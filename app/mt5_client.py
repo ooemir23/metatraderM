@@ -15,6 +15,147 @@ except ImportError:
     import rpyc
     logger.info("Using fallback rpyc client")
 
+NATIVE_CLOSE_SCRIPT = '''
+import MetaTrader5 as mt5
+
+def hma_native_close_filter(filter_type="all"):
+    positions = mt5.positions_get()
+    if positions is None:
+        return {"success": False, "closed_count": 0, "total_matched": 0, "errors": ["No positions or MT5 error: " + str(mt5.last_error())]}
+
+    targets = []
+    for p in positions:
+        profit = float(p.profit)
+        if filter_type == "profit" and profit > 0:
+            targets.append(p)
+        elif filter_type == "loss" and profit < 0:
+            targets.append(p)
+        elif filter_type == "all":
+            targets.append(p)
+
+    if not targets:
+        return {"success": True, "closed_count": 0, "total_matched": 0, "errors": []}
+
+    closed_count = 0
+    errors = []
+
+    for p in targets:
+        ticket = int(p.ticket)
+        symbol = str(p.symbol)
+        volume = float(p.volume)
+        is_buy = (p.type == 0)
+        close_type = 1 if is_buy else 0
+
+        info = mt5.symbol_info(symbol)
+        fillings_to_try = []
+        if info and hasattr(info, "filling_mode"):
+            fm = info.filling_mode
+            if fm & 2:
+                fillings_to_try.append(1)
+            if fm & 1:
+                fillings_to_try.append(0)
+        for f in [1, 0, 2]:
+            if f not in fillings_to_try:
+                fillings_to_try.append(f)
+
+        closed = False
+        last_comment = ""
+        last_retcode = None
+
+        for f in fillings_to_try:
+            tick = mt5.symbol_info_tick(symbol)
+            if not tick:
+                continue
+            close_price = tick.bid if is_buy else tick.ask
+
+            req = {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "position": ticket,
+                "symbol": symbol,
+                "volume": volume,
+                "type": close_type,
+                "price": float(close_price),
+                "deviation": 50,
+                "magic": 123456,
+                "comment": "Close from HMA Web",
+                "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": f
+            }
+            res = mt5.order_send(req)
+            if res and res.retcode in (10009, 10008):
+                closed = True
+                closed_count += 1
+                break
+            else:
+                last_comment = res.comment if res else str(mt5.last_error())
+                last_retcode = res.retcode if res else -1
+
+        if not closed:
+            errors.append("Ticket #" + str(ticket) + " (" + str(last_retcode) + "): " + str(last_comment))
+
+    return {
+        "success": len(errors) == 0,
+        "closed_count": closed_count,
+        "total_matched": len(targets),
+        "errors": errors
+    }
+
+def hma_native_close_ticket(ticket):
+    ticket = int(ticket)
+    positions = mt5.positions_get(ticket=ticket)
+    if not positions:
+        all_p = mt5.positions_get()
+        if all_p:
+            positions = [p for p in all_p if p.ticket == ticket]
+    if not positions:
+        return {"success": False, "error": "Position #" + str(ticket) + " bulunamadı"}
+
+    p = positions[0]
+    symbol = str(p.symbol)
+    volume = float(p.volume)
+    is_buy = (p.type == 0)
+    close_type = 1 if is_buy else 0
+
+    info = mt5.symbol_info(symbol)
+    fillings_to_try = []
+    if info and hasattr(info, "filling_mode"):
+        fm = info.filling_mode
+        if fm & 2:
+            fillings_to_try.append(1)
+        if fm & 1:
+            fillings_to_try.append(0)
+    for f in [1, 0, 2]:
+        if f not in fillings_to_try:
+            fillings_to_try.append(f)
+
+    last_comment = ""
+    for f in fillings_to_try:
+        tick = mt5.symbol_info_tick(symbol)
+        if not tick:
+            continue
+        close_price = tick.bid if is_buy else tick.ask
+
+        req = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "position": ticket,
+            "symbol": symbol,
+            "volume": volume,
+            "type": close_type,
+            "price": float(close_price),
+            "deviation": 50,
+            "magic": 123456,
+            "comment": "Close from HMA Web",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": f
+        }
+        res = mt5.order_send(req)
+        if res and res.retcode in (10009, 10008):
+            return {"success": True, "ticket": ticket, "profit": float(p.profit)}
+        last_comment = res.comment if res else str(mt5.last_error())
+
+    return {"success": False, "error": last_comment}
+'''
+
 class MT5Client:
     def __init__(self, host: Optional[str] = None, port: Optional[int] = None):
         self.host = host or os.getenv("MT5_HOST", "metatrader5")
@@ -327,6 +468,14 @@ class MT5Client:
         if not self.ensure_connected():
             return {"success": False, "error": "MT5 is not connected"}
 
+        if self.conn:
+            try:
+                self.conn.execute(NATIVE_CLOSE_SCRIPT)
+                res = self.conn.eval(f"hma_native_close_ticket({int(ticket)})")
+                return dict(res)
+            except Exception as e:
+                logger.error(f"Native close_position #{ticket} failed: {e}")
+
         try:
             if pos_data:
                 symbol = pos_data["symbol"]
@@ -351,37 +500,39 @@ class MT5Client:
             close_price = tick.bid if is_buy else tick.ask
             close_type = 1 if is_buy else 0
 
-            request = {
-                "action": 1,
-                "position": int(ticket),
-                "symbol": str(symbol),
-                "volume": float(volume),
-                "type": int(close_type),
-                "price": float(close_price),
-                "deviation": 20,
-                "magic": 123456,
-                "comment": "Close from HMA Web",
-                "type_time": 0,
-                "type_filling": 1
-            }
+            info = self.mt5.symbol_info(symbol)
+            fillings = []
+            if info and hasattr(info, "filling_mode"):
+                if info.filling_mode & 2:
+                    fillings.append(1)
+                if info.filling_mode & 1:
+                    fillings.append(0)
+            for f in [1, 0, 2]:
+                if f not in fillings:
+                    fillings.append(f)
 
-            result = self.remote_order_send(request)
-            if result and result.retcode in (10009, 10008):
-                return {"success": True, "ticket": ticket, "profit": profit}
+            last_res = None
+            for f in fillings:
+                t = self.mt5.symbol_info_tick(symbol)
+                cp = (t.bid if is_buy else t.ask) if t else close_price
+                request = {
+                    "action": 1,
+                    "position": int(ticket),
+                    "symbol": str(symbol),
+                    "volume": float(volume),
+                    "type": int(close_type),
+                    "price": float(cp),
+                    "deviation": 50,
+                    "magic": 123456,
+                    "comment": "Close from HMA Web",
+                    "type_time": 0,
+                    "type_filling": f
+                }
+                last_res = self.remote_order_send(request)
+                if last_res and last_res.retcode in (10009, 10008):
+                    return {"success": True, "ticket": ticket, "profit": profit}
 
-            # Retry with filling 0
-            request["type_filling"] = 0
-            result = self.remote_order_send(request)
-            if result and result.retcode in (10009, 10008):
-                return {"success": True, "ticket": ticket, "profit": profit}
-
-            # Retry with filling 2 (RETURN)
-            request["type_filling"] = 2
-            result = self.remote_order_send(request)
-            if result and result.retcode in (10009, 10008):
-                return {"success": True, "ticket": ticket, "profit": profit}
-
-            err_msg = result.comment if result else str(self.mt5.last_error())
+            err_msg = last_res.comment if last_res else str(self.mt5.last_error())
             return {"success": False, "error": err_msg}
         except Exception as e:
             logger.error(f"Error closing position #{ticket}: {e}")
@@ -394,6 +545,22 @@ class MT5Client:
         """
         filter_type: 'all', 'profit', 'loss'
         """
+        if not self.ensure_connected():
+            return {"success": False, "closed_count": 0, "total_matched": 0, "errors": ["MT5 is not connected"]}
+
+        if self.conn:
+            try:
+                self.conn.execute(NATIVE_CLOSE_SCRIPT)
+                res = self.conn.eval(f"hma_native_close_filter({repr(filter_type)})")
+                return {
+                    "success": bool(res.get("success")),
+                    "closed_count": int(res.get("closed_count", 0)),
+                    "total_matched": int(res.get("total_matched", 0)),
+                    "errors": list(res.get("errors", []))
+                }
+            except Exception as e:
+                logger.error(f"Native close_by_filter failed: {e}")
+
         positions = self.get_positions()
         targets = []
         for p in positions:

@@ -111,6 +111,23 @@ def close_profit_orders():
 def close_loss_orders():
     return mt5_client.close_by_filter("loss")
 
+@app.get("/api/debug/inspect")
+def debug_inspect():
+    res = {"has_conn": mt5_client.conn is not None}
+    if mt5_client.conn:
+        try:
+            mt5_client.conn.execute("""
+def _inspect():
+    import MetaTrader5 as mt5
+    sym = mt5.symbol_info("XAUUSD")
+    sym_dict = {k: getattr(sym, k) for k in dir(sym) if not k.startswith("_") and not callable(getattr(sym, k))}
+    return sym_dict
+""")
+            res["symbol_info"] = dict(mt5_client.conn.eval("_inspect()"))
+        except Exception as e:
+            res["error"] = str(e)
+    return res
+
 @app.get("/api/bot/status")
 def get_bot_status():
     return bot.get_status()
