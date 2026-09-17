@@ -1,10 +1,10 @@
 /* Custom styles and animations */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #121620;
+  background: #0e121a;
 }
 ::-webkit-scrollbar-thumb {
   background: #232a3b;
@@ -28,3 +28,65 @@
     opacity: 1;
   }
 }
+
+/* TradingView Chart Fullscreen Mode */
+.chart-fullscreen-mode {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  z-index: 999999 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  margin: 0 !important;
+  background-color: #0b0e14 !important;
+  box-shadow: none !important;
+}
+
+.chart-fullscreen-mode #tradingview-container {
+  height: calc(100vh - 42px) !important;
+  min-height: calc(100vh - 42px) !important;
+  max-height: calc(100vh - 42px) !important;
+}
+
+/* Ensure TradingView iframe stretches properly without gaps */
+#tradingview-container iframe {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  display: block;
+}
+
+/* High-density scaling for lower resolution devices (laptops, 1366x768, 720p, 1080p scaled) */
+@media (max-width: 1440px) or (max-height: 900px) {
+  html {
+    font-size: 14px;
+  }
+  .chart-dynamic-h {
+    height: 410px !important;
+    min-height: 350px !important;
+  }
+}
+
+@media (max-width: 1280px) or (max-height: 768px) {
+  html {
+    font-size: 13px;
+  }
+  .chart-dynamic-h {
+    height: 360px !important;
+    min-height: 300px !important;
+  }
+}
+
+@media (max-height: 680px) {
+  html {
+    font-size: 12.5px;
+  }
+  .chart-dynamic-h {
+    height: 310px !important;
+    min-height: 260px !important;
+  }
+}
+

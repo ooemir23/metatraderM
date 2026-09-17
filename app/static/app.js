@@ -46,6 +46,86 @@ function initTradingView(symbol) {
   }
 }
 
+// Toggle TradingView Chart Fullscreen Mode
+function toggleChartFullscreen() {
+  const card = document.getElementById("chart-card");
+  const fsBtn = document.getElementById("chart-fs-btn");
+  const fsIcon = document.getElementById("chart-fs-icon");
+  const fsText = document.getElementById("chart-fs-text");
+
+  if (!card) return;
+
+  const isFullscreen = card.classList.contains("chart-fullscreen-mode");
+
+  if (!isFullscreen) {
+    card.classList.add("chart-fullscreen-mode");
+    document.body.classList.add("overflow-hidden");
+    if (fsIcon) {
+      fsIcon.className = "ph-bold ph-arrows-in-simple text-amber-400";
+    }
+    if (fsText) {
+      fsText.innerText = "Küçült (ESC)";
+    }
+    if (fsBtn) {
+      fsBtn.className = "px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition border border-amber-500/30 active:scale-95 shadow-sm";
+    }
+
+    try {
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    } catch (e) {}
+
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 150);
+  } else {
+    exitChartFullscreen();
+  }
+}
+
+function exitChartFullscreen() {
+  const card = document.getElementById("chart-card");
+  const fsBtn = document.getElementById("chart-fs-btn");
+  const fsIcon = document.getElementById("chart-fs-icon");
+  const fsText = document.getElementById("chart-fs-text");
+
+  if (!card) return;
+
+  card.classList.remove("chart-fullscreen-mode");
+  document.body.classList.remove("overflow-hidden");
+  if (fsIcon) {
+    fsIcon.className = "ph-bold ph-arrows-out-simple text-cyan-400";
+  }
+  if (fsText) {
+    fsText.innerText = "Tam Ekran";
+  }
+  if (fsBtn) {
+    fsBtn.className = "px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold flex items-center gap-1.5 transition border border-gray-700 active:scale-95 shadow-sm";
+  }
+
+  try {
+    if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
+  } catch (e) {}
+
+  setTimeout(() => {
+    window.dispatchEvent(new Event("resize"));
+  }, 150);
+}
+
+// Global ESC key listener to exit chart fullscreen
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" || e.keyCode === 27) {
+    const card = document.getElementById("chart-card");
+    if (card && card.classList.contains("chart-fullscreen-mode")) {
+      exitChartFullscreen();
+    }
+  }
+});
+
+
 // Switch Active Symbol
 function switchSymbol(symbol) {
   currentSymbol = symbol;
