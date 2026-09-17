@@ -244,16 +244,19 @@ class MT5Client:
             logger.error(f"Error fetching symbol price for {symbol}: {e}")
             return {"symbol": symbol, "bid": 0.0, "ask": 0.0, "spread": 0}
 
-    def to_server_dict(self, d: Dict[str, Any]) -> Any:
-        if self.conn and hasattr(self.conn, "modules"):
+    def remote_order_send(self, request: Dict[str, Any]) -> Any:
+        if self.conn:
             try:
-                return self.conn.modules["builtins"].dict(d)
-            except Exception:
-                try:
-                    return self.conn.modules.builtins.dict(d)
-                except Exception:
-                    pass
-        return d
+                self.conn.execute("import MetaTrader5 as mt5")
+                return self.conn.eval(f"mt5.order_send({repr(request)})")
+            except Exception as e:
+                logger.warning(f"conn.eval order_send failed: {e}")
+        if self.mt5:
+            try:
+                return self.mt5.order_send(request)
+            except Exception as e:
+                logger.error(f"mt5.order_send failed: {e}")
+        return None
 
     def open_order(self, symbol: str, order_type: str, volume: float, sl_points: int = 0, tp_points: int = 0, comment: str = "HMA Web App") -> Dict[str, Any]:
         if not self.ensure_connected():
@@ -282,31 +285,32 @@ class MT5Client:
 
             request = {
                 "action": 1,
-                "symbol": symbol,
+                "symbol": str(symbol),
                 "volume": float(volume),
-                "type": type_code,
-                "price": price,
-                "sl": sl,
-                "tp": tp,
+                "type": int(type_code),
+                "price": float(price),
+                "sl": float(sl),
+                "tp": float(tp),
                 "deviation": 20,
                 "magic": 123456,
-                "comment": comment,
+                "comment": str(comment),
                 "type_time": 0,
                 "type_filling": 1
             }
 
-            srv_req = self.to_server_dict(request)
-            result = self.mt5.order_send(srv_req)
+            result = self.remote_order_send(request)
             if result is None:
                 err = self.mt5.last_error()
                 return {"success": False, "error": f"order_send failed: {err}"}
 
             if result.retcode not in (10009, 10008):
                 request["type_filling"] = 0
-                srv_req = self.to_server_dict(request)
-                result = self.mt5.order_send(srv_req)
+                result = self.remote_order_send(request)
                 if result.retcode not in (10009, 10008):
-                    return {"success": False, "retcode": result.retcode, "error": result.comment}
+                    request["type_filling"] = 2
+                    result = self.remote_order_send(request)
+                    if result.retcode not in (10009, 10008):
+                        return {"success": False, "retcode": result.retcode, "error": result.comment}
 
             return {
                 "success": True,
@@ -319,31 +323,41 @@ class MT5Client:
             logger.error(f"Error opening order: {e}")
             return {"success": False, "error": str(e)}
 
-    def close_position(self, ticket: int) -> Dict[str, Any]:
+    def close_position(self, ticket: int, pos_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         if not self.ensure_connected():
             return {"success": False, "error": "MT5 is not connected"}
 
         try:
-            positions = self.mt5.positions_get(ticket=ticket)
-            if not positions or len(positions) == 0:
-                return {"success": False, "error": f"Position #{ticket} bulunamadı"}
+            if pos_data:
+                symbol = pos_data["symbol"]
+                volume = float(pos_data["volume"])
+                is_buy = (pos_data.get("type") == "BUY" or pos_data.get("type_raw") == 0)
+                profit = float(pos_data.get("profit", 0.0))
+            else:
+                positions = self.get_positions()
+                matched = [p for p in positions if p["ticket"] == int(ticket)]
+                if not matched:
+                    return {"success": False, "error": f"Position #{ticket} bulunamadı"}
+                pos = matched[0]
+                symbol = pos["symbol"]
+                volume = float(pos["volume"])
+                is_buy = (pos["type"] == "BUY" or pos.get("type_raw") == 0)
+                profit = float(pos.get("profit", 0.0))
 
-            pos = positions[0]
-            tick = self.mt5.symbol_info_tick(pos.symbol)
+            tick = self.mt5.symbol_info_tick(symbol)
             if not tick:
-                return {"success": False, "error": f"Could not get tick for {pos.symbol}"}
+                return {"success": False, "error": f"Could not get tick for {symbol}"}
 
-            is_buy = pos.type == 0
             close_price = tick.bid if is_buy else tick.ask
             close_type = 1 if is_buy else 0
 
             request = {
                 "action": 1,
-                "position": ticket,
-                "symbol": pos.symbol,
-                "volume": pos.volume,
-                "type": close_type,
-                "price": close_price,
+                "position": int(ticket),
+                "symbol": str(symbol),
+                "volume": float(volume),
+                "type": int(close_type),
+                "price": float(close_price),
                 "deviation": 20,
                 "magic": 123456,
                 "comment": "Close from HMA Web",
@@ -351,18 +365,24 @@ class MT5Client:
                 "type_filling": 1
             }
 
-            srv_req = self.to_server_dict(request)
-            result = self.mt5.order_send(srv_req)
+            result = self.remote_order_send(request)
             if result and result.retcode in (10009, 10008):
-                return {"success": True, "ticket": ticket, "profit": pos.profit}
-            else:
-                request["type_filling"] = 0
-                srv_req = self.to_server_dict(request)
-                result = self.mt5.order_send(srv_req)
-                if result and result.retcode in (10009, 10008):
-                    return {"success": True, "ticket": ticket, "profit": pos.profit}
-                err_msg = result.comment if result else str(self.mt5.last_error())
-                return {"success": False, "error": err_msg}
+                return {"success": True, "ticket": ticket, "profit": profit}
+
+            # Retry with filling 0
+            request["type_filling"] = 0
+            result = self.remote_order_send(request)
+            if result and result.retcode in (10009, 10008):
+                return {"success": True, "ticket": ticket, "profit": profit}
+
+            # Retry with filling 2 (RETURN)
+            request["type_filling"] = 2
+            result = self.remote_order_send(request)
+            if result and result.retcode in (10009, 10008):
+                return {"success": True, "ticket": ticket, "profit": profit}
+
+            err_msg = result.comment if result else str(self.mt5.last_error())
+            return {"success": False, "error": err_msg}
         except Exception as e:
             logger.error(f"Error closing position #{ticket}: {e}")
             return {"success": False, "error": str(e)}
@@ -389,7 +409,7 @@ class MT5Client:
         errors = []
 
         for p in targets:
-            res = self.close_position(p["ticket"])
+            res = self.close_position(p["ticket"], pos_data=p)
             if res.get("success"):
                 closed_count += 1
             else:

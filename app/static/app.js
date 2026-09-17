@@ -305,10 +305,8 @@ async function submitOrder(type) {
   }
 }
 
-// Close Single Position
+// Close Single Position (Instant 1-Click)
 async function closePosition(ticket) {
-  if (!confirm(`#${ticket} numaralı pozisyonu kapatmak istediğinize emin misiniz?`)) return;
-
   try {
     const res = await fetch("/api/order/close", {
       method: "POST",
@@ -329,19 +327,17 @@ async function closePosition(ticket) {
   }
 }
 
-// Close Filtered Positions (all, profit, loss)
+// Close Filtered Positions (all, profit, loss) - Instant 1-Click
 async function closeFilteredPositions(filterType) {
-  let label = "Tüm açık pozisyonlar";
+  let label = "Tüm pozisyonlar";
   let endpoint = "/api/order/close-all";
   if (filterType === "profit") {
-    label = "Sadece KÂRDA olan pozisyonlar";
+    label = "Kârdaki pozisyonlar";
     endpoint = "/api/order/close-profit";
   } else if (filterType === "loss") {
-    label = "Sadece ZARARDA olan pozisyonlar";
+    label = "Zarardaki pozisyonlar";
     endpoint = "/api/order/close-loss";
   }
-
-  if (!confirm(`DİKKAT: ${label} kapatılacak! Onaylıyor musunuz?`)) return;
 
   try {
     showToast(`${label} kapatılıyor...`, "info");
