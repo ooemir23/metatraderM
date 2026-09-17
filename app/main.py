@@ -108,7 +108,7 @@ def get_bot_status():
     return bot.get_status()
 
 @app.post("/api/bot/toggle")
-def toggle_bot():
+async def toggle_bot():
     if bot.is_running:
         bot.stop()
     else:
