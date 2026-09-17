@@ -87,15 +87,30 @@ async function fetchAccount() {
 
     const indicator = document.getElementById("status-indicator");
     const statusText = document.getElementById("status-text");
+    const lastSyncText = document.getElementById("last-sync-text");
+    const uptimeText = document.getElementById("uptime-text");
+    const uptimeBadge = document.getElementById("uptime-badge");
+
+    const nowStr = new Date().toLocaleTimeString("tr-TR");
 
     if (data.connected) {
       indicator.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
       statusText.innerText = `MT5 Bağlı (#${data.login})`;
       statusText.className = "text-emerald-400 font-semibold";
+      if (lastSyncText) lastSyncText.innerText = `Son Veri: ${data.server_time || nowStr}`;
+      if (uptimeText) {
+        uptimeText.innerText = `Bağlı: ${data.connected_since || "Aktif"}`;
+        uptimeBadge.className = "text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1";
+      }
     } else {
       indicator.className = "w-2 h-2 rounded-full bg-amber-400 animate-pulse";
       statusText.innerText = "MT5 Bekleniyor / Çevrimdışı";
       statusText.className = "text-amber-400";
+      if (lastSyncText) lastSyncText.innerText = `Son Veri: Bekleniyor (${nowStr})`;
+      if (uptimeText) {
+        uptimeText.innerText = "Bağlantı: Yok";
+        uptimeBadge.className = "text-[11px] font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700 flex items-center gap-1";
+      }
     }
 
     document.getElementById("acc-balance").innerText = `$${formatMoney(data.balance)}`;

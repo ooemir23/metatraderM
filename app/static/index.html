@@ -24,11 +24,18 @@
           <i class="ph-bold ph-chart-line-up text-xl text-black"></i>
         </div>
         <div>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
             <span class="font-extrabold tracking-tight text-white text-lg">HMA</span>
-            <span class="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">MT5 PRO</span>
+            <span id="last-sync-badge" class="text-[11px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 flex items-center gap-1 shadow-sm" title="Son Veri Güncelleme Saati">
+              <i class="ph-bold ph-arrows-clockwise text-xs"></i>
+              <span id="last-sync-text">Son Veri: --:--:--</span>
+            </span>
+            <span id="uptime-badge" class="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1" title="Sisteme Bağlantı Zamanı">
+              <i class="ph-bold ph-clock text-xs"></i>
+              <span id="uptime-text">Bağlantı: Bekleniyor</span>
+            </span>
           </div>
-          <div class="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer hover:text-gray-200 transition" onclick="toggleLoginModal()">
+          <div class="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer hover:text-gray-200 transition mt-0.5" onclick="toggleLoginModal()">
             <span id="status-indicator" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
             <span id="status-text">MT5 Bağlanıyor...</span>
             <i class="ph-bold ph-pencil-simple text-[10px] text-gray-500"></i>

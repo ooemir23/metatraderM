@@ -31,6 +31,7 @@ class MT5Client:
         self.server = os.getenv("MT5_SERVER", "Tickmill-Demo")
 
         self.conn = None
+        self.connected_at = 0
 
     def connect(self) -> bool:
         now = time.time()
@@ -66,6 +67,7 @@ class MT5Client:
                     self.mt5 = mt5
                     self.port = p
                     self.is_connected = True
+                    self.connected_at = time.time()
                     self.last_error_msg = ""
                     logger.info(f"Connected to MT5 via rpyc.classic on port {p}!")
                     return True
@@ -134,6 +136,7 @@ class MT5Client:
                 self.is_connected = False
                 self.conn = None
                 self.mt5 = None
+                self.connected_at = 0
 
         return self.connect()
 
@@ -150,7 +153,9 @@ class MT5Client:
                 "margin_level": 0.0,
                 "currency": "USD",
                 "server": self.server,
-                "error": self.last_error_msg or "MT5 Bağlantısı Bekleniyor"
+                "error": self.last_error_msg or "MT5 Bağlantısı Bekleniyor",
+                "connected_since": None,
+                "server_time": time.strftime("%H:%M:%S")
             }
 
         try:
@@ -161,7 +166,9 @@ class MT5Client:
                     "terminal_ready": True,
                     "error": "Broker hesabına giriş bekleniyor",
                     "login": self.login_id,
-                    "server": self.server
+                    "server": self.server,
+                    "connected_since": None,
+                    "server_time": time.strftime("%H:%M:%S")
                 }
             
             return {
@@ -175,7 +182,9 @@ class MT5Client:
                 "margin_level": round(acc.margin_level, 2) if acc.margin > 0 else 100.0,
                 "currency": acc.currency,
                 "server": acc.server,
-                "leverage": acc.leverage
+                "leverage": acc.leverage,
+                "connected_since": time.strftime("%H:%M:%S", time.localtime(self.connected_at)) if self.connected_at else time.strftime("%H:%M:%S"),
+                "server_time": time.strftime("%H:%M:%S")
             }
         except Exception as e:
             logger.error(f"Error fetching account info: {e}")
