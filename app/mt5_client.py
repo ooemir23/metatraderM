@@ -26,29 +26,9 @@ def _execute_close_deal(p):
     close_type = 1 if is_buy else 0
     magic = int(getattr(p, "magic", 0))
 
-    sym = mt5.symbol_info(symbol)
-    fm = int(sym.filling_mode) if (sym and hasattr(sym, "filling_mode")) else 2
-
-    # Configurations to try in priority order:
-    # 1. Broker dynamic filling_mode directly (e.g. 2 for Tickmill)
-    # 2. ORDER_FILLING_IOC (1)
-    # 3. ORDER_FILLING_FOK (0)
-    # 4. ORDER_FILLING_RETURN (2)
-    # 5. Without type_filling
-    configs = [
-        {"type_filling": fm, "type_time": 0},
-        {"type_filling": 1, "type_time": 0},
-        {"type_filling": 0, "type_time": 0},
-        {"type_filling": 2, "type_time": 0},
-        {"type_time": 0},
-        {"type_filling": fm},
-        {"type_filling": 1},
-        {"type_filling": 0},
-        {}
-    ]
-
+    # ORDER_FILLING_IOC (1) is confirmed supported by Tickmill symbol_info.
     attempts = []
-    for cfg in configs:
+    for dev in [50, 100, 200]:
         tick = mt5.symbol_info_tick(symbol)
         if not tick:
             continue
@@ -61,21 +41,22 @@ def _execute_close_deal(p):
             "volume": volume,
             "type": close_type,
             "price": close_price,
-            "deviation": 50,
+            "deviation": dev,
             "magic": magic,
-            "comment": "Close from HMA Web"
+            "comment": "Close from HMA Web",
+            "type_time": 0,
+            "type_filling": 1
         }
-        req.update(cfg)
 
         res = mt5.order_send(req)
-        if res and res.retcode in (10009, 10008):
+        if res and res.retcode in (10009, 10008, 10010, 0):
             return {"success": True, "ticket": ticket, "profit": float(p.profit), "comment": str(res.comment)}
 
         c = getattr(res, "comment", str(mt5.last_error()))
         rc = getattr(res, "retcode", -1)
-        attempts.append(str(rc) + ":" + str(c))
+        attempts.append("dev" + str(dev) + "->" + str(rc) + ":" + str(c))
 
-    last_err = attempts[-1] if attempts else "Unknown error"
+    last_err = " | ".join(attempts) if attempts else "Unknown error"
     return {"success": False, "ticket": ticket, "error": last_err}
 
 def hma_native_close_filter(filter_type="all"):

@@ -346,6 +346,8 @@ async function closeFilteredPositions(filterType) {
     if (res.ok) {
       if (data.total_matched === 0) {
         showToast(`Kapatılacak uygun pozisyon bulunamadı.`, "info");
+      } else if (data.closed_count === 0 && data.errors && data.errors.length > 0) {
+        showToast(`❌ Kapatma Hatası: ${data.errors[0]}`, "error");
       } else {
         showToast(`✅ ${data.closed_count} adet pozisyon kapatıldı.`, "success");
       }
