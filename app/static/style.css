@@ -88,17 +88,20 @@
 }
 
 /* Resizer Handle styling */
-#chart-resizer {
+#chart-resizer,
+#positions-resizer {
   touch-action: none;
   user-select: none;
 }
 
-body.resizing-chart {
+body.resizing-chart,
+body.resizing-positions {
   cursor: ns-resize !important;
   user-select: none !important;
 }
 
-body.resizing-chart #tradingview-container iframe {
+body.resizing-chart #tradingview-container iframe,
+body.resizing-positions #tradingview-container iframe {
   pointer-events: none !important;
 }
 

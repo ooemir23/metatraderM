@@ -18,6 +18,7 @@ const TV_SYMBOLS = {
 document.addEventListener("DOMContentLoaded", () => {
   initTradingView(currentSymbol);
   initChartResizer();
+  initPositionsResizer();
   startPolling();
 });
 
@@ -213,6 +214,78 @@ function initChartResizer() {
     localStorage.removeItem("hma_chart_height");
     card.style.height = "";
     window.dispatchEvent(new Event("resize"));
+  }
+
+  resizer.addEventListener("pointerdown", onPointerDown);
+  resizer.addEventListener("dblclick", onDoubleClick);
+}
+
+// Positions Card Resizer Handle Logic (Drag to stretch or shrink height)
+function initPositionsResizer() {
+  const card = document.getElementById("positions-card");
+  const resizer = document.getElementById("positions-resizer");
+  if (!card || !resizer) return;
+
+  // Restore saved height from localStorage if available
+  const savedHeight = localStorage.getItem("hma_positions_height");
+  if (savedHeight) {
+    const h = parseInt(savedHeight, 10);
+    if (!isNaN(h) && h >= 200 && h <= 2000) {
+      card.style.height = `${h}px`;
+    }
+  }
+
+  let startY = 0;
+  let startHeight = 0;
+  let isDragging = false;
+
+  function onPointerDown(e) {
+    if (e.button !== undefined && e.button !== 0) return;
+
+    isDragging = true;
+    startY = e.clientY;
+    startHeight = card.getBoundingClientRect().height;
+
+    try {
+      resizer.setPointerCapture(e.pointerId);
+    } catch (err) {}
+
+    document.body.classList.add("resizing-positions");
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+  }
+
+  function onPointerMove(e) {
+    if (!isDragging) return;
+    const dy = e.clientY - startY;
+    const minH = 220;
+    const maxH = Math.max(minH, window.innerHeight * 2);
+    const newHeight = Math.max(minH, Math.min(maxH, startHeight + dy));
+
+    card.style.height = `${Math.round(newHeight)}px`;
+  }
+
+  function onPointerUp(e) {
+    if (!isDragging) return;
+    isDragging = false;
+
+    try {
+      resizer.releasePointerCapture(e.pointerId);
+    } catch (err) {}
+
+    document.body.classList.remove("resizing-positions");
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+    window.removeEventListener("pointercancel", onPointerUp);
+
+    const currentH = Math.round(card.getBoundingClientRect().height);
+    localStorage.setItem("hma_positions_height", currentH);
+  }
+
+  function onDoubleClick() {
+    localStorage.removeItem("hma_positions_height");
+    card.style.height = "";
   }
 
   resizer.addEventListener("pointerdown", onPointerDown);
