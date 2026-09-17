@@ -566,3 +566,74 @@ class MT5Client:
         except Exception as e:
             logger.error(f"Error fetching rates for {symbol}: {e}")
             return None
+
+    def get_history(self, days: int = 30) -> List[Dict[str, Any]]:
+        if not self.ensure_connected():
+            return []
+
+        try:
+            if self.conn:
+                script = f"""
+def _get_history():
+    import MetaTrader5 as mt5
+    import time
+    from datetime import datetime, timedelta
+    from_date = datetime.now() - timedelta(days={int(days)})
+    to_date = datetime.now() + timedelta(days=1)
+    deals = mt5.history_deals_get(from_date, to_date)
+    if deals is None:
+        return []
+    res = []
+    for d in deals:
+        if d.entry in (1, 2, 3) or d.profit != 0:
+            res.append({{
+                "ticket": int(d.ticket),
+                "order": int(d.order),
+                "position_id": int(d.position_id),
+                "symbol": str(d.symbol),
+                "type": "BUY" if d.type == 0 else "SELL",
+                "entry": int(d.entry),
+                "volume": float(d.volume),
+                "price": round(float(d.price), 5),
+                "profit": round(float(d.profit), 2),
+                "commission": round(float(getattr(d, "commission", 0.0)), 2),
+                "swap": round(float(getattr(d, "swap", 0.0)), 2),
+                "comment": str(d.comment),
+                "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(d.time))
+            }})
+    res.reverse()
+    return res
+_get_history()
+"""
+                return list(self.conn.eval(script))
+            elif self.mt5:
+                from datetime import datetime, timedelta
+                from_date = datetime.now() - timedelta(days=days)
+                to_date = datetime.now() + timedelta(days=1)
+                deals = self.mt5.history_deals_get(from_date, to_date)
+                if deals is None:
+                    return []
+                res = []
+                for d in deals:
+                    if d.entry in (1, 2, 3) or d.profit != 0:
+                        res.append({
+                            "ticket": int(d.ticket),
+                            "order": int(d.order),
+                            "position_id": int(d.position_id),
+                            "symbol": str(d.symbol),
+                            "type": "BUY" if d.type == 0 else "SELL",
+                            "entry": int(d.entry),
+                            "volume": float(d.volume),
+                            "price": round(float(d.price), 5),
+                            "profit": round(float(d.profit), 2),
+                            "commission": round(float(getattr(d, "commission", 0.0)), 2),
+                            "swap": round(float(getattr(d, "swap", 0.0)), 2),
+                            "comment": str(d.comment),
+                            "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(d.time))
+                        })
+                res.reverse()
+                return res
+            return []
+        except Exception as e:
+            logger.error(f"Error fetching history: {e}")
+            return []

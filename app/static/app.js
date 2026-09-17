@@ -65,17 +65,53 @@ function switchSymbol(symbol) {
   fetchPrice();
 }
 
+let currentPositionTab = "open";
+
 // Polling loop for real-time updates
 function startPolling() {
   fetchAccount();
   fetchPositions();
+  fetchHistory();
   fetchPrice();
   fetchBotStatus();
 
   setInterval(fetchAccount, 2000);
   setInterval(fetchPositions, 2000);
+  setInterval(fetchHistory, 4000);
   setInterval(fetchPrice, 1500);
   setInterval(fetchBotStatus, 3000);
+}
+
+// Switch between Open and Closed Positions tabs
+function switchPositionTab(tab) {
+  currentPositionTab = tab;
+  const btnOpen = document.getElementById("tab-btn-open");
+  const btnClosed = document.getElementById("tab-btn-closed");
+  const openActions = document.getElementById("open-actions-bar");
+  const closedSummary = document.getElementById("closed-summary-bar");
+  const openContainer = document.getElementById("open-positions-container");
+  const closedContainer = document.getElementById("closed-positions-container");
+
+  if (tab === "open") {
+    btnOpen.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-emerald-500/20 text-emerald-400 shadow-sm";
+    btnClosed.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200";
+    if (openActions) openActions.classList.remove("hidden");
+    if (closedSummary) closedSummary.classList.add("hidden");
+    if (openContainer) openContainer.classList.remove("hidden");
+    if (closedContainer) closedContainer.classList.add("hidden");
+    fetchPositions();
+  } else {
+    btnClosed.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-cyan-500/20 text-cyan-400 shadow-sm";
+    btnOpen.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200";
+    if (openActions) openActions.classList.add("hidden");
+    if (closedSummary) {
+      closedSummary.classList.remove("hidden");
+      closedSummary.classList.add("flex");
+    }
+    if (openContainer) openContainer.classList.add("hidden");
+    if (closedContainer) closedContainer.classList.remove("hidden");
+    fetchHistory();
+  }
 }
 
 // Fetch Account Info
@@ -141,7 +177,7 @@ async function fetchPositions() {
 
     const tbody = document.getElementById("positions-table-body");
     const countBadge = document.getElementById("pos-count-badge");
-    countBadge.innerText = positions.length;
+    if (countBadge) countBadge.innerText = positions.length;
 
     if (!positions || positions.length === 0) {
       tbody.innerHTML = `<tr><td colspan="9" class="py-6 text-center text-gray-500 font-sans">Henüz açık pozisyon bulunmuyor.</td></tr>`;
@@ -169,7 +205,7 @@ async function fetchPositions() {
           <td class="py-2.5 px-3 text-gray-500">${p.sl || "-"} / ${p.tp || "-"}</td>
           <td class="py-2.5 px-3 text-right font-bold ${profitColor}">${profitSign}$${formatMoney(p.profit)}</td>
           <td class="py-2.5 px-3 text-center">
-            <button onclick="closePosition(${p.ticket})" class="px-2 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition" title="Kapat">
+            <button onclick="closePosition(${p.ticket})" class="px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition active:scale-95" title="Kapat">
               Kapat
             </button>
           </td>
@@ -180,6 +216,71 @@ async function fetchPositions() {
     tbody.innerHTML = rowsHtml;
   } catch (err) {
     console.error("fetchPositions error:", err);
+  }
+}
+
+// Fetch Closed Positions / Trade History
+async function fetchHistory() {
+  try {
+    const res = await fetch("/api/history?days=30");
+    if (!res.ok) return;
+    const history = await res.json();
+
+    const tbody = document.getElementById("history-table-body");
+    const countBadge = document.getElementById("history-count-badge");
+    const totalProfitEl = document.getElementById("history-total-profit");
+
+    if (countBadge) countBadge.innerText = history.length;
+
+    let totalProfit = 0;
+    history.forEach(d => {
+      totalProfit += (d.profit || 0);
+    });
+
+    if (totalProfitEl) {
+      const pColor = totalProfit >= 0 ? "text-emerald-400" : "text-rose-400";
+      const pSign = totalProfit >= 0 ? "+" : "";
+      totalProfitEl.className = `font-bold ${pColor}`;
+      totalProfitEl.innerText = `${pSign}$${formatMoney(totalProfit)}`;
+    }
+
+    if (!tbody) return;
+
+    if (!history || history.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" class="py-6 text-center text-gray-500 font-sans">Henüz kapalı işlem geçmişi bulunmuyor.</td></tr>`;
+      return;
+    }
+
+    let rowsHtml = "";
+    history.forEach(d => {
+      const isBuy = d.type === "BUY";
+      const typeBadge = isBuy
+        ? `<span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold text-[10px]">BUY</span>`
+        : `<span class="px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold text-[10px]">SELL</span>`;
+
+      const profitColor = d.profit >= 0 ? "text-emerald-400" : "text-rose-400";
+      const profitSign = d.profit >= 0 ? "+" : "";
+
+      const fee = (d.swap || 0) + (d.commission || 0);
+      const feeText = fee !== 0 ? `${fee >= 0 ? "+" : ""}$${formatMoney(fee)}` : "-";
+
+      rowsHtml += `
+        <tr class="hover:bg-[#151a26]/60 transition border-b border-gray-800/40">
+          <td class="py-2.5 px-3 text-gray-400">#${d.ticket} <span class="text-[10px] text-gray-600 block">Pos: #${d.position_id || d.order}</span></td>
+          <td class="py-2.5 px-3 font-bold text-white">${d.symbol}</td>
+          <td class="py-2.5 px-3">${typeBadge}</td>
+          <td class="py-2.5 px-3 text-gray-200 font-semibold">${d.volume}</td>
+          <td class="py-2.5 px-3 text-gray-300 font-mono">${d.price}</td>
+          <td class="py-2.5 px-3 text-gray-500 text-[11px]">${feeText}</td>
+          <td class="py-2.5 px-3 text-gray-400 text-[11px]">${d.time}</td>
+          <td class="py-2.5 px-3 text-right font-bold font-mono ${profitColor}">${profitSign}$${formatMoney(d.profit)}</td>
+        </tr>
+      `;
+    });
+
+    tbody.innerHTML = rowsHtml;
+  } catch (err) {
+    console.error("fetchHistory error:", err);
   }
 }
 

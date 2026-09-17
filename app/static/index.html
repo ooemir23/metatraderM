@@ -206,15 +206,26 @@
     <!-- BOTTOM ROW: OPEN POSITIONS TABLE & RECENT LOGS -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
       
-      <!-- OPEN POSITIONS TABLE (8 COLS) -->
-      <div class="lg:col-span-8 bg-[#121620] rounded-2xl border border-gray-800/80 p-4 shadow-xl">
-        <div class="flex items-center justify-between mb-3">
-          <div class="flex items-center gap-2">
-            <i class="ph-bold ph-briefcase text-emerald-400"></i>
-            <h3 class="font-bold text-white text-sm">Açık Pozisyonlar</h3>
-            <span id="pos-count-badge" class="px-2 py-0.5 rounded-full bg-gray-800 text-gray-300 text-xs font-mono">0</span>
+      <!-- POSITIONS & HISTORY CARD (8 COLS) -->
+      <div class="lg:col-span-8 bg-[#121620] rounded-2xl border border-gray-800/80 p-4 shadow-xl flex flex-col">
+        <!-- HEADER WITH TABS & ACTION BUTTONS -->
+        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <!-- TABS -->
+          <div class="flex items-center bg-[#151a26] p-1 rounded-xl border border-gray-800/80">
+            <button id="tab-btn-open" onclick="switchPositionTab('open')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-emerald-500/20 text-emerald-400 shadow-sm">
+              <i class="ph-bold ph-briefcase"></i>
+              <span>Açık Pozisyonlar</span>
+              <span id="pos-count-badge" class="px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono">0</span>
+            </button>
+            <button id="tab-btn-closed" onclick="switchPositionTab('closed')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200">
+              <i class="ph-bold ph-clock-counter-clockwise"></i>
+              <span>Kapalı Pozisyonlar</span>
+              <span id="history-count-badge" class="px-1.5 py-0.5 rounded-full bg-gray-800 text-gray-400 text-[10px] font-mono">0</span>
+            </button>
           </div>
-          <div class="flex items-center gap-2 flex-wrap">
+
+          <!-- OPEN POSITIONS ACTIONS (Visible when open tab active) -->
+          <div id="open-actions-bar" class="flex items-center gap-2 flex-wrap">
             <button onclick="closeFilteredPositions('profit')" class="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-xs font-semibold flex items-center gap-1 transition active:scale-95" title="Sadece kârda olan pozisyonları kapat">
               <i class="ph-bold ph-trend-up"></i>
               <span>Kârda Olanları Kapat</span>
@@ -228,10 +239,19 @@
               <span>Tümünü Kapat</span>
             </button>
           </div>
+
+          <!-- CLOSED POSITIONS SUMMARY (Visible when closed tab active) -->
+          <div id="closed-summary-bar" class="hidden flex items-center gap-3 text-xs font-mono">
+            <span class="text-gray-400">Toplam Net: <strong id="history-total-profit" class="text-white">$0.00</strong></span>
+            <button onclick="fetchHistory()" class="px-2 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs flex items-center gap-1 transition" title="Yenile">
+              <i class="ph-bold ph-arrows-clockwise"></i>
+              <span class="font-sans">Yenile</span>
+            </button>
+          </div>
         </div>
 
-        <!-- Responsive Table Container -->
-        <div class="overflow-x-auto">
+        <!-- OPEN POSITIONS TABLE -->
+        <div id="open-positions-container" class="overflow-x-auto flex-1">
           <table class="w-full text-left text-xs text-gray-300">
             <thead class="text-[11px] text-gray-400 uppercase bg-[#151a26] border-b border-gray-800">
               <tr>
@@ -249,6 +269,29 @@
             <tbody id="positions-table-body" class="divide-y divide-gray-800/50 font-mono">
               <tr>
                 <td colspan="9" class="py-6 text-center text-gray-500 font-sans">Henüz açık pozisyon bulunmuyor.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- CLOSED POSITIONS TABLE -->
+        <div id="closed-positions-container" class="overflow-x-auto flex-1 hidden">
+          <table class="w-full text-left text-xs text-gray-300">
+            <thead class="text-[11px] text-gray-400 uppercase bg-[#151a26] border-b border-gray-800">
+              <tr>
+                <th class="py-2.5 px-3">Bilet / Poz.</th>
+                <th class="py-2.5 px-3">Sembol</th>
+                <th class="py-2.5 px-3">Yön</th>
+                <th class="py-2.5 px-3">Hacim</th>
+                <th class="py-2.5 px-3">Kapanış Fiyatı</th>
+                <th class="py-2.5 px-3">Swap/Kom.</th>
+                <th class="py-2.5 px-3">Kapanış Zamanı</th>
+                <th class="py-2.5 px-3 text-right">Net Kâr / Zarar</th>
+              </tr>
+            </thead>
+            <tbody id="history-table-body" class="divide-y divide-gray-800/50 font-mono">
+              <tr>
+                <td colspan="8" class="py-6 text-center text-gray-500 font-sans">Henüz kapalı işlem geçmişi bulunmuyor.</td>
               </tr>
             </tbody>
           </table>

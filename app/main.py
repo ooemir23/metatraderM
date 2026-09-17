@@ -74,6 +74,10 @@ def account_login(req: LoginRequest):
 def get_positions():
     return mt5_client.get_positions()
 
+@app.get("/api/history")
+def get_history(days: int = 30):
+    return mt5_client.get_history(days=days)
+
 @app.get("/api/price/{symbol}")
 def get_price(symbol: str):
     return mt5_client.get_symbol_price(symbol.upper())
