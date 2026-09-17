@@ -314,22 +314,42 @@ async function closePosition(ticket) {
   }
 }
 
-// Close All Positions
-async function closeAllPositions() {
-  if (!confirm("DİKKAT: Tüm açık pozisyonlar kapatılacak! Onaylıyor musunuz?")) return;
+// Close Filtered Positions (all, profit, loss)
+async function closeFilteredPositions(filterType) {
+  let label = "Tüm açık pozisyonlar";
+  let endpoint = "/api/order/close-all";
+  if (filterType === "profit") {
+    label = "Sadece KÂRDA olan pozisyonlar";
+    endpoint = "/api/order/close-profit";
+  } else if (filterType === "loss") {
+    label = "Sadece ZARARDA olan pozisyonlar";
+    endpoint = "/api/order/close-loss";
+  }
+
+  if (!confirm(`DİKKAT: ${label} kapatılacak! Onaylıyor musunuz?`)) return;
 
   try {
-    showToast("Tüm pozisyonlar kapatılıyor...", "info");
-    const res = await fetch("/api/order/close-all", { method: "POST" });
+    showToast(`${label} kapatılıyor...`, "info");
+    const res = await fetch(endpoint, { method: "POST" });
     const data = await res.json();
     if (res.ok) {
-      showToast(`✅ Toplam ${data.closed_count} adet pozisyon kapatıldı.`, "success");
+      if (data.total_matched === 0) {
+        showToast(`Kapatılacak uygun pozisyon bulunamadı.`, "info");
+      } else {
+        showToast(`✅ ${data.closed_count} adet pozisyon kapatıldı.`, "success");
+      }
       fetchPositions();
       fetchAccount();
+    } else {
+      showToast(`❌ Hata: ${data.detail || data.error || "İşlem başarısız"}`, "error");
     }
   } catch (err) {
     showToast(`❌ Hata: ${err.message}`, "error");
   }
+}
+
+function closeAllPositions() {
+  closeFilteredPositions("all");
 }
 
 // Toggle Bot

@@ -207,10 +207,20 @@
             <h3 class="font-bold text-white text-sm">Açık Pozisyonlar</h3>
             <span id="pos-count-badge" class="px-2 py-0.5 rounded-full bg-gray-800 text-gray-300 text-xs font-mono">0</span>
           </div>
-          <button onclick="closeAllPositions()" class="px-3 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-semibold flex items-center gap-1 transition">
-            <i class="ph-bold ph-x-circle"></i>
-            <span>Tümünü Kapat</span>
-          </button>
+          <div class="flex items-center gap-2 flex-wrap">
+            <button onclick="closeFilteredPositions('profit')" class="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-xs font-semibold flex items-center gap-1 transition active:scale-95" title="Sadece kârda olan pozisyonları kapat">
+              <i class="ph-bold ph-trend-up"></i>
+              <span>Kârda Olanları Kapat</span>
+            </button>
+            <button onclick="closeFilteredPositions('loss')" class="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold flex items-center gap-1 transition active:scale-95" title="Sadece zararda olan pozisyonları kapat">
+              <i class="ph-bold ph-trend-down"></i>
+              <span>Zararda Olanları Kapat</span>
+            </button>
+            <button onclick="closeFilteredPositions('all')" class="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 text-xs font-semibold flex items-center gap-1 transition active:scale-95" title="Tüm açık pozisyonları kapat">
+              <i class="ph-bold ph-x-circle"></i>
+              <span>Tümünü Kapat</span>
+            </button>
+          </div>
         </div>
 
         <!-- Responsive Table Container -->

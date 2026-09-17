@@ -344,11 +344,27 @@ class MT5Client:
             return {"success": False, "error": str(e)}
 
     def close_all(self) -> Dict[str, Any]:
+        return self.close_by_filter("all")
+
+    def close_by_filter(self, filter_type: str = "all") -> Dict[str, Any]:
+        """
+        filter_type: 'all', 'profit', 'loss'
+        """
         positions = self.get_positions()
+        targets = []
+        for p in positions:
+            profit = float(p.get("profit", 0.0))
+            if filter_type == "profit" and profit > 0:
+                targets.append(p)
+            elif filter_type == "loss" and profit < 0:
+                targets.append(p)
+            elif filter_type == "all":
+                targets.append(p)
+
         closed_count = 0
         errors = []
 
-        for p in positions:
+        for p in targets:
             res = self.close_position(p["ticket"])
             if res.get("success"):
                 closed_count += 1
@@ -358,7 +374,8 @@ class MT5Client:
         return {
             "success": len(errors) == 0,
             "closed_count": closed_count,
-            "total": len(positions),
+            "total_matched": len(targets),
+            "total_positions": len(positions),
             "errors": errors
         }
 

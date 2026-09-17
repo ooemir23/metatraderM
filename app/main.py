@@ -101,7 +101,15 @@ def close_order(req: CloseRequest):
 
 @app.post("/api/order/close-all")
 def close_all_orders():
-    return mt5_client.close_all()
+    return mt5_client.close_by_filter("all")
+
+@app.post("/api/order/close-profit")
+def close_profit_orders():
+    return mt5_client.close_by_filter("profit")
+
+@app.post("/api/order/close-loss")
+def close_loss_orders():
+    return mt5_client.close_by_filter("loss")
 
 @app.get("/api/bot/status")
 def get_bot_status():
