@@ -1,21 +1,22 @@
 version: '3.8'
 
 services:
-  # 1. MetaTrader 5 Engine (Runs in Wine, listens on 8001 for API)
+  # 1. MetaTrader 5 Engine
   metatrader5:
     image: ghcr.io/gmag11/metatrader5-docker:latest
     container_name: mt5-server
     restart: unless-stopped
     ports:
-      - "3001:3000"   # Optional: VNC Web interface if needed for maintenance
-      - "8001:8001"   # RPyC API port for MT5
+      - "3001:3000"
+      - "8001:8001"
+      - "18812:18812"
     environment:
       - CUSTOM_USER=admin
       - PASSWORD=Admin12345!
     volumes:
       - mt5_data:/config
 
-  # 2. Your Custom Trading Web Application (FastAPI + Modern Trading Dashboard)
+  # 2. HMA Trading Web Application
   web-dashboard:
     build:
       context: .
@@ -23,7 +24,7 @@ services:
     container_name: volta-trading-web
     restart: unless-stopped
     ports:
-      - "8000:8000"   # Web Dashboard port (Accessible via browser)
+      - "8000:8000"
     environment:
       - MT5_HOST=metatrader5
       - MT5_PORT=8001

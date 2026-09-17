@@ -2,26 +2,33 @@ import os
 import logging
 import time
 from typing import Dict, Any, List, Optional
-import rpyc
 
 logger = logging.getLogger("MT5Client")
 logger.setLevel(logging.INFO)
+
+try:
+    from mt5linux import MetaTrader5
+    USE_MT5LINUX = True
+    logger.info("Using mt5linux MetaTrader5 bridge")
+except ImportError:
+    USE_MT5LINUX = False
+    import rpyc
+    logger.info("Using fallback rpyc client")
 
 class MT5Client:
     def __init__(self, host: Optional[str] = None, port: Optional[int] = None):
         self.host = host or os.getenv("MT5_HOST", "metatrader5")
         self.port = int(port or os.getenv("MT5_PORT", "8001"))
-        self.conn = None
         self.mt5 = None
         self.is_connected = False
         self.last_connect_attempt = 0
-        self.reconnect_cooldown = 4  # seconds
+        self.reconnect_cooldown = 4
         self.last_error_msg = ""
 
         # Default broker credentials (Tickmill Demo)
         self.login_id = int(os.getenv("MT5_LOGIN", "25373151"))
         self.password = os.getenv("MT5_PASSWORD", "PpE&tgF6)8[>")
-        self.server = os.getenv("MT5_SERVER", "demo.mt5tickmill.com")
+        self.server = os.getenv("MT5_SERVER", "Tickmill-Demo")
 
     def connect(self) -> bool:
         now = time.time()
@@ -29,93 +36,81 @@ class MT5Client:
             return False
 
         self.last_connect_attempt = now
-        try:
-            logger.info(f"Connecting to MT5 RPyC server at {self.host}:{self.port}...")
-            self.conn = rpyc.connect(self.host, self.port, config={"sync_request_timeout": 15})
-            self.mt5 = self.conn.root
-            logger.info("RPyC connection established, attempting MT5 initialize...")
+        ports_to_try = [self.port, 8001, 18812]
+        # remove duplicates preserving order
+        ports_to_try = list(dict.fromkeys(ports_to_try))
 
-            # Attempt initialize with credentials if available
-            initialized = False
-            servers = [self.server, "demo.mt5tickmill.com", "TickmillLtd-Demo"]
-            
-            for srv in servers:
-                try:
-                    logger.info(f"Trying initialize with account #{self.login_id} on {srv}...")
-                    if self.mt5.initialize(login=int(self.login_id), password=str(self.password), server=str(srv)):
-                        self.server = srv
-                        initialized = True
-                        logger.info(f"MT5 initialized and logged into #{self.login_id} on {srv}!")
-                        break
-                except Exception as ex:
-                    logger.warning(f"Initialize error on {srv}: {ex}")
-
-            if not initialized:
-                # Fallback to plain initialize
-                try:
-                    if self.mt5.initialize():
-                        initialized = True
-                        logger.info("MT5 initialized with default terminal state.")
-                except Exception as ex:
-                    logger.warning(f"Plain initialize error: {ex}")
-
-            if initialized:
-                self.is_connected = True
-                self.last_error_msg = ""
-                return True
-            else:
-                err = self.mt5.last_error()
-                self.last_error_msg = f"MT5 initialize failed: {err}"
+        for p in ports_to_try:
+            try:
+                logger.info(f"Connecting to MT5 at {self.host}:{p}...")
+                if USE_MT5LINUX:
+                    client = MetaTrader5(host=self.host, port=p)
+                    # MT5 is already logged in inside the terminal, so plain initialize works!
+                    if client.initialize():
+                        self.mt5 = client
+                        self.port = p
+                        self.is_connected = True
+                        self.last_error_msg = ""
+                        logger.info(f"Connected to MT5 via mt5linux on port {p}!")
+                        return True
+                    else:
+                        # Try with credentials
+                        if client.initialize(login=int(self.login_id), password=str(self.password), server=str(self.server)):
+                            self.mt5 = client
+                            self.port = p
+                            self.is_connected = True
+                            self.last_error_msg = ""
+                            logger.info(f"Connected to MT5 with credentials on port {p}!")
+                            return True
+                else:
+                    conn = rpyc.connect(self.host, p, config={"sync_request_timeout": 10})
+                    client = conn.root
+                    if client.initialize():
+                        self.mt5 = client
+                        self.port = p
+                        self.is_connected = True
+                        self.last_error_msg = ""
+                        logger.info(f"Connected to MT5 via rpyc on port {p}!")
+                        return True
+            except Exception as e:
+                self.last_error_msg = f"Port {p} error: {e}"
                 logger.warning(self.last_error_msg)
-                self.is_connected = False
-                return False
 
-        except Exception as e:
-            self.last_error_msg = f"MT5 sunucusuna bağlanılamadı ({self.host}:{self.port}): {e}"
-            logger.warning(self.last_error_msg)
-            self.is_connected = False
-            self.conn = None
-            self.mt5 = None
-            return False
+        self.is_connected = False
+        return False
 
     def login(self, login_id: int, password: str, server: str) -> Dict[str, Any]:
-        # Connect to RPyC if not connected
-        if not self.conn or not self.mt5:
+        if not self.ensure_connected():
             self.connect()
 
-        if not self.conn or not self.mt5:
-            return {"success": False, "error": f"MT5 bağlantısı kurulamadı: {self.last_error_msg}"}
+        if not self.mt5:
+            return {"success": False, "error": f"MT5 sunucusuna ulaşılamadı. ({self.last_error_msg})"}
 
         try:
             self.login_id = int(login_id)
             self.password = str(password)
             self.server = str(server)
 
-            # Try initialize with credentials
             ok = self.mt5.initialize(login=int(login_id), password=str(password), server=str(server))
             if not ok:
-                # If already initialized, try login()
                 ok = self.mt5.login(login=int(login_id), password=str(password), server=str(server))
 
             if ok:
                 self.is_connected = True
-                logger.info(f"Login SUCCESSFUL for #{login_id} on {server}!")
                 return {"success": True, "login": login_id, "server": server}
             else:
                 err = self.mt5.last_error()
-                logger.warning(f"Login failed: {err}")
-                return {"success": False, "error": f"Broker giriş hatası: {err}"}
+                return {"success": False, "error": f"Login hatası: {err}"}
         except Exception as e:
-            logger.error(f"Error during login: {e}")
             return {"success": False, "error": str(e)}
 
     def ensure_connected(self) -> bool:
         if self.is_connected and self.mt5 is not None:
             try:
-                _ = self.mt5.terminal_info()
-                return True
+                info = self.mt5.terminal_info()
+                if info is not None:
+                    return True
             except Exception:
-                logger.warning("MT5 connection lost, attempting reconnect...")
                 self.is_connected = False
 
         return self.connect()
