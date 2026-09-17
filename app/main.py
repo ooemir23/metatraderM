@@ -119,11 +119,78 @@ def debug_inspect():
             mt5_client.conn.execute("""
 def _inspect():
     import MetaTrader5 as mt5
+    positions = mt5.positions_get(ticket=331610653)
+    if not positions:
+        positions = mt5.positions_get()
+    
+    pos_data = None
+    if positions:
+        p = positions[0]
+        pos_data = {k: getattr(p, k) for k in dir(p) if not k.startswith("_") and not callable(getattr(p, k))}
+    
+    tick = mt5.symbol_info_tick("XAUUSD")
     sym = mt5.symbol_info("XAUUSD")
-    sym_dict = {k: getattr(sym, k) for k in dir(sym) if not k.startswith("_") and not callable(getattr(sym, k))}
-    return sym_dict
+    sym_dict = {
+        "filling_mode": sym.filling_mode if sym else None,
+        "execution_mode": sym.execution_mode if sym else None,
+        "trade_mode": sym.trade_mode if sym else None,
+        "order_mode": sym.order_mode if sym else None
+    }
+    
+    variations = []
+    if pos_data and tick:
+        # Base close params:
+        # Pos is SELL (type=1), so close is BUY (type=0)
+        base = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "position": int(pos_data["ticket"]),
+            "symbol": pos_data["symbol"],
+            "volume": float(pos_data["volume"]),
+            "type": 0,
+            "price": float(tick.ask),
+            "deviation": 50,
+            "magic": 123456,
+            "comment": "test",
+        }
+        
+        configs = [
+            {"desc": "type_filling=1 (IOC), type_time=GTC", "extra": {"type_filling": 1, "type_time": mt5.ORDER_TIME_GTC}},
+            {"desc": "type_filling=0 (FOK), type_time=GTC", "extra": {"type_filling": 0, "type_time": mt5.ORDER_TIME_GTC}},
+            {"desc": "type_filling=2 (RETURN), type_time=GTC", "extra": {"type_filling": 2, "type_time": mt5.ORDER_TIME_GTC}},
+            {"desc": "type_filling=1, no type_time", "extra": {"type_filling": 1}},
+            {"desc": "type_filling=0, no type_time", "extra": {"type_filling": 0}},
+            {"desc": "type_filling=2, no type_time", "extra": {"type_filling": 2}},
+            {"desc": "no type_filling, no type_time", "extra": {}},
+            {"desc": "no type_filling, type_time=GTC", "extra": {"type_time": mt5.ORDER_TIME_GTC}},
+            {"desc": "price=0, type_filling=1", "extra": {"type_filling": 1, "price": 0.0}},
+            {"desc": "price=0, type_filling=0", "extra": {"type_filling": 0, "price": 0.0}},
+            {"desc": "price=0, no type_filling", "extra": {"price": 0.0}},
+        ]
+        
+        for c in configs:
+            req = dict(base)
+            req.update(c["extra"])
+            chk = mt5.order_check(req)
+            if chk:
+                variations.append({
+                    "config": c["desc"],
+                    "retcode": int(chk.retcode),
+                    "comment": str(chk.comment)
+                })
+            else:
+                variations.append({
+                    "config": c["desc"],
+                    "retcode": -1,
+                    "error": str(mt5.last_error())
+                })
+                
+    return {
+        "pos": pos_data,
+        "sym": sym_dict,
+        "variations": variations
+    }
 """)
-            res["symbol_info"] = dict(mt5_client.conn.eval("_inspect()"))
+            res["data"] = mt5_client.conn.eval("_inspect()")
         except Exception as e:
             res["error"] = str(e)
     return res
