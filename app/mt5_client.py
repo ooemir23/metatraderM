@@ -30,6 +30,8 @@ class MT5Client:
         self.password = os.getenv("MT5_PASSWORD", "PpE&tgF6)8[>")
         self.server = os.getenv("MT5_SERVER", "Tickmill-Demo")
 
+        self.conn = None
+
     def connect(self) -> bool:
         now = time.time()
         if now - self.last_connect_attempt < self.reconnect_cooldown and not self.is_connected:
@@ -37,15 +39,45 @@ class MT5Client:
 
         self.last_connect_attempt = now
         ports_to_try = [self.port, 8001, 18812]
-        # remove duplicates preserving order
         ports_to_try = list(dict.fromkeys(ports_to_try))
 
         for p in ports_to_try:
+            # 1. Try rpyc.classic directly (cleanest, connects straight to Wine MetaTrader5)
             try:
-                logger.info(f"Connecting to MT5 at {self.host}:{p}...")
-                if USE_MT5LINUX:
+                logger.info(f"Connecting via rpyc.classic to {self.host}:{p}...")
+                conn = rpyc.classic.connect(self.host, p)
+                mt5 = conn.modules.MetaTrader5
+                
+                # Check terminal / initialize
+                ok = False
+                try:
+                    ok = mt5.initialize()
+                except Exception:
+                    ok = False
+
+                if not ok:
+                    try:
+                        ok = mt5.initialize(login=int(self.login_id), password=str(self.password), server=str(self.server))
+                    except Exception:
+                        ok = False
+
+                if ok or mt5.terminal_info() is not None:
+                    self.conn = conn
+                    self.mt5 = mt5
+                    self.port = p
+                    self.is_connected = True
+                    self.last_error_msg = ""
+                    logger.info(f"Connected to MT5 via rpyc.classic on port {p}!")
+                    return True
+            except Exception as e:
+                logger.debug(f"rpyc.classic on port {p} failed: {e}")
+                self.last_error_msg = f"Port {p} error: {e}"
+
+            # 2. Try mt5linux if available
+            if USE_MT5LINUX:
+                try:
+                    logger.info(f"Connecting via mt5linux to {self.host}:{p}...")
                     client = MetaTrader5(host=self.host, port=p)
-                    # MT5 is already logged in inside the terminal, so plain initialize works!
                     if client.initialize():
                         self.mt5 = client
                         self.port = p
@@ -53,28 +85,16 @@ class MT5Client:
                         self.last_error_msg = ""
                         logger.info(f"Connected to MT5 via mt5linux on port {p}!")
                         return True
-                    else:
-                        # Try with credentials
-                        if client.initialize(login=int(self.login_id), password=str(self.password), server=str(self.server)):
-                            self.mt5 = client
-                            self.port = p
-                            self.is_connected = True
-                            self.last_error_msg = ""
-                            logger.info(f"Connected to MT5 with credentials on port {p}!")
-                            return True
-                else:
-                    conn = rpyc.connect(self.host, p, config={"sync_request_timeout": 10})
-                    client = conn.root
-                    if client.initialize():
+                    elif client.initialize(login=int(self.login_id), password=str(self.password), server=str(self.server)):
                         self.mt5 = client
                         self.port = p
                         self.is_connected = True
                         self.last_error_msg = ""
-                        logger.info(f"Connected to MT5 via rpyc on port {p}!")
+                        logger.info(f"Connected to MT5 with credentials via mt5linux on port {p}!")
                         return True
-            except Exception as e:
-                self.last_error_msg = f"Port {p} error: {e}"
-                logger.warning(self.last_error_msg)
+                except Exception as e:
+                    self.last_error_msg = f"Port {p} error: {e}"
+                    logger.warning(self.last_error_msg)
 
         self.is_connected = False
         return False
@@ -112,6 +132,8 @@ class MT5Client:
                     return True
             except Exception:
                 self.is_connected = False
+                self.conn = None
+                self.mt5 = None
 
         return self.connect()
 
