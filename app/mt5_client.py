@@ -17,6 +17,11 @@ class MT5Client:
         self.last_connect_attempt = 0
         self.reconnect_cooldown = 5  # seconds
 
+        # Default broker credentials
+        self.login_id = int(os.getenv("MT5_LOGIN", "25373151"))
+        self.password = os.getenv("MT5_PASSWORD", "PpE&tgF6)8[>")
+        self.server = os.getenv("MT5_SERVER", "Tickmill-Demo")
+
     def connect(self) -> bool:
         now = time.time()
         if now - self.last_connect_attempt < self.reconnect_cooldown and not self.is_connected:
@@ -25,11 +30,16 @@ class MT5Client:
         self.last_connect_attempt = now
         try:
             logger.info(f"Connecting to MT5 RPyC server at {self.host}:{self.port}...")
-            self.conn = rpyc.connect(self.host, self.port, config={"sync_request_timeout": 10})
+            self.conn = rpyc.connect(self.host, self.port, config={"sync_request_timeout": 15})
             self.mt5 = self.conn.root
             if self.mt5.initialize():
                 self.is_connected = True
                 logger.info("Successfully initialized MT5 connection!")
+                
+                # Auto-login if credentials provided
+                if self.login_id and self.password:
+                    self.auto_login()
+
                 return True
             else:
                 err = self.mt5.last_error()
@@ -43,10 +53,47 @@ class MT5Client:
             self.mt5 = None
             return False
 
+    def auto_login(self):
+        servers_to_try = [self.server, "Tickmill-Demo", "TickmillLtd-Demo", "Tickmill-Live"]
+        for srv in servers_to_try:
+            if not srv:
+                continue
+            try:
+                logger.info(f"Attempting MT5 login for #{self.login_id} on {srv}...")
+                ok = self.mt5.login(login=int(self.login_id), password=str(self.password), server=str(srv))
+                if ok:
+                    self.server = srv
+                    logger.info(f"Login SUCCESSFUL on server {srv}!")
+                    break
+                else:
+                    err = self.mt5.last_error()
+                    logger.warning(f"Login failed on {srv}: {err}")
+            except Exception as e:
+                logger.warning(f"Login attempt error on {srv}: {e}")
+
+    def login(self, login_id: int, password: str, server: str) -> Dict[str, Any]:
+        if not self.ensure_connected():
+            return {"success": False, "error": "MT5 is not connected"}
+
+        try:
+            self.login_id = int(login_id)
+            self.password = str(password)
+            self.server = str(server)
+            ok = self.mt5.login(login=int(login_id), password=str(password), server=str(server))
+            if ok:
+                logger.info(f"Manual login SUCCESSFUL for #{login_id} on {server}!")
+                return {"success": True, "login": login_id, "server": server}
+            else:
+                err = self.mt5.last_error()
+                logger.warning(f"Manual login failed: {err}")
+                return {"success": False, "error": f"Login failed: {err}"}
+        except Exception as e:
+            logger.error(f"Error during login: {e}")
+            return {"success": False, "error": str(e)}
+
     def ensure_connected(self) -> bool:
         if self.is_connected and self.mt5 is not None:
             try:
-                # Test connection heartbeat
                 _ = self.mt5.terminal_info()
                 return True
             except Exception:
@@ -73,7 +120,14 @@ class MT5Client:
         try:
             acc = self.mt5.account_info()
             if acc is None:
-                return {"connected": False, "error": "Account info is None"}
+                # Connected to terminal, but not logged in to broker
+                return {
+                    "connected": False,
+                    "terminal_ready": True,
+                    "error": "Broker hesabına giriş bekleniyor",
+                    "login": self.login_id,
+                    "server": self.server
+                }
             
             return {
                 "connected": True,
@@ -146,7 +200,7 @@ class MT5Client:
             logger.error(f"Error fetching symbol price for {symbol}: {e}")
             return {"symbol": symbol, "bid": 0.0, "ask": 0.0, "spread": 0}
 
-    def open_order(self, symbol: str, order_type: str, volume: float, sl_points: int = 0, tp_points: int = 0, comment: str = "Web App") -> Dict[str, Any]:
+    def open_order(self, symbol: str, order_type: str, volume: float, sl_points: int = 0, tp_points: int = 0, comment: str = "HMA Web App") -> Dict[str, Any]:
         if not self.ensure_connected():
             return {"success": False, "error": "MT5 is not connected"}
 
@@ -162,7 +216,7 @@ class MT5Client:
             is_buy = order_type.upper() == "BUY"
 
             price = tick.ask if is_buy else tick.bid
-            type_code = 0 if is_buy else 1 # 0: BUY, 1: SELL
+            type_code = 0 if is_buy else 1
 
             sl = 0.0
             tp = 0.0
@@ -182,8 +236,8 @@ class MT5Client:
                 "deviation": 20,
                 "magic": 123456,
                 "comment": comment,
-                "type_time": 0, # ORDER_TIME_GTC
-                "type_filling": 1 # ORDER_FILLING_IOC (or 0 for FOK)
+                "type_time": 0,
+                "type_filling": 1
             }
 
             result = self.mt5.order_send(request)
@@ -191,11 +245,10 @@ class MT5Client:
                 err = self.mt5.last_error()
                 return {"success": False, "error": f"order_send failed: {err}"}
 
-            if result.retcode != 10009: # 10009: TRADE_RETCODE_DONE
-                # Try filling mode FOK if IOC failed
-                request["type_filling"] = 0 # FOK
+            if result.retcode not in (10009, 10008):
+                request["type_filling"] = 0
                 result = self.mt5.order_send(request)
-                if result.retcode != 10009 and result.retcode != 10008:
+                if result.retcode not in (10009, 10008):
                     return {"success": False, "retcode": result.retcode, "error": result.comment}
 
             return {
@@ -228,7 +281,7 @@ class MT5Client:
             close_type = 1 if is_buy else 0
 
             request = {
-                "action": 1, # TRADE_ACTION_DEAL
+                "action": 1,
                 "position": ticket,
                 "symbol": pos.symbol,
                 "volume": pos.volume,
@@ -236,7 +289,7 @@ class MT5Client:
                 "price": close_price,
                 "deviation": 20,
                 "magic": 123456,
-                "comment": "Close from Web App",
+                "comment": "Close from HMA Web",
                 "type_time": 0,
                 "type_filling": 1
             }
@@ -279,7 +332,6 @@ class MT5Client:
             return None
 
         try:
-            # 15: TIMEFRAME_M15 in MT5
             rates = self.mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
             if rates is None or len(rates) == 0:
                 return None

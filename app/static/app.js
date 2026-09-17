@@ -414,3 +414,40 @@ function escapeHtml(text) {
   div.innerText = text;
   return div.innerHTML;
 }
+
+// Login Modal Functions
+function toggleLoginModal() {
+  const modal = document.getElementById("login-modal");
+  modal.classList.toggle("hidden");
+}
+
+async function submitLogin() {
+  const acc = parseInt(document.getElementById("login-acc").value);
+  const pass = document.getElementById("login-pass").value;
+  const srv = document.getElementById("login-srv").value;
+
+  if (!acc || !pass || !srv) {
+    showToast("Lütfen tüm alanları doldurun.", "error");
+    return;
+  }
+
+  try {
+    showToast("Broker hesabına bağlanılıyor...", "info");
+    const res = await fetch("/api/account/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ login: acc, password: pass, server: srv })
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(`✅ Giriş Başarılı! Hesap: #${data.login}`, "success");
+      toggleLoginModal();
+      fetchAccount();
+    } else {
+      showToast(`❌ Giriş Başarısız: ${data.detail || data.error}`, "error");
+    }
+  } catch (err) {
+    showToast(`❌ Bağlantı Hatası: ${err.message}`, "error");
+  }
+}

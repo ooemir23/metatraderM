@@ -11,21 +11,20 @@ from app.mt5_client import MT5Client
 from app.strategy_bot import StrategyBot
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-logger = logging.getLogger("VoltaTradingApp")
+logger = logging.getLogger("HMATradingApp")
 
 mt5_client = MT5Client()
 bot = StrategyBot(mt5_client)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting Volta Trading Web Application...")
-    # Try initial connection in background
+    logger.info("Starting HMA Trading Web Application...")
     mt5_client.connect()
     yield
-    logger.info("Shutting down Volta Trading Application...")
+    logger.info("Shutting down HMA Trading Application...")
     bot.stop()
 
-app = FastAPI(title="Volta Trading Dashboard", lifespan=lifespan)
+app = FastAPI(title="HMA Trading Dashboard", lifespan=lifespan)
 
 # Pydantic Schemas
 class OrderRequest(BaseModel):
@@ -34,10 +33,15 @@ class OrderRequest(BaseModel):
     volume: float = 0.01
     sl_points: int = 0
     tp_points: int = 0
-    comment: str = "Web Trade"
+    comment: str = "HMA Web Trade"
 
 class CloseRequest(BaseModel):
     ticket: int
+
+class LoginRequest(BaseModel):
+    login: int
+    password: str
+    server: str = "Tickmill-Demo"
 
 class BotConfigRequest(BaseModel):
     symbol: Optional[str] = None
@@ -58,6 +62,13 @@ class BotConfigRequest(BaseModel):
 @app.get("/api/account")
 def get_account():
     return mt5_client.get_account_info()
+
+@app.post("/api/account/login")
+def account_login(req: LoginRequest):
+    res = mt5_client.login(req.login, req.password, req.server)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("error", "Login failed"))
+    return res
 
 @app.get("/api/positions")
 def get_positions():

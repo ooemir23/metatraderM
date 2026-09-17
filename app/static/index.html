@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Volta Trading Terminal | MetaTrader 5 Web</title>
+  <title>HMA Trading Terminal | MetaTrader 5 Web</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Phosphor Icons -->
@@ -25,12 +25,13 @@
         </div>
         <div>
           <div class="flex items-center gap-2">
-            <span class="font-extrabold tracking-tight text-white text-lg">VOLTA</span>
+            <span class="font-extrabold tracking-tight text-white text-lg">HMA</span>
             <span class="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">MT5 PRO</span>
           </div>
-          <div class="flex items-center gap-1.5 text-xs text-gray-400">
+          <div class="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer hover:text-gray-200 transition" onclick="toggleLoginModal()">
             <span id="status-indicator" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
             <span id="status-text">MT5 Bağlanıyor...</span>
+            <i class="ph-bold ph-pencil-simple text-[10px] text-gray-500"></i>
           </div>
         </div>
       </div>
@@ -53,6 +54,10 @@
           <span class="text-gray-400 block text-[11px]">Serbest Teminat</span>
           <span id="acc-margin-free" class="font-bold text-gray-300 tracking-wide">$0.00</span>
         </div>
+        <button onclick="toggleLoginModal()" class="px-2.5 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-semibold flex items-center gap-1 border border-gray-700">
+          <i class="ph-bold ph-user-circle text-sm"></i>
+          <span>Hesap Girişi</span>
+        </button>
       </div>
 
       <!-- Quick Symbol Switcher Tabs -->
@@ -247,6 +252,41 @@
     </div>
 
   </main>
+
+  <!-- LOGIN MODAL -->
+  <div id="login-modal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-[#151a26] border border-gray-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl">
+      <div class="flex items-center justify-between mb-4 pb-2 border-b border-gray-800">
+        <h3 class="font-bold text-white text-base flex items-center gap-2">
+          <i class="ph-bold ph-key text-emerald-400"></i>
+          MT5 Broker Girişi
+        </h3>
+        <button onclick="toggleLoginModal()" class="text-gray-400 hover:text-white text-lg">
+          <i class="ph-bold ph-x"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block text-gray-400 mb-1">Demo / Gerçek Hesap No</label>
+          <input type="number" id="login-acc" value="25373151" class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-emerald-500 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-gray-400 mb-1">Hesap Şifresi</label>
+          <input type="text" id="login-pass" value="PpE&tgF6)8[>" class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-emerald-500 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-gray-400 mb-1">Broker Sunucusu (Server)</label>
+          <input type="text" id="login-srv" value="Tickmill-Demo" class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-emerald-500 focus:outline-none">
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 mt-5 pt-3 border-t border-gray-800">
+        <button onclick="toggleLoginModal()" class="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-semibold">İptal</button>
+        <button onclick="submitLogin()" class="px-5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-black font-bold text-xs shadow-lg shadow-emerald-500/20">Giriş Yap</button>
+      </div>
+    </div>
+  </div>
 
   <!-- BOT SETTINGS MODAL -->
   <div id="bot-settings-modal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
