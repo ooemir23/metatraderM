@@ -15,6 +15,11 @@ services:
       - PASSWORD=Admin12345!
     volumes:
       - mt5_data:/config
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # 2. HMA Trading Web Application
   web-dashboard:
@@ -30,6 +35,11 @@ services:
       - MT5_PORT=8001
     depends_on:
       - metatrader5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   mt5_data:
