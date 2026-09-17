@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Volta Trading Terminal | MetaTrader 5 Web</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Phosphor Icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  <!-- TradingView Widget -->
+  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="bg-[#0b0e14] text-gray-200 min-h-screen flex flex-col font-sans antialiased selection:bg-emerald-500 selection:text-white">
+
+  <!-- TOP NAVIGATION / HEADER -->
+  <header class="bg-[#121620] border-b border-gray-800/80 sticky top-0 z-50 px-4 py-3">
+    <div class="max-w-[1700px] mx-auto flex flex-wrap items-center justify-between gap-4">
+      
+      <!-- Brand & Status -->
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+          <i class="ph-bold ph-chart-line-up text-xl text-black"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-extrabold tracking-tight text-white text-lg">VOLTA</span>
+            <span class="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">MT5 PRO</span>
+          </div>
+          <div class="flex items-center gap-1.5 text-xs text-gray-400">
+            <span id="status-indicator" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+            <span id="status-text">MT5 Bağlanıyor...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Account Summary Cards -->
+      <div class="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm">
+        <div class="bg-[#181d2a] px-3.5 py-1.5 rounded-lg border border-gray-800">
+          <span class="text-gray-400 block text-[11px]">Bakiye (Balance)</span>
+          <span id="acc-balance" class="font-bold text-white tracking-wide">$0.00</span>
+        </div>
+        <div class="bg-[#181d2a] px-3.5 py-1.5 rounded-lg border border-gray-800">
+          <span class="text-gray-400 block text-[11px]">Varlık (Equity)</span>
+          <span id="acc-equity" class="font-bold text-white tracking-wide">$0.00</span>
+        </div>
+        <div class="bg-[#181d2a] px-3.5 py-1.5 rounded-lg border border-gray-800">
+          <span class="text-gray-400 block text-[11px]">Açık Kâr / Zarar</span>
+          <span id="acc-profit" class="font-bold text-emerald-400 tracking-wide">$0.00</span>
+        </div>
+        <div class="bg-[#181d2a] px-3.5 py-1.5 rounded-lg border border-gray-800 hidden md:block">
+          <span class="text-gray-400 block text-[11px]">Serbest Teminat</span>
+          <span id="acc-margin-free" class="font-bold text-gray-300 tracking-wide">$0.00</span>
+        </div>
+      </div>
+
+      <!-- Quick Symbol Switcher Tabs -->
+      <div class="flex items-center gap-1 bg-[#181d2a] p-1 rounded-lg border border-gray-800 overflow-x-auto max-w-full">
+        <button onclick="switchSymbol('EURUSD')" class="sym-btn px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500/20 text-emerald-400">EURUSD</button>
+        <button onclick="switchSymbol('XAUUSD')" class="sym-btn px-2.5 py-1 rounded text-xs font-semibold text-gray-400 hover:text-white">XAUUSD</button>
+        <button onclick="switchSymbol('GBPUSD')" class="sym-btn px-2.5 py-1 rounded text-xs font-semibold text-gray-400 hover:text-white">GBPUSD</button>
+        <button onclick="switchSymbol('BTCUSD')" class="sym-btn px-2.5 py-1 rounded text-xs font-semibold text-gray-400 hover:text-white">BTCUSD</button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- MAIN WORKSPACE -->
+  <main class="flex-1 max-w-[1700px] w-full mx-auto p-3 sm:p-4 flex flex-col gap-4">
+    
+    <!-- TOP ROW: CHART (LEFT) & TRADING/BOT CONTROLS (RIGHT) -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      
+      <!-- LEFT: INTERACTIVE TRADINGVIEW CHART (8 COLS) -->
+      <div class="lg:col-span-8 bg-[#121620] rounded-2xl border border-gray-800/80 overflow-hidden flex flex-col h-[480px] sm:h-[580px] shadow-xl">
+        <div class="px-4 py-2.5 border-b border-gray-800 flex items-center justify-between bg-[#151a26]">
+          <div class="flex items-center gap-2">
+            <i class="ph-bold ph-chart-line text-emerald-400"></i>
+            <span id="current-symbol-title" class="font-bold text-white text-sm">EURUSD • M15</span>
+          </div>
+          <div class="flex items-center gap-3 text-xs">
+            <span class="text-gray-400">Bid: <strong id="header-bid" class="text-white">--</strong></span>
+            <span class="text-gray-400">Ask: <strong id="header-ask" class="text-white">--</strong></span>
+            <span class="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-300 font-mono">Spread: <span id="header-spread">--</span></span>
+          </div>
+        </div>
+        <div id="tradingview-container" class="flex-1 w-full bg-[#0b0e14]">
+          <!-- TradingView Widget iframe will be mounted here -->
+        </div>
+      </div>
+
+      <!-- RIGHT: ORDER EXECUTION & ALGO BOT (4 COLS) -->
+      <div class="lg:col-span-4 flex flex-col gap-4">
+        
+        <!-- CARD 1: FAST ORDER EXECUTION -->
+        <div class="bg-[#121620] p-4 sm:p-5 rounded-2xl border border-gray-800/80 shadow-xl">
+          <div class="flex items-center justify-between mb-3.5 pb-2 border-b border-gray-800">
+            <div class="flex items-center gap-2">
+              <i class="ph-bold ph-lightning text-amber-400 text-lg"></i>
+              <h2 class="font-bold text-white text-sm uppercase tracking-wider">Hızlı Emir Girişi</h2>
+            </div>
+            <span id="order-symbol-tag" class="text-xs px-2 py-0.5 rounded bg-gray-800 text-emerald-400 font-mono font-bold">EURUSD</span>
+          </div>
+
+          <!-- Lot Size Selector -->
+          <div class="mb-3">
+            <label class="block text-xs font-semibold text-gray-400 mb-1">İşlem Hacmi (Lot)</label>
+            <div class="flex items-center gap-1.5">
+              <button onclick="adjustLot(-0.01)" class="w-9 h-9 rounded-lg bg-gray-800 hover:bg-gray-700 text-white font-bold text-sm">-</button>
+              <input type="number" id="lot-input" value="0.01" step="0.01" min="0.01" max="100.0" class="flex-1 bg-[#181d2a] border border-gray-700 rounded-lg px-3 py-2 text-center text-white font-bold text-sm focus:outline-none focus:border-emerald-500">
+              <button onclick="adjustLot(+0.01)" class="w-9 h-9 rounded-lg bg-gray-800 hover:bg-gray-700 text-white font-bold text-sm">+</button>
+            </div>
+            <!-- Preset lot badges -->
+            <div class="flex items-center gap-1.5 mt-1.5">
+              <button onclick="setLot(0.01)" class="flex-1 py-1 text-[11px] rounded bg-gray-800/80 hover:bg-gray-700 text-gray-300 font-mono">0.01</button>
+              <button onclick="setLot(0.05)" class="flex-1 py-1 text-[11px] rounded bg-gray-800/80 hover:bg-gray-700 text-gray-300 font-mono">0.05</button>
+              <button onclick="setLot(0.10)" class="flex-1 py-1 text-[11px] rounded bg-gray-800/80 hover:bg-gray-700 text-gray-300 font-mono">0.10</button>
+              <button onclick="setLot(0.50)" class="flex-1 py-1 text-[11px] rounded bg-gray-800/80 hover:bg-gray-700 text-gray-300 font-mono">0.50</button>
+            </div>
+          </div>
+
+          <!-- SL & TP (Points) -->
+          <div class="grid grid-cols-2 gap-2 mb-4">
+            <div>
+              <label class="block text-xs font-semibold text-gray-400 mb-1">Stop Loss (Puan)</label>
+              <input type="number" id="sl-input" value="200" step="50" min="0" placeholder="0 = Yok" class="w-full bg-[#181d2a] border border-gray-700 rounded-lg px-3 py-1.5 text-center text-white text-xs font-mono focus:outline-none focus:border-red-500">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-400 mb-1">Take Profit (Puan)</label>
+              <input type="number" id="tp-input" value="400" step="50" min="0" placeholder="0 = Yok" class="w-full bg-[#181d2a] border border-gray-700 rounded-lg px-3 py-1.5 text-center text-white text-xs font-mono focus:outline-none focus:border-emerald-500">
+            </div>
+          </div>
+
+          <!-- BIG BUY & SELL BUTTONS -->
+          <div class="grid grid-cols-2 gap-3">
+            <button onclick="submitOrder('SELL')" class="flex flex-col items-center justify-center p-3 rounded-xl bg-gradient-to-b from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-extrabold shadow-lg shadow-red-600/20 active:scale-[0.98] transition">
+              <span class="text-sm tracking-wide">SAT (SELL)</span>
+              <span id="btn-bid-price" class="text-xs font-mono font-medium text-red-100 opacity-90 mt-0.5">--</span>
+            </button>
+            <button onclick="submitOrder('BUY')" class="flex flex-col items-center justify-center p-3 rounded-xl bg-gradient-to-b from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-extrabold shadow-lg shadow-emerald-600/20 active:scale-[0.98] transition">
+              <span class="text-sm tracking-wide">AL (BUY)</span>
+              <span id="btn-ask-price" class="text-xs font-mono font-medium text-emerald-100 opacity-90 mt-0.5">--</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- CARD 2: HMA CROSSOVER STRATEGY BOT -->
+        <div class="bg-[#121620] p-4 sm:p-5 rounded-2xl border border-gray-800/80 shadow-xl flex-1 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-3 pb-2 border-b border-gray-800">
+              <div class="flex items-center gap-2">
+                <i class="ph-bold ph-robot text-cyan-400 text-lg"></i>
+                <h2 class="font-bold text-white text-sm uppercase tracking-wider">HMA Algoritmik Bot</h2>
+              </div>
+              <span id="bot-status-badge" class="text-[11px] font-bold px-2 py-0.5 rounded bg-gray-800 text-gray-400">DURDURULDU</span>
+            </div>
+
+            <!-- Bot Live Status Indicators -->
+            <div class="grid grid-cols-2 gap-2 mb-3 bg-[#181d2a] p-2.5 rounded-xl border border-gray-800/80 text-xs">
+              <div>
+                <span class="text-gray-400 block text-[10px]">HMA (<span id="bot-disp-hma-p">14</span>):</span>
+                <span id="bot-disp-hma-val" class="font-mono font-bold text-cyan-400">0.00000</span>
+              </div>
+              <div>
+                <span class="text-gray-400 block text-[10px]"><span id="bot-disp-ma2-t">EMA</span> (<span id="bot-disp-ma2-p">34</span>):</span>
+                <span id="bot-disp-ma2-val" class="font-mono font-bold text-amber-400">0.00000</span>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between text-xs text-gray-400 mb-3 px-1">
+              <span>Son Sinyal: <strong id="bot-last-signal" class="text-gray-200">YOK</strong></span>
+              <span id="bot-last-signal-time" class="font-mono text-[11px]">--:--:--</span>
+            </div>
+          </div>
+
+          <!-- Bot Actions -->
+          <div class="flex items-center gap-2 pt-2">
+            <button id="bot-toggle-btn" onclick="toggleBot()" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-bold text-xs shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-1.5 transition">
+              <i class="ph-bold ph-play"></i>
+              <span>Botu Başlat</span>
+            </button>
+            <button onclick="toggleBotSettingsModal()" class="px-3 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white text-xs font-semibold flex items-center gap-1">
+              <i class="ph-bold ph-gear text-base"></i>
+              <span>Ayarlar</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- BOTTOM ROW: OPEN POSITIONS TABLE & RECENT LOGS -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      
+      <!-- OPEN POSITIONS TABLE (8 COLS) -->
+      <div class="lg:col-span-8 bg-[#121620] rounded-2xl border border-gray-800/80 p-4 shadow-xl">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <i class="ph-bold ph-briefcase text-emerald-400"></i>
+            <h3 class="font-bold text-white text-sm">Açık Pozisyonlar</h3>
+            <span id="pos-count-badge" class="px-2 py-0.5 rounded-full bg-gray-800 text-gray-300 text-xs font-mono">0</span>
+          </div>
+          <button onclick="closeAllPositions()" class="px-3 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-semibold flex items-center gap-1 transition">
+            <i class="ph-bold ph-x-circle"></i>
+            <span>Tümünü Kapat</span>
+          </button>
+        </div>
+
+        <!-- Responsive Table Container -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-gray-300">
+            <thead class="text-[11px] text-gray-400 uppercase bg-[#151a26] border-b border-gray-800">
+              <tr>
+                <th class="py-2.5 px-3">Bilet</th>
+                <th class="py-2.5 px-3">Sembol</th>
+                <th class="py-2.5 px-3">Yön</th>
+                <th class="py-2.5 px-3">Hacim</th>
+                <th class="py-2.5 px-3">Açılış</th>
+                <th class="py-2.5 px-3">Güncel</th>
+                <th class="py-2.5 px-3">SL / TP</th>
+                <th class="py-2.5 px-3 text-right">Kâr / Zarar</th>
+                <th class="py-2.5 px-3 text-center">İşlem</th>
+              </tr>
+            </thead>
+            <tbody id="positions-table-body" class="divide-y divide-gray-800/50 font-mono">
+              <tr>
+                <td colspan="9" class="py-6 text-center text-gray-500 font-sans">Henüz açık pozisyon bulunmuyor.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- BOT LOGS & SIGNALS (4 COLS) -->
+      <div class="lg:col-span-4 bg-[#121620] rounded-2xl border border-gray-800/80 p-4 shadow-xl flex flex-col h-[280px]">
+        <div class="flex items-center gap-2 mb-2 pb-2 border-b border-gray-800">
+          <i class="ph-bold ph-scroll text-cyan-400"></i>
+          <h3 class="font-bold text-white text-sm">Canlı Sistem Günlüğü</h3>
+        </div>
+        <div id="system-logs" class="flex-1 overflow-y-auto space-y-1 text-[11px] font-mono pr-1 text-gray-400">
+          <div>[--:--:--] Sistem başlatıldı, MT5 bekleniyor...</div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- BOT SETTINGS MODAL -->
+  <div id="bot-settings-modal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-[#151a26] border border-gray-800 rounded-2xl max-w-md w-full p-5 shadow-2xl">
+      <div class="flex items-center justify-between mb-4 pb-2 border-b border-gray-800">
+        <h3 class="font-bold text-white text-base flex items-center gap-2">
+          <i class="ph-bold ph-sliders text-cyan-400"></i>
+          HMA Bot Parametreleri
+        </h3>
+        <button onclick="toggleBotSettingsModal()" class="text-gray-400 hover:text-white text-lg">
+          <i class="ph-bold ph-x"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block text-gray-400 mb-1">Hedef Sembol</label>
+          <input type="text" id="cfg-symbol" value="EURUSD" class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none">
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-gray-400 mb-1">HMA Periyodu (Hızlı)</label>
+            <input type="number" id="cfg-hma-period" value="14" min="2" class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-gray-400 mb-1">2. MA Türü</label>
+            <select id="cfg-ma2-type" class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none">
+              <option value="EMA" selected>EMA (Üstel)</option>
+              <option value="SMA">SMA (Basit)</option>
+              <option value="HMA">HMA (2. Hull)</option>
+              <option value="LWMA">LWMA (Ağırlıklı)</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-gray-400 mb-1">2. MA Periyodu (Yavaş)</label>
+            <input type="number" id="cfg-ma2-period" value="34" min="2" class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-gray-400 mb-1">İşlem Lotu</label>
+            <input type="number" id="cfg-lot" value="0.01" step="0.01" min="0.01" class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none">
+          </div>
+        </div>
+        <div class="flex items-center gap-2 pt-1">
+          <input type="checkbox" id="cfg-close-opp" checked class="w-4 h-4 rounded bg-[#1c2233] text-cyan-500 focus:ring-0">
+          <label for="cfg-close-opp" class="text-gray-300">Ters sinyalde açık pozisyonu otomatik kapat</label>
+        </div>
+        <div>
+          <label class="block text-gray-400 mb-1">Telegram Bot Token (İsteğe Bağlı)</label>
+          <input type="text" id="cfg-tg-token" placeholder="Örn: 123456:ABC-DEF..." class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-gray-400 mb-1">Telegram Chat ID (İsteğe Bağlı)</label>
+          <input type="text" id="cfg-tg-chat" placeholder="Örn: 987654321" class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none">
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 mt-5 pt-3 border-t border-gray-800">
+        <button onclick="toggleBotSettingsModal()" class="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-semibold">İptal</button>
+        <button onclick="saveBotSettings()" class="px-5 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-600 text-black font-bold text-xs shadow-lg shadow-cyan-500/20">Kaydet</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
