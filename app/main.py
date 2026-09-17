@@ -41,7 +41,7 @@ class CloseRequest(BaseModel):
 class LoginRequest(BaseModel):
     login: int
     password: str
-    server: str = "Tickmill-Demo"
+    server: str = "demo.mt5tickmill.com"
 
 class BotConfigRequest(BaseModel):
     symbol: Optional[str] = None

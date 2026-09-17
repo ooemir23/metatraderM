@@ -21,7 +21,7 @@ class MT5Client:
         # Default broker credentials (Tickmill Demo)
         self.login_id = int(os.getenv("MT5_LOGIN", "25373151"))
         self.password = os.getenv("MT5_PASSWORD", "PpE&tgF6)8[>")
-        self.server = os.getenv("MT5_SERVER", "Tickmill-Demo")
+        self.server = os.getenv("MT5_SERVER", "demo.mt5tickmill.com")
 
     def connect(self) -> bool:
         now = time.time()
@@ -37,7 +37,7 @@ class MT5Client:
 
             # Attempt initialize with credentials if available
             initialized = False
-            servers = [self.server, "Tickmill-Demo", "TickmillLtd-Demo"]
+            servers = [self.server, "demo.mt5tickmill.com", "TickmillLtd-Demo"]
             
             for srv in servers:
                 try:
