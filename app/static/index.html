@@ -292,24 +292,24 @@
           </div>
 
           <!-- DAILY & SYMBOL BREAKDOWN TABLES -->
-          <div class="grid grid-cols-1 lg:grid-cols-12 gap-3">
-            <!-- DAILY BREAKDOWN (8 COLS) -->
-            <div class="w-full overflow-x-auto rounded-xl border border-gray-800/70">
+          <div class="grid grid-cols-1 xl:grid-cols-12 gap-3">
+            <!-- DAILY BREAKDOWN (7-8 COLS) -->
+            <div class="xl:col-span-7 2xl:col-span-8 overflow-x-auto rounded-xl border border-gray-800/70">
               <div class="bg-[#151a26] px-3 py-2 border-b border-gray-800 flex items-center justify-between">
-                <span class="font-bold text-gray-300 text-xs flex items-center gap-1.5">
+                <span class="font-bold text-gray-300 text-xs flex items-center gap-1.5 whitespace-nowrap">
                   <i class="ph-bold ph-calendar text-cyan-400"></i> Günlük Kâr / Zarar Dökümü
                 </span>
-                <span class="text-[10px] text-gray-500">Tarihe Göre</span>
+                <span class="text-[10px] text-gray-500 whitespace-nowrap">Tarihe Göre</span>
               </div>
               <table class="w-full text-left text-xs text-gray-300">
                 <thead class="text-[11px] text-gray-400 uppercase bg-[#151a26]/80 border-b border-gray-800">
                   <tr>
-                    <th class="py-2 px-2.5">Tarih</th>
-                    <th class="py-2 px-2.5 text-center">İşlem</th>
-                    <th class="py-2 px-2.5 text-center">Kazan/Kaybet</th>
-                    <th class="py-2 px-2.5 text-center">Başarı %</th>
-                    <th class="py-2 px-2.5 text-center">Hacim</th>
-                    <th class="py-2 px-2.5 text-right">Net Kâr / Zarar</th>
+                    <th class="py-2 px-2.5 whitespace-nowrap">Tarih</th>
+                    <th class="py-2 px-2.5 text-center whitespace-nowrap">İşlem</th>
+                    <th class="py-2 px-2.5 text-center whitespace-nowrap">Kazan/Kaybet</th>
+                    <th class="py-2 px-2.5 text-center whitespace-nowrap">Başarı %</th>
+                    <th class="py-2 px-2.5 text-center whitespace-nowrap">Hacim</th>
+                    <th class="py-2 px-2.5 text-right whitespace-nowrap">Net Kâr / Zarar</th>
                   </tr>
                 </thead>
                 <tbody id="daily-reports-tbody" class="divide-y divide-gray-800/50 font-mono">
@@ -320,21 +320,21 @@
               </table>
             </div>
 
-            <!-- SYMBOL BREAKDOWN (4 COLS) -->
-            <div class="lg:col-span-4 overflow-x-auto rounded-xl border border-gray-800/70">
+            <!-- SYMBOL BREAKDOWN (4-5 COLS) -->
+            <div class="xl:col-span-5 2xl:col-span-4 overflow-x-auto rounded-xl border border-gray-800/70">
               <div class="bg-[#151a26] px-3 py-2 border-b border-gray-800 flex items-center justify-between">
-                <span class="font-bold text-gray-300 text-xs flex items-center gap-1.5">
+                <span class="font-bold text-gray-300 text-xs flex items-center gap-1.5 whitespace-nowrap">
                   <i class="ph-bold ph-chart-pie text-emerald-400"></i> Sembol Dağılımı
                 </span>
-                <span class="text-[10px] text-gray-500">Net K/Z</span>
+                <span class="text-[10px] text-gray-500 whitespace-nowrap">Net K/Z</span>
               </div>
               <table class="w-full text-left text-xs text-gray-300">
                 <thead class="text-[11px] text-gray-400 uppercase bg-[#151a26]/80 border-b border-gray-800">
                   <tr>
-                    <th class="py-2 px-2.5">Sembol</th>
-                    <th class="py-2 px-2.5 text-center">İşlem</th>
-                    <th class="py-2 px-2.5 text-center">Lot</th>
-                    <th class="py-2 px-2.5 text-right">Net K/Z</th>
+                    <th class="py-2 px-2.5 whitespace-nowrap">Sembol</th>
+                    <th class="py-2 px-2.5 text-center whitespace-nowrap">İşlem</th>
+                    <th class="py-2 px-2.5 text-center whitespace-nowrap">Lot</th>
+                    <th class="py-2 px-2.5 text-right whitespace-nowrap">Net K/Z</th>
                   </tr>
                 </thead>
                 <tbody id="symbol-reports-tbody" class="divide-y divide-gray-800/50 font-mono">

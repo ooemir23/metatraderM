@@ -575,12 +575,12 @@ async function fetchReports() {
 
           dHtml += `
             <tr class="hover:bg-[#151a26]/60 transition border-b border-gray-800/40">
-              <td class="py-2.5 px-2.5">${dateBadge}</td>
-              <td class="py-2.5 px-2.5 text-center text-gray-300 font-semibold">${d.trades_count}</td>
-              <td class="py-2.5 px-2.5 text-center text-xs text-gray-400"><span class="text-emerald-400 font-bold">${d.winning_trades}</span> / <span class="text-rose-400 font-bold">${d.losing_trades}</span></td>
-              <td class="py-2.5 px-2.5 text-center font-bold font-mono ${wrColor}">${d.win_rate}%</td>
-              <td class="py-2.5 px-2.5 text-center text-gray-400">${d.volume} L</td>
-              <td class="py-2.5 px-2.5 text-right font-bold font-mono ${pColor}">${pSign}$${formatMoney(d.profit)}</td>
+              <td class="py-2.5 px-2.5 whitespace-nowrap">${dateBadge}</td>
+              <td class="py-2.5 px-2.5 text-center text-gray-300 font-semibold whitespace-nowrap">${d.trades_count}</td>
+              <td class="py-2.5 px-2.5 text-center text-xs text-gray-400 whitespace-nowrap"><span class="text-emerald-400 font-bold">${d.winning_trades}</span> / <span class="text-rose-400 font-bold">${d.losing_trades}</span></td>
+              <td class="py-2.5 px-2.5 text-center font-bold font-mono ${wrColor} whitespace-nowrap">${d.win_rate}%</td>
+              <td class="py-2.5 px-2.5 text-center text-gray-400 whitespace-nowrap">${d.volume} L</td>
+              <td class="py-2.5 px-2.5 text-right font-bold font-mono ${pColor} whitespace-nowrap">${pSign}$${formatMoney(d.profit)}</td>
             </tr>
           `;
         });
@@ -602,10 +602,10 @@ async function fetchReports() {
 
           sHtml += `
             <tr class="hover:bg-[#151a26]/60 transition border-b border-gray-800/40">
-              <td class="py-2 px-2.5 font-bold text-white">${sym.symbol}</td>
-              <td class="py-2 px-2.5 text-center text-gray-300">${sym.trades_count}</td>
-              <td class="py-2 px-2.5 text-center text-gray-400">${sym.volume} L</td>
-              <td class="py-2 px-2.5 text-right font-bold font-mono ${pColor}">${pSign}$${formatMoney(sym.profit)}</td>
+              <td class="py-2 px-2.5 font-bold text-white whitespace-nowrap">${sym.symbol}</td>
+              <td class="py-2 px-2.5 text-center text-gray-300 whitespace-nowrap">${sym.trades_count}</td>
+              <td class="py-2 px-2.5 text-center text-gray-400 whitespace-nowrap">${sym.volume} L</td>
+              <td class="py-2 px-2.5 text-right font-bold font-mono ${pColor} whitespace-nowrap">${pSign}$${formatMoney(sym.profit)}</td>
             </tr>
           `;
         });
