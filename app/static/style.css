@@ -29,8 +29,34 @@
   }
 }
 
-/* TradingView Chart Fullscreen Mode */
-.chart-fullscreen-mode {
+/* Native HTML5 Fullscreen on #chart-card */
+#chart-card:fullscreen,
+#chart-card:-webkit-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  border: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background-color: #0b0e14 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  z-index: 2147483647 !important;
+}
+
+#chart-card:fullscreen #tradingview-container,
+#chart-card:-webkit-full-screen #tradingview-container {
+  flex: 1 1 0% !important;
+  height: calc(100vh - 44px) !important;
+  min-height: calc(100vh - 44px) !important;
+  max-height: calc(100vh - 44px) !important;
+  width: 100vw !important;
+}
+
+/* Fallback In-Window Fullscreen Mode */
+.chart-fullscreen-fallback {
   position: fixed !important;
   inset: 0 !important;
   width: 100vw !important;
@@ -42,13 +68,15 @@
   border: none !important;
   margin: 0 !important;
   background-color: #0b0e14 !important;
-  box-shadow: none !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
-.chart-fullscreen-mode #tradingview-container {
-  height: calc(100vh - 42px) !important;
-  min-height: calc(100vh - 42px) !important;
-  max-height: calc(100vh - 42px) !important;
+.chart-fullscreen-fallback #tradingview-container {
+  flex: 1 1 0% !important;
+  height: calc(100vh - 44px) !important;
+  min-height: calc(100vh - 44px) !important;
+  max-height: calc(100vh - 44px) !important;
 }
 
 /* Ensure TradingView iframe stretches properly without gaps */
@@ -59,34 +87,4 @@
   display: block;
 }
 
-/* High-density scaling for lower resolution devices (laptops, 1366x768, 720p, 1080p scaled) */
-@media (max-width: 1440px) or (max-height: 900px) {
-  html {
-    font-size: 14px;
-  }
-  .chart-dynamic-h {
-    height: 410px !important;
-    min-height: 350px !important;
-  }
-}
-
-@media (max-width: 1280px) or (max-height: 768px) {
-  html {
-    font-size: 13px;
-  }
-  .chart-dynamic-h {
-    height: 360px !important;
-    min-height: 300px !important;
-  }
-}
-
-@media (max-height: 680px) {
-  html {
-    font-size: 12.5px;
-  }
-  .chart-dynamic-h {
-    height: 310px !important;
-    min-height: 260px !important;
-  }
-}
 
