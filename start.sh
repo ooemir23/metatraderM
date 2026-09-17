@@ -62,21 +62,54 @@ if ! $wine_executable python --version 2>/dev/null; then
 fi
 
 # Ensure correct packages in Wine Python (NumPy 1.x, rpyc 5.3.1, MetaTrader5)
-show_message "[6/7] Ensuring Wine Python dependencies..."
-$wine_executable python -m pip install --no-cache-dir "numpy<2" "rpyc==5.3.1" "MetaTrader5"
+if ! $wine_executable python -c "import MetaTrader5, rpyc" 2>/dev/null; then
+    show_message "[6/7] Installing Wine Python dependencies (MetaTrader5, rpyc, numpy)..."
+    $wine_executable python -m pip install --no-cache-dir "numpy<2" "rpyc==5.3.1" "MetaTrader5"
+else
+    show_message "[6/7] Wine Python dependencies already installed."
+fi
 
-# Create server.py if not present
+# Kill any stale server.py instances
+pkill -f server.py 2>/dev/null || true
+sleep 1
+
+# Create / overwrite server.py with reuse_addr=True and proper logging
 cat << 'PYEOF' > /config/server.py
 import rpyc
 from rpyc.utils.server import ThreadedServer
-print(">>> RPYC SUNUCUSU BASLATILDI (0.0.0.0:8001) <<<")
-server = ThreadedServer(rpyc.SlaveService, hostname="0.0.0.0", port=8001, protocol_config={"allow_all_attrs": True})
-server.start()
+import time
+import sys
+
+print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] >>> RPYC SUNUCUSU BASLATILDI (0.0.0.0:8001) <<<", flush=True)
+try:
+    server = ThreadedServer(
+        rpyc.SlaveService,
+        hostname="0.0.0.0",
+        port=8001,
+        reuse_addr=True,
+        protocol_config={"allow_all_attrs": True}
+    )
+    server.start()
+except Exception as e:
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Server error: {e}", file=sys.stderr, flush=True)
+    sys.exit(1)
 PYEOF
 
-# Start the RPyC server inside Wine
-show_message "[7/7] Starting the MT5 RPyC bridge server on port $mt5server_port..."
-nohup $wine_executable python /config/server.py > /config/server.log 2>&1 &
+# Create daemon runner loop to ensure RPyC is always alive
+cat << 'RUNEOF' > /config/run_server.sh
+#!/bin/bash
+while true; do
+    echo "[$(date)] Starting MT5 RPyC bridge server..." >> /config/server.log
+    wine python /config/server.py >> /config/server.log 2>&1
+    echo "[$(date)] server.py exited with code $?, restarting in 2s..." >> /config/server.log
+    sleep 2
+done
+RUNEOF
+chmod +x /config/run_server.sh
+
+# Start the RPyC server supervisor inside Wine
+show_message "[7/7] Starting the MT5 RPyC bridge supervisor on port $mt5server_port..."
+nohup /config/run_server.sh > /dev/null 2>&1 &
 
 sleep 3
 if ss -tuln | grep ":$mt5server_port" > /dev/null; then

@@ -1,6 +1,7 @@
 import os
 import logging
 import time
+import json
 from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger("MT5Client")
@@ -184,12 +185,46 @@ class MT5Client:
         self.last_error_msg = ""
 
         # Default broker credentials (Tickmill Demo)
-        self.login_id = int(os.getenv("MT5_LOGIN", "25373151"))
+        self.login_id = int(os.getenv("MT5_LOGIN", "25373161"))
         self.password = os.getenv("MT5_PASSWORD", "PpE&tgF6)8[>")
         self.server = os.getenv("MT5_SERVER", "Tickmill-Demo")
 
+        # Load persisted credentials from volume if available
+        self.load_credentials()
+
         self.conn = None
         self.connected_at = 0
+
+    def load_credentials(self):
+        for path in ["/config/credentials.json", "/tmp/credentials.json"]:
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    if data.get("login"): self.login_id = int(data["login"])
+                    if data.get("password"): self.password = str(data["password"])
+                    if data.get("server"): self.server = str(data["server"])
+                    logger.info(f"Loaded credentials from {path}: #{self.login_id} @ {self.server}")
+                    return
+                except Exception as e:
+                    logger.warning(f"Failed to read {path}: {e}")
+
+    def save_credentials(self):
+        data = {
+            "login": self.login_id,
+            "password": self.password,
+            "server": self.server
+        }
+        for path in ["/config/credentials.json", "/tmp/credentials.json"]:
+            try:
+                d = os.path.dirname(path)
+                if os.path.exists(d) or d == "/tmp":
+                    with open(path, "w", encoding="utf-8") as f:
+                        json.dump(data, f)
+                    logger.info(f"Saved credentials to {path}")
+                    return
+            except Exception as e:
+                logger.warning(f"Could not save credentials to {path}: {e}")
 
     def connect(self) -> bool:
         now = time.time()
@@ -228,6 +263,13 @@ class MT5Client:
                     self.connected_at = time.time()
                     self.last_error_msg = ""
                     logger.info(f"Connected to MT5 via rpyc.classic on port {p}!")
+                    # Auto login to broker if account is not logged in
+                    try:
+                        if self.mt5.account_info() is None and self.login_id and self.password:
+                            logger.info(f"Auto-logging in to broker #{self.login_id} on connect...")
+                            self.mt5.login(login=int(self.login_id), password=str(self.password), server=str(self.server))
+                    except Exception as le:
+                        logger.warning(f"Auto login on connect warning: {le}")
                     return True
             except Exception as e:
                 logger.debug(f"rpyc.classic on port {p} failed: {e}")
@@ -277,6 +319,7 @@ class MT5Client:
 
             if ok:
                 self.is_connected = True
+                self.save_credentials()
                 return {"success": True, "login": login_id, "server": server}
             else:
                 err = self.mt5.last_error()
@@ -318,6 +361,14 @@ class MT5Client:
 
         try:
             acc = self.mt5.account_info()
+            if acc is None and self.login_id and self.password:
+                try:
+                    logger.info("account_info returned None, attempting broker login...")
+                    self.mt5.login(login=int(self.login_id), password=str(self.password), server=str(self.server))
+                    acc = self.mt5.account_info()
+                except Exception as le:
+                    logger.debug(f"Auto-login in get_account_info error: {le}")
+
             if acc is None:
                 return {
                     "connected": False,

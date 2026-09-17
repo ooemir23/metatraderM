@@ -89,7 +89,8 @@
 
 /* Resizer Handle styling */
 #chart-resizer,
-#positions-resizer {
+#positions-resizer,
+#positions-top-resizer {
   touch-action: none;
   user-select: none;
 }

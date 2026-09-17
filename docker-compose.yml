@@ -34,6 +34,8 @@ services:
     environment:
       - MT5_HOST=metatrader5
       - MT5_PORT=8001
+    volumes:
+      - mt5_data:/config
     depends_on:
       - metatrader5
     logging:

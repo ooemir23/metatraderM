@@ -19,6 +19,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initTradingView(currentSymbol);
   initChartResizer();
   initPositionsResizer();
+  initPositionsTopResizer();
   startPolling();
 });
 
@@ -290,6 +291,101 @@ function initPositionsResizer() {
 
   resizer.addEventListener("pointerdown", onPointerDown);
   resizer.addEventListener("dblclick", onDoubleClick);
+}
+
+// Positions Card Top Resizer Handle Logic (Drag to expand/shrink boundary with Chart)
+function initPositionsTopResizer() {
+  const topResizer = document.getElementById("positions-top-resizer");
+  const chartCard = document.getElementById("chart-card");
+  const posCard = document.getElementById("positions-card");
+  if (!topResizer || !chartCard || !posCard) return;
+
+  let startY = 0;
+  let startChartH = 0;
+  let startPosH = 0;
+  let isDragging = false;
+
+  function onPointerDown(e) {
+    if (e.button !== undefined && e.button !== 0) return;
+
+    isDragging = true;
+    startY = e.clientY;
+    startChartH = chartCard.getBoundingClientRect().height;
+    startPosH = posCard.getBoundingClientRect().height;
+
+    try {
+      topResizer.setPointerCapture(e.pointerId);
+    } catch (err) {}
+
+    document.body.classList.add("resizing-positions");
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+  }
+
+  function onPointerMove(e) {
+    if (!isDragging) return;
+    const dy = e.clientY - startY;
+
+    // Dragging UP (dy < 0): chart shrinks, positions grows upwards
+    // Dragging DOWN (dy > 0): chart grows, positions shrinks downwards
+    const minChartH = 220;
+    const maxChartH = 1000;
+    const minPosH = 200;
+    const maxPosH = 1200;
+
+    let newChartH = startChartH + dy;
+    let newPosH = startPosH - dy;
+
+    if (newChartH < minChartH) {
+      newChartH = minChartH;
+      newPosH = startPosH + (startChartH - minChartH);
+    } else if (newChartH > maxChartH) {
+      newChartH = maxChartH;
+      newPosH = startPosH - (maxChartH - startChartH);
+    }
+
+    if (newPosH < minPosH) {
+      newPosH = minPosH;
+      newChartH = startChartH + (startPosH - minPosH);
+    } else if (newPosH > maxPosH) {
+      newPosH = maxPosH;
+      newChartH = startChartH - (maxPosH - startPosH);
+    }
+
+    chartCard.style.height = `${Math.round(newChartH)}px`;
+    posCard.style.height = `${Math.round(newPosH)}px`;
+  }
+
+  function onPointerUp(e) {
+    if (!isDragging) return;
+    isDragging = false;
+
+    try {
+      topResizer.releasePointerCapture(e.pointerId);
+    } catch (err) {}
+
+    document.body.classList.remove("resizing-positions");
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+    window.removeEventListener("pointercancel", onPointerUp);
+
+    localStorage.setItem("hma_chart_height", Math.round(chartCard.getBoundingClientRect().height));
+    localStorage.setItem("hma_positions_height", Math.round(posCard.getBoundingClientRect().height));
+
+    window.dispatchEvent(new Event("resize"));
+  }
+
+  function onDoubleClick() {
+    localStorage.removeItem("hma_chart_height");
+    localStorage.removeItem("hma_positions_height");
+    chartCard.style.height = "";
+    posCard.style.height = "";
+    window.dispatchEvent(new Event("resize"));
+  }
+
+  topResizer.addEventListener("pointerdown", onPointerDown);
+  topResizer.addEventListener("dblclick", onDoubleClick);
 }
 
 

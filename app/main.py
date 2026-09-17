@@ -13,14 +13,29 @@ from app.strategy_bot import StrategyBot
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("HMATradingApp")
 
+import asyncio
+
 mt5_client = MT5Client()
 bot = StrategyBot(mt5_client)
+
+async def auto_reconnect_loop():
+    while True:
+        try:
+            if not mt5_client.is_connected:
+                mt5_client.connect()
+            else:
+                mt5_client.ensure_connected()
+        except Exception:
+            pass
+        await asyncio.sleep(4)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting HMA Trading Web Application...")
     mt5_client.connect()
+    task = asyncio.create_task(auto_reconnect_loop())
     yield
+    task.cancel()
     logger.info("Shutting down HMA Trading Application...")
     bot.stop()
 
@@ -219,6 +234,18 @@ def update_bot_config(req: BotConfigRequest):
     data = req.model_dump(exclude_unset=True)
     bot.update_config(data)
     return bot.get_status()
+
+@app.get("/api/debug/server-log")
+def get_server_log():
+    for p in ["/config/server.log", "/tmp/server.log"]:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()
+                return {"success": True, "path": p, "log": [line.strip() for line in lines[-100:]]}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+    return {"success": False, "error": "server.log not found"}
 
 # Static Files & SPA Routing
 app.mount("/static", StaticFiles(directory="app/static"), name="static")

@@ -118,6 +118,11 @@
 
         <!-- POSITIONS, HISTORY & REPORTS CARD -->
         <div id="positions-card" class="w-full bg-[#121620] rounded-2xl border border-gray-800/80 p-3 sm:p-4 shadow-xl flex flex-col min-h-[240px]">
+          <!-- TOP RESIZE HANDLE (PULL UP TO EXPAND POSITIONS / DOWN TO SHRINK) -->
+          <div id="positions-top-resizer" class="h-3.5 -mx-3 sm:-mx-4 -mt-3 sm:-mt-4 mb-2.5 bg-[#121620] hover:bg-cyan-500/20 active:bg-cyan-500/30 cursor-ns-resize flex items-center justify-center transition border-b border-gray-800/80 group select-none rounded-t-2xl shrink-0" title="Yukarı/Aşağı sürükleyerek Grafik ve Pozisyonlar boyutunu ayarlayın (Çift tıklama: Sıfırla)">
+            <div class="w-12 h-1 rounded-full bg-gray-600 group-hover:bg-cyan-400 transition-colors"></div>
+          </div>
+
         <!-- HEADER WITH TABS & ACTION BUTTONS -->
         <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
           <!-- TABS -->
