@@ -15,9 +15,10 @@ class MT5Client:
         self.mt5 = None
         self.is_connected = False
         self.last_connect_attempt = 0
-        self.reconnect_cooldown = 5  # seconds
+        self.reconnect_cooldown = 4  # seconds
+        self.last_error_msg = ""
 
-        # Default broker credentials
+        # Default broker credentials (Tickmill Demo)
         self.login_id = int(os.getenv("MT5_LOGIN", "25373151"))
         self.password = os.getenv("MT5_PASSWORD", "PpE&tgF6)8[>")
         self.server = os.getenv("MT5_SERVER", "Tickmill-Demo")
@@ -32,61 +33,78 @@ class MT5Client:
             logger.info(f"Connecting to MT5 RPyC server at {self.host}:{self.port}...")
             self.conn = rpyc.connect(self.host, self.port, config={"sync_request_timeout": 15})
             self.mt5 = self.conn.root
-            if self.mt5.initialize():
-                self.is_connected = True
-                logger.info("Successfully initialized MT5 connection!")
-                
-                # Auto-login if credentials provided
-                if self.login_id and self.password:
-                    self.auto_login()
+            logger.info("RPyC connection established, attempting MT5 initialize...")
 
+            # Attempt initialize with credentials if available
+            initialized = False
+            servers = [self.server, "Tickmill-Demo", "TickmillLtd-Demo"]
+            
+            for srv in servers:
+                try:
+                    logger.info(f"Trying initialize with account #{self.login_id} on {srv}...")
+                    if self.mt5.initialize(login=int(self.login_id), password=str(self.password), server=str(srv)):
+                        self.server = srv
+                        initialized = True
+                        logger.info(f"MT5 initialized and logged into #{self.login_id} on {srv}!")
+                        break
+                except Exception as ex:
+                    logger.warning(f"Initialize error on {srv}: {ex}")
+
+            if not initialized:
+                # Fallback to plain initialize
+                try:
+                    if self.mt5.initialize():
+                        initialized = True
+                        logger.info("MT5 initialized with default terminal state.")
+                except Exception as ex:
+                    logger.warning(f"Plain initialize error: {ex}")
+
+            if initialized:
+                self.is_connected = True
+                self.last_error_msg = ""
                 return True
             else:
                 err = self.mt5.last_error()
-                logger.warning(f"MT5 initialize failed: {err}")
+                self.last_error_msg = f"MT5 initialize failed: {err}"
+                logger.warning(self.last_error_msg)
                 self.is_connected = False
                 return False
+
         except Exception as e:
-            logger.warning(f"Could not connect to MT5 at {self.host}:{self.port}: {e}")
+            self.last_error_msg = f"MT5 sunucusuna bağlanılamadı ({self.host}:{self.port}): {e}"
+            logger.warning(self.last_error_msg)
             self.is_connected = False
             self.conn = None
             self.mt5 = None
             return False
 
-    def auto_login(self):
-        servers_to_try = [self.server, "Tickmill-Demo", "TickmillLtd-Demo", "Tickmill-Live"]
-        for srv in servers_to_try:
-            if not srv:
-                continue
-            try:
-                logger.info(f"Attempting MT5 login for #{self.login_id} on {srv}...")
-                ok = self.mt5.login(login=int(self.login_id), password=str(self.password), server=str(srv))
-                if ok:
-                    self.server = srv
-                    logger.info(f"Login SUCCESSFUL on server {srv}!")
-                    break
-                else:
-                    err = self.mt5.last_error()
-                    logger.warning(f"Login failed on {srv}: {err}")
-            except Exception as e:
-                logger.warning(f"Login attempt error on {srv}: {e}")
-
     def login(self, login_id: int, password: str, server: str) -> Dict[str, Any]:
-        if not self.ensure_connected():
-            return {"success": False, "error": "MT5 is not connected"}
+        # Connect to RPyC if not connected
+        if not self.conn or not self.mt5:
+            self.connect()
+
+        if not self.conn or not self.mt5:
+            return {"success": False, "error": f"MT5 bağlantısı kurulamadı: {self.last_error_msg}"}
 
         try:
             self.login_id = int(login_id)
             self.password = str(password)
             self.server = str(server)
-            ok = self.mt5.login(login=int(login_id), password=str(password), server=str(server))
+
+            # Try initialize with credentials
+            ok = self.mt5.initialize(login=int(login_id), password=str(password), server=str(server))
+            if not ok:
+                # If already initialized, try login()
+                ok = self.mt5.login(login=int(login_id), password=str(password), server=str(server))
+
             if ok:
-                logger.info(f"Manual login SUCCESSFUL for #{login_id} on {server}!")
+                self.is_connected = True
+                logger.info(f"Login SUCCESSFUL for #{login_id} on {server}!")
                 return {"success": True, "login": login_id, "server": server}
             else:
                 err = self.mt5.last_error()
-                logger.warning(f"Manual login failed: {err}")
-                return {"success": False, "error": f"Login failed: {err}"}
+                logger.warning(f"Login failed: {err}")
+                return {"success": False, "error": f"Broker giriş hatası: {err}"}
         except Exception as e:
             logger.error(f"Error during login: {e}")
             return {"success": False, "error": str(e)}
@@ -106,7 +124,7 @@ class MT5Client:
         if not self.ensure_connected():
             return {
                 "connected": False,
-                "login": 0,
+                "login": self.login_id,
                 "balance": 0.0,
                 "equity": 0.0,
                 "profit": 0.0,
@@ -114,13 +132,13 @@ class MT5Client:
                 "margin_free": 0.0,
                 "margin_level": 0.0,
                 "currency": "USD",
-                "server": "Offline"
+                "server": self.server,
+                "error": self.last_error_msg or "MT5 Bağlantısı Bekleniyor"
             }
 
         try:
             acc = self.mt5.account_info()
             if acc is None:
-                # Connected to terminal, but not logged in to broker
                 return {
                     "connected": False,
                     "terminal_ready": True,
@@ -202,14 +220,14 @@ class MT5Client:
 
     def open_order(self, symbol: str, order_type: str, volume: float, sl_points: int = 0, tp_points: int = 0, comment: str = "HMA Web App") -> Dict[str, Any]:
         if not self.ensure_connected():
-            return {"success": False, "error": "MT5 is not connected"}
+            return {"success": False, "error": f"MT5 bağlı değil: {self.last_error_msg}"}
 
         try:
             self.mt5.symbol_select(symbol, True)
             tick = self.mt5.symbol_info_tick(symbol)
             info = self.mt5.symbol_info(symbol)
             if not tick or not info:
-                return {"success": False, "error": f"Symbol {symbol} not found or not visible"}
+                return {"success": False, "error": f"Symbol {symbol} bulunamadı veya kapalı"}
 
             point = info.point
             digits = info.digits
@@ -226,7 +244,7 @@ class MT5Client:
                 tp = round(price + (tp_points * point) if is_buy else price - (tp_points * point), digits)
 
             request = {
-                "action": 1, # TRADE_ACTION_DEAL
+                "action": 1,
                 "symbol": symbol,
                 "volume": float(volume),
                 "type": type_code,
@@ -269,7 +287,7 @@ class MT5Client:
         try:
             positions = self.mt5.positions_get(ticket=ticket)
             if not positions or len(positions) == 0:
-                return {"success": False, "error": f"Position #{ticket} not found"}
+                return {"success": False, "error": f"Position #{ticket} bulunamadı"}
 
             pos = positions[0]
             tick = self.mt5.symbol_info_tick(pos.symbol)
