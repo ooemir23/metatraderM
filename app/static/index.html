@@ -222,6 +222,10 @@
               <span>Kapalı Pozisyonlar</span>
               <span id="history-count-badge" class="px-1.5 py-0.5 rounded-full bg-gray-800 text-gray-400 text-[10px] font-mono">0</span>
             </button>
+            <button id="tab-btn-reports" onclick="switchPositionTab('reports')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200">
+              <i class="ph-bold ph-chart-polar"></i>
+              <span>Günlük Rapor & Analiz</span>
+            </button>
           </div>
 
           <!-- OPEN POSITIONS ACTIONS (Visible when open tab active) -->
@@ -248,7 +252,22 @@
               <span class="font-sans">Yenile</span>
             </button>
           </div>
+
+          <!-- REPORTS SUMMARY & ACTIONS (Visible when reports tab active) -->
+          <div id="reports-actions-bar" class="hidden flex items-center gap-2 text-xs">
+            <select id="reports-days-select" onchange="fetchReports()" class="bg-[#151a26] border border-gray-700 text-gray-200 text-xs rounded-lg px-2.5 py-1 focus:outline-none focus:border-cyan-500 font-sans">
+              <option value="7">Son 7 Gün</option>
+              <option value="30" selected>Son 30 Gün</option>
+              <option value="90">Son 90 Gün</option>
+              <option value="365">Tüm Geçmiş</option>
+            </select>
+            <button onclick="fetchReports()" class="px-2 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs flex items-center gap-1 transition" title="Raporu Yenile">
+              <i class="ph-bold ph-arrows-clockwise"></i>
+              <span class="font-sans">Yenile</span>
+            </button>
+          </div>
         </div>
+
 
         <!-- OPEN POSITIONS TABLE -->
         <div id="open-positions-container" class="overflow-x-auto flex-1">
@@ -295,6 +314,127 @@
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- REPORTS & ANALYTICS CONTAINER -->
+        <div id="reports-container" class="flex-1 flex flex-col gap-3 hidden">
+          <!-- TOP 4 KPI CARDS -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+            <!-- TODAY P/L -->
+            <div class="bg-[#151a26] p-3 rounded-xl border border-gray-800/80">
+              <div class="flex items-center justify-between text-gray-400 text-xs mb-1">
+                <span class="font-medium">Bugünkü Net K/Z</span>
+                <i class="ph-bold ph-calendar-blank text-cyan-400"></i>
+              </div>
+              <div id="rep-today-profit" class="text-base md:text-lg font-bold font-mono text-white">$0.00</div>
+              <div id="rep-today-sub" class="text-[10px] text-gray-500 mt-0.5">0 işlem yapıldı</div>
+            </div>
+
+            <!-- TOTAL NET PROFIT -->
+            <div class="bg-[#151a26] p-3 rounded-xl border border-gray-800/80">
+              <div class="flex items-center justify-between text-gray-400 text-xs mb-1">
+                <span class="font-medium">Toplam Net Kâr</span>
+                <i class="ph-bold ph-wallet text-emerald-400"></i>
+              </div>
+              <div id="rep-total-profit" class="text-base md:text-lg font-bold font-mono text-emerald-400">+$0.00</div>
+              <div id="rep-total-sub" class="text-[10px] text-gray-500 mt-0.5">Brüt: $0 | Zarar: $0</div>
+            </div>
+
+            <!-- WIN RATE -->
+            <div class="bg-[#151a26] p-3 rounded-xl border border-gray-800/80">
+              <div class="flex items-center justify-between text-gray-400 text-xs mb-1">
+                <span class="font-medium">Kazanma Oranı</span>
+                <i class="ph-bold ph-target text-amber-400"></i>
+              </div>
+              <div id="rep-win-rate" class="text-base md:text-lg font-bold font-mono text-white">0.0%</div>
+              <div id="rep-win-sub" class="text-[10px] text-gray-500 mt-0.5">0 Kazanç / 0 Kayıp</div>
+            </div>
+
+            <!-- PROFIT FACTOR -->
+            <div class="bg-[#151a26] p-3 rounded-xl border border-gray-800/80">
+              <div class="flex items-center justify-between text-gray-400 text-xs mb-1">
+                <span class="font-medium">Kâr Faktörü (PF)</span>
+                <i class="ph-bold ph-scales text-indigo-400"></i>
+              </div>
+              <div id="rep-profit-factor" class="text-base md:text-lg font-bold font-mono text-white">0.00</div>
+              <div id="rep-pf-sub" class="text-[10px] text-gray-500 mt-0.5">Ort. Kâr: $0 | Zarar: $0</div>
+            </div>
+          </div>
+
+          <!-- QUICK STATS BAR -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-[#151a26]/70 p-2 rounded-xl border border-gray-800/60 text-xs">
+            <div class="flex items-center justify-between px-2 py-0.5">
+              <span class="text-gray-400 text-[11px]">En İyi İşlem:</span>
+              <span id="rep-best-trade" class="font-bold font-mono text-emerald-400">+$0.00</span>
+            </div>
+            <div class="flex items-center justify-between px-2 py-0.5">
+              <span class="text-gray-400 text-[11px]">En Kötü İşlem:</span>
+              <span id="rep-worst-trade" class="font-bold font-mono text-rose-400">-$0.00</span>
+            </div>
+            <div class="flex items-center justify-between px-2 py-0.5">
+              <span class="text-gray-400 text-[11px]">Toplam Hacim:</span>
+              <span id="rep-total-volume" class="font-bold font-mono text-gray-200">0.00 Lot</span>
+            </div>
+            <div class="flex items-center justify-between px-2 py-0.5">
+              <span class="text-gray-400 text-[11px]">Swap / Kom.:</span>
+              <span id="rep-total-fee" class="font-bold font-mono text-gray-400">$0.00</span>
+            </div>
+          </div>
+
+          <!-- DAILY & SYMBOL BREAKDOWN TABLES -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-3">
+            <!-- DAILY BREAKDOWN (8 COLS) -->
+            <div class="lg:col-span-8 overflow-x-auto rounded-xl border border-gray-800/70">
+              <div class="bg-[#151a26] px-3 py-2 border-b border-gray-800 flex items-center justify-between">
+                <span class="font-bold text-gray-300 text-xs flex items-center gap-1.5">
+                  <i class="ph-bold ph-calendar text-cyan-400"></i> Günlük Kâr / Zarar Dökümü
+                </span>
+                <span class="text-[10px] text-gray-500">Tarihe Göre</span>
+              </div>
+              <table class="w-full text-left text-xs text-gray-300">
+                <thead class="text-[11px] text-gray-400 uppercase bg-[#151a26]/80 border-b border-gray-800">
+                  <tr>
+                    <th class="py-2 px-2.5">Tarih</th>
+                    <th class="py-2 px-2.5 text-center">İşlem</th>
+                    <th class="py-2 px-2.5 text-center">Kazan/Kaybet</th>
+                    <th class="py-2 px-2.5 text-center">Başarı %</th>
+                    <th class="py-2 px-2.5 text-center">Hacim</th>
+                    <th class="py-2 px-2.5 text-right">Net Kâr / Zarar</th>
+                  </tr>
+                </thead>
+                <tbody id="daily-reports-tbody" class="divide-y divide-gray-800/50 font-mono">
+                  <tr>
+                    <td colspan="6" class="py-6 text-center text-gray-500 font-sans">Henüz geçmiş veri bulunmuyor.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- SYMBOL BREAKDOWN (4 COLS) -->
+            <div class="lg:col-span-4 overflow-x-auto rounded-xl border border-gray-800/70">
+              <div class="bg-[#151a26] px-3 py-2 border-b border-gray-800 flex items-center justify-between">
+                <span class="font-bold text-gray-300 text-xs flex items-center gap-1.5">
+                  <i class="ph-bold ph-chart-pie text-emerald-400"></i> Sembol Dağılımı
+                </span>
+                <span class="text-[10px] text-gray-500">Net K/Z</span>
+              </div>
+              <table class="w-full text-left text-xs text-gray-300">
+                <thead class="text-[11px] text-gray-400 uppercase bg-[#151a26]/80 border-b border-gray-800">
+                  <tr>
+                    <th class="py-2 px-2.5">Sembol</th>
+                    <th class="py-2 px-2.5 text-center">İşlem</th>
+                    <th class="py-2 px-2.5 text-center">Lot</th>
+                    <th class="py-2 px-2.5 text-right">Net K/Z</th>
+                  </tr>
+                </thead>
+                <tbody id="symbol-reports-tbody" class="divide-y divide-gray-800/50 font-mono">
+                  <tr>
+                    <td colspan="4" class="py-6 text-center text-gray-500 font-sans">Veri yok.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
 

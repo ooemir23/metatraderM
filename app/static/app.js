@@ -80,37 +80,60 @@ function startPolling() {
   setInterval(fetchHistory, 4000);
   setInterval(fetchPrice, 1500);
   setInterval(fetchBotStatus, 3000);
+  setInterval(() => {
+    if (currentPositionTab === "reports") fetchReports();
+  }, 6000);
 }
 
-// Switch between Open and Closed Positions tabs
+// Switch between Open, Closed Positions, and Reports tabs
 function switchPositionTab(tab) {
   currentPositionTab = tab;
   const btnOpen = document.getElementById("tab-btn-open");
   const btnClosed = document.getElementById("tab-btn-closed");
+  const btnReports = document.getElementById("tab-btn-reports");
   const openActions = document.getElementById("open-actions-bar");
   const closedSummary = document.getElementById("closed-summary-bar");
+  const reportsActions = document.getElementById("reports-actions-bar");
   const openContainer = document.getElementById("open-positions-container");
   const closedContainer = document.getElementById("closed-positions-container");
+  const reportsContainer = document.getElementById("reports-container");
+
+  const defaultTabClass = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200";
+  if (btnOpen) btnOpen.className = defaultTabClass;
+  if (btnClosed) btnClosed.className = defaultTabClass;
+  if (btnReports) btnReports.className = defaultTabClass;
+
+  if (openActions) openActions.classList.add("hidden");
+  if (closedSummary) { closedSummary.classList.add("hidden"); closedSummary.classList.remove("flex"); }
+  if (reportsActions) { reportsActions.classList.add("hidden"); reportsActions.classList.remove("flex"); }
+  if (openContainer) openContainer.classList.add("hidden");
+  if (closedContainer) closedContainer.classList.add("hidden");
+  if (reportsContainer) { reportsContainer.classList.add("hidden"); reportsContainer.classList.remove("flex"); }
 
   if (tab === "open") {
-    btnOpen.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-emerald-500/20 text-emerald-400 shadow-sm";
-    btnClosed.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200";
+    if (btnOpen) btnOpen.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-emerald-500/20 text-emerald-400 shadow-sm";
     if (openActions) openActions.classList.remove("hidden");
-    if (closedSummary) closedSummary.classList.add("hidden");
     if (openContainer) openContainer.classList.remove("hidden");
-    if (closedContainer) closedContainer.classList.add("hidden");
     fetchPositions();
-  } else {
-    btnClosed.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-cyan-500/20 text-cyan-400 shadow-sm";
-    btnOpen.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200";
-    if (openActions) openActions.classList.add("hidden");
+  } else if (tab === "closed") {
+    if (btnClosed) btnClosed.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-cyan-500/20 text-cyan-400 shadow-sm";
     if (closedSummary) {
       closedSummary.classList.remove("hidden");
       closedSummary.classList.add("flex");
     }
-    if (openContainer) openContainer.classList.add("hidden");
     if (closedContainer) closedContainer.classList.remove("hidden");
     fetchHistory();
+  } else if (tab === "reports") {
+    if (btnReports) btnReports.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-indigo-500/20 text-indigo-400 shadow-sm";
+    if (reportsActions) {
+      reportsActions.classList.remove("hidden");
+      reportsActions.classList.add("flex");
+    }
+    if (reportsContainer) {
+      reportsContainer.classList.remove("hidden");
+      reportsContainer.classList.add("flex");
+    }
+    fetchReports();
   }
 }
 
@@ -284,6 +307,142 @@ async function fetchHistory() {
   }
 }
 
+// Fetch Performance & Daily Reports
+async function fetchReports() {
+  try {
+    const daysSelect = document.getElementById("reports-days-select");
+    const days = daysSelect ? daysSelect.value : 30;
+    const res = await fetch(`/api/reports?days=${days}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data || !data.summary) return;
+
+    const s = data.summary;
+
+    // Today's Profit
+    const repTodayProfit = document.getElementById("rep-today-profit");
+    const repTodaySub = document.getElementById("rep-today-sub");
+    if (repTodayProfit) {
+      const isPos = s.today_profit >= 0;
+      repTodayProfit.className = `text-base md:text-lg font-bold font-mono ${isPos ? "text-emerald-400" : "text-rose-400"}`;
+      repTodayProfit.innerText = `${isPos ? "+" : ""}$${formatMoney(s.today_profit)}`;
+    }
+    if (repTodaySub) {
+      repTodaySub.innerText = `${s.today_trades} işlem yapıldı`;
+    }
+
+    // Total Net Profit
+    const repTotalProfit = document.getElementById("rep-total-profit");
+    const repTotalSub = document.getElementById("rep-total-sub");
+    if (repTotalProfit) {
+      const isPos = s.total_profit >= 0;
+      repTotalProfit.className = `text-base md:text-lg font-bold font-mono ${isPos ? "text-emerald-400" : "text-rose-400"}`;
+      repTotalProfit.innerText = `${isPos ? "+" : ""}$${formatMoney(s.total_profit)}`;
+    }
+    if (repTotalSub) {
+      repTotalSub.innerText = `Brüt: +$${formatMoney(s.gross_profit)} | Zarar: -$${formatMoney(Math.abs(s.gross_loss))}`;
+    }
+
+    // Win Rate
+    const repWinRate = document.getElementById("rep-win-rate");
+    const repWinSub = document.getElementById("rep-win-sub");
+    if (repWinRate) {
+      const color = s.win_rate >= 50 ? "text-emerald-400" : (s.total_trades === 0 ? "text-white" : "text-rose-400");
+      repWinRate.className = `text-base md:text-lg font-bold font-mono ${color}`;
+      repWinRate.innerText = `${s.win_rate}%`;
+    }
+    if (repWinSub) {
+      repWinSub.innerText = `${s.winning_trades} Kazanç / ${s.losing_trades} Kayıp (${s.total_trades} Toplam)`;
+    }
+
+    // Profit Factor
+    const repPF = document.getElementById("rep-profit-factor");
+    const repPFSub = document.getElementById("rep-pf-sub");
+    if (repPF) {
+      const pfVal = s.profit_factor >= 999 ? "∞" : s.profit_factor;
+      repPF.innerText = pfVal;
+    }
+    if (repPFSub) {
+      repPFSub.innerText = `Ort. Kâr: $${formatMoney(s.avg_profit)} | Zarar: -$${formatMoney(Math.abs(s.avg_loss))}`;
+    }
+
+    // Quick Stats Bar
+    const repBest = document.getElementById("rep-best-trade");
+    const repWorst = document.getElementById("rep-worst-trade");
+    const repVol = document.getElementById("rep-total-volume");
+    const repFee = document.getElementById("rep-total-fee");
+
+    if (repBest) repBest.innerText = `+$${formatMoney(s.best_trade)}`;
+    if (repWorst) repWorst.innerText = `-$${formatMoney(Math.abs(s.worst_trade))}`;
+    if (repVol) repVol.innerText = `${s.total_volume} Lot`;
+    if (repFee) {
+      const fee = (s.total_swap || 0) + (s.total_commission || 0);
+      repFee.innerText = `${fee >= 0 ? "+" : ""}$${formatMoney(fee)}`;
+    }
+
+    // Daily Table
+    const dailyTbody = document.getElementById("daily-reports-tbody");
+    if (dailyTbody) {
+      if (!data.daily || data.daily.length === 0) {
+        dailyTbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-gray-500 font-sans">Seçilen dönemde işlem geçmişi bulunmuyor.</td></tr>`;
+      } else {
+        let dHtml = "";
+        data.daily.forEach(d => {
+          const isPos = d.profit >= 0;
+          const pColor = isPos ? "text-emerald-400" : "text-rose-400";
+          const pSign = isPos ? "+" : "";
+          const dateBadge = d.is_today 
+            ? `<span class="text-white font-bold">${d.date}</span> <span class="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 text-[9px] uppercase font-sans font-bold">Bugün</span>`
+            : `<span class="text-gray-300">${d.date}</span>`;
+          
+          const wrColor = d.win_rate >= 50 ? "text-emerald-400" : "text-rose-400";
+
+          dHtml += `
+            <tr class="hover:bg-[#151a26]/60 transition border-b border-gray-800/40">
+              <td class="py-2.5 px-2.5">${dateBadge}</td>
+              <td class="py-2.5 px-2.5 text-center text-gray-300 font-semibold">${d.trades_count}</td>
+              <td class="py-2.5 px-2.5 text-center text-xs text-gray-400"><span class="text-emerald-400 font-bold">${d.winning_trades}</span> / <span class="text-rose-400 font-bold">${d.losing_trades}</span></td>
+              <td class="py-2.5 px-2.5 text-center font-bold font-mono ${wrColor}">${d.win_rate}%</td>
+              <td class="py-2.5 px-2.5 text-center text-gray-400">${d.volume} L</td>
+              <td class="py-2.5 px-2.5 text-right font-bold font-mono ${pColor}">${pSign}$${formatMoney(d.profit)}</td>
+            </tr>
+          `;
+        });
+        dailyTbody.innerHTML = dHtml;
+      }
+    }
+
+    // Symbol Table
+    const symTbody = document.getElementById("symbol-reports-tbody");
+    if (symTbody) {
+      if (!data.by_symbol || data.by_symbol.length === 0) {
+        symTbody.innerHTML = `<tr><td colspan="4" class="py-6 text-center text-gray-500 font-sans">Veri yok.</td></tr>`;
+      } else {
+        let sHtml = "";
+        data.by_symbol.forEach(sym => {
+          const isPos = sym.profit >= 0;
+          const pColor = isPos ? "text-emerald-400" : "text-rose-400";
+          const pSign = isPos ? "+" : "";
+
+          sHtml += `
+            <tr class="hover:bg-[#151a26]/60 transition border-b border-gray-800/40">
+              <td class="py-2 px-2.5 font-bold text-white">${sym.symbol}</td>
+              <td class="py-2 px-2.5 text-center text-gray-300">${sym.trades_count}</td>
+              <td class="py-2 px-2.5 text-center text-gray-400">${sym.volume} L</td>
+              <td class="py-2 px-2.5 text-right font-bold font-mono ${pColor}">${pSign}$${formatMoney(sym.profit)}</td>
+            </tr>
+          `;
+        });
+        symTbody.innerHTML = sHtml;
+      }
+    }
+
+  } catch (err) {
+    console.error("fetchReports error:", err);
+  }
+}
+
+
 // Fetch Price for Active Symbol
 async function fetchPrice() {
   try {
@@ -420,6 +579,8 @@ async function closePosition(ticket) {
       showToast(`✅ #${ticket} numaralı pozisyon kapatıldı.`, "success");
       fetchPositions();
       fetchAccount();
+      fetchHistory();
+      if (currentPositionTab === "reports") fetchReports();
     } else {
       const err = data.detail || data.error || "";
       if (err.includes("10018") || err.includes("Market closed")) {
@@ -464,6 +625,8 @@ async function closeFilteredPositions(filterType) {
       }
       fetchPositions();
       fetchAccount();
+      fetchHistory();
+      if (currentPositionTab === "reports") fetchReports();
     } else {
       showToast(`❌ Hata: ${data.detail || data.error || "İşlem başarısız"}`, "error");
     }

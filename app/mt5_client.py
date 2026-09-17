@@ -109,6 +109,70 @@ def hma_native_close_ticket(ticket):
     return _execute_close_deal(positions[0])
 '''
 
+NATIVE_HISTORY_SCRIPT = '''
+import MetaTrader5 as mt5
+import time
+from datetime import datetime, timedelta
+
+def hma_native_get_history(days=30):
+    try:
+        days_int = int(days) if days else 30
+        from_date = datetime.now() - timedelta(days=days_int)
+        to_date = datetime.now() + timedelta(days=2)
+        
+        deals = mt5.history_deals_get(from_date, to_date)
+        if deals is None or len(deals) == 0:
+            deals = mt5.history_deals_get(datetime(2020, 1, 1), to_date)
+        if deals is None or len(deals) == 0:
+            deals = mt5.history_deals_get(0, 2147483647)
+            
+        if deals is None:
+            return []
+            
+        res = []
+        for d in deals:
+            deal_symbol = str(getattr(d, "symbol", ""))
+            deal_entry = int(getattr(d, "entry", -1))
+            deal_profit = float(getattr(d, "profit", 0.0))
+            deal_type = int(getattr(d, "type", -1))
+            
+            # Filter: we want exit deals (entry in 1: OUT, 2: INOUT, 3: OUT_BY) or deals with realized profit/loss
+            # Must have a trading symbol (excludes deposit/withdrawal balance deals)
+            if deal_symbol != "" and (deal_entry in (1, 2, 3) or deal_profit != 0):
+                t = int(getattr(d, "time", 0))
+                try:
+                    time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t)) if t else "-"
+                    date_str = time.strftime("%Y-%m-%d", time.localtime(t)) if t else "-"
+                except Exception:
+                    time_str = "-"
+                    date_str = "-"
+                    
+                type_name = "BUY" if deal_type == 0 else ("SELL" if deal_type == 1 else str(deal_type))
+                
+                res.append({
+                    "ticket": int(d.ticket),
+                    "order": int(d.order),
+                    "position_id": int(getattr(d, "position_id", d.order)),
+                    "symbol": deal_symbol,
+                    "type": type_name,
+                    "entry": deal_entry,
+                    "volume": float(getattr(d, "volume", 0.0)),
+                    "price": round(float(getattr(d, "price", 0.0)), 5),
+                    "profit": round(deal_profit, 2),
+                    "commission": round(float(getattr(d, "commission", 0.0)), 2),
+                    "swap": round(float(getattr(d, "swap", 0.0)), 2),
+                    "fee": round(float(getattr(d, "fee", 0.0)), 2),
+                    "comment": str(getattr(d, "comment", "")),
+                    "time": time_str,
+                    "date": date_str,
+                    "timestamp": t
+                })
+        res.reverse()
+        return res
+    except Exception as e:
+        return []
+'''
+
 class MT5Client:
     def __init__(self, host: Optional[str] = None, port: Optional[int] = None):
         self.host = host or os.getenv("MT5_HOST", "metatrader5")
@@ -573,63 +637,56 @@ class MT5Client:
 
         try:
             if self.conn:
-                script = f"""
-def _get_history():
-    import MetaTrader5 as mt5
-    import time
-    from datetime import datetime, timedelta
-    from_date = datetime.now() - timedelta(days={int(days)})
-    to_date = datetime.now() + timedelta(days=1)
-    deals = mt5.history_deals_get(from_date, to_date)
-    if deals is None:
-        return []
-    res = []
-    for d in deals:
-        if d.entry in (1, 2, 3) or d.profit != 0:
-            res.append({{
-                "ticket": int(d.ticket),
-                "order": int(d.order),
-                "position_id": int(d.position_id),
-                "symbol": str(d.symbol),
-                "type": "BUY" if d.type == 0 else "SELL",
-                "entry": int(d.entry),
-                "volume": float(d.volume),
-                "price": round(float(d.price), 5),
-                "profit": round(float(d.profit), 2),
-                "commission": round(float(getattr(d, "commission", 0.0)), 2),
-                "swap": round(float(getattr(d, "swap", 0.0)), 2),
-                "comment": str(d.comment),
-                "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(d.time))
-            }})
-    res.reverse()
-    return res
-_get_history()
-"""
-                return list(self.conn.eval(script))
+                self.conn.execute(NATIVE_HISTORY_SCRIPT)
+                raw = self.conn.eval(f"hma_native_get_history({int(days)})")
+                if not raw:
+                    return []
+                # Ensure plain python dicts
+                return [dict(d) for d in raw]
             elif self.mt5:
                 from datetime import datetime, timedelta
-                from_date = datetime.now() - timedelta(days=days)
-                to_date = datetime.now() + timedelta(days=1)
+                days_int = int(days) if days else 30
+                from_date = datetime.now() - timedelta(days=days_int)
+                to_date = datetime.now() + timedelta(days=2)
                 deals = self.mt5.history_deals_get(from_date, to_date)
+                if deals is None or len(deals) == 0:
+                    deals = self.mt5.history_deals_get(datetime(2020, 1, 1), to_date)
+                if deals is None or len(deals) == 0:
+                    deals = self.mt5.history_deals_get(0, 2147483647)
                 if deals is None:
                     return []
                 res = []
                 for d in deals:
-                    if d.entry in (1, 2, 3) or d.profit != 0:
+                    deal_symbol = str(getattr(d, "symbol", ""))
+                    deal_entry = int(getattr(d, "entry", -1))
+                    deal_profit = float(getattr(d, "profit", 0.0))
+                    deal_type = int(getattr(d, "type", -1))
+                    if deal_symbol != "" and (deal_entry in (1, 2, 3) or deal_profit != 0):
+                        t = int(getattr(d, "time", 0))
+                        try:
+                            time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t)) if t else "-"
+                            date_str = time.strftime("%Y-%m-%d", time.localtime(t)) if t else "-"
+                        except Exception:
+                            time_str = "-"
+                            date_str = "-"
+                        type_name = "BUY" if deal_type == 0 else ("SELL" if deal_type == 1 else str(deal_type))
                         res.append({
                             "ticket": int(d.ticket),
                             "order": int(d.order),
-                            "position_id": int(d.position_id),
-                            "symbol": str(d.symbol),
-                            "type": "BUY" if d.type == 0 else "SELL",
-                            "entry": int(d.entry),
-                            "volume": float(d.volume),
-                            "price": round(float(d.price), 5),
-                            "profit": round(float(d.profit), 2),
+                            "position_id": int(getattr(d, "position_id", d.order)),
+                            "symbol": deal_symbol,
+                            "type": type_name,
+                            "entry": deal_entry,
+                            "volume": float(getattr(d, "volume", 0.0)),
+                            "price": round(float(getattr(d, "price", 0.0)), 5),
+                            "profit": round(deal_profit, 2),
                             "commission": round(float(getattr(d, "commission", 0.0)), 2),
                             "swap": round(float(getattr(d, "swap", 0.0)), 2),
-                            "comment": str(d.comment),
-                            "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(d.time))
+                            "fee": round(float(getattr(d, "fee", 0.0)), 2),
+                            "comment": str(getattr(d, "comment", "")),
+                            "time": time_str,
+                            "date": date_str,
+                            "timestamp": t
                         })
                 res.reverse()
                 return res
@@ -637,3 +694,161 @@ _get_history()
         except Exception as e:
             logger.error(f"Error fetching history: {e}")
             return []
+
+    def get_reports(self, days: int = 30) -> Dict[str, Any]:
+        deals = self.get_history(days=days)
+        total_trades = len(deals)
+        
+        empty_res = {
+            "summary": {
+                "total_trades": 0,
+                "winning_trades": 0,
+                "losing_trades": 0,
+                "win_rate": 0.0,
+                "total_profit": 0.0,
+                "gross_profit": 0.0,
+                "gross_loss": 0.0,
+                "profit_factor": 0.0,
+                "today_profit": 0.0,
+                "today_trades": 0,
+                "avg_profit": 0.0,
+                "avg_loss": 0.0,
+                "best_trade": 0.0,
+                "worst_trade": 0.0,
+                "total_volume": 0.0,
+                "total_swap": 0.0,
+                "total_commission": 0.0
+            },
+            "daily": [],
+            "by_symbol": []
+        }
+        
+        if total_trades == 0:
+            return empty_res
+
+        today_str = time.strftime("%Y-%m-%d")
+
+        winning_deals = [d for d in deals if d["profit"] > 0]
+        losing_deals = [d for d in deals if d["profit"] < 0]
+
+        winning_count = len(winning_deals)
+        losing_count = len(losing_deals)
+        win_rate = round((winning_count / total_trades) * 100, 1) if total_trades > 0 else 0.0
+
+        gross_profit = sum(d["profit"] for d in winning_deals)
+        gross_loss = sum(d["profit"] for d in losing_deals)
+        total_profit = sum(d["profit"] for d in deals)
+        total_swap = sum(d.get("swap", 0.0) for d in deals)
+        total_comm = sum(d.get("commission", 0.0) for d in deals)
+        total_vol = sum(d.get("volume", 0.0) for d in deals)
+
+        profit_factor = round(gross_profit / abs(gross_loss), 2) if gross_loss != 0 else (999.0 if gross_profit > 0 else 0.0)
+
+        avg_win = round(gross_profit / winning_count, 2) if winning_count > 0 else 0.0
+        avg_loss = round(gross_loss / losing_count, 2) if losing_count > 0 else 0.0
+
+        best_trade = max((d["profit"] for d in deals), default=0.0)
+        worst_trade = min((d["profit"] for d in deals), default=0.0)
+
+        # Today's profit & trades
+        today_deals = [d for d in deals if d.get("date") == today_str]
+        today_profit = sum(d["profit"] for d in today_deals)
+        today_trades = len(today_deals)
+
+        # Group by date
+        daily_dict = {}
+        for d in deals:
+            d_date = d.get("date", "Unknown")
+            if d_date not in daily_dict:
+                daily_dict[d_date] = {
+                    "date": d_date,
+                    "is_today": (d_date == today_str),
+                    "trades_count": 0,
+                    "winning_trades": 0,
+                    "losing_trades": 0,
+                    "gross_profit": 0.0,
+                    "gross_loss": 0.0,
+                    "profit": 0.0,
+                    "swap": 0.0,
+                    "commission": 0.0,
+                    "volume": 0.0
+                }
+            entry = daily_dict[d_date]
+            entry["trades_count"] += 1
+            p = d["profit"]
+            entry["profit"] += p
+            if p > 0:
+                entry["winning_trades"] += 1
+                entry["gross_profit"] += p
+            elif p < 0:
+                entry["losing_trades"] += 1
+                entry["gross_loss"] += p
+            entry["swap"] += d.get("swap", 0.0)
+            entry["commission"] += d.get("commission", 0.0)
+            entry["volume"] += d.get("volume", 0.0)
+
+        daily_list = []
+        for date_k, val in sorted(daily_dict.items(), reverse=True):
+            val["profit"] = round(val["profit"], 2)
+            val["gross_profit"] = round(val["gross_profit"], 2)
+            val["gross_loss"] = round(val["gross_loss"], 2)
+            val["swap"] = round(val["swap"], 2)
+            val["commission"] = round(val["commission"], 2)
+            val["volume"] = round(val["volume"], 2)
+            val["win_rate"] = round((val["winning_trades"] / val["trades_count"]) * 100, 1) if val["trades_count"] > 0 else 0.0
+            daily_list.append(val)
+
+        # Group by symbol
+        symbol_dict = {}
+        for d in deals:
+            sym = d.get("symbol", "Other")
+            if sym not in symbol_dict:
+                symbol_dict[sym] = {
+                    "symbol": sym,
+                    "trades_count": 0,
+                    "winning_trades": 0,
+                    "losing_trades": 0,
+                    "profit": 0.0,
+                    "volume": 0.0
+                }
+            s_entry = symbol_dict[sym]
+            s_entry["trades_count"] += 1
+            p = d["profit"]
+            s_entry["profit"] += p
+            if p > 0:
+                s_entry["winning_trades"] += 1
+            elif p < 0:
+                s_entry["losing_trades"] += 1
+            s_entry["volume"] += d.get("volume", 0.0)
+
+        symbol_list = []
+        for sym_k, val in sorted(symbol_dict.items(), key=lambda x: x[1]["profit"], reverse=True):
+            val["profit"] = round(val["profit"], 2)
+            val["volume"] = round(val["volume"], 2)
+            val["win_rate"] = round((val["winning_trades"] / val["trades_count"]) * 100, 1) if val["trades_count"] > 0 else 0.0
+            symbol_list.append(val)
+
+        return {
+            "summary": {
+                "total_trades": total_trades,
+                "winning_trades": winning_count,
+                "losing_trades": losing_count,
+                "win_rate": win_rate,
+                "total_profit": round(total_profit, 2),
+                "gross_profit": round(gross_profit, 2),
+                "gross_loss": round(gross_loss, 2),
+                "profit_factor": profit_factor,
+                "today_profit": round(today_profit, 2),
+                "today_trades": today_trades,
+                "avg_profit": avg_win,
+                "avg_loss": avg_loss,
+                "best_trade": round(best_trade, 2),
+                "worst_trade": round(worst_trade, 2),
+                "total_volume": round(total_vol, 2),
+                "total_swap": round(total_swap, 2),
+                "total_commission": round(total_comm, 2)
+            },
+            "daily": daily_list,
+            "by_symbol": symbol_list
+        }
+
