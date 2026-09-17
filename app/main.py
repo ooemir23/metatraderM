@@ -131,16 +131,14 @@ def _inspect():
     tick = mt5.symbol_info_tick("XAUUSD")
     sym = mt5.symbol_info("XAUUSD")
     sym_dict = {
-        "filling_mode": sym.filling_mode if sym else None,
-        "execution_mode": sym.execution_mode if sym else None,
-        "trade_mode": sym.trade_mode if sym else None,
-        "order_mode": sym.order_mode if sym else None
+        "filling_mode": getattr(sym, "filling_mode", None) if sym else None,
+        "trade_exemode": getattr(sym, "trade_exemode", None) if sym else None,
+        "trade_mode": getattr(sym, "trade_mode", None) if sym else None,
+        "order_mode": getattr(sym, "order_mode", None) if sym else None
     }
     
     variations = []
     if pos_data and tick:
-        # Base close params:
-        # Pos is SELL (type=1), so close is BUY (type=0)
         base = {
             "action": mt5.TRADE_ACTION_DEAL,
             "position": int(pos_data["ticket"]),
@@ -149,22 +147,23 @@ def _inspect():
             "type": 0,
             "price": float(tick.ask),
             "deviation": 50,
-            "magic": 123456,
+            "magic": int(getattr(pos_data, "magic", 0)),
             "comment": "test",
         }
         
         configs = [
-            {"desc": "type_filling=1 (IOC), type_time=GTC", "extra": {"type_filling": 1, "type_time": mt5.ORDER_TIME_GTC}},
-            {"desc": "type_filling=0 (FOK), type_time=GTC", "extra": {"type_filling": 0, "type_time": mt5.ORDER_TIME_GTC}},
-            {"desc": "type_filling=2 (RETURN), type_time=GTC", "extra": {"type_filling": 2, "type_time": mt5.ORDER_TIME_GTC}},
+            {"desc": "type_filling=1 (IOC), type_time=GTC", "extra": {"type_filling": 1, "type_time": 0}},
+            {"desc": "type_filling=0 (FOK), type_time=GTC", "extra": {"type_filling": 0, "type_time": 0}},
+            {"desc": "type_filling=2 (RETURN), type_time=GTC", "extra": {"type_filling": 2, "type_time": 0}},
+            {"desc": "type_filling=fm directly", "extra": {"type_filling": int(getattr(sym, "filling_mode", 2)), "type_time": 0}},
             {"desc": "type_filling=1, no type_time", "extra": {"type_filling": 1}},
             {"desc": "type_filling=0, no type_time", "extra": {"type_filling": 0}},
             {"desc": "type_filling=2, no type_time", "extra": {"type_filling": 2}},
             {"desc": "no type_filling, no type_time", "extra": {}},
-            {"desc": "no type_filling, type_time=GTC", "extra": {"type_time": mt5.ORDER_TIME_GTC}},
-            {"desc": "price=0, type_filling=1", "extra": {"type_filling": 1, "price": 0.0}},
-            {"desc": "price=0, type_filling=0", "extra": {"type_filling": 0, "price": 0.0}},
-            {"desc": "price=0, no type_filling", "extra": {"price": 0.0}},
+            {"desc": "no type_filling, type_time=GTC", "extra": {"type_time": 0}},
+            {"desc": "mt5.ORDER_FILLING_IOC", "extra": {"type_filling": getattr(mt5, "ORDER_FILLING_IOC", 1), "type_time": 0}},
+            {"desc": "mt5.ORDER_FILLING_FOK", "extra": {"type_filling": getattr(mt5, "ORDER_FILLING_FOK", 0), "type_time": 0}},
+            {"desc": "mt5.ORDER_FILLING_RETURN", "extra": {"type_filling": getattr(mt5, "ORDER_FILLING_RETURN", 2), "type_time": 0}},
         ]
         
         for c in configs:
