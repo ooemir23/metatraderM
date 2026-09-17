@@ -235,6 +235,17 @@ class MT5Client:
             logger.error(f"Error fetching symbol price for {symbol}: {e}")
             return {"symbol": symbol, "bid": 0.0, "ask": 0.0, "spread": 0}
 
+    def to_server_dict(self, d: Dict[str, Any]) -> Any:
+        if self.conn and hasattr(self.conn, "modules"):
+            try:
+                return self.conn.modules["builtins"].dict(d)
+            except Exception:
+                try:
+                    return self.conn.modules.builtins.dict(d)
+                except Exception:
+                    pass
+        return d
+
     def open_order(self, symbol: str, order_type: str, volume: float, sl_points: int = 0, tp_points: int = 0, comment: str = "HMA Web App") -> Dict[str, Any]:
         if not self.ensure_connected():
             return {"success": False, "error": f"MT5 bağlı değil: {self.last_error_msg}"}
@@ -275,14 +286,16 @@ class MT5Client:
                 "type_filling": 1
             }
 
-            result = self.mt5.order_send(request)
+            srv_req = self.to_server_dict(request)
+            result = self.mt5.order_send(srv_req)
             if result is None:
                 err = self.mt5.last_error()
                 return {"success": False, "error": f"order_send failed: {err}"}
 
             if result.retcode not in (10009, 10008):
                 request["type_filling"] = 0
-                result = self.mt5.order_send(request)
+                srv_req = self.to_server_dict(request)
+                result = self.mt5.order_send(srv_req)
                 if result.retcode not in (10009, 10008):
                     return {"success": False, "retcode": result.retcode, "error": result.comment}
 
@@ -329,12 +342,14 @@ class MT5Client:
                 "type_filling": 1
             }
 
-            result = self.mt5.order_send(request)
+            srv_req = self.to_server_dict(request)
+            result = self.mt5.order_send(srv_req)
             if result and result.retcode in (10009, 10008):
                 return {"success": True, "ticket": ticket, "profit": pos.profit}
             else:
                 request["type_filling"] = 0
-                result = self.mt5.order_send(request)
+                srv_req = self.to_server_dict(request)
+                result = self.mt5.order_send(srv_req)
                 if result and result.retcode in (10009, 10008):
                     return {"success": True, "ticket": ticket, "profit": pos.profit}
                 err_msg = result.comment if result else str(self.mt5.last_error())
