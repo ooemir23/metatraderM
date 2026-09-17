@@ -320,7 +320,12 @@ async function closePosition(ticket) {
       fetchPositions();
       fetchAccount();
     } else {
-      showToast(`❌ Kapatma Hatası: ${data.detail || data.error}`, "error");
+      const err = data.detail || data.error || "";
+      if (err.includes("10018") || err.includes("Market closed")) {
+        showToast(`⚠️ Piyasa Kapalı: Altın (XAUUSD) 23:57 - 01:02 arası günlük tatildedir. Saat 01:02'de açılacaktır.`, "error");
+      } else {
+        showToast(`❌ Kapatma Hatası: ${err}`, "error");
+      }
     }
   } catch (err) {
     showToast(`❌ Hata: ${err.message}`, "error");
@@ -347,7 +352,12 @@ async function closeFilteredPositions(filterType) {
       if (data.total_matched === 0) {
         showToast(`Kapatılacak uygun pozisyon bulunamadı.`, "info");
       } else if (data.closed_count === 0 && data.errors && data.errors.length > 0) {
-        showToast(`❌ Kapatma Hatası: ${data.errors[0]}`, "error");
+        const err = data.errors[0];
+        if (err.includes("10018") || err.includes("Market closed")) {
+          showToast(`⚠️ Piyasa Kapalı: Altın (XAUUSD) 23:57 - 01:02 arası günlük tatildedir. Saat 01:02'de açılacaktır.`, "error");
+        } else {
+          showToast(`❌ Kapatma Hatası: ${err}`, "error");
+        }
       } else {
         showToast(`✅ ${data.closed_count} adet pozisyon kapatıldı.`, "success");
       }

@@ -54,6 +54,8 @@ def _execute_close_deal(p):
 
         c = getattr(res, "comment", str(mt5.last_error()))
         rc = getattr(res, "retcode", -1)
+        if rc == 10018 or "Market closed" in str(c):
+            return {"success": False, "ticket": ticket, "error": "Piyasa şu anda kapalı (Market closed - 10018). Altın (XAUUSD) her gece 23:57 - 01:02 arası rollover tatilindedir. 01:02'de otomatik açılacaktır."}
         attempts.append("dev" + str(dev) + "->" + str(rc) + ":" + str(c))
 
     last_err = " | ".join(attempts) if attempts else "Unknown error"
