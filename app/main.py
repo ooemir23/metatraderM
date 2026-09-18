@@ -333,6 +333,98 @@ def get_server_log():
                 return {"success": False, "error": str(e)}
     return {"success": False, "error": "server.log not found"}
 
+@app.get("/api/debug/diagnostic")
+def get_diagnostic():
+    import socket
+    info = {}
+    
+    # 1. Environment
+    host = os.getenv("MT5_HOST", "metatrader5")
+    info["env"] = {
+        "MT5_HOST": host,
+        "MT5_PORT": os.getenv("MT5_PORT", "8001"),
+        "client_connected": mt5_client.is_connected,
+        "client_last_error": mt5_client.last_error_msg,
+    }
+    
+    # 2. DNS & TCP probe
+    try:
+        ip = socket.gethostbyname(host)
+        info["dns"] = {"host": host, "ip": ip}
+    except Exception as e:
+        info["dns"] = {"host": host, "error": str(e)}
+        
+    for p in [8001, 3000, 3001]:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(1.5)
+            err = s.connect_ex((host, p))
+            s.close()
+            info[f"tcp_{host}_{p}"] = "OPEN" if err == 0 else f"ERR_{err}"
+        except Exception as e:
+            info[f"tcp_{host}_{p}"] = str(e)
+            
+    # 3. Files in /config
+    try:
+        info["config_files"] = os.listdir("/config") if os.path.exists("/config") else "No /config"
+    except Exception as e:
+        info["config_files"] = str(e)
+        
+    # 4. mt5_watchdog.log
+    for wp in ["/config/mt5_watchdog.log", "/tmp/mt5_watchdog.log"]:
+        if os.path.exists(wp):
+            try:
+                with open(wp, "r", encoding="utf-8", errors="replace") as f:
+                    info["watchdog_log"] = [l.strip() for l in f.readlines()[-30:]]
+            except Exception as e:
+                info["watchdog_log"] = str(e)
+            break
+            
+    # 5. Direct RPyC test
+    try:
+        import rpyc
+        c = rpyc.classic.connect(host, 8001)
+        c._config["sync_request_timeout"] = 5
+        info["rpyc_connect"] = "SUCCESS"
+        
+        try:
+            m = c.modules.MetaTrader5
+            info["mt5_module"] = "IMPORTED"
+            
+            try:
+                v = m.version()
+                info["mt5_version"] = list(v) if v else None
+            except Exception as ve:
+                info["mt5_version_error"] = str(ve)
+                
+            try:
+                tinfo = m.terminal_info()
+                if tinfo:
+                    info["terminal_info"] = {k: getattr(tinfo, k) for k in dir(tinfo) if not k.startswith("_") and not callable(getattr(tinfo, k))}
+                else:
+                    info["terminal_info"] = None
+                    info["terminal_last_error"] = str(m.last_error())
+            except Exception as te:
+                info["terminal_info_error"] = str(te)
+                
+            try:
+                acc = m.account_info()
+                if acc:
+                    info["account_info"] = {k: getattr(acc, k) for k in dir(acc) if not k.startswith("_") and not callable(getattr(acc, k))}
+                else:
+                    info["account_info"] = None
+                    info["account_last_error"] = str(m.last_error())
+            except Exception as ae:
+                info["account_info_error"] = str(ae)
+        except Exception as me:
+            info["mt5_module_error"] = str(me)
+            
+        c.close()
+    except Exception as re:
+        info["rpyc_connect_error"] = str(re)
+        
+    return info
+
 # Static Files & SPA Routing
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
