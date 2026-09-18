@@ -317,20 +317,10 @@ class MT5Client:
                         except Exception:
                             pass
                         m = c.modules.MetaTrader5
-                        ok = False
-                        try:
-                            ok = bool(m.initialize(path="C:\\\\Program Files\\\\MetaTrader 5\\\\terminal64.exe"))
-                        except Exception as ie:
-                            logger.debug(f"mt5.initialize() exception: {ie}")
-                        tinfo = None
-                        try:
-                            tinfo = m.terminal_info()
-                        except Exception:
-                            pass
-                        if not (ok or tinfo is not None):
-                            if self.login_id and self.password:
-                                ok = bool(m.initialize(path="C:\\\\Program Files\\\\MetaTrader 5\\\\terminal64.exe", login=int(self.login_id), password=str(self.password), server=str(self.server)))
-                        res.append((c, m, ok or tinfo is not None))
+                        # Don't call m.initialize() here - it blocks for 60+ seconds
+                        # when MT5 terminal isn't ready. Just verify the RPyC tunnel
+                        # and module import work. MT5 init happens in login() or first use.
+                        res.append((c, m))
                     except Exception as e:
                         err.append(e)
 
@@ -343,8 +333,8 @@ class MT5Client:
                 if err:
                     raise err[0]
                 
-                if res and res[0][2]:
-                    conn, mt5, _ = res[0]
+                if res:
+                    conn, mt5 = res[0]
                     
                     if self._lock.acquire(timeout=2.0):
                         try:
@@ -433,10 +423,28 @@ class MT5Client:
                 elif "tickmill" in server_clean.lower() and "live" in server_clean.lower():
                     server_clean = "Tickmill-Live"
 
-                ok = self.mt5.initialize(login=int(login_id), password=str(password), server=server_clean)
-                if not ok:
-                    ok = self.mt5.login(login=int(login_id), password=str(password), server=server_clean)
+                # Run initialize in a thread with timeout to prevent blocking
+                login_result = [None]
+                login_error = [None]
+                def _do_login():
+                    try:
+                        ok = self.mt5.initialize(login=int(login_id), password=str(password), server=server_clean)
+                        if not ok:
+                            ok = self.mt5.login(login=int(login_id), password=str(password), server=server_clean)
+                        login_result[0] = ok
+                    except Exception as e:
+                        login_error[0] = e
 
+                lt = threading.Thread(target=_do_login)
+                lt.daemon = True
+                lt.start()
+                lt.join(15.0)
+                if lt.is_alive():
+                    return {"success": False, "error": "MT5 login zaman aşımı (15s). Terminal henüz hazır olmayabilir, lütfen tekrar deneyin."}
+                if login_error[0]:
+                    return {"success": False, "error": str(login_error[0])}
+
+                ok = login_result[0]
                 if ok:
                     self.login_id = int(login_id)
                     self.password = str(password)
@@ -459,8 +467,22 @@ class MT5Client:
             if now - self.last_ping_time < 5.0:
                 return True
             try:
-                info = self.mt5.terminal_info()
-                if info is not None:
+                # Use a thread with timeout to prevent blocking on terminal_info
+                ping_result = [None]
+                def _ping():
+                    try:
+                        ping_result[0] = self.mt5.terminal_info()
+                    except Exception:
+                        pass
+                pt = threading.Thread(target=_ping)
+                pt.daemon = True
+                pt.start()
+                pt.join(3.0)
+                if pt.is_alive():
+                    logger.warning("terminal_info ping timed out (3s)")
+                    # Don't reset connection - it might just be slow
+                    return True
+                if ping_result[0] is not None:
                     self.last_ping_time = now
                     return True
             except Exception:

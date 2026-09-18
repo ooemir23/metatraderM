@@ -124,16 +124,23 @@ import rpyc
 from rpyc.utils.server import ThreadedServer
 import time
 import sys
+import threading
 
-print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Pre-importing MetaTrader5 in Wine...", flush=True)
-try:
-    import MetaTrader5 as mt5
-    ok = mt5.initialize()
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] MetaTrader5 pre-initialized: {ok}", flush=True)
-except Exception as e:
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] MetaTrader5 pre-import note: {e}", flush=True)
+print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] >>> RPYC SUNUCUSU BASLATILIYOR (0.0.0.0:8001) <<<", flush=True)
 
-print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] >>> RPYC SUNUCUSU BASLATILDI (0.0.0.0:8001) <<<", flush=True)
+# Pre-import MetaTrader5 in a background thread so RPyC starts immediately
+def _lazy_mt5_init():
+    time.sleep(5)  # Wait for MT5 terminal to be ready
+    try:
+        import MetaTrader5 as mt5
+        ok = mt5.initialize()
+        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] MetaTrader5 lazy-initialized: {ok}", flush=True)
+    except Exception as e:
+        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] MetaTrader5 lazy-init note: {e}", flush=True)
+
+t = threading.Thread(target=_lazy_mt5_init, daemon=True)
+t.start()
+
 try:
     server = ThreadedServer(
         rpyc.SlaveService,
@@ -142,6 +149,7 @@ try:
         reuse_addr=True,
         protocol_config={"allow_all_attrs": True, "sync_request_timeout": 30}
     )
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] >>> RPYC SUNUCUSU BASLATILDI (0.0.0.0:8001) <<<", flush=True)
     server.start()
 except Exception as e:
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Server error: {e}", file=sys.stderr, flush=True)

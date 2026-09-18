@@ -63,21 +63,29 @@ def ensure_optimized_server_py():
             if os.path.exists(p):
                 with open(p, "r", encoding="utf-8") as f:
                     content = f.read()
-            if "Pre-importing MetaTrader5" not in content or "terminal64.exe" not in content:
+            # Check if the server.py has the non-blocking lazy init version
+            if "_lazy_mt5_init" not in content:
                 new_code = '''import rpyc
 from rpyc.utils.server import ThreadedServer
 import time
 import sys
+import threading
 
-print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Pre-importing MetaTrader5 in Wine...", flush=True)
-try:
-    import MetaTrader5 as mt5
-    ok = mt5.initialize(path="C:\\\\Program Files\\\\MetaTrader 5\\\\terminal64.exe")
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] MetaTrader5 pre-initialized: {ok}", flush=True)
-except Exception as e:
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] MetaTrader5 pre-import note: {e}", flush=True)
+print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] >>> RPYC SUNUCUSU BASLATILIYOR (0.0.0.0:8001) <<<", flush=True)
 
-print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] >>> RPYC SUNUCUSU BASLATILDI (0.0.0.0:8001) <<<", flush=True)
+# Pre-import MetaTrader5 in a background thread so RPyC starts immediately
+def _lazy_mt5_init():
+    time.sleep(5)
+    try:
+        import MetaTrader5 as mt5
+        ok = mt5.initialize()
+        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] MetaTrader5 lazy-initialized: {ok}", flush=True)
+    except Exception as e:
+        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] MetaTrader5 lazy-init note: {e}", flush=True)
+
+t = threading.Thread(target=_lazy_mt5_init, daemon=True)
+t.start()
+
 try:
     server = ThreadedServer(
         rpyc.SlaveService,
@@ -86,6 +94,7 @@ try:
         reuse_addr=True,
         protocol_config={"allow_all_attrs": True, "sync_request_timeout": 30}
     )
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] >>> RPYC SUNUCUSU BASLATILDI (0.0.0.0:8001) <<<", flush=True)
     server.start()
 except Exception as e:
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Server error: {e}", file=sys.stderr, flush=True)
@@ -93,7 +102,8 @@ except Exception as e:
 '''
                 with open(p, "w", encoding="utf-8") as f:
                     f.write(new_code)
-                logger.info("Updated /config/server.py with pre-import logic.")
+                logger.info("Updated /config/server.py with non-blocking lazy init.")
+                # Restart the RPyC server so it picks up the new code
                 try:
                     import rpyc
                     c = rpyc.classic.connect(os.getenv("MT5_HOST", "metatrader5"), 8001)
