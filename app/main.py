@@ -55,9 +55,59 @@ async def auto_reconnect_loop():
             logger.debug(f"auto_reconnect_loop error: {e}")
         await asyncio.sleep(5)
 
+def ensure_optimized_server_py():
+    p = "/config/server.py"
+    if os.path.exists(p) or os.path.exists("/config"):
+        try:
+            content = ""
+            if os.path.exists(p):
+                with open(p, "r", encoding="utf-8") as f:
+                    content = f.read()
+            if "Pre-importing MetaTrader5" not in content:
+                new_code = '''import rpyc
+from rpyc.utils.server import ThreadedServer
+import time
+import sys
+
+print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Pre-importing MetaTrader5 in Wine...", flush=True)
+try:
+    import MetaTrader5 as mt5
+    ok = mt5.initialize()
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] MetaTrader5 pre-initialized: {ok}", flush=True)
+except Exception as e:
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] MetaTrader5 pre-import note: {e}", flush=True)
+
+print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] >>> RPYC SUNUCUSU BASLATILDI (0.0.0.0:8001) <<<", flush=True)
+try:
+    server = ThreadedServer(
+        rpyc.SlaveService,
+        hostname="0.0.0.0",
+        port=8001,
+        reuse_addr=True,
+        protocol_config={"allow_all_attrs": True, "sync_request_timeout": 30}
+    )
+    server.start()
+except Exception as e:
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Server error: {e}", file=sys.stderr, flush=True)
+    sys.exit(1)
+'''
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(new_code)
+                logger.info("Updated /config/server.py with pre-import logic.")
+                try:
+                    import rpyc
+                    c = rpyc.classic.connect(os.getenv("MT5_HOST", "metatrader5"), 8001)
+                    c.modules.sys.exit(0)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"ensure_optimized_server_py error: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting HMA Trading Web Application...")
+    ensure_optimized_server_py()
+    await asyncio.sleep(2.5) # Allow Wine supervisor to restart if updated
     try:
         await asyncio.to_thread(mt5_client.connect)
     except Exception as e:
@@ -390,7 +440,7 @@ def get_diagnostic():
     try:
         import rpyc
         c = rpyc.classic.connect(host, 8001)
-        c._config["sync_request_timeout"] = 5
+        c._config["sync_request_timeout"] = 30
         info["rpyc_connect"] = "SUCCESS"
         
         try:

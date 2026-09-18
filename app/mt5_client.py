@@ -278,7 +278,7 @@ class MT5Client:
                 logger.warning(f"Could not save credentials to {path}: {e}")
 
     def connect(self) -> bool:
-        if not self._lock.acquire(timeout=3.0):
+        if not self._lock.acquire(timeout=15.0):
             return False
         try:
             now = time.time()
@@ -300,7 +300,7 @@ class MT5Client:
                 try:
                     conn = rpyc.classic.connect(self.host, p)
                     try:
-                        conn._config["sync_request_timeout"] = 5
+                        conn._config["sync_request_timeout"] = 30
                         conn._config["allow_all_attrs"] = True
                     except Exception:
                         pass
@@ -383,7 +383,7 @@ class MT5Client:
             self._lock.release()
 
     def login(self, login_id: int, password: str, server: str) -> Dict[str, Any]:
-        if not self._lock.acquire(timeout=5.0):
+        if not self._lock.acquire(timeout=15.0):
             return {"success": False, "error": "MT5 meşgul, lütfen birkaç saniye sonra tekrar deneyin."}
         try:
             if not self.ensure_connected():

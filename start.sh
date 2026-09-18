@@ -118,12 +118,20 @@ fi
 pkill -f server.py 2>/dev/null || true
 sleep 1
 
-# Create / overwrite server.py with reuse_addr=True and proper logging
+# Create / overwrite server.py with reuse_addr=True, pre-imported MetaTrader5, and proper logging
 cat << 'PYEOF' > /config/server.py
 import rpyc
 from rpyc.utils.server import ThreadedServer
 import time
 import sys
+
+print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Pre-importing MetaTrader5 in Wine...", flush=True)
+try:
+    import MetaTrader5 as mt5
+    ok = mt5.initialize()
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] MetaTrader5 pre-initialized: {ok}", flush=True)
+except Exception as e:
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] MetaTrader5 pre-import note: {e}", flush=True)
 
 print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] >>> RPYC SUNUCUSU BASLATILDI (0.0.0.0:8001) <<<", flush=True)
 try:
@@ -132,7 +140,7 @@ try:
         hostname="0.0.0.0",
         port=8001,
         reuse_addr=True,
-        protocol_config={"allow_all_attrs": True}
+        protocol_config={"allow_all_attrs": True, "sync_request_timeout": 30}
     )
     server.start()
 except Exception as e:
