@@ -78,6 +78,7 @@ done
 # Run MT5 with persistent watchdog supervisor
 cat << 'MT5EOF' > /config/run_mt5.sh
 #!/bin/bash
+export DISPLAY=:1
 export WINEPREFIX='/config/.wine'
 export WINEDEBUG='-all'
 export wine_executable="wine"
@@ -118,29 +119,14 @@ fi
 pkill -f server.py 2>/dev/null || true
 sleep 1
 
-# Create / overwrite server.py with reuse_addr=True, pre-imported MetaTrader5, and proper logging
+# Create / overwrite server.py with reuse_addr=True and proper logging
 cat << 'PYEOF' > /config/server.py
 import rpyc
 from rpyc.utils.server import ThreadedServer
 import time
 import sys
-import threading
 
-print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] >>> RPYC SUNUCUSU BASLATILIYOR (0.0.0.0:8001) <<<", flush=True)
-
-# Pre-import MetaTrader5 in a background thread so RPyC starts immediately
-def _lazy_mt5_init():
-    time.sleep(5)  # Wait for MT5 terminal to be ready
-    try:
-        import MetaTrader5 as mt5
-        ok = mt5.initialize()
-        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] MetaTrader5 lazy-initialized: {ok}", flush=True)
-    except Exception as e:
-        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] MetaTrader5 lazy-init note: {e}", flush=True)
-
-t = threading.Thread(target=_lazy_mt5_init, daemon=True)
-t.start()
-
+print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] >>> RPYC SUNUCUSU BASLATILDI (0.0.0.0:8001) <<<", flush=True)
 try:
     server = ThreadedServer(
         rpyc.SlaveService,
@@ -149,7 +135,6 @@ try:
         reuse_addr=True,
         protocol_config={"allow_all_attrs": True, "sync_request_timeout": 30}
     )
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] >>> RPYC SUNUCUSU BASLATILDI (0.0.0.0:8001) <<<", flush=True)
     server.start()
 except Exception as e:
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Server error: {e}", file=sys.stderr, flush=True)
@@ -159,6 +144,7 @@ PYEOF
 # Create daemon runner loop to ensure RPyC is always alive
 cat << 'RUNEOF' > /config/run_server.sh
 #!/bin/bash
+export DISPLAY=:1
 export WINEPREFIX='/config/.wine'
 export WINEDEBUG='-all'
 while true; do
