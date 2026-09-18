@@ -373,18 +373,23 @@ class MT5Client:
                 return {"success": False, "error": f"MT5 sunucusuna ulaşılamadı. ({self.last_error_msg})"}
 
             try:
-                self.login_id = int(login_id)
-                self.password = str(password)
-                self.server = str(server)
+                server_clean = str(server).strip()
+                if "tickmill" in server_clean.lower() and "demo" in server_clean.lower():
+                    server_clean = "Tickmill-Demo"
+                elif "tickmill" in server_clean.lower() and "live" in server_clean.lower():
+                    server_clean = "Tickmill-Live"
 
-                ok = self.mt5.initialize(login=int(login_id), password=str(password), server=str(server))
+                ok = self.mt5.initialize(login=int(login_id), password=str(password), server=server_clean)
                 if not ok:
-                    ok = self.mt5.login(login=int(login_id), password=str(password), server=str(server))
+                    ok = self.mt5.login(login=int(login_id), password=str(password), server=server_clean)
 
                 if ok:
+                    self.login_id = int(login_id)
+                    self.password = str(password)
+                    self.server = server_clean
                     self.is_connected = True
                     self.save_credentials()
-                    return {"success": True, "login": login_id, "server": server}
+                    return {"success": True, "login": login_id, "server": server_clean}
                 else:
                     err = self.mt5.last_error()
                     return {"success": False, "error": f"Login hatası: {err}"}

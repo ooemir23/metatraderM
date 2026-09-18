@@ -79,7 +79,7 @@ class CloseRequest(BaseModel):
 class LoginRequest(BaseModel):
     login: int
     password: str
-    server: str = "demo.mt5tickmill.com"
+    server: str = "Tickmill-Demo"
 
 class BotConfigRequest(BaseModel):
     symbol: Optional[str] = None
