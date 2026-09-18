@@ -419,6 +419,7 @@ function startPolling() {
   fetchHistory();
   fetchPrice();
   fetchBotStatus();
+  fetchAIStatus();
 
   setInterval(fetchAccount, 2000);
   setInterval(fetchPositions, 2000);
@@ -427,33 +428,40 @@ function startPolling() {
   setInterval(fetchBotStatus, 3000);
   setInterval(() => {
     if (currentPositionTab === "reports") fetchReports();
+    if (currentPositionTab === "ai") fetchAIStatus();
   }, 6000);
 }
 
-// Switch between Open, Closed Positions, and Reports tabs
+// Switch between Open, Closed Positions, Reports, and AI tabs
 function switchPositionTab(tab) {
   currentPositionTab = tab;
   const btnOpen = document.getElementById("tab-btn-open");
   const btnClosed = document.getElementById("tab-btn-closed");
   const btnReports = document.getElementById("tab-btn-reports");
+  const btnAI = document.getElementById("tab-btn-ai");
   const openActions = document.getElementById("open-actions-bar");
   const closedSummary = document.getElementById("closed-summary-bar");
   const reportsActions = document.getElementById("reports-actions-bar");
+  const aiActions = document.getElementById("ai-actions-bar");
   const openContainer = document.getElementById("open-positions-container");
   const closedContainer = document.getElementById("closed-positions-container");
   const reportsContainer = document.getElementById("reports-container");
+  const aiContainer = document.getElementById("ai-container");
 
   const defaultTabClass = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200";
   if (btnOpen) btnOpen.className = defaultTabClass;
   if (btnClosed) btnClosed.className = defaultTabClass;
   if (btnReports) btnReports.className = defaultTabClass;
+  if (btnAI) btnAI.className = defaultTabClass;
 
   if (openActions) openActions.classList.add("hidden");
   if (closedSummary) { closedSummary.classList.add("hidden"); closedSummary.classList.remove("flex"); }
   if (reportsActions) { reportsActions.classList.add("hidden"); reportsActions.classList.remove("flex"); }
+  if (aiActions) { aiActions.classList.add("hidden"); aiActions.classList.remove("flex"); }
   if (openContainer) openContainer.classList.add("hidden");
   if (closedContainer) closedContainer.classList.add("hidden");
   if (reportsContainer) { reportsContainer.classList.add("hidden"); reportsContainer.classList.remove("flex"); }
+  if (aiContainer) { aiContainer.classList.add("hidden"); aiContainer.classList.remove("flex"); }
 
   if (tab === "open") {
     if (btnOpen) btnOpen.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-emerald-500/20 text-emerald-400 shadow-sm";
@@ -479,6 +487,17 @@ function switchPositionTab(tab) {
       reportsContainer.classList.add("flex");
     }
     fetchReports();
+  } else if (tab === "ai") {
+    if (btnAI) btnAI.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-purple-500/20 text-purple-400 shadow-sm";
+    if (aiActions) {
+      aiActions.classList.remove("hidden");
+      aiActions.classList.add("flex");
+    }
+    if (aiContainer) {
+      aiContainer.classList.remove("hidden");
+      aiContainer.classList.add("flex");
+    }
+    fetchAIStatus();
   }
 }
 
@@ -1103,3 +1122,395 @@ async function submitLogin() {
     showToast(`❌ Bağlantı Hatası: ${err.message}`, "error");
   }
 }
+
+// ==========================================
+// DEEPSEEK AI ADVISOR & AUTONOMOUS ENGINE
+// ==========================================
+
+let currentAIAdvice = null;
+
+async function fetchAIStatus() {
+  try {
+    const res = await fetch("/api/ai/status");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.success) return;
+
+    renderAIMemory(data.memory, data.config);
+  } catch (err) {
+    console.error("AI Status fetch error:", err);
+  }
+}
+
+function renderAIMemory(memory, config) {
+  if (!memory) return;
+
+  // 1. Status Badge & Trades Analyzed
+  const statusBadge = document.getElementById("ai-status-badge");
+  const tradesCount = document.getElementById("ai-learned-trades-count");
+  const personaStyle = document.getElementById("ai-persona-style");
+  const personaRR = document.getElementById("ai-persona-rr");
+  const lastDate = document.getElementById("ai-last-learned-date");
+  const personaDesc = document.getElementById("ai-persona-desc");
+
+  if (memory.is_trained && (memory.trades_analyzed || 0) > 0) {
+    if (statusBadge) {
+      statusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> Öğrenildi & Aktif`;
+      statusBadge.className = "text-sm md:text-base font-bold text-emerald-400 flex items-center gap-1.5";
+    }
+  } else {
+    if (statusBadge) {
+      statusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400"></span> Analiz Bekleniyor`;
+      statusBadge.className = "text-sm md:text-base font-bold text-gray-300 flex items-center gap-1.5";
+    }
+  }
+
+  if (tradesCount) {
+    tradesCount.innerText = `${memory.trades_analyzed || 0} işlem analiz edildi`;
+  }
+
+  if (personaStyle) {
+    personaStyle.innerText = memory.style || "Bekleniyor";
+  }
+
+  if (personaRR) {
+    personaRR.innerText = `R:R Oranı: ${memory.risk_reward_ratio || "Belirlenmedi"}`;
+  }
+
+  if (lastDate) {
+    lastDate.innerText = `Son Güncelleme: ${memory.last_learned_at || "-"}`;
+  }
+
+  if (personaDesc && memory.summary) {
+    personaDesc.innerText = memory.summary;
+  }
+
+  // 2. Rules List
+  const rulesList = document.getElementById("ai-rules-list");
+  if (rulesList && Array.isArray(memory.learned_rules)) {
+    if (memory.learned_rules.length > 0) {
+      rulesList.innerHTML = memory.learned_rules.map(r => `<li>${escapeHtml(r)}</li>`).join("");
+    } else {
+      rulesList.innerHTML = `<li class="text-gray-500 list-none">Öğrenilen kural yok</li>`;
+    }
+  }
+
+  // 3. Habits List
+  const habitsList = document.getElementById("ai-habits-list");
+  if (habitsList && Array.isArray(memory.learned_habits)) {
+    if (memory.learned_habits.length > 0) {
+      habitsList.innerHTML = memory.learned_habits.map(h => `<li>${escapeHtml(h)}</li>`).join("");
+    } else {
+      habitsList.innerHTML = `<li class="text-gray-500 list-none">Öğrenilen alışkanlık yok</li>`;
+    }
+  }
+
+  // 4. Strengths & Weaknesses
+  const strengthsList = document.getElementById("ai-strengths-list");
+  if (strengthsList && Array.isArray(memory.strengths)) {
+    if (memory.strengths.length > 0) {
+      strengthsList.innerHTML = memory.strengths.map(s => `<li>${escapeHtml(s)}</li>`).join("");
+    } else {
+      strengthsList.innerHTML = `<li class="text-gray-500 list-none">-</li>`;
+    }
+  }
+
+  const weaknessesList = document.getElementById("ai-weaknesses-list");
+  if (weaknessesList && Array.isArray(memory.weaknesses)) {
+    if (memory.weaknesses.length > 0) {
+      weaknessesList.innerHTML = memory.weaknesses.map(w => `<li>${escapeHtml(w)}</li>`).join("");
+    } else {
+      weaknessesList.innerHTML = `<li class="text-gray-500 list-none">-</li>`;
+    }
+  }
+
+  // 5. Strategic Income Ideas
+  const ideasList = document.getElementById("ai-ideas-list");
+  if (ideasList && Array.isArray(memory.income_ideas)) {
+    if (memory.income_ideas.length > 0) {
+      ideasList.innerHTML = memory.income_ideas.map(idea => `
+        <li class="flex items-start gap-2 bg-[#11151f] p-2 rounded-lg border border-gray-800/60">
+          <i class="ph-bold ph-check text-emerald-400 mt-0.5 shrink-0"></i>
+          <span>${escapeHtml(idea)}</span>
+        </li>
+      `).join("");
+    } else {
+      ideasList.innerHTML = `<li class="text-gray-500 text-[11px] py-1">Geçmiş işlemleriniz analiz edildiğinde gelir artırıcı öneriler burada listelenecektir.</li>`;
+    }
+  }
+
+  // 6. Autopilot UI & Settings Modal Sync
+  if (config) {
+    const autoStatus = document.getElementById("ai-autopilot-status");
+    const autoSub = document.getElementById("ai-autopilot-sub");
+    const autoPill = document.getElementById("ai-autopilot-pill");
+
+    let modeText = "KAPALI";
+    let modeClass = "text-[9px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400 font-mono";
+
+    if (config.mode === "SEMI_AUTO") {
+      modeText = "YARI OTOMATİK";
+      modeClass = "text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 font-mono";
+    } else if (config.mode === "FULL_AUTO") {
+      modeText = "TAM OTOMATİK";
+      modeClass = "text-[9px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30 font-mono animate-pulse";
+    }
+
+    if (autoStatus) {
+      autoStatus.innerText = modeText;
+      autoStatus.className = config.mode === "FULL_AUTO" ? "text-sm md:text-base font-bold text-purple-400" : (config.mode === "SEMI_AUTO" ? "text-sm md:text-base font-bold text-cyan-400" : "text-sm md:text-base font-bold text-gray-400");
+    }
+
+    if (autoSub) {
+      autoSub.innerText = `Maks: ${config.max_lot} Lot | Min: %${config.min_confidence}`;
+    }
+
+    if (autoPill) {
+      autoPill.innerText = modeText;
+      autoPill.className = modeClass;
+    }
+
+    // Modal inputs sync
+    const cfgMode = document.getElementById("ai-cfg-mode");
+    const cfgLot = document.getElementById("ai-cfg-max-lot");
+    const cfgConf = document.getElementById("ai-cfg-min-conf");
+    const cfgLoss = document.getElementById("ai-cfg-max-loss");
+    const cfgSyms = document.getElementById("ai-cfg-symbols");
+
+    if (cfgMode && !cfgMode.dataset.userEditing) cfgMode.value = config.mode || "DISABLED";
+    if (cfgLot && !cfgLot.dataset.userEditing) cfgLot.value = config.max_lot || 0.01;
+    if (cfgConf && !cfgConf.dataset.userEditing) cfgConf.value = config.min_confidence || 75;
+    if (cfgLoss && !cfgLoss.dataset.userEditing) cfgLoss.value = config.daily_max_loss || 50.0;
+    if (cfgSyms && !cfgSyms.dataset.userEditing) cfgSyms.value = (config.symbols || []).join(",");
+  }
+
+  // 7. Last Advice Sync
+  if (memory.last_advice && !currentAIAdvice) {
+    renderAIAdvice(memory.last_advice);
+  }
+}
+
+function renderAIAdvice(advice) {
+  if (!advice) return;
+  currentAIAdvice = advice;
+
+  const signalEl = document.getElementById("ai-advice-signal");
+  const confEl = document.getElementById("ai-advice-confidence");
+  const symbolEl = document.getElementById("ai-advice-symbol");
+  const entryEl = document.getElementById("ai-advice-entry");
+  const slEl = document.getElementById("ai-advice-sl");
+  const tpEl = document.getElementById("ai-advice-tp");
+  const reasonEl = document.getElementById("ai-advice-reasoning");
+  const timeEl = document.getElementById("ai-advice-time");
+  const execBtn = document.getElementById("ai-execute-btn");
+
+  const sig = (advice.signal || "WAIT").toUpperCase();
+  if (signalEl) {
+    if (sig === "BUY") {
+      signalEl.innerText = "AL (BUY)";
+      signalEl.className = "text-xl font-black tracking-wide text-emerald-400";
+    } else if (sig === "SELL") {
+      signalEl.innerText = "SAT (SELL)";
+      signalEl.className = "text-xl font-black tracking-wide text-rose-400";
+    } else {
+      signalEl.innerText = "BEKLE / YOL HARİTASI YOK";
+      signalEl.className = "text-base font-bold tracking-wide text-amber-400";
+    }
+  }
+
+  if (confEl) {
+    const conf = advice.confidence || 0;
+    confEl.innerText = `%${conf}`;
+    confEl.className = conf >= 75 ? "text-base font-bold font-mono text-emerald-400" : "text-base font-bold font-mono text-amber-400";
+  }
+
+  if (symbolEl) symbolEl.innerText = advice.symbol || currentSymbol;
+  if (entryEl) entryEl.innerText = advice.entry_price || "-";
+  if (slEl) slEl.innerText = advice.stop_loss || "-";
+  if (tpEl) tpEl.innerText = advice.take_profit || "-";
+  if (timeEl) timeEl.innerText = advice.time || new Date().toLocaleTimeString("tr-TR");
+
+  if (reasonEl) {
+    reasonEl.innerText = advice.reasoning || "Gerekçe belirtilmedi.";
+  }
+
+  if (execBtn) {
+    if (sig === "BUY" || sig === "SELL") {
+      execBtn.disabled = false;
+      execBtn.innerHTML = `<i class="ph-bold ph-paper-plane-tilt text-base"></i> <span>Bu Tavsiyeyi MT5'te Uygula (${sig} - ${advice.symbol || currentSymbol})</span>`;
+    } else {
+      execBtn.disabled = true;
+      execBtn.innerHTML = `<i class="ph-bold ph-hand text-base"></i> <span>Bekle Modunda (Emir Açılmaz)</span>`;
+    }
+  }
+}
+
+async function triggerAILearn() {
+  const btn = document.getElementById("ai-learn-btn");
+  let originalHtml = "";
+  if (btn) {
+    originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<i class="ph-bold ph-spinner animate-spin"></i> <span>İşlemler Öğreniliyor...</span>`;
+  }
+
+  try {
+    showToast("🧠 DeepSeek geçmiş işlemlerinizi analiz ediyor ve tarzınızı öğreniyor...", "info");
+    const res = await fetch("/api/ai/learn", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ days: 90 })
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(`✅ Başarılı! DeepSeek ${data.trades_analyzed} işlemi analiz etti ve tarzınızı hafızasına kaydetti.`, "success");
+      renderAIMemory(data.memory, null);
+      fetchAIStatus();
+    } else {
+      showToast(`❌ Analiz Hatası: ${data.detail || data.error}`, "error");
+    }
+  } catch (err) {
+    showToast(`❌ Bağlantı Hatası: ${err.message}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+  }
+}
+
+async function triggerAIAdvice() {
+  const btn = document.getElementById("ai-advice-btn");
+  let originalHtml = "";
+  if (btn) {
+    originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<i class="ph-bold ph-spinner animate-spin text-cyan-400"></i> <span>Piyasa Analiz Ediliyor...</span>`;
+  }
+
+  try {
+    showToast(`⚡ ${currentSymbol} için DeepSeek canlı piyasa tavsiyesi hazırlanıyor...`, "info");
+    const res = await fetch("/api/ai/advice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol: currentSymbol, timeframe: "M15" })
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success && data.advice) {
+      renderAIAdvice(data.advice);
+      showToast(`💡 ${currentSymbol}: ${data.advice.signal} Sinyali Üretildi (Güven: %${data.advice.confidence})`, "success");
+    } else {
+      showToast(`❌ Tavsiye Üretilemedi: ${data.detail || data.error}`, "error");
+    }
+  } catch (err) {
+    showToast(`❌ Tavsiye Hatası: ${err.message}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+  }
+}
+
+async function executeCurrentAdvice() {
+  if (!currentAIAdvice) {
+    showToast("Uygulanacak aktif bir AI tavsiyesi bulunmuyor.", "error");
+    return;
+  }
+
+  const sig = (currentAIAdvice.signal || "").toUpperCase();
+  if (sig !== "BUY" && sig !== "SELL") {
+    showToast("Bekleme sinyalinde işlem açılamaz.", "error");
+    return;
+  }
+
+  const symbol = currentAIAdvice.symbol || currentSymbol;
+  const sl = currentAIAdvice.stop_loss ? Number(currentAIAdvice.stop_loss) : null;
+  const tp = currentAIAdvice.take_profit ? Number(currentAIAdvice.take_profit) : null;
+
+  const conf = confirm(
+    `🤖 DeepSeek AI Emri:\n\nSembol: ${symbol}\nYön: ${sig}\nLot: 0.01\nSL: ${sl || 'Belirtilmedi'}\nTP: ${tp || 'Belirtilmedi'}\nMagic No: 777888\n\nBu işlemi MT5 hesabınızda açmak istiyor musunuz?`
+  );
+  if (!conf) return;
+
+  const btn = document.getElementById("ai-execute-btn");
+  let originalHtml = "";
+  if (btn) {
+    originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<i class="ph-bold ph-spinner animate-spin"></i> <span>MT5'e Gönderiliyor...</span>`;
+  }
+
+  try {
+    const res = await fetch("/api/ai/execute", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        symbol: symbol,
+        action: sig,
+        lot: 0.01,
+        stop_loss: sl,
+        take_profit: tp,
+        reason: currentAIAdvice.reasoning || "DeepSeek manual approval"
+      })
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(`🚀 AI Emri Başarıyla Açıldı! Bilet: #${data.result?.order || 'Tamam'}`, "success");
+      fetchPositions();
+      fetchAccount();
+    } else {
+      showToast(`❌ Emir Reddedildi: ${data.detail || data.error}`, "error");
+    }
+  } catch (err) {
+    showToast(`❌ İstek Hatası: ${err.message}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+  }
+}
+
+function toggleAIAutopilotModal() {
+  const modal = document.getElementById("ai-autopilot-modal");
+  if (modal) modal.classList.toggle("hidden");
+}
+
+async function saveAIAutopilot() {
+  const mode = document.getElementById("ai-cfg-mode")?.value || "DISABLED";
+  const maxLot = parseFloat(document.getElementById("ai-cfg-max-lot")?.value || "0.01");
+  const minConf = parseInt(document.getElementById("ai-cfg-min-conf")?.value || "75");
+  const maxLoss = parseFloat(document.getElementById("ai-cfg-max-loss")?.value || "50.0");
+  const symsRaw = document.getElementById("ai-cfg-symbols")?.value || "EURUSD,GBPUSD";
+  const symbols = symsRaw.split(",").map(s => s.trim().toUpperCase()).filter(s => s.length > 0);
+
+  try {
+    const res = await fetch("/api/ai/autopilot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: mode,
+        max_lot: maxLot,
+        min_confidence: minConf,
+        daily_max_loss: maxLoss,
+        symbols: symbols
+      })
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(`✅ Otopilot Ayarları Kaydedildi! (${mode})`, "success");
+      toggleAIAutopilotModal();
+      fetchAIStatus();
+    } else {
+      showToast(`❌ Kayıt Hatası: ${data.detail || data.error}`, "error");
+    }
+  } catch (err) {
+    showToast(`❌ İstek Hatası: ${err.message}`, "error");
+  }
+}
+

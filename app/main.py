@@ -1,7 +1,7 @@
 import os
 import logging
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, Dict, Any, List
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -9,14 +9,17 @@ from pydantic import BaseModel
 
 from app.mt5_client import MT5Client
 from app.strategy_bot import StrategyBot
+from app.ai_advisor import DeepSeekAdvisor
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("HMATradingApp")
 
 import asyncio
+import time
 
 mt5_client = MT5Client()
 bot = StrategyBot(mt5_client)
+ai_advisor = DeepSeekAdvisor(mt5_client)
 
 async def auto_reconnect_loop():
     while True:
@@ -25,8 +28,31 @@ async def auto_reconnect_loop():
                 mt5_client.connect()
             else:
                 mt5_client.ensure_connected()
-        except Exception:
-            pass
+
+            # Autopilot autonomous check
+            if mt5_client.is_connected and ai_advisor.autopilot.get("enabled") and ai_advisor.autopilot.get("mode") == "FULL_AUTO":
+                now = time.time()
+                last_time = ai_advisor.autopilot.get("last_auto_trade_time", 0)
+                # Check at most once every 300 seconds (5 minutes)
+                if now - last_time >= 300:
+                    symbols = ai_advisor.autopilot.get("allowed_symbols", ["EURUSD", "XAUUSD"])
+                    for sym in symbols:
+                        tick = mt5_client.get_symbol_price(sym)
+                        if tick and tick.get("bid"):
+                            rates = mt5_client.get_rates(sym, 15, 30) or []
+                            open_pos = mt5_client.get_positions()
+                            adv = ai_advisor.get_market_advice(sym, "M15", tick=tick, rates=rates, open_positions=open_pos)
+                            if adv.get("success"):
+                                rec = adv.get("recommendation", {})
+                                conf = rec.get("confidence", 0)
+                                action = rec.get("action")
+                                min_conf = ai_advisor.autopilot.get("min_confidence", 80)
+                                if action in ("BUY", "SELL") and conf >= min_conf:
+                                    logger.info(f"AI FULL_AUTO triggering trade on {sym}: {action} (Confidence: {conf}%)")
+                                    ai_advisor.execute_recommendation(rec)
+                                    break
+        except Exception as e:
+            logger.debug(f"auto_reconnect_loop error: {e}")
         await asyncio.sleep(4)
 
 @asynccontextmanager
@@ -72,6 +98,21 @@ class BotConfigRequest(BaseModel):
     close_opposite: Optional[bool] = None
     telegram_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
+
+class AIAdviceRequest(BaseModel):
+    symbol: Optional[str] = "EURUSD"
+    timeframe: Optional[str] = "M15"
+
+class AIExecuteRequest(BaseModel):
+    recommendation: Optional[Dict[str, Any]] = None
+
+class AIAutopilotRequest(BaseModel):
+    enabled: Optional[bool] = None
+    mode: Optional[str] = None
+    min_confidence: Optional[int] = None
+    max_lot: Optional[float] = None
+    daily_loss_limit: Optional[float] = None
+    allowed_symbols: Optional[List[str]] = None
 
 # API Endpoints
 @app.get("/api/account")
@@ -234,6 +275,54 @@ def update_bot_config(req: BotConfigRequest):
     data = req.model_dump(exclude_unset=True)
     bot.update_config(data)
     return bot.get_status()
+
+# DeepSeek AI Advisor & Autopilot Endpoints
+@app.get("/api/ai/status")
+def get_ai_status():
+    return ai_advisor.get_status()
+
+@app.post("/api/ai/learn")
+def trigger_ai_learning():
+    deals = mt5_client.get_history(days=90)
+    rep = mt5_client.get_reports(days=90)
+    stats = rep.get("summary", {}) if rep else {}
+    res = ai_advisor.analyze_user_trades(deals, stats)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("error", "Öğrenme analizi başarısız"))
+    return res
+
+@app.post("/api/ai/advice")
+def get_ai_advice(req: AIAdviceRequest):
+    sym = (req.symbol or "EURUSD").upper()
+    tick = mt5_client.get_symbol_price(sym)
+    rates = mt5_client.get_rates(sym, 15, 30) or []
+    open_pos = mt5_client.get_positions()
+    hma_val = bot.current_hma if bot.symbol == sym else None
+    ma2_val = bot.current_ma2 if bot.symbol == sym else None
+    res = ai_advisor.get_market_advice(
+        symbol=sym,
+        timeframe_name=req.timeframe or "M15",
+        tick=tick,
+        rates=rates,
+        open_positions=open_pos,
+        hma_val=hma_val,
+        ma2_val=ma2_val
+    )
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("error", "Tavsiye üretilemedi"))
+    return res
+
+@app.post("/api/ai/execute")
+def execute_ai_advice(req: AIExecuteRequest):
+    res = ai_advisor.execute_recommendation(req.recommendation)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("error", "İşlem açılamadı"))
+    return res
+
+@app.post("/api/ai/autopilot")
+def update_ai_autopilot(req: AIAutopilotRequest):
+    data = req.model_dump(exclude_unset=True)
+    return ai_advisor.update_autopilot(data)
 
 @app.get("/api/debug/server-log")
 def get_server_log():
