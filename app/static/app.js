@@ -502,8 +502,11 @@ function switchPositionTab(tab) {
 async function fetchAccount() {
   if (isFetchingAccount) return;
   isFetchingAccount = true;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
   try {
-    const res = await fetch("/api/account");
+    const res = await fetch("/api/account", { signal: controller.signal });
+    clearTimeout(timer);
     if (!res.ok) return;
     const data = await res.json();
 
@@ -550,8 +553,11 @@ async function fetchAccount() {
       profitEl.className = "font-bold text-gray-300 tracking-wide";
     }
   } catch (err) {
-    console.error("fetchAccount error:", err);
+    if (err.name !== "AbortError") {
+      console.error("fetchAccount error:", err);
+    }
   } finally {
+    clearTimeout(timer);
     isFetchingAccount = false;
   }
 }
@@ -560,8 +566,11 @@ async function fetchAccount() {
 async function fetchPositions() {
   if (isFetchingPositions) return;
   isFetchingPositions = true;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
   try {
-    const res = await fetch("/api/positions");
+    const res = await fetch("/api/positions", { signal: controller.signal });
+    clearTimeout(timer);
     if (!res.ok) return;
     const positions = await res.json();
 
@@ -605,8 +614,11 @@ async function fetchPositions() {
 
     tbody.innerHTML = rowsHtml;
   } catch (err) {
-    console.error("fetchPositions error:", err);
+    if (err.name !== "AbortError") {
+      console.error("fetchPositions error:", err);
+    }
   } finally {
+    clearTimeout(timer);
     isFetchingPositions = false;
   }
 }

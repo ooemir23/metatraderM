@@ -278,7 +278,9 @@ class MT5Client:
                 logger.warning(f"Could not save credentials to {path}: {e}")
 
     def connect(self) -> bool:
-        with self._lock:
+        if not self._lock.acquire(timeout=3.0):
+            return False
+        try:
             now = time.time()
             if now - self.last_connect_attempt < self.reconnect_cooldown and not self.is_connected:
                 return False
@@ -298,26 +300,28 @@ class MT5Client:
                 try:
                     conn = rpyc.classic.connect(self.host, p)
                     try:
-                        conn._config["sync_request_timeout"] = 10
+                        conn._config["sync_request_timeout"] = 5
                         conn._config["allow_all_attrs"] = True
                     except Exception:
                         pass
                     mt5 = conn.modules.MetaTrader5
                     
-                    # Check terminal / initialize
+                    # In Wine with MT5 already running, mt5.initialize() connects straight to it
                     ok = False
                     try:
-                        ok = mt5.initialize()
-                    except Exception:
+                        ok = bool(mt5.initialize())
+                    except Exception as ie:
+                        logger.debug(f"mt5.initialize() exception: {ie}")
                         ok = False
 
-                    if not ok:
-                        try:
-                            ok = mt5.initialize(login=int(self.login_id), password=str(self.password), server=str(self.server))
-                        except Exception:
-                            ok = False
+                    # Check terminal info
+                    tinfo = None
+                    try:
+                        tinfo = mt5.terminal_info()
+                    except Exception:
+                        pass
 
-                    if ok or mt5.terminal_info() is not None:
+                    if ok or tinfo is not None:
                         self.conn = conn
                         self.mt5 = mt5
                         self.port = p
@@ -326,14 +330,24 @@ class MT5Client:
                         self.last_ping_time = time.time()
                         self.last_error_msg = ""
                         logger.info(f"Connected to MT5 via rpyc.classic on port {p}!")
-                        # Auto login to broker if account is not logged in
-                        try:
-                            if self.mt5.account_info() is None and self.login_id and self.password:
-                                logger.info(f"Auto-logging in to broker #{self.login_id} on connect...")
-                                self.mt5.login(login=int(self.login_id), password=str(self.password), server=str(self.server))
-                        except Exception as le:
-                            logger.warning(f"Auto login on connect warning: {le}")
                         return True
+                    else:
+                        # If initialize without args didn't attach, attempt initialize with credentials
+                        if self.login_id and self.password:
+                            try:
+                                ok = bool(mt5.initialize(login=int(self.login_id), password=str(self.password), server=str(self.server)))
+                                if ok or mt5.terminal_info() is not None:
+                                    self.conn = conn
+                                    self.mt5 = mt5
+                                    self.port = p
+                                    self.is_connected = True
+                                    self.connected_at = time.time()
+                                    self.last_ping_time = time.time()
+                                    self.last_error_msg = ""
+                                    logger.info(f"Connected to MT5 with credentials via rpyc.classic on port {p}!")
+                                    return True
+                            except Exception as ce:
+                                logger.debug(f"mt5.initialize with credentials error: {ce}")
                 except Exception as e:
                     logger.debug(f"rpyc.classic on port {p} failed: {e}")
                     self.last_error_msg = f"Port {p} error: {e}"
@@ -365,9 +379,13 @@ class MT5Client:
 
             self.is_connected = False
             return False
+        finally:
+            self._lock.release()
 
     def login(self, login_id: int, password: str, server: str) -> Dict[str, Any]:
-        with self._lock:
+        if not self._lock.acquire(timeout=5.0):
+            return {"success": False, "error": "MT5 meşgul, lütfen birkaç saniye sonra tekrar deneyin."}
+        try:
             if not self.ensure_connected():
                 self.connect()
 
@@ -397,29 +415,46 @@ class MT5Client:
                     return {"success": False, "error": f"Login hatası: {err}"}
             except Exception as e:
                 return {"success": False, "error": str(e)}
+        finally:
+            self._lock.release()
 
     def ensure_connected(self) -> bool:
-        with self._lock:
-            now = time.time()
-            if self.is_connected and self.mt5 is not None:
-                # Ping terminal only every 3 seconds to avoid socket flooding
-                if now - self.last_ping_time < 3.0:
+        now = time.time()
+        if self.is_connected and self.mt5 is not None:
+            # Ping terminal only every 5 seconds to avoid socket flooding
+            if now - self.last_ping_time < 5.0:
+                return True
+            try:
+                info = self.mt5.terminal_info()
+                if info is not None:
+                    self.last_ping_time = now
                     return True
-                try:
-                    info = self.mt5.terminal_info()
-                    if info is not None:
-                        self.last_ping_time = now
-                        return True
-                except Exception:
-                    self.is_connected = False
-                    self.conn = None
-                    self.mt5 = None
-                    self.connected_at = 0
+            except Exception:
+                self.is_connected = False
+                self.conn = None
+                self.mt5 = None
+                self.connected_at = 0
 
-            return self.connect()
+        return self.connect()
 
     def get_account_info(self) -> Dict[str, Any]:
-        with self._lock:
+        if not self._lock.acquire(timeout=2.0):
+            return {
+                "connected": self.is_connected,
+                "login": self.login_id,
+                "balance": 0.0,
+                "equity": 0.0,
+                "profit": 0.0,
+                "margin": 0.0,
+                "margin_free": 0.0,
+                "margin_level": 0.0,
+                "currency": "USD",
+                "server": self.server,
+                "error": "MT5 meşgul (yeniden deneniyor...)",
+                "connected_since": None,
+                "server_time": time.strftime("%H:%M:%S")
+            }
+        try:
             if not self.ensure_connected():
                 return {
                     "connected": False,
@@ -479,9 +514,13 @@ class MT5Client:
             except Exception as e:
                 logger.error(f"Error fetching account info: {e}")
                 return {"connected": False, "error": str(e)}
+        finally:
+            self._lock.release()
 
     def get_positions(self) -> List[Dict[str, Any]]:
-        with self._lock:
+        if not self._lock.acquire(timeout=2.0):
+            return []
+        try:
             if not self.ensure_connected():
                 return []
 
@@ -510,9 +549,13 @@ class MT5Client:
             except Exception as e:
                 logger.error(f"Error fetching positions: {e}")
                 return []
+        finally:
+            self._lock.release()
 
     def get_symbol_price(self, symbol: str) -> Dict[str, Any]:
-        with self._lock:
+        if not self._lock.acquire(timeout=2.0):
+            return {"symbol": symbol, "bid": 0.0, "ask": 0.0, "spread": 0}
+        try:
             if not self.ensure_connected():
                 return {"symbol": symbol, "bid": 0.0, "ask": 0.0, "spread": 0}
 
@@ -535,6 +578,8 @@ class MT5Client:
             except Exception as e:
                 logger.error(f"Error fetching symbol price for {symbol}: {e}")
                 return {"symbol": symbol, "bid": 0.0, "ask": 0.0, "spread": 0}
+        finally:
+            self._lock.release()
 
     def remote_order_send(self, request: Dict[str, Any]) -> Any:
         with self._lock:

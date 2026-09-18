@@ -24,7 +24,10 @@ ai_advisor = DeepSeekAdvisor(mt5_client)
 async def auto_reconnect_loop():
     while True:
         try:
-            connected = await asyncio.to_thread(mt5_client.ensure_connected)
+            if not mt5_client.is_connected:
+                connected = await asyncio.to_thread(mt5_client.connect)
+            else:
+                connected = await asyncio.to_thread(mt5_client.ensure_connected)
 
             # Autopilot autonomous check
             if connected and ai_advisor.autopilot.get("enabled") and ai_advisor.autopilot.get("mode") == "FULL_AUTO":
@@ -50,12 +53,15 @@ async def auto_reconnect_loop():
                                     break
         except Exception as e:
             logger.debug(f"auto_reconnect_loop error: {e}")
-        await asyncio.sleep(4)
+        await asyncio.sleep(5)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting HMA Trading Web Application...")
-    mt5_client.connect()
+    try:
+        await asyncio.to_thread(mt5_client.connect)
+    except Exception as e:
+        logger.warning(f"Initial MT5 connect error (will retry in background): {e}")
     task = asyncio.create_task(auto_reconnect_loop())
     yield
     task.cancel()
