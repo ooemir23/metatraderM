@@ -278,7 +278,7 @@ class MT5Client:
                 logger.warning(f"Could not save credentials to {path}: {e}")
 
     def connect(self) -> bool:
-        if not self._lock.acquire(timeout=15.0):
+        if not self._lock.acquire(timeout=5.0):
             return False
         try:
             now = time.time()
@@ -288,99 +288,133 @@ class MT5Client:
             self.last_connect_attempt = now
             ports_to_try = [self.port, 8001]
             ports_to_try = list(dict.fromkeys(ports_to_try))
-
-            for p in ports_to_try:
-                # Fast probe: if port is not accepting TCP, don't wait for OS socket timeout
-                if not is_port_open(self.host, p, timeout=1.5):
-                    logger.debug(f"Port {self.host}:{p} is not open, skipping.")
-                    self.last_error_msg = f"Port {p} kapalı / MT5 başlatılıyor"
-                    continue
-
-                # 1. Try rpyc.classic directly (cleanest, connects straight to Wine MetaTrader5)
-                try:
-                    conn = rpyc.classic.connect(self.host, p)
-                    try:
-                        conn._config["sync_request_timeout"] = 30
-                        conn._config["allow_all_attrs"] = True
-                    except Exception:
-                        pass
-                    mt5 = conn.modules.MetaTrader5
-                    
-                    # In Wine with MT5 already running, mt5.initialize() connects straight to it
-                    ok = False
-                    try:
-                        ok = bool(mt5.initialize())
-                    except Exception as ie:
-                        logger.debug(f"mt5.initialize() exception: {ie}")
-                        ok = False
-
-                    # Check terminal info
-                    tinfo = None
-                    try:
-                        tinfo = mt5.terminal_info()
-                    except Exception:
-                        pass
-
-                    if ok or tinfo is not None:
-                        self.conn = conn
-                        self.mt5 = mt5
-                        self.port = p
-                        self.is_connected = True
-                        self.connected_at = time.time()
-                        self.last_ping_time = time.time()
-                        self.last_error_msg = ""
-                        logger.info(f"Connected to MT5 via rpyc.classic on port {p}!")
-                        return True
-                    else:
-                        # If initialize without args didn't attach, attempt initialize with credentials
-                        if self.login_id and self.password:
-                            try:
-                                ok = bool(mt5.initialize(login=int(self.login_id), password=str(self.password), server=str(self.server)))
-                                if ok or mt5.terminal_info() is not None:
-                                    self.conn = conn
-                                    self.mt5 = mt5
-                                    self.port = p
-                                    self.is_connected = True
-                                    self.connected_at = time.time()
-                                    self.last_ping_time = time.time()
-                                    self.last_error_msg = ""
-                                    logger.info(f"Connected to MT5 with credentials via rpyc.classic on port {p}!")
-                                    return True
-                            except Exception as ce:
-                                logger.debug(f"mt5.initialize with credentials error: {ce}")
-                except Exception as e:
-                    logger.debug(f"rpyc.classic on port {p} failed: {e}")
-                    self.last_error_msg = f"Port {p} error: {e}"
-
-                # 2. Try mt5linux if available
-                if USE_MT5LINUX:
-                    try:
-                        logger.info(f"Connecting via mt5linux to {self.host}:{p}...")
-                        client = MetaTrader5(host=self.host, port=p)
-                        if client.initialize():
-                            self.mt5 = client
-                            self.port = p
-                            self.is_connected = True
-                            self.last_ping_time = time.time()
-                            self.last_error_msg = ""
-                            logger.info(f"Connected to MT5 via mt5linux on port {p}!")
-                            return True
-                        elif client.initialize(login=int(self.login_id), password=str(self.password), server=str(self.server)):
-                            self.mt5 = client
-                            self.port = p
-                            self.is_connected = True
-                            self.last_ping_time = time.time()
-                            self.last_error_msg = ""
-                            logger.info(f"Connected to MT5 with credentials via mt5linux on port {p}!")
-                            return True
-                    except Exception as e:
-                        self.last_error_msg = f"Port {p} error: {e}"
-                        logger.warning(self.last_error_msg)
-
-            self.is_connected = False
-            return False
         finally:
             self._lock.release()
+
+        new_conn = None
+        new_mt5 = None
+        new_port = None
+        success = False
+
+        for p in ports_to_try:
+            # Fast probe: if port is not accepting TCP, don't wait for OS socket timeout
+            if not is_port_open(self.host, p, timeout=1.5):
+                logger.debug(f"Port {self.host}:{p} is not open, skipping.")
+                self.last_error_msg = f"Port {p} kapalı / MT5 başlatılıyor"
+                continue
+
+            # 1. Try rpyc.classic directly (cleanest, connects straight to Wine MetaTrader5)
+            try:
+                import threading
+                res = []
+                err = []
+                def _connect_rpyc():
+                    try:
+                        c = rpyc.classic.connect(self.host, p)
+                        try:
+                            c._config["sync_request_timeout"] = 30
+                            c._config["allow_all_attrs"] = True
+                        except Exception:
+                            pass
+                        m = c.modules.MetaTrader5
+                        ok = False
+                        try:
+                            ok = bool(m.initialize())
+                        except Exception as ie:
+                            logger.debug(f"mt5.initialize() exception: {ie}")
+                        tinfo = None
+                        try:
+                            tinfo = m.terminal_info()
+                        except Exception:
+                            pass
+                        if not (ok or tinfo is not None):
+                            if self.login_id and self.password:
+                                ok = bool(m.initialize(login=int(self.login_id), password=str(self.password), server=str(self.server)))
+                        res.append((c, m, ok or tinfo is not None))
+                    except Exception as e:
+                        err.append(e)
+
+                t = threading.Thread(target=_connect_rpyc)
+                t.daemon = True
+                t.start()
+                t.join(5.0)
+                if t.is_alive():
+                    raise TimeoutError("rpyc connect timed out after 5s")
+                if err:
+                    raise err[0]
+                
+                if res and res[0][2]:
+                    conn, mt5, _ = res[0]
+                    
+                    if self._lock.acquire(timeout=2.0):
+                        try:
+                            self.conn = conn
+                            self.mt5 = mt5
+                            self.port = p
+                            self.is_connected = True
+                            self.connected_at = time.time()
+                            self.last_ping_time = time.time()
+                            self.last_error_msg = ""
+                            logger.info(f"Connected to MT5 via rpyc.classic on port {p}!")
+                        finally:
+                            self._lock.release()
+                    return True
+
+            except Exception as e:
+                logger.debug(f"rpyc.classic on port {p} failed: {e}")
+                self.last_error_msg = f"Port {p} error: {e}"
+
+            # 2. Try mt5linux if available
+            if USE_MT5LINUX:
+                try:
+                    logger.info(f"Connecting via mt5linux to {self.host}:{p}...")
+                    
+                    res_mt5 = []
+                    err_mt5 = []
+                    def _connect_mt5linux():
+                        try:
+                            client = MetaTrader5(host=self.host, port=p)
+                            if client.initialize():
+                                res_mt5.append(client)
+                            elif client.initialize(login=int(self.login_id), password=str(self.password), server=str(self.server)):
+                                res_mt5.append(client)
+                        except Exception as e:
+                            err_mt5.append(e)
+                    
+                    t2 = threading.Thread(target=_connect_mt5linux)
+                    t2.daemon = True
+                    t2.start()
+                    t2.join(5.0)
+                    if t2.is_alive():
+                        raise TimeoutError("mt5linux connect timed out after 5s")
+                    if err_mt5:
+                        raise err_mt5[0]
+                        
+                    if res_mt5:
+                        client = res_mt5[0]
+                        if self._lock.acquire(timeout=2.0):
+                            try:
+                                self.mt5 = client
+                                self.port = p
+                                self.is_connected = True
+                                self.last_ping_time = time.time()
+                                self.last_error_msg = ""
+                                logger.info(f"Connected to MT5 via mt5linux on port {p}!")
+                            finally:
+                                self._lock.release()
+                        return True
+                except Exception as e:
+                    self.last_error_msg = f"Port {p} error: {e}"
+                    logger.warning(self.last_error_msg)
+
+        if self._lock.acquire(timeout=2.0):
+            try:
+                self.is_connected = False
+            finally:
+                self._lock.release()
+        return False
+
+
 
     def login(self, login_id: int, password: str, server: str) -> Dict[str, Any]:
         if not self._lock.acquire(timeout=15.0):
