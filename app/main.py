@@ -91,12 +91,6 @@ except Exception as e:
                 with open(p, "w", encoding="utf-8") as f:
                     f.write(clean_code)
                 logger.info("Updated /config/server.py with clean RPyC server.")
-                try:
-                    import rpyc
-                    c = rpyc.classic.connect(os.getenv("MT5_HOST", "metatrader5"), 8001)
-                    c.modules.sys.exit(0)
-                except Exception:
-                    pass
         except Exception as e:
             logger.warning(f"ensure_optimized_server_py error: {e}")
 
@@ -104,7 +98,6 @@ except Exception as e:
 async def lifespan(app: FastAPI):
     logger.info("Starting HMA Trading Web Application...")
     ensure_optimized_server_py()
-    await asyncio.sleep(2.5) # Allow Wine supervisor to restart if updated
     try:
         await asyncio.to_thread(mt5_client.connect)
     except Exception as e:

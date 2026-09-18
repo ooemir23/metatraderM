@@ -406,27 +406,31 @@ class MT5Client:
                     server_clean = "Tickmill-Live"
 
                 # Run initialize in a thread with timeout to prevent blocking
-                login_result = [None]
-                login_error = [None]
-                def _do_login():
+                # Check if already logged into this account in MT5
+                try:
+                    acc = self.mt5.account_info()
+                    if acc and int(acc.login) == int(login_id):
+                        self.login_id = int(login_id)
+                        self.password = str(password)
+                        self.server = server_clean
+                        self.is_connected = True
+                        self.save_credentials()
+                        return {"success": True, "login": login_id, "server": server_clean}
+                except Exception:
+                    pass
+
+                ok = False
+                try:
+                    ok = bool(self.mt5.initialize(login=int(login_id), password=str(password), server=server_clean))
+                except Exception:
+                    ok = False
+
+                if not ok:
                     try:
-                        ok = self.mt5.initialize(login=int(login_id), password=str(password), server=server_clean)
-                        if not ok:
-                            ok = self.mt5.login(login=int(login_id), password=str(password), server=server_clean)
-                        login_result[0] = ok
-                    except Exception as e:
-                        login_error[0] = e
+                        ok = bool(self.mt5.login(login=int(login_id), password=str(password), server=server_clean))
+                    except Exception:
+                        ok = False
 
-                lt = threading.Thread(target=_do_login)
-                lt.daemon = True
-                lt.start()
-                lt.join(15.0)
-                if lt.is_alive():
-                    return {"success": False, "error": "MT5 login zaman aşımı (15s). Terminal henüz hazır olmayabilir, lütfen tekrar deneyin."}
-                if login_error[0]:
-                    return {"success": False, "error": str(login_error[0])}
-
-                ok = login_result[0]
                 if ok:
                     self.login_id = int(login_id)
                     self.password = str(password)
