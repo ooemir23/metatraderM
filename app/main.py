@@ -491,6 +491,72 @@ def get_diagnostic():
         
     return info
 
+@app.get("/api/debug/wine-info")
+def get_wine_info():
+    import rpyc
+    host = os.getenv("MT5_HOST", "metatrader5")
+    res = {}
+    try:
+        c = rpyc.classic.connect(host, 8001)
+        c._config["sync_request_timeout"] = 20
+        
+        py_os = c.modules.os
+        py_sys = c.modules.sys
+        
+        res["python_exe"] = str(py_sys.executable)
+        res["env_user"] = str(py_os.environ.get("USERNAME", py_os.environ.get("USER")))
+        res["env_wineprefix"] = str(py_os.environ.get("WINEPREFIX"))
+        res["cwd"] = str(py_os.getcwd())
+        
+        # Check running processes
+        try:
+            p = c.modules.subprocess.run("tasklist", capture_output=True, text=True, shell=True)
+            res["tasklist"] = [l.strip() for l in p.stdout.splitlines() if "terminal" in l.lower() or "python" in l.lower() or "wine" in l.lower()]
+        except Exception as te:
+            res["tasklist_err"] = str(te)
+            
+        m = c.modules.MetaTrader5
+        
+        # Test 1: initialize without path
+        try:
+            ok1 = bool(m.initialize())
+            res["init_default"] = {"ok": ok1, "error": list(m.last_error()) if m.last_error() else None}
+        except Exception as e1:
+            res["init_default_err"] = str(e1)
+            
+        # Test 2: initialize with common Windows paths
+        paths_to_test = [
+            "C:\\Program Files\\MetaTrader 5\\terminal64.exe",
+            "C:\\Program Files (x86)\\MetaTrader 5\\terminal64.exe",
+            "terminal64.exe"
+        ]
+        for p_test in paths_to_test:
+            try:
+                ok_p = bool(m.initialize(path=p_test))
+                res[f"init_{p_test}"] = {"ok": ok_p, "error": list(m.last_error()) if m.last_error() else None}
+                if ok_p:
+                    break
+            except Exception as ep:
+                res[f"init_{p_test}_err"] = str(ep)
+                
+        # Terminal & account info
+        try:
+            tinfo = m.terminal_info()
+            res["terminal_info"] = {k: getattr(tinfo, k) for k in dir(tinfo) if not k.startswith("_") and not callable(getattr(tinfo, k))} if tinfo else None
+        except Exception as e:
+            res["terminal_info_err"] = str(e)
+            
+        try:
+            acc = m.account_info()
+            res["account_info"] = {k: getattr(acc, k) for k in dir(acc) if not k.startswith("_") and not callable(getattr(acc, k))} if acc else None
+        except Exception as e:
+            res["account_info_err"] = str(e)
+
+        c.close()
+    except Exception as ge:
+        res["general_error"] = str(ge)
+    return res
+
 # Static Files & SPA Routing
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
