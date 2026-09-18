@@ -28,7 +28,7 @@ node --check app/static/app.js
 bash -n start.sh
 ```
 
-21 test: bağlantı kaybı, bağlantıların serileştirilmesi, başarısız initialize temizliği, kısmi/belirsiz emir sonucu, güvenli tekrar koşulu, saatlik grafik, giriş doğrulama, ters pozisyon kapatma hatası, bot durdurma ve MT5 beklerken web açılışı. Sahte broker yanıtları kullanılır; gerçek emir gönderilmez. Yerel Python 3.14 ile çalıştırıldı; Docker üretim hedefi Python 3.11/Wine üzerinde uçtan uca işlem testi yapılmadı.
+22 test (gerçek RPyC el sıkışması dahil): bağlantı kaybı, bağlantıların serileştirilmesi, başarısız initialize temizliği, kısmi/belirsiz emir sonucu, güvenli tekrar koşulu, saatlik grafik, giriş doğrulama, ters pozisyon kapatma hatası, bot durdurma ve MT5 beklerken web açılışı. Sahte broker yanıtları kullanılır; gerçek emir gönderilmez. Yerel Python 3.14 ile çalıştırıldı; Docker üretim hedefi Python 3.11/Wine üzerinde uçtan uca işlem testi yapılmadı.
 
 ## Öncelikli öneriler ve açık kalanlar
 

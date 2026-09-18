@@ -254,7 +254,7 @@ class MT5Client:
             try:
                 stream = rpyc.SocketStream.connect(self.host, self.port, timeout=5)
                 conn = rpyc.utils.factory.connect_stream(
-                    stream, rpyc.SlaveService,
+                    stream, rpyc.classic.SlaveService,
                     config={"sync_request_timeout": 15},
                 )
                 mt5 = conn.modules.MetaTrader5

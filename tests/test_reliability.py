@@ -186,3 +186,28 @@ def test_invalid_request_returns_validation_error():
     web = TestClient(app)  # no lifespan / remote connection
     assert web.post('/api/order/open', json={'symbol':'EURUSD', 'order_type':'TYPO', 'volume':.01}).status_code == 422
     assert web.post('/api/order/open', json={'symbol':'EURUSD', 'order_type':'BUY', 'volume':-1}).status_code == 422
+
+
+def test_real_rpyc_connection_exposes_remote_modules(client, monkeypatch):
+    """Exercise the actual service handshake, not just mocked RPC objects."""
+    import sys
+    from types import ModuleType
+    from rpyc.utils.server import ThreadedServer
+    remote_mt5 = ModuleType('MetaTrader5')
+    remote_mt5.initialize = lambda **kwargs: True
+    remote_mt5.terminal_info = lambda: NS(connected=True)
+    monkeypatch.setitem(sys.modules, 'MetaTrader5', remote_mt5)
+    server = ThreadedServer(module.rpyc.SlaveService, hostname='127.0.0.1', port=0,
+                            auto_register=False)
+    server.listener.listen(5)
+    worker = threading.Thread(target=server.start, daemon=True)
+    worker.start()
+    client.is_connected = False
+    client.host, client.port = '127.0.0.1', server.port
+    try:
+        assert client.connect(), client.last_error_msg
+        assert client.mt5.terminal_info().connected
+    finally:
+        client._reset_connection()
+        server.close()
+        worker.join(timeout=2)
