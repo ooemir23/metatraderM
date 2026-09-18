@@ -317,9 +317,6 @@ class MT5Client:
                         except Exception:
                             pass
                         m = c.modules.MetaTrader5
-                        # Don't call m.initialize() here - it blocks for 60+ seconds
-                        # when MT5 terminal isn't ready. Just verify the RPyC tunnel
-                        # and module import work. MT5 init happens in login() or first use.
                         res.append((c, m))
                     except Exception as e:
                         err.append(e)
@@ -336,6 +333,28 @@ class MT5Client:
                 if res:
                     conn, mt5 = res[0]
                     
+                    # Step 2: Initialize MT5 (separate, longer timeout)
+                    # This is needed so positions/history/account data work.
+                    init_ok = [False]
+                    def _init_mt5():
+                        try:
+                            ok = bool(mt5.initialize())
+                            if not ok and self.login_id and self.password:
+                                ok = bool(mt5.initialize(
+                                    login=int(self.login_id),
+                                    password=str(self.password),
+                                    server=str(self.server)
+                                ))
+                            init_ok[0] = ok
+                        except Exception as ie:
+                            logger.debug(f"mt5.initialize() in connect: {ie}")
+
+                    it = threading.Thread(target=_init_mt5)
+                    it.daemon = True
+                    it.start()
+                    it.join(15.0)
+
+                    # Store connection regardless of init result - RPyC tunnel is up
                     if self._lock.acquire(timeout=2.0):
                         try:
                             self.conn = conn
@@ -345,7 +364,10 @@ class MT5Client:
                             self.connected_at = time.time()
                             self.last_ping_time = time.time()
                             self.last_error_msg = ""
-                            logger.info(f"Connected to MT5 via rpyc.classic on port {p}!")
+                            if init_ok[0]:
+                                logger.info(f"Connected and initialized MT5 on port {p}!")
+                            else:
+                                logger.info(f"Connected to RPyC on port {p}, MT5 init pending (will retry on login)")
                         finally:
                             self._lock.release()
                     return True
@@ -473,18 +495,47 @@ class MT5Client:
                     try:
                         ping_result[0] = self.mt5.terminal_info()
                     except Exception:
-                        pass
+                        ping_result[0] = "ERROR"
                 pt = threading.Thread(target=_ping)
                 pt.daemon = True
                 pt.start()
                 pt.join(3.0)
                 if pt.is_alive():
                     logger.warning("terminal_info ping timed out (3s)")
-                    # Don't reset connection - it might just be slow
                     return True
+                if ping_result[0] == "ERROR":
+                    # RPyC connection broken
+                    self.is_connected = False
+                    self.conn = None
+                    self.mt5 = None
+                    self.connected_at = 0
+                    return self.connect()
                 if ping_result[0] is not None:
                     self.last_ping_time = now
                     return True
+                # terminal_info returned None - MT5 not initialized yet
+                # Try to initialize with saved credentials
+                if self.login_id and self.password:
+                    init_result = [False]
+                    def _try_init():
+                        try:
+                            init_result[0] = bool(self.mt5.initialize(
+                                login=int(self.login_id),
+                                password=str(self.password),
+                                server=str(self.server)
+                            ))
+                        except Exception:
+                            pass
+                    it = threading.Thread(target=_try_init)
+                    it.daemon = True
+                    it.start()
+                    it.join(10.0)
+                    if init_result[0]:
+                        self.last_ping_time = now
+                        logger.info("MT5 auto-initialized with saved credentials")
+                        return True
+                # Still not initialized but RPyC is up - stay connected
+                return True
             except Exception:
                 self.is_connected = False
                 self.conn = None
