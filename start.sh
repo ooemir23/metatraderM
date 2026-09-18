@@ -2,9 +2,9 @@
 
 # Configuration variables
 mt5file='/config/.wine/drive_c/Program Files/MetaTrader 5/terminal64.exe'
-WINEPREFIX='/config/.wine'
-WINEDEBUG='-all'
-wine_executable="wine"
+export WINEPREFIX='/config/.wine'
+export WINEDEBUG='-all'
+export wine_executable="wine"
 metatrader_version="5.0.36"
 mt5server_port="8001"
 MT5_CMD_OPTIONS="${MT5_CMD_OPTIONS:-}"
@@ -98,8 +98,10 @@ PYEOF
 # Create daemon runner loop to ensure RPyC is always alive
 cat << 'RUNEOF' > /config/run_server.sh
 #!/bin/bash
+export WINEPREFIX='/config/.wine'
+export WINEDEBUG='-all'
 while true; do
-    echo "[$(date)] Starting MT5 RPyC bridge server..." >> /config/server.log
+    echo "[$(date)] Starting MT5 RPyC bridge server on port 8001..." >> /config/server.log
     wine python /config/server.py >> /config/server.log 2>&1
     echo "[$(date)] server.py exited with code $?, restarting in 2s..." >> /config/server.log
     sleep 2
