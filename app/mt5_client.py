@@ -519,7 +519,10 @@ class MT5Client:
                     request["type_filling"] = 2
                     result = self.remote_order_send(request)
                     if result.retcode not in (10009, 10008):
-                        return {"success": False, "retcode": result.retcode, "error": result.comment}
+                        err_comment = str(result.comment)
+                        if result.retcode == 10027 or "AutoTrading disabled" in err_comment:
+                            err_comment = "MT5 terminalinde 'Algo Trading' (Algoritmik İşlem) kapalı! Lütfen MT5 sekmesinde üst menüdeki 'Algo Trading' butonunu aktif (yeşil) yapın."
+                        return {"success": False, "retcode": result.retcode, "error": err_comment}
 
             return {
                 "success": True,
