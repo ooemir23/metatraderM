@@ -47,10 +47,55 @@ else
     rm -f /config/.wine/drive_c/mt5setup.exe
 fi
 
-# Run MT5
+# Auto-configure Algo Trading in MT5 config
+configure_common_ini() {
+    local target="$1"
+    mkdir -p "$(dirname "$target")" 2>/dev/null || true
+    if [ -f "$target" ]; then
+        if grep -qi "\[Experts\]" "$target" 2>/dev/null; then
+            sed -i 's/AllowLiveTrading=[0-9]/AllowLiveTrading=1/gI' "$target" 2>/dev/null || true
+            sed -i 's/Enabled=[0-9]/Enabled=1/gI' "$target" 2>/dev/null || true
+            sed -i 's/AllowDllImport=[0-9]/AllowDllImport=1/gI' "$target" 2>/dev/null || true
+        else
+            printf "\n[Experts]\nAllowLiveTrading=1\nAllowDllImport=1\nEnabled=1\n" >> "$target"
+        fi
+    else
+        printf "[Experts]\nAllowLiveTrading=1\nAllowDllImport=1\nEnabled=1\n" > "$target"
+    fi
+}
+
+for d in "/config/.wine/drive_c/Program Files/MetaTrader 5/config" \
+         "/config/.wine/drive_c/Program Files/MetaTrader 5/Config"; do
+    configure_common_ini "$d/common.ini"
+    configure_common_ini "$d/Common.ini"
+done
+
+find /config/.wine/drive_c -type d -iname "config" 2>/dev/null | while read -r cdir; do
+    configure_common_ini "$cdir/common.ini"
+    configure_common_ini "$cdir/Common.ini"
+done
+
+# Run MT5 with persistent watchdog supervisor
+cat << 'MT5EOF' > /config/run_mt5.sh
+#!/bin/bash
+export WINEPREFIX='/config/.wine'
+export WINEDEBUG='-all'
+export wine_executable="wine"
+mt5file='/config/.wine/drive_c/Program Files/MetaTrader 5/terminal64.exe'
+while true; do
+    if [ -e "$mt5file" ] && ! pgrep -f "terminal64.exe" > /dev/null; then
+        echo "[$(date)] MT5 terminal64.exe not running. Launching MT5..." >> /config/mt5_watchdog.log
+        $wine_executable "$mt5file" $MT5_CMD_OPTIONS >> /config/mt5_watchdog.log 2>&1 &
+    fi
+    sleep 3
+done
+MT5EOF
+chmod +x /config/run_mt5.sh
+pkill -f run_mt5.sh 2>/dev/null || true
+
 if [ -e "$mt5file" ]; then
-    show_message "[4/7] Running MT5..."
-    $wine_executable "$mt5file" $MT5_CMD_OPTIONS &
+    show_message "[4/7] Running MT5 with watchdog supervisor..."
+    nohup /config/run_mt5.sh > /dev/null 2>&1 &
 fi
 
 # Install Python in Wine if not present

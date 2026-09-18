@@ -13,7 +13,7 @@ services:
     environment:
       - CUSTOM_USER=admin
       - PASSWORD=Admin12345!
-      - RPYC_SUPERVISOR_VERSION=20260918_v2
+      - RPYC_SUPERVISOR_VERSION=20260918_v3
     volumes:
       - mt5_data:/config
       - ./start.sh:/Metatrader/start.sh:ro

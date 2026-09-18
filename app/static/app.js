@@ -412,6 +412,11 @@ function switchSymbol(symbol) {
 
 let currentPositionTab = "open";
 
+let isFetchingAccount = false;
+let isFetchingPositions = false;
+let isFetchingHistory = false;
+let isFetchingPrice = false;
+
 // Polling loop for real-time updates
 function startPolling() {
   fetchAccount();
@@ -423,13 +428,13 @@ function startPolling() {
 
   setInterval(fetchAccount, 2000);
   setInterval(fetchPositions, 2000);
-  setInterval(fetchHistory, 4000);
   setInterval(fetchPrice, 1500);
   setInterval(fetchBotStatus, 3000);
   setInterval(() => {
-    if (currentPositionTab === "reports") fetchReports();
-    if (currentPositionTab === "ai") fetchAIStatus();
-  }, 6000);
+    if (currentPositionTab === "closed") fetchHistory();
+    else if (currentPositionTab === "reports") fetchReports();
+    else if (currentPositionTab === "ai") fetchAIStatus();
+  }, 5000);
 }
 
 // Switch between Open, Closed Positions, Reports, and AI tabs
@@ -495,6 +500,8 @@ function switchPositionTab(tab) {
 
 // Fetch Account Info
 async function fetchAccount() {
+  if (isFetchingAccount) return;
+  isFetchingAccount = true;
   try {
     const res = await fetch("/api/account");
     if (!res.ok) return;
@@ -544,11 +551,15 @@ async function fetchAccount() {
     }
   } catch (err) {
     console.error("fetchAccount error:", err);
+  } finally {
+    isFetchingAccount = false;
   }
 }
 
 // Fetch Open Positions
 async function fetchPositions() {
+  if (isFetchingPositions) return;
+  isFetchingPositions = true;
   try {
     const res = await fetch("/api/positions");
     if (!res.ok) return;
@@ -595,11 +606,15 @@ async function fetchPositions() {
     tbody.innerHTML = rowsHtml;
   } catch (err) {
     console.error("fetchPositions error:", err);
+  } finally {
+    isFetchingPositions = false;
   }
 }
 
 // Fetch Closed Positions / Trade History
 async function fetchHistory() {
+  if (isFetchingHistory) return;
+  isFetchingHistory = true;
   try {
     const res = await fetch("/api/history?days=30");
     if (!res.ok) return;
@@ -660,6 +675,8 @@ async function fetchHistory() {
     tbody.innerHTML = rowsHtml;
   } catch (err) {
     console.error("fetchHistory error:", err);
+  } finally {
+    isFetchingHistory = false;
   }
 }
 
@@ -801,6 +818,8 @@ async function fetchReports() {
 
 // Fetch Price for Active Symbol
 async function fetchPrice() {
+  if (isFetchingPrice) return;
+  isFetchingPrice = true;
   try {
     const res = await fetch(`/api/price/${currentSymbol}`);
     if (!res.ok) return;
@@ -815,6 +834,8 @@ async function fetchPrice() {
     }
   } catch (err) {
     console.error("fetchPrice error:", err);
+  } finally {
+    isFetchingPrice = false;
   }
 }
 

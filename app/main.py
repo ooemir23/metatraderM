@@ -24,24 +24,21 @@ ai_advisor = DeepSeekAdvisor(mt5_client)
 async def auto_reconnect_loop():
     while True:
         try:
-            if not mt5_client.is_connected:
-                mt5_client.connect()
-            else:
-                mt5_client.ensure_connected()
+            connected = await asyncio.to_thread(mt5_client.ensure_connected)
 
             # Autopilot autonomous check
-            if mt5_client.is_connected and ai_advisor.autopilot.get("enabled") and ai_advisor.autopilot.get("mode") == "FULL_AUTO":
+            if connected and ai_advisor.autopilot.get("enabled") and ai_advisor.autopilot.get("mode") == "FULL_AUTO":
                 now = time.time()
                 last_time = ai_advisor.autopilot.get("last_auto_trade_time", 0)
                 # Check at most once every 300 seconds (5 minutes)
                 if now - last_time >= 300:
                     symbols = ai_advisor.autopilot.get("allowed_symbols", ["EURUSD", "XAUUSD"])
                     for sym in symbols:
-                        tick = mt5_client.get_symbol_price(sym)
+                        tick = await asyncio.to_thread(mt5_client.get_symbol_price, sym)
                         if tick and tick.get("bid"):
-                            rates = mt5_client.get_rates(sym, 15, 30) or []
-                            open_pos = mt5_client.get_positions()
-                            adv = ai_advisor.get_market_advice(sym, "M15", tick=tick, rates=rates, open_positions=open_pos)
+                            rates = await asyncio.to_thread(mt5_client.get_rates, sym, 15, 30) or []
+                            open_pos = await asyncio.to_thread(mt5_client.get_positions)
+                            adv = await asyncio.to_thread(ai_advisor.get_market_advice, sym, "M15", tick=tick, rates=rates, open_positions=open_pos)
                             if adv.get("success"):
                                 rec = adv.get("recommendation", {})
                                 conf = rec.get("confidence", 0)
@@ -49,7 +46,7 @@ async def auto_reconnect_loop():
                                 min_conf = ai_advisor.autopilot.get("min_confidence", 80)
                                 if action in ("BUY", "SELL") and conf >= min_conf:
                                     logger.info(f"AI FULL_AUTO triggering trade on {sym}: {action} (Confidence: {conf}%)")
-                                    ai_advisor.execute_recommendation(rec)
+                                    await asyncio.to_thread(ai_advisor.execute_recommendation, rec)
                                     break
         except Exception as e:
             logger.debug(f"auto_reconnect_loop error: {e}")
