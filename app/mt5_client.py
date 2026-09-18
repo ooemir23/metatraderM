@@ -294,15 +294,12 @@ class MT5Client:
 
                 # 1. Try rpyc.classic directly (cleanest, connects straight to Wine MetaTrader5)
                 try:
-                    logger.info(f"Connecting via rpyc.classic to {self.host}:{p}...")
-                    conn = rpyc.classic.connect(
-                        self.host,
-                        p,
-                        config={
-                            "sync_request_timeout": 10,
-                            "allow_all_attrs": True
-                        }
-                    )
+                    conn = rpyc.classic.connect(self.host, p)
+                    try:
+                        conn._config["sync_request_timeout"] = 10
+                        conn._config["allow_all_attrs"] = True
+                    except Exception:
+                        pass
                     mt5 = conn.modules.MetaTrader5
                     
                     # Check terminal / initialize
