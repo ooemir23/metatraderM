@@ -231,6 +231,8 @@ class MT5Client:
         self.reconnect_cooldown = 3
         self.last_error_msg = ""
         self.last_ping_time = 0
+        self.last_auto_login_attempt = 0
+        self.auto_login_cooldown = 20
         self._lock = threading.RLock()
 
         # Default broker credentials (Tickmill Demo)
@@ -437,13 +439,16 @@ class MT5Client:
 
             try:
                 acc = self.mt5.account_info()
+                now = time.time()
                 if acc is None and self.login_id and self.password:
-                    try:
-                        logger.info("account_info returned None, attempting broker login...")
-                        self.mt5.login(login=int(self.login_id), password=str(self.password), server=str(self.server))
-                        acc = self.mt5.account_info()
-                    except Exception as le:
-                        logger.debug(f"Auto-login in get_account_info error: {le}")
+                    if now - self.last_auto_login_attempt > self.auto_login_cooldown:
+                        self.last_auto_login_attempt = now
+                        try:
+                            logger.info(f"account_info returned None, attempting broker login #{self.login_id} @ {self.server}...")
+                            self.mt5.login(login=int(self.login_id), password=str(self.password), server=str(self.server))
+                            acc = self.mt5.account_info()
+                        except Exception as le:
+                            logger.debug(f"Auto-login in get_account_info error: {le}")
 
                 if acc is None:
                     return {
