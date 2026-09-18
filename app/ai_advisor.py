@@ -366,23 +366,26 @@ Yanıtını SADECE şu JSON formatında ver:
         tp = int(target_rec.get("tp_points", 0))
 
         logger.info(f"Executing DeepSeek AI Trade: {symbol} {action} {volume} lot (SL:{sl}, TP:{tp})")
+        conf_score = target_rec.get("confidence", 80)
         res = self.mt5.open_order(
             symbol=symbol,
             order_type=action,
             volume=volume,
             sl_points=sl,
             tp_points=tp,
-            comment=f"DeepSeek AI ({target_rec.get("confidence", 80)}%)"
+            comment=f"DeepSeek AI ({conf_score}%)"
         )
 
         if res.get("success"):
             self.autopilot["last_auto_trade_time"] = time.time()
             self.save_memory()
+            ticket_num = res.get("ticket")
+            deal_price = res.get("price")
             return {
                 "success": True,
-                "ticket": res.get("ticket"),
-                "price": res.get("price"),
-                "message": f"✅ DeepSeek AI Emri Açıldı: {symbol} {action} #{res.get("ticket")} @ {res.get("price")}"
+                "ticket": ticket_num,
+                "price": deal_price,
+                "message": f"✅ DeepSeek AI Emri Açıldı: {symbol} {action} #{ticket_num} @ {deal_price}"
             }
         else:
             return {
