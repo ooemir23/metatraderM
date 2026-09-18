@@ -63,7 +63,7 @@ def ensure_optimized_server_py():
             if os.path.exists(p):
                 with open(p, "r", encoding="utf-8") as f:
                     content = f.read()
-            if "Pre-importing MetaTrader5" not in content:
+            if "Pre-importing MetaTrader5" not in content or "terminal64.exe" not in content:
                 new_code = '''import rpyc
 from rpyc.utils.server import ThreadedServer
 import time
@@ -72,7 +72,7 @@ import sys
 print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Pre-importing MetaTrader5 in Wine...", flush=True)
 try:
     import MetaTrader5 as mt5
-    ok = mt5.initialize()
+    ok = mt5.initialize(path="C:\\\\Program Files\\\\MetaTrader 5\\\\terminal64.exe")
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] MetaTrader5 pre-initialized: {ok}", flush=True)
 except Exception as e:
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] MetaTrader5 pre-import note: {e}", flush=True)

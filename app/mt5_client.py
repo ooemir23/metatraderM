@@ -319,7 +319,7 @@ class MT5Client:
                         m = c.modules.MetaTrader5
                         ok = False
                         try:
-                            ok = bool(m.initialize())
+                            ok = bool(m.initialize(path="C:\\\\Program Files\\\\MetaTrader 5\\\\terminal64.exe"))
                         except Exception as ie:
                             logger.debug(f"mt5.initialize() exception: {ie}")
                         tinfo = None
@@ -329,7 +329,7 @@ class MT5Client:
                             pass
                         if not (ok or tinfo is not None):
                             if self.login_id and self.password:
-                                ok = bool(m.initialize(login=int(self.login_id), password=str(self.password), server=str(self.server)))
+                                ok = bool(m.initialize(path="C:\\\\Program Files\\\\MetaTrader 5\\\\terminal64.exe", login=int(self.login_id), password=str(self.password), server=str(self.server)))
                         res.append((c, m, ok or tinfo is not None))
                     except Exception as e:
                         err.append(e)
