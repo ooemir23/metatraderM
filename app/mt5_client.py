@@ -3,111 +3,47 @@ import logging
 import time
 import json
 import threading
-import socket
+import math
+import rpyc
+import tempfile
 from typing import Dict, Any, List, Optional
+
+TIMEFRAME_NAMES = {
+    **{m: f"TIMEFRAME_M{m}" for m in (1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30)},
+    **{h * 60: f"TIMEFRAME_H{h}" for h in (1, 2, 3, 4, 6, 8, 12)},
+    1440: "TIMEFRAME_D1", 10080: "TIMEFRAME_W1", 43200: "TIMEFRAME_MN1",
+}
 
 logger = logging.getLogger("MT5Client")
 logger.setLevel(logging.INFO)
 
-try:
-    from mt5linux import MetaTrader5
-    USE_MT5LINUX = True
-    logger.info("Using mt5linux MetaTrader5 bridge")
-except ImportError:
-    USE_MT5LINUX = False
-    import rpyc
-    logger.info("Using fallback rpyc client")
-
-def is_port_open(host: str, port: int, timeout: float = 1.5) -> bool:
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
-    except Exception:
-        return False
-
 NATIVE_CLOSE_SCRIPT = '''
 import MetaTrader5 as mt5
 
-def _try_enable_algo():
-    try:
-        tinfo = mt5.terminal_info()
-        if tinfo and not getattr(tinfo, "trade_allowed", True):
-            import ctypes, time
-            windll = getattr(ctypes, "windll", None)
-            if windll:
-                user32 = getattr(windll, "user32", None)
-                if user32:
-                    hwnd = user32.FindWindowW("MetaQuotes::MetaTrader::5.00", 0)
-                    if not hwnd:
-                        def enum_windows_callback(h, l):
-                            length = user32.GetWindowTextLengthW(h)
-                            if length > 0:
-                                buff = ctypes.create_unicode_buffer(length + 1)
-                                user32.GetWindowTextW(h, buff, length + 1)
-                                if "MetaTrader" in buff.value:
-                                    l.append(h)
-                                    return False
-                            return True
-                        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.py_object)
-                        found = []
-                        user32.EnumWindows(WNDENUMPROC(enum_windows_callback), found)
-                        if found:
-                            hwnd = found[0]
-                    if hwnd:
-                        user32.PostMessageW(hwnd, 0x0111, 32851, 0)
-                        time.sleep(0.5)
-    except Exception:
-        pass
-
 def _execute_close_deal(p):
-    _try_enable_algo()
-    ticket = int(p.ticket)
-    symbol = str(p.symbol)
-    volume = float(p.volume)
-    is_buy = (p.type == 0)
-    close_type = 1 if is_buy else 0
-    magic = int(getattr(p, "magic", 0))
-
-    # ORDER_FILLING_IOC (1) is confirmed supported by Tickmill symbol_info.
-    attempts = []
-    for dev in [50, 100, 200]:
+    ticket, symbol = int(p.ticket), str(p.symbol)
+    is_buy = p.type == 0
+    for filling in (1, 0, 2):
         tick = mt5.symbol_info_tick(symbol)
         if not tick:
-            continue
-        close_price = float(tick.bid if is_buy else tick.ask)
-
-        req = {
-            "action": mt5.TRADE_ACTION_DEAL,
-            "position": ticket,
-            "symbol": symbol,
-            "volume": volume,
-            "type": close_type,
-            "price": close_price,
-            "deviation": dev,
-            "magic": magic,
-            "comment": "Close from HMA Web",
-            "type_time": 0,
-            "type_filling": 1
+            return {"success": False, "ticket": ticket, "error": "Fiyat alınamadı"}
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL, "position": ticket,
+            "symbol": symbol, "volume": float(p.volume),
+            "type": 1 if is_buy else 0, "price": float(tick.bid if is_buy else tick.ask),
+            "deviation": 50, "magic": int(getattr(p, "magic", 0)),
+            "comment": "Close from HMA Web", "type_time": 0, "type_filling": filling,
         }
-
-        res = mt5.order_send(req)
-        if res and res.retcode in (10009, 10008, 10010, 0):
-            return {"success": True, "ticket": ticket, "profit": float(p.profit), "comment": str(res.comment)}
-
-        c = getattr(res, "comment", str(mt5.last_error()))
-        rc = getattr(res, "retcode", -1)
-        if rc == 10018 or "Market closed" in str(c):
-            return {"success": False, "ticket": ticket, "error": "Piyasa şu anda kapalı (Market closed - 10018). Altın (XAUUSD) her gece 23:57 - 01:02 arası rollover tatilindedir. 01:02'de otomatik açılacaktır."}
-        if rc == 10027 or "AutoTrading disabled" in str(c):
-            _try_enable_algo()
-            res2 = mt5.order_send(req)
-            if res2 and res2.retcode in (10009, 10008, 10010, 0):
-                return {"success": True, "ticket": ticket, "profit": float(p.profit), "comment": str(res2.comment)}
-            return {"success": False, "ticket": ticket, "error": "MT5 terminalinde 'Algo Trading' (Algoritmik İşlem) butonu kapalı! Lütfen MT5 sekmesinde üst menüdeki 'Algo Trading' butonuna tıklayarak yeşil yapın."}
-        attempts.append("dev" + str(dev) + "->" + str(rc) + ":" + str(c))
-
-    last_err = " | ".join(attempts) if attempts else "Unknown error"
-    return {"success": False, "ticket": ticket, "error": last_err}
+        result = mt5.order_send(request)
+        if result is None:
+            return {"success": False, "uncertain": True, "ticket": ticket, "error": "Kapatma sonucu belirsiz"}
+        code = int(result.retcode)
+        if code == 10009:
+            return {"success": True, "ticket": ticket, "profit": float(p.profit)}
+        if code != 10030:
+            return {"success": False, "ticket": ticket, "partial": code == 10010,
+                    "pending": code == 10008, "retcode": code, "error": str(result.comment)}
+    return {"success": False, "ticket": ticket, "error": str(result.comment)}
 
 def hma_native_close_filter(filter_type="all"):
     positions = mt5.positions_get()
@@ -234,10 +170,16 @@ class MT5Client:
         self.last_auto_login_attempt = 0
         self.auto_login_cooldown = 20
         self._lock = threading.RLock()
+        self._account_cache = None
+        self._account_cache_time = 0.0
+        self._positions_cache = None
+        self._positions_cache_time = 0.0
+        self._price_cache = {}
+        self._price_cache_time = {}
 
         # Default broker credentials (Tickmill Demo)
-        self.login_id = int(os.getenv("MT5_LOGIN", "25373161"))
-        self.password = os.getenv("MT5_PASSWORD", "PpE&tgF6)8[>")
+        self.login_id = int(os.getenv("MT5_LOGIN", "0"))
+        self.password = os.getenv("MT5_PASSWORD", "")
         self.server = os.getenv("MT5_SERVER", "Tickmill-Demo")
 
         # Load persisted credentials from volume if available
@@ -270,123 +212,78 @@ class MT5Client:
             try:
                 d = os.path.dirname(path)
                 if os.path.exists(d) or d == "/tmp":
-                    with open(path, "w", encoding="utf-8") as f:
-                        json.dump(data, f)
+                    temp_path = None
+                    try:
+                        with tempfile.NamedTemporaryFile(mode="w", dir=d, delete=False, encoding="utf-8") as f:
+                            temp_path = f.name
+                            os.chmod(temp_path, 0o600)
+                            json.dump(data, f)
+                        os.replace(temp_path, path)
+                    finally:
+                        if temp_path and os.path.exists(temp_path):
+                            os.unlink(temp_path)
                     logger.info(f"Saved credentials to {path}")
                     return
             except Exception as e:
                 logger.warning(f"Could not save credentials to {path}: {e}")
 
-    def connect(self) -> bool:
-        now = time.time()
-        if now - self.last_connect_attempt < self.reconnect_cooldown and not self.is_connected:
-            return False
-
-        self.last_connect_attempt = now
-        ports_to_try = [self.port, 8001]
-        ports_to_try = list(dict.fromkeys(ports_to_try))
-
-        for p in ports_to_try:
-            # Fast probe: if port is not accepting TCP, don't wait for OS socket timeout
-            if not is_port_open(self.host, p, timeout=1.5):
-                self.last_error_msg = f"Port {p} kapalı / MT5 başlatılıyor"
-                continue
-
-            # 1. Try rpyc.classic directly (cleanest, connects straight to Wine MetaTrader5)
-            try:
-                logger.info(f"Connecting via rpyc.classic to {self.host}:{p}...")
-                conn = rpyc.classic.connect(self.host, p)
-                try:
-                    conn._config["sync_request_timeout"] = 25
-                    conn._config["allow_all_attrs"] = True
-                except Exception:
-                    pass
-                mt5 = conn.modules.MetaTrader5
-                
-                # Check terminal / initialize
-                ok = False
-                try:
-                    ok = bool(mt5.initialize())
-                except Exception:
-                    ok = False
-
-                if not ok:
-                    for p_cand in [
-                        "C:\\Program Files\\MetaTrader 5\\terminal64.exe",
-                        "C:\\Program Files (x86)\\MetaTrader 5\\terminal64.exe"
-                    ]:
-                        try:
-                            if mt5.initialize(path=p_cand):
-                                ok = True
-                                break
-                        except Exception:
-                            pass
-
-                if not ok and self.login_id and self.password:
-                    try:
-                        ok = bool(mt5.initialize(login=int(self.login_id), password=str(self.password), server=str(self.server)))
-                    except Exception:
-                        ok = False
-
-                tinfo = None
-                try:
-                    tinfo = mt5.terminal_info()
-                except Exception:
-                    pass
-
-                if ok or tinfo is not None:
-                    self.conn = conn
-                    self.mt5 = mt5
-                    self.port = p
-                    self.is_connected = True
-                    self.connected_at = time.time()
-                    self.last_ping_time = time.time()
-                    self.last_error_msg = ""
-                    logger.info(f"Connected to MT5 via rpyc.classic on port {p}!")
-                    
-                    # Auto login to broker if account is not logged in
-                    try:
-                        acc = self.mt5.account_info()
-                        if acc is None and self.login_id and self.password:
-                            logger.info(f"Auto-logging in to broker #{self.login_id} on connect...")
-                            self.mt5.login(login=int(self.login_id), password=str(self.password), server=str(self.server))
-                    except Exception as le:
-                        logger.warning(f"Auto login on connect warning: {le}")
-                    return True
-            except Exception as e:
-                logger.debug(f"rpyc.classic on port {p} failed: {e}")
-                self.last_error_msg = f"Port {p} error: {e}"
-
-            # 2. Try mt5linux if available
-            if USE_MT5LINUX:
-                try:
-                    logger.info(f"Connecting via mt5linux to {self.host}:{p}...")
-                    client = MetaTrader5(host=self.host, port=p)
-                    if client.initialize():
-                        self.mt5 = client
-                        self.port = p
-                        self.is_connected = True
-                        self.last_ping_time = time.time()
-                        self.last_error_msg = ""
-                        logger.info(f"Connected to MT5 via mt5linux on port {p}!")
-                        return True
-                    elif client.initialize(login=int(self.login_id), password=str(self.password), server=str(self.server)):
-                        self.mt5 = client
-                        self.port = p
-                        self.is_connected = True
-                        self.last_ping_time = time.time()
-                        self.last_error_msg = ""
-                        logger.info(f"Connected to MT5 via mt5linux with login on port {p}!")
-                        return True
-                except Exception as e:
-                    self.last_error_msg = f"Port {p} error: {e}"
-                    logger.warning(self.last_error_msg)
-
+    def _reset_connection(self):
+        old_conn = self.conn
+        self.conn = self.mt5 = None
         self.is_connected = False
-        return False
+        self.connected_at = self.last_ping_time = 0
+        self._account_cache = self._positions_cache = None
+        self._price_cache.clear()
+        if old_conn is not None:
+            try:
+                old_conn.close()
+            except Exception:
+                pass
 
-
-
+    def connect(self) -> bool:
+        # One connection attempt at a time, including API and background callers.
+        with self._lock:
+            if self.is_connected and self.mt5 is not None:
+                return True
+            now = time.time()
+            if now - self.last_connect_attempt < self.reconnect_cooldown:
+                return False
+            self.last_connect_attempt = now
+            self._reset_connection()
+            conn = stream = None
+            try:
+                stream = rpyc.SocketStream.connect(self.host, self.port, timeout=5)
+                conn = rpyc.utils.factory.connect_stream(
+                    stream, rpyc.SlaveService,
+                    config={"sync_request_timeout": 15},
+                )
+                mt5 = conn.modules.MetaTrader5
+                ready = mt5.initialize(timeout=10000)
+                if not ready:
+                    ready = mt5.initialize(
+                        path=r"C:\Program Files\MetaTrader 5\terminal64.exe",
+                        timeout=10000,
+                    )
+                if not ready or mt5.terminal_info() is None:
+                    raise RuntimeError(f"MT5 başlatılamadı: {mt5.last_error()}")
+                self.conn, self.mt5 = conn, mt5
+                self.is_connected = True
+                self.connected_at = self.last_ping_time = time.time()
+                self.last_error_msg = ""
+                logger.info("Connected to MT5 on %s:%s", self.host, self.port)
+                return True
+            except Exception as exc:
+                self.last_error_msg = str(exc)
+                logger.warning("MT5 connection failed: %s", exc)
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                elif stream is not None:
+                    stream.close()
+                self._reset_connection()
+                return False
 
     def login(self, login_id: int, password: str, server: str) -> Dict[str, Any]:
         if not self._lock.acquire(timeout=15.0):
@@ -405,29 +302,15 @@ class MT5Client:
                 elif "tickmill" in server_clean.lower() and "live" in server_clean.lower():
                     server_clean = "Tickmill-Live"
 
-                # Run initialize in a thread with timeout to prevent blocking
-                # Check if already logged into this account in MT5
-                try:
-                    acc = self.mt5.account_info()
-                    if acc and int(acc.login) == int(login_id):
-                        self.login_id = int(login_id)
-                        self.password = str(password)
-                        self.server = server_clean
-                        self.is_connected = True
-                        self.save_credentials()
-                        return {"success": True, "login": login_id, "server": server_clean}
-                except Exception:
-                    pass
-
                 ok = False
                 try:
-                    ok = bool(self.mt5.initialize(login=int(login_id), password=str(password), server=server_clean))
+                    ok = bool(self.mt5.initialize(login=int(login_id), password=str(password), server=server_clean, timeout=10000))
                 except Exception:
                     ok = False
 
                 if not ok:
                     try:
-                        ok = bool(self.mt5.login(login=int(login_id), password=str(password), server=server_clean))
+                        ok = bool(self.mt5.login(login=int(login_id), password=str(password), server=server_clean, timeout=10000))
                     except Exception:
                         ok = False
 
@@ -436,6 +319,8 @@ class MT5Client:
                     self.password = str(password)
                     self.server = server_clean
                     self.is_connected = True
+                    self._account_cache = self._positions_cache = None
+                    self._price_cache.clear()
                     self.save_credentials()
                     return {"success": True, "login": login_id, "server": server_clean}
                 else:
@@ -447,32 +332,26 @@ class MT5Client:
             self._lock.release()
 
     def ensure_connected(self) -> bool:
-        now = time.time()
-        if self.is_connected and self.mt5 is not None:
-            if now - self.last_ping_time < 5.0:
-                return True
-            try:
-                info = self.mt5.terminal_info()
-                if info is not None:
-                    self.last_ping_time = now
+        with self._lock:
+            if self.is_connected and self.mt5 is not None:
+                if time.time() - self.last_ping_time < 5:
                     return True
-                # If terminal_info is None, try quick non-blocking initialize
                 try:
-                    if self.mt5.initialize():
-                        self.last_ping_time = now
+                    info = self.mt5.terminal_info()
+                    if info is not None:
+                        self.last_ping_time = time.time()
                         return True
-                except Exception:
-                    pass
-                return True
-            except Exception:
-                self.is_connected = False
-                self.conn = None
-                self.mt5 = None
-                self.connected_at = 0
-
-        return self.connect()
+                    self.last_error_msg = "MT5 terminali yanıt vermiyor"
+                except Exception as exc:
+                    self.last_error_msg = str(exc)
+                self._reset_connection()
+            return self.connect()
 
     def get_account_info(self) -> Dict[str, Any]:
+        now = time.time()
+        if self._account_cache and (now - self._account_cache_time < 0.5) and self.is_connected:
+            return self._account_cache
+
         if not self.ensure_connected():
             return {
                 "connected": False,
@@ -490,119 +369,141 @@ class MT5Client:
                 "server_time": time.strftime("%H:%M:%S")
             }
 
-        try:
-            acc = self.mt5.account_info()
-            now = time.time()
-            if acc is None and self.login_id and self.password:
-                if now - self.last_auto_login_attempt > self.auto_login_cooldown:
-                    self.last_auto_login_attempt = now
-                    try:
-                        logger.info(f"account_info returned None, attempting broker login #{self.login_id} @ {self.server}...")
-                        self.mt5.login(login=int(self.login_id), password=str(self.password), server=str(self.server))
-                        acc = self.mt5.account_info()
-                    except Exception as le:
-                        logger.debug(f"Auto-login in get_account_info error: {le}")
+        with self._lock:
+            try:
+                acc = self.mt5.account_info()
+                now = time.time()
+                if acc is None and self.login_id and self.password:
+                    if now - self.last_auto_login_attempt > self.auto_login_cooldown:
+                        self.last_auto_login_attempt = now
+                        try:
+                            logger.info(f"account_info returned None, attempting broker login #{self.login_id} @ {self.server}...")
+                            self.mt5.login(login=int(self.login_id), password=str(self.password), server=str(self.server), timeout=10000)
+                            acc = self.mt5.account_info()
+                        except Exception as le:
+                            logger.debug(f"Auto-login in get_account_info error: {le}")
 
-            if acc is None:
-                return {
-                    "connected": False,
-                    "terminal_ready": True,
-                    "error": "Broker hesabına giriş bekleniyor",
-                    "login": self.login_id,
-                    "server": self.server,
-                    "connected_since": None,
+                if acc is None:
+                    return {
+                        "connected": False,
+                        "terminal_ready": True,
+                        "error": "Broker hesabına giriş bekleniyor",
+                        "login": self.login_id,
+                        "server": self.server,
+                        "connected_since": None,
+                        "server_time": time.strftime("%H:%M:%S")
+                    }
+
+                res = {
+                    "connected": True,
+                    "login": acc.login,
+                    "balance": round(acc.balance, 2),
+                    "equity": round(acc.equity, 2),
+                    "profit": round(acc.profit, 2),
+                    "margin": round(acc.margin, 2),
+                    "margin_free": round(acc.margin_free, 2),
+                    "margin_level": round(acc.margin_level, 2) if acc.margin > 0 else 100.0,
+                    "currency": acc.currency,
+                    "server": acc.server,
+                    "leverage": acc.leverage,
+                    "connected_since": time.strftime("%H:%M:%S", time.localtime(self.connected_at)) if self.connected_at else time.strftime("%H:%M:%S"),
                     "server_time": time.strftime("%H:%M:%S")
                 }
-            
-            return {
-                "connected": True,
-                "login": acc.login,
-                "balance": round(acc.balance, 2),
-                "equity": round(acc.equity, 2),
-                "profit": round(acc.profit, 2),
-                "margin": round(acc.margin, 2),
-                "margin_free": round(acc.margin_free, 2),
-                "margin_level": round(acc.margin_level, 2) if acc.margin > 0 else 100.0,
-                "currency": acc.currency,
-                "server": acc.server,
-                "leverage": acc.leverage,
-                "connected_since": time.strftime("%H:%M:%S", time.localtime(self.connected_at)) if self.connected_at else time.strftime("%H:%M:%S"),
-                "server_time": time.strftime("%H:%M:%S")
-            }
-        except Exception as e:
-            logger.error(f"Error fetching account info: {e}")
-            return {"connected": False, "error": str(e)}
+                self._account_cache = res
+                self._account_cache_time = time.time()
+                return res
+            except Exception as e:
+                logger.error(f"Error fetching account info: {e}")
+                return {"connected": False, "error": str(e)}
 
     def get_positions(self) -> List[Dict[str, Any]]:
+        now = time.time()
+        if self._positions_cache is not None and (now - self._positions_cache_time < 0.5) and self.is_connected:
+            return self._positions_cache
+
         if not self.ensure_connected():
             return []
 
-        try:
-            positions = self.mt5.positions_get()
-            if positions is None:
+        with self._lock:
+            try:
+                positions = self.mt5.positions_get()
+                if positions is None:
+                    return []
+
+                result = []
+                for p in positions:
+                    result.append({
+                        "ticket": p.ticket,
+                        "symbol": p.symbol,
+                        "type": "BUY" if p.type == 0 else "SELL",
+                        "type_raw": p.type,
+                        "volume": p.volume,
+                        "price_open": round(p.price_open, 5),
+                        "price_current": round(p.price_current, 5),
+                        "sl": round(p.sl, 5),
+                        "tp": round(p.tp, 5),
+                        "profit": round(p.profit, 2),
+                        "swap": round(p.swap, 2),
+                        "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(p.time))
+                    })
+                self._positions_cache = result
+                self._positions_cache_time = time.time()
+                return result
+            except Exception as e:
+                logger.error(f"Error fetching positions: {e}")
                 return []
 
-            result = []
-            for p in positions:
-                result.append({
-                    "ticket": p.ticket,
-                    "symbol": p.symbol,
-                    "type": "BUY" if p.type == 0 else "SELL",
-                    "type_raw": p.type,
-                    "volume": p.volume,
-                    "price_open": round(p.price_open, 5),
-                    "price_current": round(p.price_current, 5),
-                    "sl": round(p.sl, 5),
-                    "tp": round(p.tp, 5),
-                    "profit": round(p.profit, 2),
-                    "swap": round(p.swap, 2),
-                    "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(p.time))
-                })
-            return result
-        except Exception as e:
-            logger.error(f"Error fetching positions: {e}")
-            return []
-
     def get_symbol_price(self, symbol: str) -> Dict[str, Any]:
+        now = time.time()
+        if symbol in self._price_cache and (now - self._price_cache_time.get(symbol, 0) < 0.3) and self.is_connected:
+            return self._price_cache[symbol]
+
         if not self.ensure_connected():
             return {"symbol": symbol, "bid": 0.0, "ask": 0.0, "spread": 0}
 
-        try:
-            tick = self.mt5.symbol_info_tick(symbol)
-            if tick is None:
-                return {"symbol": symbol, "bid": 0.0, "ask": 0.0, "spread": 0}
-            
-            info = self.mt5.symbol_info(symbol)
-            digits = info.digits if info else 5
-            spread = info.spread if info else round((tick.ask - tick.bid) * (10 ** digits))
+        with self._lock:
+            try:
+                tick = self.mt5.symbol_info_tick(symbol)
+                if tick is None:
+                    return {"symbol": symbol, "bid": 0.0, "ask": 0.0, "spread": 0}
 
-            return {
-                "symbol": symbol,
-                "bid": round(tick.bid, digits),
-                "ask": round(tick.ask, digits),
-                "spread": spread,
-                "time": tick.time
-            }
-        except Exception as e:
-            logger.error(f"Error fetching symbol price for {symbol}: {e}")
-            return {"symbol": symbol, "bid": 0.0, "ask": 0.0, "spread": 0}
+                info = self.mt5.symbol_info(symbol)
+                digits = info.digits if info else 5
+                spread = info.spread if info else round((tick.ask - tick.bid) * (10 ** digits))
+
+                res = {
+                    "symbol": symbol,
+                    "bid": round(tick.bid, digits),
+                    "ask": round(tick.ask, digits),
+                    "spread": spread,
+                    "time": tick.time
+                }
+                self._price_cache[symbol] = res
+                self._price_cache_time[symbol] = time.time()
+                return res
+            except Exception as e:
+                logger.error(f"Error fetching symbol price for {symbol}: {e}")
+                return {"symbol": symbol, "bid": 0.0, "ask": 0.0, "spread": 0}
 
     def remote_order_send(self, request: Dict[str, Any]) -> Any:
         with self._lock:
-            if self.conn:
-                try:
+            # A timeout may occur after the broker accepts the order. Never retry
+            # through a second transport when the execution outcome is unknown.
+            try:
+                if self.conn:
                     self.conn.execute("import MetaTrader5 as mt5")
                     return self.conn.eval(f"mt5.order_send({repr(request)})")
-                except Exception as e:
-                    logger.warning(f"conn.eval order_send failed: {e}")
-            if self.mt5:
-                try:
+                if self.mt5:
                     return self.mt5.order_send(request)
-                except Exception as e:
-                    logger.error(f"mt5.order_send failed: {e}")
+            except Exception:
+                logger.exception("Order outcome unknown; automatic retry suppressed")
             return None
 
     def open_order(self, symbol: str, order_type: str, volume: float, sl_points: int = 0, tp_points: int = 0, comment: str = "HMA Web App") -> Dict[str, Any]:
+        if order_type.upper() not in ("BUY", "SELL"):
+            return {"success": False, "error": "Emir yönü BUY veya SELL olmalı"}
+        if not math.isfinite(volume) or volume <= 0 or sl_points < 0 or tp_points < 0:
+            return {"success": False, "error": "Geçersiz hacim veya SL/TP"}
         with self._lock:
             if not self.ensure_connected():
                 return {"success": False, "error": f"MT5 bağlı değil: {self.last_error_msg}"}
@@ -643,53 +544,21 @@ class MT5Client:
                     "type_filling": 1
                 }
 
-                # Pre-emptively try enable AlgoTrading if disabled
-                if self.conn:
-                    try:
-                        self.conn.execute(NATIVE_CLOSE_SCRIPT)
-                        self.conn.eval("_try_enable_algo()")
-                    except Exception:
-                        pass
-
-                result = self.remote_order_send(request)
-                if result is None:
-                    err = self.mt5.last_error()
-                    return {"success": False, "error": f"order_send failed: {err}"}
-
-                if result.retcode not in (10009, 10008):
-                    request["type_filling"] = 0
+                for filling in (1, 0, 2):
+                    request["type_filling"] = filling
                     result = self.remote_order_send(request)
-                    if result.retcode not in (10009, 10008):
-                        request["type_filling"] = 2
-                        result = self.remote_order_send(request)
-                        if result.retcode not in (10009, 10008):
-                            err_comment = str(result.comment)
-                            if result.retcode == 10027 or "AutoTrading disabled" in err_comment:
-                                if self.conn:
-                                    try:
-                                        self.conn.eval("_try_enable_algo()")
-                                        time.sleep(0.5)
-                                        result2 = self.remote_order_send(request)
-                                        if result2 and result2.retcode in (10009, 10008, 10010, 0):
-                                            return {
-                                                "success": True,
-                                                "ticket": result2.order,
-                                                "price": result2.price,
-                                                "volume": result2.volume,
-                                                "comment": result2.comment
-                                            }
-                                    except Exception:
-                                        pass
-                                err_comment = "MT5 terminalinde 'Algo Trading' (Algoritmik İşlem) kapalı! Lütfen MT5 sekmesinde üst menüdeki 'Algo Trading' butonunu aktif (yeşil) yapın."
-                            return {"success": False, "retcode": result.retcode, "error": err_comment}
-
-                return {
-                    "success": True,
-                    "ticket": result.order,
-                    "price": result.price,
-                    "volume": result.volume,
-                    "comment": result.comment
-                }
+                    if result is None:
+                        return {"success": False, "uncertain": True,
+                                "error": "Emir sonucu belirsiz; tekrar göndermeden önce pozisyonları kontrol edin."}
+                    code = int(result.retcode)
+                    if code in (10008, 10009, 10010):
+                        return {"success": True, "partial": code == 10010,
+                                "retcode": code, "ticket": result.order,
+                                "price": result.price, "volume": result.volume,
+                                "comment": str(result.comment)}
+                    if code != 10030:  # Only an explicit invalid filling rejection is safe to retry.
+                        break
+                return {"success": False, "retcode": int(result.retcode), "error": str(result.comment)}
             except Exception as e:
                 logger.error(f"Error opening order: {e}")
                 return {"success": False, "error": str(e)}
@@ -706,6 +575,7 @@ class MT5Client:
                     return dict(res)
                 except Exception as e:
                     logger.error(f"Native close_position #{ticket} failed: {e}")
+                    return {"success": False, "uncertain": True, "error": "Kapatma sonucu belirsiz; pozisyonu kontrol edin."}
 
             try:
                 if pos_data:
@@ -760,8 +630,10 @@ class MT5Client:
                         "type_filling": f
                     }
                     last_res = self.remote_order_send(request)
-                    if last_res and last_res.retcode in (10009, 10008):
+                    if last_res and last_res.retcode == 10009:
                         return {"success": True, "ticket": ticket, "profit": profit}
+                    if last_res is None or last_res.retcode != 10030:
+                        break
 
                 err_msg = last_res.comment if last_res else str(self.mt5.last_error())
                 return {"success": False, "error": err_msg}
@@ -792,6 +664,7 @@ class MT5Client:
                     }
                 except Exception as e:
                     logger.error(f"Native close_by_filter failed: {e}")
+                    return {"success": False, "uncertain": True, "closed_count": 0, "errors": ["Kapatma sonucu belirsiz; pozisyonları kontrol edin."]}
 
             positions = self.get_positions()
             targets = []
@@ -828,7 +701,10 @@ class MT5Client:
                 return None
 
             try:
-                rates = self.mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
+                name = TIMEFRAME_NAMES.get(timeframe)
+                if name is None:
+                    raise ValueError(f"Desteklenmeyen zaman dilimi: {timeframe}")
+                rates = self.mt5.copy_rates_from_pos(symbol, getattr(self.mt5, name), 0, count)
                 if rates is None or len(rates) == 0:
                     return None
 
@@ -1068,4 +944,3 @@ class MT5Client:
             "daily": daily_list,
             "by_symbol": symbol_list
         }
-

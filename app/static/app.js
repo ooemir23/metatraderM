@@ -498,6 +498,16 @@ function switchPositionTab(tab) {
   }
 }
 
+function showAccountConnectionError(message) {
+  const indicator = document.getElementById("status-indicator");
+  const statusText = document.getElementById("status-text");
+  if (indicator) indicator.className = "w-2 h-2 rounded-full bg-amber-400";
+  if (statusText) {
+    statusText.innerText = message;
+    statusText.className = "text-amber-400";
+  }
+}
+
 // Fetch Account Info
 async function fetchAccount() {
   if (isFetchingAccount) return;
@@ -506,8 +516,7 @@ async function fetchAccount() {
   const timer = setTimeout(() => controller.abort(), 4000);
   try {
     const res = await fetch("/api/account", { signal: controller.signal });
-    clearTimeout(timer);
-    if (!res.ok) return;
+    if (!res.ok) throw new Error(`Hesap bilgisi alınamadı (HTTP ${res.status})`);
     const data = await res.json();
 
     const indicator = document.getElementById("status-indicator");
@@ -553,6 +562,9 @@ async function fetchAccount() {
       profitEl.className = "font-bold text-gray-300 tracking-wide";
     }
   } catch (err) {
+    showAccountConnectionError(
+      err.name === "AbortError" ? "Sunucu yanıtı gecikti" : "Sunucuya ulaşılamıyor"
+    );
     if (err.name !== "AbortError") {
       console.error("fetchAccount error:", err);
     }
@@ -1538,4 +1550,3 @@ async function saveAIAutopilot() {
     showToast(`❌ İstek Hatası: ${err.message}`, "error");
   }
 }
-

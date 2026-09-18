@@ -8,11 +8,9 @@ services:
     restart: unless-stopped
     ports:
       - "3001:3000"
-      - "8001:8001"
-      - "18812:18812"
     environment:
       - CUSTOM_USER=admin
-      - PASSWORD=Admin12345!
+      - PASSWORD=${VNC_PASSWORD:?Set VNC_PASSWORD in .env}
       - RPYC_SUPERVISOR_VERSION=20260918_v7
     volumes:
       - mt5_data:/config
@@ -35,6 +33,10 @@ services:
     environment:
       - MT5_HOST=metatrader5
       - MT5_PORT=8001
+      - MT5_LOGIN=${MT5_LOGIN:-0}
+      - MT5_PASSWORD=${MT5_PASSWORD:-}
+      - MT5_SERVER=${MT5_SERVER:-Tickmill-Demo}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
     volumes:
       - mt5_data:/config
     depends_on:

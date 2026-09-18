@@ -2,6 +2,7 @@ import asyncio
 import logging
 import math
 import time
+import threading
 from typing import Dict, Any, List, Optional
 import requests
 
@@ -13,6 +14,7 @@ class StrategyBot:
         self.mt5 = mt5_client
         self.is_running = False
         self.task = None
+        self._stop_event = threading.Event()
 
         # Bot Parameters (Defaults matching HMA_Crossover_EA)
         self.symbol = "EURUSD"
@@ -154,7 +156,7 @@ class StrategyBot:
 
     async def run_loop(self):
         self.log(f"🚀 HMA Kesişim Botu Başlatıldı ({self.symbol} M{self.timeframe_minutes})")
-        self.send_telegram(f"🤖 <b>HMA Crossover Bot Başlatıldı!</b>\nSembol: {self.symbol}\nZaman: M{self.timeframe_minutes}\nHMA: {self.hma_period}\n2. MA: {self.second_ma_type}({self.second_ma_period})")
+        await asyncio.to_thread(self.send_telegram, f"🤖 <b>HMA Crossover Bot Başlatıldı!</b>\nSembol: {self.symbol}\nZaman: M{self.timeframe_minutes}\nHMA: {self.hma_period}\n2. MA: {self.second_ma_type}({self.second_ma_period})")
 
         while self.is_running:
             try:
@@ -166,6 +168,11 @@ class StrategyBot:
             await asyncio.sleep(5) # Kontrol aralığı: 5 saniye
 
     async def check_strategy(self):
+        await asyncio.to_thread(self._check_strategy)
+
+    def _check_strategy(self):
+        if self._stop_event.is_set():
+            return
         if not self.mt5.ensure_connected():
             return
 
@@ -212,8 +219,13 @@ class StrategyBot:
             self.send_telegram(f"🟢 <b>[AL SİNYALİ] {self.symbol}</b>\nFiyat: {current_price}\nHMA: {round(hma1, 5)}\n2.MA: {round(ma2_1, 5)}")
 
             # Execute Trade
-            if self.close_opposite:
-                self.close_positions_by_type("SELL")
+            if self._stop_event.is_set():
+                return
+            if self.close_opposite and not self.close_positions_by_type("SELL"):
+                self.log("Ters pozisyon kapatılamadı; yeni emir gönderilmedi.", "ERROR")
+                return
+            if self._stop_event.is_set():
+                return
 
             sl = self.sl_points if self.use_stop_loss else 0
             tp = self.tp_points if self.use_take_profit else 0
@@ -231,8 +243,13 @@ class StrategyBot:
             self.send_telegram(f"🔴 <b>[SAT SİNYALİ] {self.symbol}</b>\nFiyat: {current_price}\nHMA: {round(hma1, 5)}\n2.MA: {round(ma2_1, 5)}")
 
             # Execute Trade
-            if self.close_opposite:
-                self.close_positions_by_type("BUY")
+            if self._stop_event.is_set():
+                return
+            if self.close_opposite and not self.close_positions_by_type("BUY"):
+                self.log("Ters pozisyon kapatılamadı; yeni emir gönderilmedi.", "ERROR")
+                return
+            if self._stop_event.is_set():
+                return
 
             sl = self.sl_points if self.use_stop_loss else 0
             tp = self.tp_points if self.use_take_profit else 0
@@ -247,18 +264,23 @@ class StrategyBot:
         for p in positions:
             if p["symbol"] == self.symbol and p["type"] == pos_type:
                 self.log(f"Ters sinyal nedeniyle #{p['ticket']} ({pos_type}) pozisyonu kapatılıyor...")
-                self.mt5.close_position(p["ticket"])
+                if self._stop_event.is_set():
+                    return False
+                result = self.mt5.close_position(p["ticket"])
+                if not result.get("success"):
+                    return False
+        return True
 
     def start(self):
-        if not self.is_running:
+        if not self.is_running and (self.task is None or self.task.done()):
+            self._stop_event.clear()
             self.is_running = True
             self.task = asyncio.create_task(self.run_loop())
 
     def stop(self):
+        self._stop_event.set()
         if self.is_running:
             self.is_running = False
-            if self.task:
-                self.task.cancel()
-                self.task = None
+            # Do not cancel a to_thread worker: it cannot be interrupted, and a
+            # new start must wait until that worker has finished.
             self.log("🛑 HMA Kesişim Botu Durduruldu")
-            self.send_telegram(f"🛑 <b>HMA Crossover Bot Durduruldu.</b>")

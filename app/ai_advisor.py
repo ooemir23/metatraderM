@@ -9,7 +9,7 @@ logger = logging.getLogger("DeepSeekAdvisor")
 logger.setLevel(logging.INFO)
 
 DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
-DEFAULT_API_KEY = "sk-3f0d764175264413b390dbd77bb57cde"
+DEFAULT_API_KEY = ""
 DEFAULT_MODEL = "deepseek-chat"
 
 MEMORY_PATHS = [

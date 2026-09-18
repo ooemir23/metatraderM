@@ -1,0 +1,27 @@
+# Use with: docker compose -f docker-compose.yml -f compose.dokploy.yml ...
+services:
+  metatrader5:
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: dokploy-network
+      traefik.http.routers.mt5-mt5platform-jtahyh-5-web.rule: Host(`mt5-mt5platform-jtahyh-c957d9-46-225-94-54.sslip.io`)
+      traefik.http.routers.mt5-mt5platform-jtahyh-5-web.entrypoints: web
+      traefik.http.routers.mt5-mt5platform-jtahyh-5-web.service: mt5-mt5platform-jtahyh-5-web
+      traefik.http.services.mt5-mt5platform-jtahyh-5-web.loadbalancer.server.port: "3000"
+    networks: [default, dokploy-network]
+  web-dashboard:
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: dokploy-network
+      traefik.http.routers.mt5-mt5platform-jtahyh-6-web.rule: Host(`trade.46.225.94.54.sslip.io`)
+      traefik.http.routers.mt5-mt5platform-jtahyh-6-web.entrypoints: web
+      traefik.http.routers.mt5-mt5platform-jtahyh-6-web.service: mt5-mt5platform-jtahyh-6-web
+      traefik.http.services.mt5-mt5platform-jtahyh-6-web.loadbalancer.server.port: "8000"
+      traefik.http.routers.mt5-trade-https.rule: Host(`trade.46.225.94.54.sslip.io`)
+      traefik.http.routers.mt5-trade-https.entrypoints: websecure
+      traefik.http.routers.mt5-trade-https.service: mt5-mt5platform-jtahyh-6-web
+      traefik.http.routers.mt5-trade-https.tls.certresolver: letsencrypt
+    networks: [default, dokploy-network]
+networks:
+  dokploy-network:
+    external: true

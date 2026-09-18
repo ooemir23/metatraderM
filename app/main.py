@@ -1,11 +1,11 @@
 import os
 import logging
-from contextlib import asynccontextmanager
-from typing import Optional, Dict, Any, List
+from contextlib import asynccontextmanager, suppress
+from typing import Optional, Dict, Any, List, Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 
 from app.mt5_client import MT5Client
 from app.strategy_bot import StrategyBot
@@ -98,33 +98,35 @@ except Exception as e:
 async def lifespan(app: FastAPI):
     logger.info("Starting HMA Trading Web Application...")
     ensure_optimized_server_py()
-    try:
-        await asyncio.to_thread(mt5_client.connect)
-    except Exception as e:
-        logger.warning(f"Initial MT5 connect error (will retry in background): {e}")
+    # MT5 may be offline; the HTTP server must still start and expose status.
     task = asyncio.create_task(auto_reconnect_loop())
-    yield
-    task.cancel()
-    logger.info("Shutting down HMA Trading Application...")
-    bot.stop()
+    try:
+        yield
+    finally:
+        bot.stop()
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        logger.info("Shutting down HMA Trading Application...")
 
 app = FastAPI(title="HMA Trading Dashboard", lifespan=lifespan)
 
 # Pydantic Schemas
 class OrderRequest(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
     symbol: str
-    order_type: str # "BUY" or "SELL"
-    volume: float = 0.01
-    sl_points: int = 0
-    tp_points: int = 0
+    order_type: Literal["BUY", "SELL"]
+    volume: float = Field(default=0.01, gt=0)
+    sl_points: int = Field(default=0, ge=0)
+    tp_points: int = Field(default=0, ge=0)
     comment: str = "HMA Web Trade"
 
 class CloseRequest(BaseModel):
-    ticket: int
+    ticket: int = Field(gt=0)
 
 class LoginRequest(BaseModel):
-    login: int
-    password: str
+    login: int = Field(gt=0)
+    password: str = Field(min_length=1)
     server: str = "Tickmill-Demo"
 
 class BotConfigRequest(BaseModel):
@@ -315,7 +317,9 @@ async def toggle_bot():
 
 @app.post("/api/bot/config")
 def update_bot_config(req: BotConfigRequest):
-    data = req.model_dump(exclude_unset=True)
+    if bot.is_running or (bot.task is not None and not bot.task.done()):
+        raise HTTPException(status_code=409, detail="Ayarları değiştirmeden önce botu durdurun ve mevcut döngünün bitmesini bekleyin.")
+    data = req.model_dump(exclude_unset=True, exclude_none=True)
     bot.update_config(data)
     return bot.get_status()
 
