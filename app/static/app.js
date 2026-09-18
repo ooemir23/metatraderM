@@ -488,16 +488,8 @@ function switchPositionTab(tab) {
     }
     fetchReports();
   } else if (tab === "ai") {
-    if (btnAI) btnAI.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-purple-500/20 text-purple-400 shadow-sm";
-    if (aiActions) {
-      aiActions.classList.remove("hidden");
-      aiActions.classList.add("flex");
-    }
-    if (aiContainer) {
-      aiContainer.classList.remove("hidden");
-      aiContainer.classList.add("flex");
-    }
-    fetchAIStatus();
+    window.open("/ai", "_blank");
+    return;
   }
 }
 

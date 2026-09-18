@@ -112,5 +112,52 @@ body.resizing-positions #tradingview-container iframe {
   display: none !important;
 }
 
+/* ==========================================
+   ANIMATED DEEPSEEK AI BADGE & GLOW EFFECTS
+   ========================================== */
 
+@keyframes ai-glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.4), 0 0 25px rgba(99, 102, 241, 0.25);
+    border-color: rgba(168, 85, 247, 0.6);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(168, 85, 247, 0.8), 0 0 40px rgba(6, 182, 212, 0.45);
+    border-color: rgba(6, 182, 212, 0.9);
+    transform: scale(1.02);
+  }
+}
 
+@keyframes ai-shimmer-bg {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes ai-spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.ai-logo-animated {
+  animation: ai-glow-pulse 3s infinite ease-in-out;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-logo-animated:hover {
+  transform: scale(1.05) translateY(-1px);
+  box-shadow: 0 0 35px rgba(168, 85, 247, 0.9), 0 0 50px rgba(6, 182, 212, 0.6);
+}
+
+.ai-gradient-text {
+  background: linear-gradient(135deg, #e879f9, #818cf8, #38bdf8);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: ai-shimmer-bg 4s ease infinite;
+}
+
+.ai-spin-icon {
+  animation: ai-spin-slow 12s linear infinite;
+}

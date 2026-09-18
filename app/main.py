@@ -343,6 +343,10 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 def read_root():
     return FileResponse("app/static/index.html")
 
+@app.get("/ai")
+def read_ai_dashboard():
+    return FileResponse("app/static/ai.html")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
