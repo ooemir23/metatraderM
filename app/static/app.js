@@ -1173,7 +1173,13 @@ async function fetchAIStatus() {
     const data = await res.json();
     if (!data.success) return;
 
-    renderAIMemory(data.memory, data.config);
+    renderAIMemory(data.memory, {...data.autopilot,
+      mode: data.autopilot?.enabled ? data.autopilot.mode : "DISABLED"});
+    const usageEl = document.getElementById("ai-usage");
+    if (usageEl && data.usage) {
+      usageEl.innerText = `Bugün (UTC): ${data.usage.calls}/${data.limits.daily_calls} AI çağrısı · ${data.usage.total_tokens.toLocaleString("tr-TR")}/${Number(data.limits.daily_tokens).toLocaleString("tr-TR")} raporlanan token` +
+        (data.usage.unknown_usage_calls ? ` · ${data.usage.unknown_usage_calls} isteğin token bilgisi alınamadı` : "");
+    }
   } catch (err) {
     console.error("AI Status fetch error:", err);
   }
@@ -1190,7 +1196,7 @@ function renderAIMemory(memory, config) {
   const lastDate = document.getElementById("ai-last-learned-date");
   const personaDesc = document.getElementById("ai-persona-desc");
 
-  if (memory.is_trained && (memory.trades_analyzed || 0) > 0) {
+  if (memory.last_analyzed && (memory.analyzed_trades_count || 0) > 0) {
     if (statusBadge) {
       statusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> Öğrenildi & Aktif`;
       statusBadge.className = "text-sm md:text-base font-bold text-emerald-400 flex items-center gap-1.5";
@@ -1203,11 +1209,11 @@ function renderAIMemory(memory, config) {
   }
 
   if (tradesCount) {
-    tradesCount.innerText = `${memory.trades_analyzed || 0} işlem analiz edildi`;
+    tradesCount.innerText = `${memory.analyzed_trades_count || 0} işlem analiz edildi`;
   }
 
   if (personaStyle) {
-    personaStyle.innerText = memory.style || "Bekleniyor";
+    personaStyle.innerText = memory.persona?.style || "Bekleniyor";
   }
 
   if (personaRR) {
@@ -1215,11 +1221,11 @@ function renderAIMemory(memory, config) {
   }
 
   if (lastDate) {
-    lastDate.innerText = `Son Güncelleme: ${memory.last_learned_at || "-"}`;
+    lastDate.innerText = `Son Güncelleme: ${memory.last_analyzed || "-"}`;
   }
 
-  if (personaDesc && memory.summary) {
-    personaDesc.innerText = memory.summary;
+  if (personaDesc && memory.persona?.summary) {
+    personaDesc.innerText = memory.persona?.summary;
   }
 
   // 2. Rules List
@@ -1263,9 +1269,9 @@ function renderAIMemory(memory, config) {
 
   // 5. Strategic Income Ideas
   const ideasList = document.getElementById("ai-ideas-list");
-  if (ideasList && Array.isArray(memory.income_ideas)) {
-    if (memory.income_ideas.length > 0) {
-      ideasList.innerHTML = memory.income_ideas.map(idea => `
+  if (ideasList && Array.isArray(memory.revenue_tips)) {
+    if (memory.revenue_tips.length > 0) {
+      ideasList.innerHTML = memory.revenue_tips.map(idea => `
         <li class="flex items-start gap-2 bg-[#11151f] p-2 rounded-lg border border-gray-800/60">
           <i class="ph-bold ph-check text-emerald-400 mt-0.5 shrink-0"></i>
           <span>${escapeHtml(idea)}</span>
@@ -1317,13 +1323,13 @@ function renderAIMemory(memory, config) {
     if (cfgMode && !cfgMode.dataset.userEditing) cfgMode.value = config.mode || "DISABLED";
     if (cfgLot && !cfgLot.dataset.userEditing) cfgLot.value = config.max_lot || 0.01;
     if (cfgConf && !cfgConf.dataset.userEditing) cfgConf.value = config.min_confidence || 75;
-    if (cfgLoss && !cfgLoss.dataset.userEditing) cfgLoss.value = config.daily_max_loss || 50.0;
-    if (cfgSyms && !cfgSyms.dataset.userEditing) cfgSyms.value = (config.symbols || []).join(",");
+    if (cfgLoss && !cfgLoss.dataset.userEditing) cfgLoss.value = config.daily_loss_limit || 50.0;
+    if (cfgSyms && !cfgSyms.dataset.userEditing) cfgSyms.value = (config.allowed_symbols || []).join(",");
   }
 
   // 7. Last Advice Sync
-  if (memory.last_advice && !currentAIAdvice) {
-    renderAIAdvice(memory.last_advice);
+  if (memory.latest_recommendation && !currentAIAdvice) {
+    renderAIAdvice(memory.latest_recommendation);
   }
 }
 
@@ -1341,7 +1347,7 @@ function renderAIAdvice(advice) {
   const timeEl = document.getElementById("ai-advice-time");
   const execBtn = document.getElementById("ai-execute-btn");
 
-  const sig = (advice.signal || "WAIT").toUpperCase();
+  const sig = (advice.action || "WAIT").toUpperCase();
   if (signalEl) {
     if (sig === "BUY") {
       signalEl.innerText = "AL (BUY)";
@@ -1363,16 +1369,16 @@ function renderAIAdvice(advice) {
 
   if (symbolEl) symbolEl.innerText = advice.symbol || currentSymbol;
   if (entryEl) entryEl.innerText = advice.entry_price || "-";
-  if (slEl) slEl.innerText = advice.stop_loss || "-";
-  if (tpEl) tpEl.innerText = advice.take_profit || "-";
-  if (timeEl) timeEl.innerText = advice.time || new Date().toLocaleTimeString("tr-TR");
+  if (slEl) slEl.innerText = advice.sl_price || "-";
+  if (tpEl) tpEl.innerText = advice.tp_price || "-";
+  if (timeEl) timeEl.innerText = advice.generated_at || new Date().toLocaleTimeString("tr-TR");
 
   if (reasonEl) {
     reasonEl.innerText = advice.reasoning || "Gerekçe belirtilmedi.";
   }
 
   if (execBtn) {
-    if (sig === "BUY" || sig === "SELL") {
+    if ((sig === "BUY" || sig === "SELL") && Number(advice.expires_at || 0) * 1000 > Date.now()) {
       execBtn.disabled = false;
       execBtn.innerHTML = `<i class="ph-bold ph-paper-plane-tilt text-base"></i> <span>Bu Tavsiyeyi MT5'te Uygula (${sig} - ${advice.symbol || currentSymbol})</span>`;
     } else {
@@ -1384,6 +1390,7 @@ function renderAIAdvice(advice) {
 
 async function triggerAILearn() {
   const btn = document.getElementById("ai-learn-btn");
+  if (btn?.disabled) return;
   let originalHtml = "";
   if (btn) {
     originalHtml = btn.innerHTML;
@@ -1419,6 +1426,7 @@ async function triggerAILearn() {
 
 async function triggerAIAdvice() {
   const btn = document.getElementById("ai-advice-btn");
+  if (btn?.disabled) return;
   let originalHtml = "";
   if (btn) {
     originalHtml = btn.innerHTML;
@@ -1435,9 +1443,13 @@ async function triggerAIAdvice() {
     });
 
     const data = await res.json();
-    if (res.ok && data.success && data.advice) {
-      renderAIAdvice(data.advice);
-      showToast(`💡 ${currentSymbol}: ${data.advice.signal} Sinyali Üretildi (Güven: %${data.advice.confidence})`, "success");
+    if (res.ok && data.success && data.recommendation) {
+      renderAIAdvice(data.recommendation);
+      if (data.cached) {
+        showToast(data.stale ? "Yeni kapanmış mum yok; önceki analiz gösteriliyor. Yeni token harcanmadı." : "Kayıtlı analiz gösteriliyor; yeni token harcanmadı.", "info");
+        return;
+      }
+      showToast(`💡 ${currentSymbol}: ${data.recommendation.action} Sinyali Üretildi (Güven: %${data.recommendation.confidence})`, "success");
     } else {
       showToast(`❌ Tavsiye Üretilemedi: ${data.detail || data.error}`, "error");
     }
@@ -1457,18 +1469,22 @@ async function executeCurrentAdvice() {
     return;
   }
 
-  const sig = (currentAIAdvice.signal || "").toUpperCase();
+  const sig = (currentAIAdvice.action || "").toUpperCase();
   if (sig !== "BUY" && sig !== "SELL") {
     showToast("Bekleme sinyalinde işlem açılamaz.", "error");
     return;
   }
 
+  if (Number(currentAIAdvice.expires_at || 0) * 1000 <= Date.now()) {
+    showToast("Tavsiyenin süresi doldu; yeni mum sonrası analiz alın.", "error");
+    return;
+  }
   const symbol = currentAIAdvice.symbol || currentSymbol;
-  const sl = currentAIAdvice.stop_loss ? Number(currentAIAdvice.stop_loss) : null;
-  const tp = currentAIAdvice.take_profit ? Number(currentAIAdvice.take_profit) : null;
+  const sl = currentAIAdvice.sl_price ? Number(currentAIAdvice.sl_price) : null;
+  const tp = currentAIAdvice.tp_price ? Number(currentAIAdvice.tp_price) : null;
 
   const conf = confirm(
-    `🤖 DeepSeek AI Emri:\n\nSembol: ${symbol}\nYön: ${sig}\nLot: 0.01\nSL: ${sl || 'Belirtilmedi'}\nTP: ${tp || 'Belirtilmedi'}\nMagic No: 777888\n\nBu işlemi MT5 hesabınızda açmak istiyor musunuz?`
+    `🤖 DeepSeek AI Emri:\n\nSembol: ${symbol}\nYön: ${sig}\nLot: 0.01\nSL: ${sl || 'Belirtilmedi'}\nTP: ${tp || 'Belirtilmedi'}\nMagic No: 123456\n\nBu işlemi MT5 hesabınızda açmak istiyor musunuz?`
   );
   if (!conf) return;
 
@@ -1484,19 +1500,12 @@ async function executeCurrentAdvice() {
     const res = await fetch("/api/ai/execute", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        symbol: symbol,
-        action: sig,
-        lot: 0.01,
-        stop_loss: sl,
-        take_profit: tp,
-        reason: currentAIAdvice.reasoning || "DeepSeek manual approval"
-      })
+      body: JSON.stringify({recommendation: {...currentAIAdvice, suggested_lot: 0.01}})
     });
 
     const data = await res.json();
     if (res.ok && data.success) {
-      showToast(`🚀 AI Emri Başarıyla Açıldı! Bilet: #${data.result?.order || 'Tamam'}`, "success");
+      showToast(`🚀 AI Emri Başarıyla Açıldı! Bilet: #${data.ticket || 'Tamam'}`, "success");
       fetchPositions();
       fetchAccount();
     } else {
@@ -1530,11 +1539,12 @@ async function saveAIAutopilot() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        mode: mode,
+        enabled: mode !== "DISABLED",
+        mode: mode === "DISABLED" ? "ADVISORY" : mode,
         max_lot: maxLot,
         min_confidence: minConf,
-        daily_max_loss: maxLoss,
-        symbols: symbols
+        daily_loss_limit: maxLoss,
+        allowed_symbols: symbols
       })
     });
 

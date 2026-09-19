@@ -3,6 +3,11 @@ import json
 import time
 import logging
 import requests
+import hashlib
+import threading
+import tempfile
+from functools import wraps
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger("DeepSeekAdvisor")
@@ -18,8 +23,31 @@ MEMORY_PATHS = [
     os.path.join(os.path.dirname(__file__), "ai_memory.json")
 ]
 
+def serialized_analysis(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        if not self._analysis_lock.acquire(blocking=False):
+            return {"success": False, "error": "Bir AI analizi sürüyor; tamamlanmasını bekleyin."}
+        try:
+            return method(self, *args, **kwargs)
+        finally:
+            self._analysis_lock.release()
+    return wrapped
+
+
+def digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False,
+                                    separators=(",", ":")).encode()).hexdigest()
+
+
 class DeepSeekAdvisor:
     def __init__(self, mt5_client=None, api_key: Optional[str] = None):
+        self._analysis_lock = threading.Lock()
+        self._state_lock = threading.RLock()
+        self.daily_call_limit = max(1, int(os.getenv("AI_DAILY_CALL_LIMIT", "100")))
+        self.daily_token_limit = max(1000, int(os.getenv("AI_DAILY_TOKEN_LIMIT", "100000")))
+        self.cost_state = {"usage_days": {}, "last_requests": {}, "advice_cache": {},
+                           "learn_digest": None, "autopilot_bucket": None}
         self.mt5 = mt5_client
         self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY", DEFAULT_API_KEY)
         self.model = os.getenv("DEEPSEEK_MODEL", DEFAULT_MODEL)
@@ -69,6 +97,8 @@ class DeepSeekAdvisor:
                 try:
                     with open(path, "r", encoding="utf-8") as f:
                         data = json.load(f)
+                    if isinstance(data.get("cost_state"), dict):
+                        self.cost_state.update(data["cost_state"])
                     if "memory" in data:
                         self.memory.update(data["memory"])
                     if "autopilot" in data:
@@ -79,48 +109,95 @@ class DeepSeekAdvisor:
                     logger.warning(f"Failed to read AI memory from {path}: {e}")
 
     def save_memory(self):
-        data = {
-            "memory": self.memory,
-            "autopilot": self.autopilot,
-            "saved_at": time.strftime("%Y-%m-%d %H:%M:%S")
-        }
-        for path in MEMORY_PATHS:
-            try:
-                parent = os.path.dirname(path)
-                if parent and not os.path.exists(parent):
-                    try:
-                        os.makedirs(parent, exist_ok=True)
-                    except Exception:
-                        continue
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                logger.info(f"Saved AI memory to {path}")
-                return
-            except Exception as e:
-                logger.debug(f"Could not save AI memory to {path}: {e}")
+        with self._state_lock:
+            data = {"memory": self.memory, "autopilot": self.autopilot,
+                    "cost_state": self.cost_state,
+                    "saved_at": time.strftime("%Y-%m-%d %H:%M:%S")}
+            for path in MEMORY_PATHS:
+                temp_path = None
+                try:
+                    parent = os.path.dirname(path) or "."
+                    os.makedirs(parent, exist_ok=True)
+                    with tempfile.NamedTemporaryFile(mode="w", dir=parent, delete=False,
+                                                     encoding="utf-8") as f:
+                        temp_path = f.name
+                        json.dump(data, f, ensure_ascii=False)
+                    os.replace(temp_path, path)
+                    return True
+                except Exception as exc:
+                    logger.debug("Could not save AI state: %s", exc)
+                finally:
+                    if temp_path and os.path.exists(temp_path):
+                        os.unlink(temp_path)
+            return False
 
+    def _usage(self, day=None):
+        day = day or datetime.now(timezone.utc).date().isoformat()
+        return self.cost_state["usage_days"].setdefault(day, {
+            "calls": 0, "prompt_tokens": 0, "completion_tokens": 0,
+            "total_tokens": 0, "cache_hit_tokens": 0, "unknown_usage_calls": 0,
+        })
+
+    def _request_json(self, payload, timeout, operation):
+        if not self.api_key:
+            raise ValueError("AI API anahtarı tanımlı değil.")
+        day = datetime.now(timezone.utc).date().isoformat()
+        with self._state_lock:
+            usage = self._usage(day)
+            if usage["calls"] >= self.daily_call_limit or usage["total_tokens"] >= self.daily_token_limit:
+                raise ValueError("Günlük AI kullanım sınırına ulaşıldı (UTC).")
+            last = self.cost_state["last_requests"].get(operation, 0)
+            if time.time() - last < 60:
+                raise ValueError("Aynı analiz için en az 60 saniye bekleyin.")
+            self.cost_state["last_requests"][operation] = time.time()
+            usage["calls"] += 1  # Reserve before sending, including failed/ambiguous requests.
+            usage["unknown_usage_calls"] += 1
+            self.cost_state["usage_days"] = dict(sorted(self.cost_state["usage_days"].items())[-7:])
+            if not self.save_memory():
+                raise RuntimeError("AI kullanım sayacı kaydedilemedi; istek gönderilmedi.")
+        response = requests.post(DEEPSEEK_API_URL,
+                                 headers={"Authorization": f"Bearer {self.api_key}",
+                                          "Content-Type": "application/json"},
+                                 json=payload, timeout=timeout)
+        response.raise_for_status()
+        data = response.json()
+        reported = data.get("usage")
+        if isinstance(reported, dict):
+            with self._state_lock:
+                usage = self._usage(day)
+                for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                    usage[key] += max(0, int(reported.get(key, 0)))
+                usage["cache_hit_tokens"] += max(0, int(reported.get("prompt_cache_hit_tokens", 0)))
+                usage["unknown_usage_calls"] = max(0, usage["unknown_usage_calls"] - 1)
+                self.save_memory()
+        choice = data["choices"][0]
+        if choice.get("finish_reason") == "length":
+            raise ValueError("AI yanıtı uzunluk sınırında kesildi; otomatik tekrar yapılmadı.")
+        parsed = json.loads(choice["message"]["content"])
+        if not isinstance(parsed, dict):
+            raise ValueError("AI geçerli bir JSON nesnesi döndürmedi.")
+        return parsed
+
+    def claim_autopilot_cycle(self):
+        # Claim each M15 wall-clock bucket before any analysis, even on HOLD/error.
+        with self._state_lock:
+            bucket = int(time.time() // 900)
+            if self.cost_state.get("autopilot_bucket") == bucket:
+                return False
+            self.cost_state["autopilot_bucket"] = bucket
+            return self.save_memory()
+
+    @serialized_analysis
     def test_connection(self) -> Dict[str, Any]:
         try:
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}"
-            }
-            payload = {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": "You are a financial AI assistant."},
-                    {"role": "user", "content": "Test ping. Respond in JSON: {\"status\": \"OK\"}"}
-                ],
-                "response_format": {"type": "json_object"},
-                "max_tokens": 50
-            }
-            res = requests.post(DEEPSEEK_API_URL, headers=headers, json=payload, timeout=10)
-            if res.status_code == 200:
-                return {"success": True, "data": res.json()}
-            return {"success": False, "error": f"HTTP {res.status_code}: {res.text}"}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+            data = self._request_json({"model": self.model,
+                "messages": [{"role": "user", "content": 'JSON: {"status":"OK"}'}],
+                "response_format": {"type": "json_object"}, "max_tokens": 50}, 10, "ping")
+            return {"success": True, "data": data}
+        except Exception as exc:
+            return {"success": False, "error": str(exc)}
 
+    @serialized_analysis
     def analyze_user_trades(self, deals: List[Dict[str, Any]], stats: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         if not deals or len(deals) == 0:
             return {
@@ -129,83 +206,30 @@ class DeepSeekAdvisor:
             }
 
         clean_deals = []
-        total_p = 0.0
-        winning_count = 0
-        losing_count = 0
-
+        groups = {}
         for d in deals[:100]:
-            profit = float(d.get("profit", 0.0))
-            total_p += profit
-            if profit > 0:
-                winning_count += 1
-            elif profit < 0:
-                losing_count += 1
-
-            clean_deals.append({
-                "ticket": d.get("ticket"),
-                "symbol": d.get("symbol"),
-                "type": d.get("type"),
-                "volume": d.get("volume"),
-                "price": d.get("price"),
-                "profit": profit,
-                "time": d.get("time_str") or d.get("time")
-            })
-
-        system_prompt = """Sen profesyonel bir Kantitatif Yatırımcı ve Yapay Zeka Ticaret Mentorüsün.
-Görevin: Bir kullanıcının MetaTrader 5 üzerinden yaptığı manuel işlemlerin geçmişini derinlemesine incelemek,
-kullanıcının ticaret mantığını, psikolojisini, kullandığı yapıyı ve alışkanlıklarını ÖĞRENMEK.
-
-Analiz hedeflerin:
-1. Kullanıcının işlem tarzını (Scalper, Day Trader, Swing Trader, Trend Takipçisi, Agresif/Muhafazakar) tanımla.
-2. Hangi paritelerde (örneğin XAUUSD veya EURUSD) ve hangi işlem türlerinde (BUY/SELL) en çok kâr ettiğini belirle.
-3. Kullanıcının kâr getiren "Başarılı Yapı ve Paternlerini" (Strengths) çıkar.
-4. Kullanıcının zarar etmesine yol açan "Hatalarını ve Zayıf Noktalarını" (Weaknesses - örneğin zararı kesmeme, aşırı lot, ters işlem açma) açık ve net şekilde belirle.
-5. Kullanıcının mantığını temel alarak daha çok GELİR KAZANMASI için uygulanabilir 3-5 adet altın kural (learned_rules) formüle et.
-6. Gelir artırma tavsiyeleri (revenue_tips) sun.
-
-Yanıtını SADECE geçerli bir JSON nesnesi olarak ver. Format:
-{
-  "persona": {
-    "title": "Örn: Agresif Altın Scalperı",
-    "summary": "Kullanıcının ticaret tarzının 2-3 cümlelik özeti",
-    "style": "Scalping / Day Trading / vb.",
-    "risk_profile": "Yüksek / Orta / Düşük"
-  },
-  "learning_status": "Öğrenildi (%92 Model Uyumu)",
-  "strengths": [
-    "Güçlü yön 1...",
-    "Güçlü yön 2..."
-  ],
-  "weaknesses": [
-    "Tespit edilen hata veya risk 1...",
-    "Tespit edilen hata veya risk 2..."
-  ],
-  "learned_rules": [
-    "Öğrenilen Kural 1: ...",
-    "Öğrenilen Kural 2: ..."
-  ],
-  "revenue_tips": [
-    "Gelir artırma tavsiyesi 1...",
-    "Gelir artırma tavsiyesi 2..."
-  ]
-}
-Dil: Türkçe. Analiz samimi, profesyonel ve verilere dayalı olmalı."""
-
-        user_content = json.dumps({
-            "total_deals_analyzed": len(clean_deals),
-            "total_net_profit": round(total_p, 2),
-            "winning_trades": winning_count,
-            "losing_trades": losing_count,
-            "win_rate": round((winning_count / len(clean_deals) * 100), 1) if clean_deals else 0,
-            "summary_stats": stats or {},
-            "sample_trades": clean_deals[:50]
-        }, ensure_ascii=False)
+            profit = sum(float(d.get(k, 0) or 0) for k in ("profit", "commission", "swap", "fee"))
+            symbol, side = str(d.get("symbol", "")), str(d.get("type", ""))
+            group = groups.setdefault(symbol + ":" + side, {"count": 0, "wins": 0, "net": 0})
+            group["count"] += 1
+            group["wins"] += int(profit > 0)
+            group["net"] = round(group["net"] + profit, 2)
+            clean_deals.append({"ticket": d.get("ticket"), "symbol": symbol, "side": side,
+                                "lot": d.get("volume"), "net": round(profit, 2),
+                                "time": d.get("time")})
+        learning_digest = digest({"model": self.model, "version": 2, "trades": clean_deals})
+        if self.cost_state.get("learn_digest") == learning_digest:
+            return {"success": True, "cached": True, "memory": self.memory}
+        system_prompt = """İşlem geçmişini özetleyen bir analiz yardımcısısın. Sadece verinin desteklediği
+bulguları yaz; psikoloji, strateji başarısı veya kâr garantisi uydurma. Türkçe, kısa JSON üret:
+{"persona":{"title":"","summary":"","style":"","risk_profile":""},
+"learning_status":"Analiz edildi","strengths":[],"weaknesses":[],"learned_rules":[],"revenue_tips":[]}.
+Her listede en fazla 3 kısa madde, summary en fazla 2 cümle olsun."""
+        user_content = json.dumps({"count": len(clean_deals), "by_symbol_side": groups,
+                                  "recent_examples": clean_deals[:8]},
+                                 ensure_ascii=False, separators=(",", ":"))
 
         try:
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}"
-            }
             payload = {
                 "model": self.model,
                 "messages": [
@@ -214,18 +238,13 @@ Dil: Türkçe. Analiz samimi, profesyonel ve verilere dayalı olmalı."""
                 ],
                 "response_format": {"type": "json_object"},
                 "temperature": 0.3,
-                "max_tokens": 1500
+                "max_tokens": 800
             }
 
-            logger.info("Sending trade history to DeepSeek for behavioral learning...")
-            res = requests.post(DEEPSEEK_API_URL, headers=headers, json=payload, timeout=30)
-            if res.status_code != 200:
-                logger.error(f"DeepSeek API error: {res.status_code} - {res.text}")
-                return {"success": False, "error": f"DeepSeek API hatası: {res.status_code}"}
-
-            data = res.json()
-            content_str = data["choices"][0]["message"]["content"]
-            parsed = json.loads(content_str)
+            parsed = self._request_json(payload, 30, "learn")
+            if not isinstance(parsed.get("persona"), dict) or not isinstance(parsed.get("learned_rules"), list):
+                raise ValueError("AI öğrenme yanıtı geçersiz.")
+            self.cost_state["learn_digest"] = learning_digest
 
             self.memory["last_analyzed"] = time.strftime("%Y-%m-%d %H:%M:%S")
             self.memory["analyzed_trades_count"] = len(clean_deals)
@@ -243,6 +262,7 @@ Dil: Türkçe. Analiz samimi, profesyonel ve verilere dayalı olmalı."""
             logger.error(f"Error during DeepSeek trade analysis: {e}")
             return {"success": False, "error": str(e)}
 
+    @serialized_analysis
     def get_market_advice(
         self,
         symbol: str,
@@ -254,67 +274,35 @@ Dil: Türkçe. Analiz samimi, profesyonel ve verilere dayalı olmalı."""
         ma2_val: Optional[float] = None
     ) -> Dict[str, Any]:
         symbol = symbol.upper()
-        current_price = tick.get("bid") if tick else 0.0
-        ask_price = tick.get("ask") if tick else 0.0
-
-        recent_candles = []
-        if rates and len(rates) > 0:
-            for r in rates[-15:]:
-                recent_candles.append({
-                    "time": r.get("time"),
-                    "open": round(r.get("open", 0.0), 5),
-                    "high": round(r.get("high", 0.0), 5),
-                    "low": round(r.get("low", 0.0), 5),
-                    "close": round(r.get("close", 0.0), 5),
-                    "vol": r.get("tick_volume", 0)
-                })
-
-        system_prompt = """Sen dünyanın en iyi Finansal Yapay Zeka İşlem Stratejistisin.
-Kullanıcının işlem tarzını, kurallarını ve zayıf/güçlü yönlerini öğrendin.
-Şu an canlı piyasa verilerini analiz edip kullanıcıya net, kârlı ve disiplinli bir alım-satım tavsiyesi vereceksin.
-
-Kurallar:
-1. "action" değeri SADECE "BUY", "SELL" veya "HOLD" (Bekle) olabilir.
-2. "confidence" 0 ile 100 arasında bir yüzde olmalıdır. Net bir fırsat yoksa "HOLD" ve düşük güven ver.
-3. Kullanıcının öğrendiğin tarzına ve kurallarına uygun önerilerde bulun.
-4. SL (Stop Loss) ve TP (Take Profit) seviyelerini kesinlikle mantıklı risk/ödül oranına göre belirle.
-5. Açıklaman (reasoning) net, ikna edici ve Türkçe olsun.
-
-Yanıtını SADECE şu JSON formatında ver:
-{
-  "action": "BUY" | "SELL" | "HOLD",
-  "confidence": 85,
-  "symbol": "EURUSD",
-  "entry_price": 1.14780,
-  "sl_points": 200,
-  "tp_points": 400,
-  "sl_price": 1.14580,
-  "tp_price": 1.15180,
-  "suggested_lot": 0.05,
-  "reasoning": "HMA eğimi yukarı döndü ve kullanıcının başarılı olduğu yapıyla uyumlu...",
-  "risk_reward_ratio": "1:2",
-  "action_title": "Güçlü Alım Fırsatı / Long Setup"
-}"""
-
+        if not rates or len(rates) < 2 or not tick or not tick.get("bid"):
+            return {"success": False, "error": "Güncel fiyat ve kapanmış mum verisi gerekli."}
+        closed = rates[:-1][-10:]
+        candle_time = int(closed[-1]["time"])
+        positions = [{k: p.get(k) for k in ("ticket", "symbol", "type", "volume", "sl", "tp")}
+                     for p in (open_positions or [])]
+        profile = {"persona": self.memory.get("persona"), "rules": self.memory.get("learned_rules", [])[:3]}
+        cache_key = digest({"symbol": symbol, "timeframe": timeframe_name, "candle": candle_time,
+                            "positions": positions, "profile": profile, "model": self.model})
+        entry = self.cost_state["advice_cache"].get(cache_key)
+        if entry:
+            return {"success": True, "cached": True, "stale": entry["expires_at"] <= time.time(),
+                    "recommendation": entry["recommendation"]}
+        system_prompt = """Verilen kapanmış mumları ve profil özetini değerlendir. Kâr garantisi verme;
+veri yetersizse HOLD seç. Türkçe en fazla 2 kısa cümle gerekçe ver. Yalnızca şu JSON alanlarını üret:
+action (BUY/SELL/HOLD), confidence (0-100), entry_price, sl_points (>=0), tp_points (>=0),
+sl_price, tp_price, suggested_lot, reasoning, risk_reward_ratio, action_title.
+Fiyat, puan ve lot birimlerini karıştırma. Belirsizlikte HOLD kullan."""
         user_content = json.dumps({
-            "target_symbol": symbol,
-            "timeframe": timeframe_name,
-            "current_bid": current_price,
-            "current_ask": ask_price,
-            "spread_points": round((ask_price - current_price) * 100000, 1) if ask_price and current_price else 0,
-            "current_hma": hma_val,
-            "current_second_ma": ma2_val,
-            "user_learned_persona": self.memory.get("persona"),
-            "user_learned_rules": self.memory.get("learned_rules"),
-            "active_open_positions_count": len(open_positions) if open_positions else 0,
-            "recent_candles": recent_candles
-        }, ensure_ascii=False)
+            "symbol": symbol, "timeframe": timeframe_name,
+            "bid": tick.get("bid"), "ask": tick.get("ask"), "spread_points": tick.get("spread"),
+            "hma": hma_val, "second_ma": ma2_val,
+            "profile": {"style": (profile["persona"] or {}).get("style"), "rules": profile["rules"]},
+            "open_positions": len(positions),
+            "candle_columns": ["time", "open", "high", "low", "close", "tick_volume"],
+            "closed_candles": [[r.get(k) for k in ("time", "open", "high", "low", "close", "tick_volume")]
+                               for r in closed]}, ensure_ascii=False, separators=(",", ":"))
 
         try:
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}"
-            }
             payload = {
                 "model": self.model,
                 "messages": [
@@ -323,21 +311,19 @@ Yanıtını SADECE şu JSON formatında ver:
                 ],
                 "response_format": {"type": "json_object"},
                 "temperature": 0.2,
-                "max_tokens": 800
+                "max_tokens": 400
             }
 
-            logger.info(f"Requesting DeepSeek market advice for {symbol}...")
-            res = requests.post(DEEPSEEK_API_URL, headers=headers, json=payload, timeout=25)
-            if res.status_code != 200:
-                logger.error(f"DeepSeek advice error: {res.status_code} - {res.text}")
-                return {"success": False, "error": f"DeepSeek API hatası: {res.status_code}"}
-
-            data = res.json()
-            content_str = data["choices"][0]["message"]["content"]
-            rec = json.loads(content_str)
+            rec = self._request_json(payload, 25, "advice:" + symbol + ":" + timeframe_name)
+            if rec.get("action") not in ("BUY", "SELL", "HOLD"):
+                raise ValueError("AI tavsiye yönü geçersiz.")
             rec["generated_at"] = time.strftime("%H:%M:%S")
             rec["symbol"] = symbol
 
+            rec["expires_at"] = time.time() + 900
+            self.cost_state["advice_cache"][cache_key] = {"expires_at": rec["expires_at"], "recommendation": rec}
+            self.cost_state["advice_cache"] = dict(sorted(
+                self.cost_state["advice_cache"].items(), key=lambda item: item[1]["expires_at"])[-64:])
             self.memory["latest_recommendation"] = rec
             self.save_memory()
 
@@ -355,6 +341,8 @@ Yanıtını SADECE şu JSON formatında ver:
         if not target_rec:
             return {"success": False, "error": "Uygulanacak geçerli bir tavsiye bulunamadı."}
 
+        if float(target_rec.get("expires_at", 0)) <= time.time():
+            return {"success": False, "error": "Tavsiyenin süresi doldu; güncel analiz alın."}
         action = target_rec.get("action", "").upper()
         if action not in ("BUY", "SELL"):
             return {"success": False, "error": f"Bu işlem türü açılamaz ({action}). Sadece BUY veya SELL emirleri açılabilir."}
@@ -412,6 +400,10 @@ Yanıtını SADECE şu JSON formatında ver:
 
     def get_status(self) -> Dict[str, Any]:
         return {
+            "success": True,
+            "usage": dict(self._usage()),
+            "limits": {"daily_calls": self.daily_call_limit, "daily_tokens": self.daily_token_limit,
+                       "timezone": "UTC"},
             "api_configured": bool(self.api_key),
             "model": self.model,
             "memory": self.memory,

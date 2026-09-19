@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, ConfigDict
 
-from app.mt5_client import MT5Client
+from app.mt5_client import MT5Client, TIMEFRAME_NAMES
 from app.strategy_bot import StrategyBot
 from app.ai_advisor import DeepSeekAdvisor
 
@@ -33,8 +33,8 @@ async def auto_reconnect_loop():
             if connected and ai_advisor.autopilot.get("enabled") and ai_advisor.autopilot.get("mode") == "FULL_AUTO":
                 now = time.time()
                 last_time = ai_advisor.autopilot.get("last_auto_trade_time", 0)
-                # Check at most once every 300 seconds (5 minutes)
-                if now - last_time >= 300:
+                # Scan once per M15 bucket; trade cooldown is separate from analysis cadence.
+                if now - last_time >= 300 and ai_advisor.claim_autopilot_cycle():
                     symbols = ai_advisor.autopilot.get("allowed_symbols", ["EURUSD", "XAUUSD"])
                     for sym in symbols:
                         tick = await asyncio.to_thread(mt5_client.get_symbol_price, sym)
@@ -42,7 +42,7 @@ async def auto_reconnect_loop():
                             rates = await asyncio.to_thread(mt5_client.get_rates, sym, 15, 30) or []
                             open_pos = await asyncio.to_thread(mt5_client.get_positions)
                             adv = await asyncio.to_thread(ai_advisor.get_market_advice, sym, "M15", tick=tick, rates=rates, open_positions=open_pos)
-                            if adv.get("success"):
+                            if adv.get("success") and not adv.get("cached"):
                                 rec = adv.get("recommendation", {})
                                 conf = rec.get("confidence", 0)
                                 action = rec.get("action")
@@ -149,7 +149,7 @@ class AIAdviceRequest(BaseModel):
     timeframe: Optional[str] = "M15"
 
 class AIExecuteRequest(BaseModel):
-    recommendation: Optional[Dict[str, Any]] = None
+    recommendation: Dict[str, Any]
 
 class AIAutopilotRequest(BaseModel):
     enabled: Optional[bool] = None
@@ -331,9 +331,7 @@ def get_ai_status():
 @app.post("/api/ai/learn")
 def trigger_ai_learning():
     deals = mt5_client.get_history(days=90)
-    rep = mt5_client.get_reports(days=90)
-    stats = rep.get("summary", {}) if rep else {}
-    res = ai_advisor.analyze_user_trades(deals, stats)
+    res = ai_advisor.analyze_user_trades(deals)
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error", "Öğrenme analizi başarısız"))
     return res
@@ -342,13 +340,17 @@ def trigger_ai_learning():
 def get_ai_advice(req: AIAdviceRequest):
     sym = (req.symbol or "EURUSD").upper()
     tick = mt5_client.get_symbol_price(sym)
-    rates = mt5_client.get_rates(sym, 15, 30) or []
+    timeframe = (req.timeframe or "M15").upper()
+    minutes = next((m for m, name in TIMEFRAME_NAMES.items() if name == "TIMEFRAME_" + timeframe), None)
+    if minutes is None:
+        raise HTTPException(status_code=422, detail="Desteklenmeyen zaman dilimi")
+    rates = mt5_client.get_rates(sym, minutes, 30) or []
     open_pos = mt5_client.get_positions()
     hma_val = bot.current_hma if bot.symbol == sym else None
     ma2_val = bot.current_ma2 if bot.symbol == sym else None
     res = ai_advisor.get_market_advice(
         symbol=sym,
-        timeframe_name=req.timeframe or "M15",
+        timeframe_name=timeframe,
         tick=tick,
         rates=rates,
         open_positions=open_pos,

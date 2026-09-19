@@ -39,3 +39,16 @@ bash -n start.sh
 5. **Dağıtım:** Canlı Compose etiketleri korunmalı, `.env.example` değerleri sağlanmalı ve önce demo ortamında test edilmeli. MT5/Wine bağımlılıkları ve container image sürümleri sabitlenmeli. Açılış gözeticileri kalıcı s6 servisleri olarak yönetilmeli. Canlı dağıtımda `compose.dokploy.yml` ek dosyası kullanılır; sırlar sunucudaki git dışı `.env` dosyasında tutulur.
 
 MT5 resmi referansları: [emir dönüş kodları](https://www.mql5.com/en/docs/constants/errorswarnings/enum_trade_return_codes), [TIMEFRAME kullanımı](https://www.mql5.com/en/docs/python_metatrader5/mt5copyratesfrompos_py), [initialize timeout](https://www.mql5.com/en/docs/python_metatrader5/mt5initialize_py).
+
+## AI maliyet kontrolü
+
+- Otomatik tarama işlem zamanından ayrıldı: M15 zaman aralığı başına en fazla bir döngü. HOLD ve hatalarda da bu aralık tüketilir.
+- Aynı sembol/zaman dilimi/kapanmış mum/profil/pozisyon bilgisi için analiz yeniden kullanılabilir. Yeni mum yoksa eski sonuç gösterilir; süresi dolan tavsiye işlem açamaz. Yeniden başlatmada önbellek korunur.
+- Son 100 işlemin özeti yerelde hesaplanır, modele yalnızca gruplar ve 8 örnek gönderilir. Aynı geçmiş yeniden analiz edilmez.
+- Tavsiye çıktı sınırı 400, geçmiş analizi 800 token. Kesilen JSON otomatik tekrar edilmez. Aynı analiz hatasından sonra en az 60 saniye beklenir.
+- `AI_DAILY_CALL_LIMIT=100`: UTC günü için kalıcı çağrı sayısı sınırı; başarısız istekler de sayılır.
+- `AI_DAILY_TOKEN_LIMIT=100000`: sağlayıcının bildirdiği toplam token bu eşiğe ulaşınca **sonraki** ücretli çağrı engellenir; son isteğin tokenlarıyla eşik aşılabilir. Yanıtı alınamayan isteklerin harcaması bilinmez, ayrı sayaçta gösterilir. Bu bir kesin dolar bütçesi değildir.
+- Arayüz sayacı bu sürümden itibaren tutulan verileri gösterir; eski sağlayıcı harcamalarını geriye dönük içermez. Durum yenilemeleri ücretli AI çağrısı yapmaz.
+- Sayaç tek Uvicorn süreci için tasarlanmıştır. Birden çok worker/replica kullanılacaksa merkezi Redis/DB kilidi ve sayaç gerekir.
+- Her iki arayüz backend'in `recommendation`, `autopilot` ve profil alanlarıyla uyumlu hale getirildi. Manuel emir onayında gösterilen 0.01 lot istekle birlikte gönderilir; başka bir sembolün son tavsiyesine sessiz geri dönüş kaldırıldı.
+- Ek test: `node tests/test_ai_ui.cjs`. Testler yapay API yanıtları kullanır; ücretli sağlayıcı çağrısı veya canlı emir göndermez.
