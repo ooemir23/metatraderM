@@ -1408,8 +1408,10 @@ async function triggerAILearn() {
 
     const data = await res.json();
     if (res.ok && data.success) {
-      showToast(`✅ Başarılı! DeepSeek ${data.trades_analyzed} işlemi analiz etti ve tarzınızı hafızasına kaydetti.`, "success");
+      showToast(`✅ Başarılı! DeepSeek ${data.memory?.analyzed_trades_count || 0} işlemi analiz etti ve tarzınızı hafızasına kaydetti.`, "success");
       renderAIMemory(data.memory, null);
+      if (data.cached) showToast("İşlem geçmişi değişmedi; kayıtlı analiz kullanıldı. Yeni token harcanmadı.", "info");
+      fetchAIStatus();
       fetchAIStatus();
     } else {
       showToast(`❌ Analiz Hatası: ${data.detail || data.error}`, "error");
