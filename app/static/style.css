@@ -161,3 +161,29 @@ body.resizing-positions #tradingview-container iframe {
 .ai-spin-icon {
   animation: ai-spin-slow 12s linear infinite;
 }
+
+/* Persistent feedback directly below the trade controls. */
+.order-notice {
+  margin-top: 12px;
+  padding: 11px 13px;
+  border: 1px solid #374151;
+  border-radius: 10px;
+  background: #181d2a;
+  color: #9ca3af;
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.order-notice-title { display: block; font-weight: 700; margin-bottom: 3px; }
+.order-notice[data-tone="error"] { color: #fda4af; border-color: #9f3448; background: #341b26; }
+.order-notice[data-tone="pending"] { color: #7dd3fc; border-color: #24627d; background: #152734; }
+.order-notice[data-tone="success"] { color: #6ee7b7; border-color: #27664e; background: #152e28; }
+.order-notice-flash { animation: order-notice-pulse .85s ease-in-out 4; }
+@keyframes order-notice-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { background-color: #572132; border-color: #fb7185; box-shadow: 0 0 0 3px #fb718530; }
+}
+#order-buy-btn:disabled, #order-sell-btn:disabled { opacity: .6; cursor: wait; }
+@media (prefers-reduced-motion: reduce) {
+  .order-notice-flash { animation: none; outline: 2px solid #fb7185; }
+}

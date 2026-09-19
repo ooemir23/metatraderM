@@ -394,6 +394,7 @@ function initPositionsTopResizer() {
 // Switch Active Symbol
 function switchSymbol(symbol) {
   currentSymbol = symbol;
+  renderOrderNotice();
   document.getElementById("current-symbol-title").innerText = `${symbol} • M15`;
   document.getElementById("order-symbol-tag").innerText = symbol;
 
@@ -932,37 +933,82 @@ function setLot(val) {
   document.getElementById("lot-input").value = val.toFixed(2);
 }
 
+// Keep the last result per symbol; a broker rejection is not a live session calendar.
+const orderNotices = new Map();
+let orderPending = false;
+
+function renderOrderNotice(flash = false) {
+  const box = document.getElementById("order-notice");
+  if (!box) return;
+  const notice = orderNotices.get(currentSymbol) || {
+    title: "İşlem durumu", message: "Emir sonucu ve işlem uyarıları burada gösterilir.", tone: "neutral"
+  };
+  box.dataset.tone = notice.tone;
+  document.getElementById("order-notice-title").textContent = notice.title;
+  document.getElementById("order-notice-message").textContent = notice.message;
+  box.classList.remove("order-notice-flash");
+  if (flash) {
+    void box.offsetWidth; // Restart the finite animation on each rejected attempt.
+    box.classList.add("order-notice-flash");
+  }
+}
+
+function setOrderNotice(symbol, title, message, tone, flash = false) {
+  orderNotices.set(symbol, {title: `${symbol} · ${title}`, message, tone});
+  if (symbol === currentSymbol) renderOrderNotice(flash);
+}
+
+function orderErrorMessage(data) {
+  const raw = typeof data.detail === "string" ? data.detail : (data.error || "Emir reddedildi. Girdiğiniz değerleri kontrol edin.");
+  const code = Number(data.retcode);
+  if (data.uncertain) return ["Emir sonucu belirsiz", "Tekrar göndermeden önce açık pozisyonları kontrol edin."];
+  if (code === 10018 || /market closed/i.test(raw))
+    return ["Son emir: piyasa kapalı", "Bu sembolde işlem seansı kapalı. Piyasa açıldığında yeniden deneyin."];
+  if (code === 10027 || /autotrading disabled/i.test(raw))
+    return ["İşlem izni kapalı", "MT5 Algo Trading ve Python API işlem izinlerini kontrol edin."];
+  if (code === 10019 || /not enough money|no money/i.test(raw))
+    return ["Yetersiz teminat", "Kullanılabilir teminatınızı ve lot miktarını kontrol edin."];
+  if (code === 10016 || /invalid stops/i.test(raw))
+    return ["SL / TP uygun değil", "Stop Loss ve Take Profit mesafelerini kontrol edin."];
+  if (code === 10014 || /invalid volume/i.test(raw))
+    return ["Lot miktarı uygun değil", "Bu sembolün minimum lot ve lot adımını kontrol edin."];
+  if (code === 10017 || /trade disabled/i.test(raw))
+    return ["İşlem devre dışı", "Broker bu sembol veya hesap için işlem izni vermiyor."];
+  return ["Emir gönderilemedi", raw];
+}
+
 // Submit Buy/Sell Order
 async function submitOrder(type) {
+  if (orderPending) return;
+  const symbol = currentSymbol;
   const volume = parseFloat(document.getElementById("lot-input").value) || 0.01;
   const sl = parseInt(document.getElementById("sl-input").value) || 0;
   const tp = parseInt(document.getElementById("tp-input").value) || 0;
-
+  orderPending = true;
+  const buttons = [document.getElementById("order-buy-btn"), document.getElementById("order-sell-btn")];
+  buttons.forEach(btn => { if (btn) btn.disabled = true; });
+  setOrderNotice(symbol, "Emir gönderiliyor", `${type === "BUY" ? "Alış" : "Satış"} · ${volume} lot · Broker yanıtı bekleniyor.`, "pending");
   try {
-    showToast(`${currentSymbol} ${type} (${volume} lot) emri gönderiliyor...`, "info");
     const res = await fetch("/api/order/open", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        symbol: currentSymbol,
-        order_type: type,
-        volume: volume,
-        sl_points: sl,
-        tp_points: tp,
-        comment: "Volta Web Terminal"
-      })
+      body: JSON.stringify({symbol, order_type: type, volume, sl_points: sl, tp_points: tp, comment: "Volta Web Terminal"})
     });
-
     const data = await res.json();
     if (res.ok && data.success) {
-      showToast(`✅ ${type} Emri Başarıyla Açıldı! Bilet #${data.ticket}`, "success");
+      const title = data.partial ? "Emir kısmen gerçekleşti" : (data.retcode === 10008 ? "Emir kabul edildi" : "Emir gerçekleşti");
+      setOrderNotice(symbol, title, `Bilet #${data.ticket} · Açık pozisyonlardan durumu takip edebilirsiniz.`, "success");
       fetchPositions();
       fetchAccount();
     } else {
-      showToast(`❌ Emir Hatası: ${data.detail || data.error || "Bilinmeyen hata"}`, "error");
+      const [title, message] = orderErrorMessage(data);
+      setOrderNotice(symbol, title, message, "error", true);
     }
   } catch (err) {
-    showToast(`❌ Bağlantı Hatası: ${err.message}`, "error");
+    setOrderNotice(symbol, "Yanıt alınamadı", "Emir sonucu belirsiz olabilir. Yeniden göndermeden önce açık pozisyonları kontrol edin.", "error", true);
+  } finally {
+    orderPending = false;
+    buttons.forEach(btn => { if (btn) btn.disabled = false; });
   }
 }
 

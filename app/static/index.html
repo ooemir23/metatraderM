@@ -633,14 +633,18 @@
 
           <!-- BIG BUY & SELL BUTTONS -->
           <div class="grid grid-cols-2 gap-2.5">
-            <button onclick="submitOrder('SELL')" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-gradient-to-b from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-extrabold shadow-lg shadow-red-600/20 active:scale-[0.98] transition">
+            <button id="order-sell-btn" onclick="submitOrder('SELL')" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-gradient-to-b from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-extrabold shadow-lg shadow-red-600/20 active:scale-[0.98] transition">
               <span class="text-xs sm:text-sm tracking-wide">SAT (SELL)</span>
               <span id="btn-bid-price" class="text-[11px] font-mono font-medium text-red-100 opacity-90">--</span>
             </button>
-            <button onclick="submitOrder('BUY')" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-gradient-to-b from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-extrabold shadow-lg shadow-emerald-600/20 active:scale-[0.98] transition">
+            <button id="order-buy-btn" onclick="submitOrder('BUY')" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-gradient-to-b from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-extrabold shadow-lg shadow-emerald-600/20 active:scale-[0.98] transition">
               <span class="text-xs sm:text-sm tracking-wide">AL (BUY)</span>
               <span id="btn-ask-price" class="text-[11px] font-mono font-medium text-emerald-100 opacity-90">--</span>
             </button>
+          </div>
+          <div id="order-notice" class="order-notice" data-tone="neutral" role="status" aria-live="polite" aria-atomic="true">
+            <span id="order-notice-title" class="order-notice-title">İşlem durumu</span>
+            <span id="order-notice-message">Emir sonucu ve işlem uyarıları burada gösterilir.</span>
           </div>
         </div>
 

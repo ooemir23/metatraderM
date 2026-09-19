@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager, suppress
 from typing import Optional, Dict, Any, List, Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, ConfigDict
 
 from app.mt5_client import MT5Client, TIMEFRAME_NAMES
@@ -198,7 +198,10 @@ def open_order(req: OrderRequest):
         comment=req.comment
     )
     if not res.get("success"):
-        raise HTTPException(status_code=400, detail=res.get("error", "Order failed"))
+        return JSONResponse(status_code=400, content={
+            "detail": res.get("error", "Order failed"),
+            "retcode": res.get("retcode"), "uncertain": res.get("uncertain", False)
+        })
     return res
 
 @app.post("/api/order/close")

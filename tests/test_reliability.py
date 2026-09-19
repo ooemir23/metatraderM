@@ -211,3 +211,14 @@ def test_real_rpyc_connection_exposes_remote_modules(client, monkeypatch):
         client._reset_connection()
         server.close()
         worker.join(timeout=2)
+
+
+def test_order_rejection_preserves_broker_code_for_inline_feedback(monkeypatch):
+    from app import main
+    monkeypatch.setattr(main.mt5_client, 'open_order', Mock(return_value={
+        'success':False, 'retcode':10018, 'error':'Market closed'}))
+    response=TestClient(main.app).post('/api/order/open', json={
+        'symbol':'EURUSD','order_type':'BUY','volume':.01})
+    assert response.status_code==400
+    assert response.json()['retcode']==10018
+    assert response.json()['detail']=='Market closed'
