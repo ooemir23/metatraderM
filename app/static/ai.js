@@ -345,6 +345,7 @@ async function triggerAIAdvice() {
 }
 
 async function executeCurrentAdvice() {
+  if (document.getElementById("ai-execute-btn")?.disabled) return;
   if (!currentAIAdvice) {
     showToast("Uygulanacak aktif bir AI tavsiyesi bulunmuyor.", "error");
     return;
@@ -365,7 +366,7 @@ async function executeCurrentAdvice() {
   const tp = currentAIAdvice.tp_price ? Number(currentAIAdvice.tp_price) : null;
 
   const conf = confirm(
-    `🤖 DeepSeek AI Emri:\n\nSembol: ${symbol}\nYön: ${sig}\nLot: 0.01\nSL: ${sl || 'Belirtilmedi'}\nTP: ${tp || 'Belirtilmedi'}\nMagic: 777888\n\nBu işlemi MT5 hesabınızda açmak istiyor musunuz?`
+    `🤖 DeepSeek AI Emri:\n\nSembol: ${symbol}\nYön: ${sig}\nLot: 0.01\nSL: ${sl || 'Belirtilmedi'}\nTP: ${tp || 'Belirtilmedi'}\n\nBu işlemi MT5 hesabınızda açmak istiyor musunuz?`
   );
   if (!conf) return;
 
@@ -386,10 +387,10 @@ async function executeCurrentAdvice() {
 
     const data = await res.json();
     if (res.ok && data.success) {
-      showToast(`🚀 AI Emri Başarıyla Açıldı! Bilet: #${data.ticket || 'Tamam'}`, "success");
+      showToast(`${data.partial ? "Emir kısmen gerçekleşti" : data.pending ? "Emir kabul edildi; gerçekleşme bekleniyor" : "Emir gerçekleşti"} · #${data.ticket}`, "success");
       fetchAccount();
     } else {
-      showToast(`❌ Emir Reddedildi: ${data.detail || data.error}`, "error");
+      showToast(`${data.uncertain ? "Emir sonucu belirsiz; MT5 durumunu kontrol edin" : "Emir tamamlanamadı"}: ${data.detail || data.error}`, "error");
     }
   } catch (err) {
     showToast(`❌ İstek Hatası: ${err.message}`, "error");

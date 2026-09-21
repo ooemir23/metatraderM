@@ -1,3 +1,4 @@
+import base64
 import asyncio
 import threading
 import time
@@ -9,6 +10,7 @@ from fastapi.testclient import TestClient
 from app import mt5_client as module
 from app.mt5_client import MT5Client, NATIVE_CLOSE_SCRIPT
 from app.strategy_bot import StrategyBot
+from app.mt5_bridge import HMA_MAGIC
 
 
 @pytest.fixture
@@ -17,8 +19,11 @@ def client(monkeypatch):
     c = MT5Client()
     c.mt5 = Mock()
     c.mt5.terminal_info.return_value = NS(connected=True)
-    c.mt5.symbol_info.return_value = NS(point=.00001, digits=5)
-    c.mt5.symbol_info_tick.return_value = NS(ask=1.1, bid=1.09)
+    c.mt5.symbol_info.return_value = NS(point=.00001, digits=5, volume_step=.01, volume_min=.01, volume_max=100, trade_stops_level=0, filling_mode=3, trade_exemode=2)
+    c.mt5.symbol_info_tick.return_value = NS(ask=1.1, bid=1.0999, time=time.time())
+    c.mt5.account_info.return_value = NS(login=1, server="test", currency="USD", margin_mode=2)
+    c.mt5.positions_get.return_value = []
+    c.mt5.history_deals_get.return_value = []
     c.is_connected = True
     c.last_ping_time = time.time()
     return c
@@ -114,7 +119,7 @@ def test_native_close_partial_not_reported_closed_or_retried(monkeypatch):
     import sys
     mt5 = Mock()
     mt5.TRADE_ACTION_DEAL = 1
-    mt5.symbol_info_tick.return_value = NS(ask=1.1, bid=1.09)
+    mt5.symbol_info_tick.return_value = NS(ask=1.1, bid=1.0999, time=time.time())
     mt5.order_send.return_value = result(10010)
     monkeypatch.setitem(sys.modules, 'MetaTrader5', mt5)
     ns = {}
@@ -131,7 +136,7 @@ def test_close_failure_prevents_opposite_order(client):
     client.get_rates = Mock(return_value=[{'time': i, 'close': 1.} for i in range(100)])
     bot.calc_hma = Mock(side_effect=[2., 0.])
     bot.calc_second_ma = Mock(return_value=1.)
-    client.get_positions = Mock(return_value=[{'ticket': 1, 'symbol': 'EURUSD', 'type': 'SELL'}])
+    client.get_positions = Mock(return_value=[{'ticket': 1, 'symbol': 'EURUSD', 'type': 'SELL', 'magic': HMA_MAGIC}])
     client.close_position = Mock(return_value={'success': False})
     client.open_order = Mock()
     bot._check_strategy()
@@ -173,7 +178,7 @@ def test_web_starts_while_mt5_connection_is_blocked(monkeypatch):
     monkeypatch.setattr(main.mt5_client, 'connect', connect)
     main.mt5_client.is_connected = False
     try:
-        with TestClient(main.app) as web:
+        with TestClient(main.app, headers={"Authorization": "Basic " + base64.b64encode(b"test:test-panel-password").decode()}) as web:
             assert entered.wait(1)
             assert web.get('/').status_code == 200
             release.set()
@@ -183,7 +188,7 @@ def test_web_starts_while_mt5_connection_is_blocked(monkeypatch):
 
 def test_invalid_request_returns_validation_error():
     from app.main import app
-    web = TestClient(app)  # no lifespan / remote connection
+    web = TestClient(app, headers={"Authorization": "Basic " + base64.b64encode(b"test:test-panel-password").decode()})  # no lifespan / remote connection
     assert web.post('/api/order/open', json={'symbol':'EURUSD', 'order_type':'TYPO', 'volume':.01}).status_code == 422
     assert web.post('/api/order/open', json={'symbol':'EURUSD', 'order_type':'BUY', 'volume':-1}).status_code == 422
 
@@ -197,8 +202,14 @@ def test_real_rpyc_connection_exposes_remote_modules(client, monkeypatch):
     remote_mt5.initialize = lambda **kwargs: True
     remote_mt5.terminal_info = lambda: NS(connected=True)
     monkeypatch.setitem(sys.modules, 'MetaTrader5', remote_mt5)
-    server = ThreadedServer(module.rpyc.SlaveService, hostname='127.0.0.1', port=0,
-                            auto_register=False)
+    disconnected = threading.Event()
+    class Service(module.rpyc.SlaveService):
+        def on_disconnect(self, conn):
+            try:
+                super().on_disconnect(conn)
+            finally:
+                disconnected.set()
+    server = ThreadedServer(Service, hostname='127.0.0.1', port=0, auto_register=False)
     server.listener.listen(5)
     worker = threading.Thread(target=server.start, daemon=True)
     worker.start()
@@ -209,6 +220,7 @@ def test_real_rpyc_connection_exposes_remote_modules(client, monkeypatch):
         assert client.mt5.terminal_info().connected
     finally:
         client._reset_connection()
+        assert disconnected.wait(2)
         server.close()
         worker.join(timeout=2)
 
@@ -217,8 +229,8 @@ def test_order_rejection_preserves_broker_code_for_inline_feedback(monkeypatch):
     from app import main
     monkeypatch.setattr(main.mt5_client, 'open_order', Mock(return_value={
         'success':False, 'retcode':10018, 'error':'Market closed'}))
-    response=TestClient(main.app).post('/api/order/open', json={
-        'symbol':'EURUSD','order_type':'BUY','volume':.01})
+    response=TestClient(main.app, headers={"Authorization": "Basic " + base64.b64encode(b"test:test-panel-password").decode()}).post('/api/order/open', json={
+        'symbol':'EURUSD','order_type':'BUY','volume':.01,'request_id':'test-order-123456789'})
     assert response.status_code==400
     assert response.json()['retcode']==10018
     assert response.json()['detail']=='Market closed'

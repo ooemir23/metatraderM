@@ -58,11 +58,6 @@ input bool               InpPushNotification = true;            // MT5 Mobil Uyg
 input bool               InpPlaySound        = false;           // Sesli Uyari Ver
 input string             InpSoundFile        = "alert.wav";     // Calinacak Ses Dosyasi
 
-input group "=== Telegram Bildirim Ayarlari ==="
-input bool               InpUseTelegram      = false;           // Telegram Bildirimi Acik mi?
-input string             InpTelegramBotToken = "";              // Telegram Bot Token (Orn: 123456:ABC-DEF...)
-input string             InpTelegramChatID   = "";              // Telegram Chat ID (Orn: 987654321)
-
 //+------------------------------------------------------------------+
 //| Global Nesneler ve Degiskenler                                  |
 //+------------------------------------------------------------------+
@@ -169,6 +164,8 @@ void OnTick()
    // Grafikte durum bilgisi goster
    UpdateChartComment(hma_val1, ma2_val1, buySignal, sellSignal);
 
+   m_lastBarTime = currentBarTime;
+
    // Sinyal Yonetimi ve Islem Acma
    if(buySignal)
    {
@@ -203,10 +200,6 @@ void ProcessSignal(ENUM_ORDER_TYPE orderType, double val1, double val2)
    if(InpPlaySound)
       PlaySound(InpSoundFile);
 
-   // 4. Telegram Bildirimi
-   if(InpUseTelegram && InpTelegramBotToken != "" && InpTelegramChatID != "")
-      SendTelegramMessage(message);
-
    // 5. Otomatik Alim/Satim Kapaliysa sadece sinyali iletip cik
    if(!InpAllowTrading)
       return;
@@ -214,12 +207,15 @@ void ProcessSignal(ENUM_ORDER_TYPE orderType, double val1, double val2)
    // Ters pozisyon kontrolu
    if(InpCloseOpposite)
    {
-      ClosePositionsByDirection(orderType == ORDER_TYPE_BUY ? ORDER_TYPE_SELL : ORDER_TYPE_BUY);
+      if(!ClosePositionsByDirection(orderType == ORDER_TYPE_BUY ? ORDER_TYPE_SELL : ORDER_TYPE_BUY))
+         return;
    }
 
    // Halihazirda ayni yonde acik pozisyon varsa tekrar acma (Opsiyonel guvenlik)
    if(HasOpenPosition(orderType))
       return;
+
+   if(!m_symbol.RefreshRates()) return;
 
    // Stop Loss ve Take Profit Seviyelerini Hesapla
    double sl = 0.0;
@@ -235,7 +231,7 @@ void ProcessSignal(ENUM_ORDER_TYPE orderType, double val1, double val2)
       if(InpUseTakeProfit && InpTakeProfitPoints > 0)
          tp = NormalizeDouble(price + (InpTakeProfitPoints * point), _Digits);
 
-      if(m_trade.Buy(InpLotSize, _Symbol, price, sl, tp, "HMA Buy Signal"))
+      if(m_trade.Buy(InpLotSize, _Symbol, price, sl, tp, "HMA Buy Signal") && m_trade.ResultRetcode() == TRADE_RETCODE_DONE)
       {
          Print("Basarili BUY Emri: ", _Symbol, " Lot: ", InpLotSize, " SL: ", sl, " TP: ", tp);
       }
@@ -253,7 +249,7 @@ void ProcessSignal(ENUM_ORDER_TYPE orderType, double val1, double val2)
       if(InpUseTakeProfit && InpTakeProfitPoints > 0)
          tp = NormalizeDouble(price - (InpTakeProfitPoints * point), _Digits);
 
-      if(m_trade.Sell(InpLotSize, _Symbol, price, sl, tp, "HMA Sell Signal"))
+      if(m_trade.Sell(InpLotSize, _Symbol, price, sl, tp, "HMA Sell Signal") && m_trade.ResultRetcode() == TRADE_RETCODE_DONE)
       {
          Print("Basarili SELL Emri: ", _Symbol, " Lot: ", InpLotSize, " SL: ", sl, " TP: ", tp);
       }
@@ -353,7 +349,7 @@ double GetAppliedPrice(const MqlRates &rate, ENUM_APPLIED_PRICE price)
 //+------------------------------------------------------------------+
 //| Belirli Yondeki Pozisyonlari Kapatma                             |
 //+------------------------------------------------------------------+
-void ClosePositionsByDirection(ENUM_ORDER_TYPE oppositeType)
+bool ClosePositionsByDirection(ENUM_ORDER_TYPE oppositeType)
 {
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
@@ -363,11 +359,16 @@ void ClosePositionsByDirection(ENUM_ORDER_TYPE oppositeType)
          {
             if((ENUM_ORDER_TYPE)m_position.PositionType() == oppositeType)
             {
-               m_trade.PositionClose(m_position.Ticket());
+               if(!m_trade.PositionClose(m_position.Ticket()) || m_trade.ResultRetcode() != TRADE_RETCODE_DONE)
+               {
+                  Print("Ters pozisyon kapanmadi; yeni emir engellendi: ", m_trade.ResultRetcodeDescription());
+                  return false;
+               }
             }
          }
       }
    }
+   return true;
 }
 
 //+------------------------------------------------------------------+
@@ -390,57 +391,7 @@ bool HasOpenPosition(ENUM_ORDER_TYPE orderType)
 }
 
 //+------------------------------------------------------------------+
-//| Telegram Mesaji Gonderme (WebRequest)                            |
-//+------------------------------------------------------------------+
-void SendTelegramMessage(string message)
-{
-   string url = "https://api.telegram.org/bot" + InpTelegramBotToken + "/sendMessage";
-   string postData = "chat_id=" + InpTelegramChatID + "&text=" + UrlEncode(message);
-   char post[], result[];
-   string result_headers;
-
-   StringToCharArray(postData, post, 0, WHOLE_ARRAY, CP_UTF8);
-   ArrayResize(post, ArraySize(post) - 1); // Null karakteri at
-
-   string headers = "Content-Type: application/x-www-form-urlencoded\r\n";
-   int timeout = 5000;
-
-   ResetLastError();
-   int res = WebRequest("POST", url, headers, timeout, post, result, result_headers);
-   if(res != 200)
-   {
-      Print("Telegram gonderim hatasi. WebRequest kodu: ", res, " Hata Kodu: ", GetLastError());
-      Print("Not: MT5 -> Araclar -> Secenekler -> Expert Advisors kismindan 'https://api.telegram.org' adresine izin verdiginizden emin olun.");
-   }
-}
-
-//+------------------------------------------------------------------+
-//| URL Encode Yardimcisi                                            |
-//+------------------------------------------------------------------+
-string UrlEncode(string text)
-{
-   string result = "";
-   uchar bytes[];
-   StringToCharArray(text, bytes, 0, WHOLE_ARRAY, CP_UTF8);
-   int len = ArraySize(bytes) - 1;
-
-   for(int i = 0; i < len; i++)
-   {
-      uchar c = bytes[i];
-      if((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~')
-      {
-         result += CharToString(c);
-      }
-      else
-      {
-         result += StringFormat("%%%02X", c);
-      }
-   }
-   return result;
-}
-
-//+------------------------------------------------------------------+
-//| Grafik Ekraninda Bilgi Paneli Guncelleme                         |
+//| Grafik bilgi paneli                                             |
 //+------------------------------------------------------------------+
 void UpdateChartComment(double hma, double ma2, bool buySig, bool sellSig)
 {

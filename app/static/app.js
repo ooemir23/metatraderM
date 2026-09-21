@@ -394,6 +394,7 @@ function initPositionsTopResizer() {
 // Switch Active Symbol
 function switchSymbol(symbol) {
   currentSymbol = symbol;
+  if (typeof startLiveFeed === "function") startLiveFeed();
   renderOrderNotice();
   document.getElementById("current-symbol-title").innerText = `${symbol} • M15`;
   document.getElementById("order-symbol-tag").innerText = symbol;
@@ -510,16 +511,9 @@ function showAccountConnectionError(message) {
 }
 
 // Fetch Account Info
-async function fetchAccount() {
-  if (isFetchingAccount) return;
-  isFetchingAccount = true;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 4000);
-  try {
-    const res = await fetch("/api/account", { signal: controller.signal });
-    if (!res.ok) throw new Error(`Hesap bilgisi alınamadı (HTTP ${res.status})`);
-    const data = await res.json();
-
+let accountCurrency = "USD";
+function renderAccountData(data) {
+    accountCurrency = data.currency || accountCurrency;
     const indicator = document.getElementById("status-indicator");
     const statusText = document.getElementById("status-text");
     const lastSyncText = document.getElementById("last-sync-text");
@@ -548,13 +542,13 @@ async function fetchAccount() {
       }
     }
 
-    document.getElementById("acc-balance").innerText = `$${formatMoney(data.balance)}`;
-    document.getElementById("acc-equity").innerText = `$${formatMoney(data.equity)}`;
-    document.getElementById("acc-margin-free").innerText = `$${formatMoney(data.margin_free)}`;
+    document.getElementById("acc-balance").innerText = `${accountCurrency} ${formatMoney(data.balance)}`;
+    document.getElementById("acc-equity").innerText = `${accountCurrency} ${formatMoney(data.equity)}`;
+    document.getElementById("acc-margin-free").innerText = `${accountCurrency} ${formatMoney(data.margin_free)}`;
 
     const profitEl = document.getElementById("acc-profit");
     const profitVal = data.profit || 0;
-    profitEl.innerText = `${profitVal >= 0 ? "+" : ""}$${formatMoney(profitVal)}`;
+    profitEl.innerText = `${profitVal >= 0 ? "+" : ""}${accountCurrency} ${formatMoney(profitVal)}`;
     if (profitVal > 0) {
       profitEl.className = "font-bold text-emerald-400 tracking-wide";
     } else if (profitVal < 0) {
@@ -562,6 +556,20 @@ async function fetchAccount() {
     } else {
       profitEl.className = "font-bold text-gray-300 tracking-wide";
     }
+}
+
+async function fetchAccount(force = false) {
+  if (!force && typeof liveFeedHealthy === "function" && liveFeedHealthy()) return;
+  if (isFetchingAccount) return;
+  isFetchingAccount = true;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  try {
+    const res = await fetch("/api/account", { signal: controller.signal });
+    if (!res.ok) throw new Error(`Hesap bilgisi alınamadı (HTTP ${res.status})`);
+    const data = await res.json();
+
+    renderAccountData(data);
   } catch (err) {
     showAccountConnectionError(
       err.name === "AbortError" ? "Sunucu yanıtı gecikti" : "Sunucuya ulaşılamıyor"
@@ -576,17 +584,8 @@ async function fetchAccount() {
 }
 
 // Fetch Open Positions
-async function fetchPositions() {
-  if (isFetchingPositions) return;
-  isFetchingPositions = true;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 4000);
-  try {
-    const res = await fetch("/api/positions", { signal: controller.signal });
-    clearTimeout(timer);
-    if (!res.ok) return;
-    const positions = await res.json();
-
+function renderPositionsData(positions) {
+    if (typeof rememberPositions === "function") rememberPositions(positions);
     const tbody = document.getElementById("positions-table-body");
     const countBadge = document.getElementById("pos-count-badge");
     if (countBadge) countBadge.innerText = positions.length;
@@ -615,8 +614,9 @@ async function fetchPositions() {
           <td class="py-2.5 px-3 text-gray-400">${p.price_open}</td>
           <td class="py-2.5 px-3 text-white font-semibold">${p.price_current}</td>
           <td class="py-2.5 px-3 text-gray-500">${p.sl || "-"} / ${p.tp || "-"}</td>
-          <td class="py-2.5 px-3 text-right font-bold ${profitColor}">${profitSign}$${formatMoney(p.profit)}</td>
+          <td class="py-2.5 px-3 text-right font-bold ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(p.profit)}</td>
           <td class="py-2.5 px-3 text-center">
+            <button onclick="showPositionEditor(${p.ticket})" class="px-2 py-1 rounded bg-cyan-500/10 text-cyan-300 text-xs">Yönet</button>
             <button onclick="closePosition(${p.ticket})" class="px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition active:scale-95" title="Kapat">
               Kapat
             </button>
@@ -626,10 +626,24 @@ async function fetchPositions() {
     });
 
     tbody.innerHTML = rowsHtml;
+}
+
+async function fetchPositions(force = false) {
+  if (!force && typeof liveFeedHealthy === "function" && liveFeedHealthy()) return;
+  if (isFetchingPositions) return;
+  isFetchingPositions = true;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  try {
+    const res = await fetch("/api/positions", { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error("Pozisyonlar doğrulanamadı");
+    const positions = await res.json();
+
+    renderPositionsData(positions);
   } catch (err) {
-    if (err.name !== "AbortError") {
-      console.error("fetchPositions error:", err);
-    }
+    const badge = document.getElementById("pos-count-badge");
+    if (badge) badge.innerText = "Veri güncel değil";
   } finally {
     clearTimeout(timer);
     isFetchingPositions = false;
@@ -653,14 +667,14 @@ async function fetchHistory() {
 
     let totalProfit = 0;
     history.forEach(d => {
-      totalProfit += (d.profit || 0);
+      totalProfit += (d.profit || 0) + (d.commission || 0) + (d.swap || 0) + (d.fee || 0);
     });
 
     if (totalProfitEl) {
       const pColor = totalProfit >= 0 ? "text-emerald-400" : "text-rose-400";
       const pSign = totalProfit >= 0 ? "+" : "";
       totalProfitEl.className = `font-bold ${pColor}`;
-      totalProfitEl.innerText = `${pSign}$${formatMoney(totalProfit)}`;
+      totalProfitEl.innerText = `${pSign}${accountCurrency} ${formatMoney(totalProfit)}`;
     }
 
     if (!tbody) return;
@@ -677,11 +691,12 @@ async function fetchHistory() {
         ? `<span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold text-[10px]">BUY</span>`
         : `<span class="px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold text-[10px]">SELL</span>`;
 
-      const profitColor = d.profit >= 0 ? "text-emerald-400" : "text-rose-400";
-      const profitSign = d.profit >= 0 ? "+" : "";
+      const netProfit=(d.profit||0)+(d.commission||0)+(d.swap||0)+(d.fee||0);
+      const profitColor = netProfit >= 0 ? "text-emerald-400" : "text-rose-400";
+      const profitSign = netProfit >= 0 ? "+" : "";
 
-      const fee = (d.swap || 0) + (d.commission || 0);
-      const feeText = fee !== 0 ? `${fee >= 0 ? "+" : ""}$${formatMoney(fee)}` : "-";
+      const fee = (d.swap || 0) + (d.commission || 0) + (d.fee || 0);
+      const feeText = fee !== 0 ? `${fee >= 0 ? "+" : ""}${accountCurrency} ${formatMoney(fee)}` : "-";
 
       rowsHtml += `
         <tr class="hover:bg-[#151a26]/60 transition border-b border-gray-800/40">
@@ -692,7 +707,7 @@ async function fetchHistory() {
           <td class="py-2.5 px-3 text-gray-300 font-mono">${d.price}</td>
           <td class="py-2.5 px-3 text-gray-500 text-[11px]">${feeText}</td>
           <td class="py-2.5 px-3 text-gray-400 text-[11px]">${d.time}</td>
-          <td class="py-2.5 px-3 text-right font-bold font-mono ${profitColor}">${profitSign}$${formatMoney(d.profit)}</td>
+          <td class="py-2.5 px-3 text-right font-bold font-mono ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(netProfit)}</td>
         </tr>
       `;
     });
@@ -711,11 +726,14 @@ async function fetchReports() {
     const daysSelect = document.getElementById("reports-days-select");
     const days = daysSelect ? daysSelect.value : 30;
     const res = await fetch(`/api/reports?days=${days}`);
-    if (!res.ok) return;
+    if (!res.ok) throw new Error("Rapor doğrulanamadı");
     const data = await res.json();
     if (!data || !data.summary) return;
 
     const s = data.summary;
+    const currency = data.currency || accountCurrency;
+    const note=document.getElementById("reports-basis");
+    if (note) note.textContent=data.basis + (s.incomplete_positions ? ` ${s.incomplete_positions} pozisyonun geçmişi eksik; başarı oranından çıkarıldı.` : "");
 
     // Today's Profit
     const repTodayProfit = document.getElementById("rep-today-profit");
@@ -723,10 +741,10 @@ async function fetchReports() {
     if (repTodayProfit) {
       const isPos = s.today_profit >= 0;
       repTodayProfit.className = `text-base md:text-lg font-bold font-mono ${isPos ? "text-emerald-400" : "text-rose-400"}`;
-      repTodayProfit.innerText = `${isPos ? "+" : ""}$${formatMoney(s.today_profit)}`;
+      repTodayProfit.innerText = `${isPos ? "+" : ""}${currency} ${formatMoney(s.today_profit)}`;
     }
     if (repTodaySub) {
-      repTodaySub.innerText = `${s.today_trades} işlem yapıldı`;
+      repTodaySub.innerText = `${s.today_trades} pozisyon tamamen kapandı · UTC`;
     }
 
     // Total Net Profit
@@ -735,10 +753,10 @@ async function fetchReports() {
     if (repTotalProfit) {
       const isPos = s.total_profit >= 0;
       repTotalProfit.className = `text-base md:text-lg font-bold font-mono ${isPos ? "text-emerald-400" : "text-rose-400"}`;
-      repTotalProfit.innerText = `${isPos ? "+" : ""}$${formatMoney(s.total_profit)}`;
+      repTotalProfit.innerText = `${isPos ? "+" : ""}${currency} ${formatMoney(s.total_profit)}`;
     }
     if (repTotalSub) {
-      repTotalSub.innerText = `Brüt: +$${formatMoney(s.gross_profit)} | Zarar: -$${formatMoney(Math.abs(s.gross_loss))}`;
+      repTotalSub.innerText = `Kapananlar: +${currency} ${formatMoney(s.gross_profit)} | Zarar: -${currency} ${formatMoney(Math.abs(s.gross_loss))}`;
     }
 
     // Win Rate
@@ -757,11 +775,11 @@ async function fetchReports() {
     const repPF = document.getElementById("rep-profit-factor");
     const repPFSub = document.getElementById("rep-pf-sub");
     if (repPF) {
-      const pfVal = s.profit_factor >= 999 ? "∞" : s.profit_factor;
+      const pfVal = s.profit_factor === null ? "∞" : s.profit_factor;
       repPF.innerText = pfVal;
     }
     if (repPFSub) {
-      repPFSub.innerText = `Ort. Kâr: $${formatMoney(s.avg_profit)} | Zarar: -$${formatMoney(Math.abs(s.avg_loss))}`;
+      repPFSub.innerText = `Ort. Kâr: ${currency} ${formatMoney(s.avg_profit)} | Zarar: -${currency} ${formatMoney(Math.abs(s.avg_loss))}`;
     }
 
     // Quick Stats Bar
@@ -770,12 +788,12 @@ async function fetchReports() {
     const repVol = document.getElementById("rep-total-volume");
     const repFee = document.getElementById("rep-total-fee");
 
-    if (repBest) repBest.innerText = `+$${formatMoney(s.best_trade)}`;
-    if (repWorst) repWorst.innerText = `-$${formatMoney(Math.abs(s.worst_trade))}`;
+    if (repBest) repBest.innerText = `+${currency} ${formatMoney(s.best_trade)}`;
+    if (repWorst) repWorst.innerText = `-${currency} ${formatMoney(Math.abs(s.worst_trade))}`;
     if (repVol) repVol.innerText = `${s.total_volume} Lot`;
     if (repFee) {
-      const fee = (s.total_swap || 0) + (s.total_commission || 0);
-      repFee.innerText = `${fee >= 0 ? "+" : ""}$${formatMoney(fee)}`;
+      const fee = (s.total_swap || 0) + (s.total_commission || 0) + (s.total_fee || 0);
+      repFee.innerText = `${fee >= 0 ? "+" : ""}${currency} ${formatMoney(fee)}`;
     }
 
     // Daily Table
@@ -802,7 +820,7 @@ async function fetchReports() {
               <td class="py-2.5 px-2.5 text-center text-xs text-gray-400 whitespace-nowrap"><span class="text-emerald-400 font-bold">${d.winning_trades}</span> / <span class="text-rose-400 font-bold">${d.losing_trades}</span></td>
               <td class="py-2.5 px-2.5 text-center font-bold font-mono ${wrColor} whitespace-nowrap">${d.win_rate}%</td>
               <td class="py-2.5 px-2.5 text-center text-gray-400 whitespace-nowrap">${d.volume} L</td>
-              <td class="py-2.5 px-2.5 text-right font-bold font-mono ${pColor} whitespace-nowrap">${pSign}$${formatMoney(d.profit)}</td>
+              <td class="py-2.5 px-2.5 text-right font-bold font-mono ${pColor} whitespace-nowrap">${pSign}${currency} ${formatMoney(d.profit)}</td>
             </tr>
           `;
         });
@@ -827,7 +845,7 @@ async function fetchReports() {
               <td class="py-2 px-2.5 font-bold text-white whitespace-nowrap">${sym.symbol}</td>
               <td class="py-2 px-2.5 text-center text-gray-300 whitespace-nowrap">${sym.trades_count}</td>
               <td class="py-2 px-2.5 text-center text-gray-400 whitespace-nowrap">${sym.volume} L</td>
-              <td class="py-2 px-2.5 text-right font-bold font-mono ${pColor} whitespace-nowrap">${pSign}$${formatMoney(sym.profit)}</td>
+              <td class="py-2 px-2.5 text-right font-bold font-mono ${pColor} whitespace-nowrap">${pSign}${currency} ${formatMoney(sym.profit)}</td>
             </tr>
           `;
         });
@@ -836,20 +854,15 @@ async function fetchReports() {
     }
 
   } catch (err) {
-    console.error("fetchReports error:", err);
+    const note=document.getElementById("reports-basis");
+    if (note) note.textContent="Rapor güncellenemedi; gösterilen veriler eski olabilir.";
   }
 }
 
 
 // Fetch Price for Active Symbol
-async function fetchPrice() {
-  if (isFetchingPrice) return;
-  isFetchingPrice = true;
-  try {
-    const res = await fetch(`/api/price/${currentSymbol}`);
-    if (!res.ok) return;
-    const tick = await res.json();
-
+function renderPriceData(tick) {
+    if (typeof displayedTickTime !== "undefined") displayedTickTime = tick.time || 0;
     if (tick && tick.bid > 0) {
       document.getElementById("header-bid").innerText = tick.bid;
       document.getElementById("header-ask").innerText = tick.ask;
@@ -857,6 +870,18 @@ async function fetchPrice() {
       document.getElementById("btn-bid-price").innerText = `@ ${tick.bid}`;
       document.getElementById("btn-ask-price").innerText = `@ ${tick.ask}`;
     }
+}
+
+async function fetchPrice(force = false) {
+  if (!force && typeof liveFeedHealthy === "function" && liveFeedHealthy()) return;
+  if (isFetchingPrice) return;
+  isFetchingPrice = true;
+  try {
+    const res = await fetch(`/api/price/${currentSymbol}`);
+    if (!res.ok) return;
+    const tick = await res.json();
+
+    renderPriceData(tick);
   } catch (err) {
     console.error("fetchPrice error:", err);
   } finally {
@@ -936,6 +961,20 @@ function setLot(val) {
 // Keep the last result per symbol; a broker rejection is not a live session calendar.
 const orderNotices = new Map();
 let orderPending = false;
+const closePending = new Set();
+function newOrderId() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, "0")).join("");
+}
+function clearUncertainOrder() {
+  if (orderPending || closePending.size || (typeof actionLocks !== "undefined" && actionLocks.size)) return;
+  if (!confirm("MT5 açık pozisyonları, bekleyen emirleri ve işlem geçmişini kontrol ettiniz mi? Bu sembolde al/sat ve tüm kapatma düğmeleri yeni talep gönderebilecek. Yeni emir ayrı bir işlem açabilir.")) return;
+  localStorage.removeItem("order-intent:" + currentSymbol);
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (key.startsWith("close-intent:") || key.startsWith("close-bulk:") || key.startsWith("managed-intent:")) localStorage.removeItem(key);
+  }
+  setOrderNotice(currentSymbol, "Yeni emir hazır", "Önceki emir kaydı korunuyor; sonraki tıklama yeni bir işlem talebidir.", "neutral");
+}
 
 function renderOrderNotice(flash = false) {
   const box = document.getElementById("order-notice");
@@ -981,9 +1020,30 @@ function orderErrorMessage(data) {
 async function submitOrder(type) {
   if (orderPending) return;
   const symbol = currentSymbol;
-  const volume = parseFloat(document.getElementById("lot-input").value) || 0.01;
+  const volume = Number(document.getElementById("lot-input").value);
+  if (!Number.isFinite(volume) || volume <= 0) {
+    setOrderNotice(symbol, "Geçersiz lot", "Sıfırdan büyük bir lot miktarı girin.", "error");
+    return;
+  }
   const sl = parseInt(document.getElementById("sl-input").value) || 0;
   const tp = parseInt(document.getElementById("tp-input").value) || 0;
+  let intent;
+  try {
+    const stored = localStorage.getItem("order-intent:" + symbol);
+    if (stored) {
+      intent = JSON.parse(stored);
+      if (intent.order_type !== type || intent.volume !== volume || intent.sl_points !== sl || intent.tp_points !== tp) {
+        setOrderNotice(symbol, "Önceki emir doğrulanmalı", "MT5 durumunu kontrol edip ‘Kontrol ettim’ düğmesini kullanın.", "error");
+        return;
+      }
+    } else {
+      intent = {request_id: newOrderId(), symbol, order_type: type, volume, sl_points: sl, tp_points: tp, comment: "Volta Web Terminal"};
+      localStorage.setItem("order-intent:" + symbol, JSON.stringify(intent));
+    }
+  } catch (_) {
+    setOrderNotice(symbol, "Emir gönderilemedi", "Emir kimliğini saklamak için tarayıcı depolama izni gerekli.", "error");
+    return;
+  }
   orderPending = true;
   const buttons = [document.getElementById("order-buy-btn"), document.getElementById("order-sell-btn")];
   buttons.forEach(btn => { if (btn) btn.disabled = true; });
@@ -992,9 +1052,10 @@ async function submitOrder(type) {
     const res = await fetch("/api/order/open", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({symbol, order_type: type, volume, sl_points: sl, tp_points: tp, comment: "Volta Web Terminal"})
+      body: JSON.stringify(intent)
     });
     const data = await res.json();
+    if (data.request_id && !data.uncertain) localStorage.removeItem("order-intent:" + symbol);
     if (res.ok && data.success) {
       const title = data.partial ? "Emir kısmen gerçekleşti" : (data.retcode === 10008 ? "Emir kabul edildi" : "Emir gerçekleşti");
       setOrderNotice(symbol, title, `Bilet #${data.ticket} · Açık pozisyonlardan durumu takip edebilirsiniz.`, "success");
@@ -1014,14 +1075,20 @@ async function submitOrder(type) {
 
 // Close Single Position (Instant 1-Click)
 async function closePosition(ticket) {
+  if (closePending.has(ticket)) return;
+  closePending.add(ticket);
   try {
+    const key = "close-intent:" + ticket;
+    const requestId = localStorage.getItem(key) || newOrderId();
+    localStorage.setItem(key, requestId);
     const res = await fetch("/api/order/close", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ticket: ticket })
+      body: JSON.stringify({ ticket, request_id: requestId })
     });
 
     const data = await res.json();
+    if (data.request_id && !data.uncertain && !data.pending) localStorage.removeItem(key);
     if (res.ok && data.success) {
       showToast(`✅ #${ticket} numaralı pozisyon kapatıldı.`, "success");
       fetchPositions();
@@ -1031,18 +1098,22 @@ async function closePosition(ticket) {
     } else {
       const err = data.detail || data.error || "";
       if (err.includes("10018") || err.includes("Market closed")) {
-        showToast(`⚠️ Piyasa Kapalı: Altın (XAUUSD) 23:57 - 01:02 arası günlük tatildedir. Saat 01:02'de açılacaktır.`, "error");
+        showToast(`⚠️ Broker bu sembol için piyasanın kapalı olduğunu bildirdi. İşlem seansını MT5 üzerinden kontrol edin.`, "error");
       } else {
         showToast(`❌ Kapatma Hatası: ${err}`, "error");
       }
     }
   } catch (err) {
-    showToast(`❌ Hata: ${err.message}`, "error");
+    showToast("Kapatma sonucu belirsiz; MT5 durumunu kontrol edin.", "error");
+  } finally {
+    closePending.delete(ticket);
   }
 }
 
 // Close Filtered Positions (all, profit, loss) - Instant 1-Click
 async function closeFilteredPositions(filterType) {
+  if (closePending.has("bulk")) return;
+  closePending.add("bulk");
   let label = "Tüm pozisyonlar";
   let endpoint = "/api/order/close-all";
   if (filterType === "profit") {
@@ -1055,20 +1126,20 @@ async function closeFilteredPositions(filterType) {
 
   try {
     showToast(`${label} kapatılıyor...`, "info");
-    const res = await fetch(endpoint, { method: "POST" });
+    const key = "close-bulk:" + filterType;
+    const requestId = localStorage.getItem(key) || newOrderId();
+    localStorage.setItem(key, requestId);
+    const res = await fetch(endpoint, { method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({request_id: requestId}) });
     const data = await res.json();
+    if (data.request_id && !data.uncertain && !data.pending) localStorage.removeItem(key);
     if (res.ok) {
-      if (data.total_matched === 0) {
-        showToast(`Kapatılacak uygun pozisyon bulunamadı.`, "info");
-      } else if (data.closed_count === 0 && data.errors && data.errors.length > 0) {
-        const err = data.errors[0];
-        if (err.includes("10018") || err.includes("Market closed")) {
-          showToast(`⚠️ Piyasa Kapalı: Altın (XAUUSD) 23:57 - 01:02 arası günlük tatildedir. Saat 01:02'de açılacaktır.`, "error");
-        } else {
-          showToast(`❌ Kapatma Hatası: ${err}`, "error");
-        }
+      if (!data.success || (data.errors && data.errors.length)) {
+        showToast(`${data.closed_count || 0} pozisyon kapatıldı. Tamamlanamayanlar: ${(data.errors || [data.error || "Sonuç belirsiz"]).join("; ")}`, "error");
+      } else if (data.total_matched === 0 && !data.cancelled_count) {
+        showToast("Kapatılacak uygun pozisyon bulunamadı.", "info");
       } else {
-        showToast(`✅ ${data.closed_count} adet pozisyon kapatıldı.`, "success");
+        showToast(`${data.closed_count} pozisyon kapatıldı; ${data.cancelled_count || 0} bekleyen emir iptal edildi.`, "success");
       }
       fetchPositions();
       fetchAccount();
@@ -1079,6 +1150,8 @@ async function closeFilteredPositions(filterType) {
     }
   } catch (err) {
     showToast(`❌ Hata: ${err.message}`, "error");
+  } finally {
+    closePending.delete("bulk");
   }
 }
 
@@ -1116,8 +1189,6 @@ async function saveBotSettings() {
     second_ma_period: parseInt(document.getElementById("cfg-ma2-period").value),
     lot_size: parseFloat(document.getElementById("cfg-lot").value),
     close_opposite: document.getElementById("cfg-close-opp").checked,
-    telegram_token: document.getElementById("cfg-tg-token").value,
-    telegram_chat_id: document.getElementById("cfg-tg-chat").value
   };
 
   try {
@@ -1512,6 +1583,7 @@ async function triggerAIAdvice() {
 }
 
 async function executeCurrentAdvice() {
+  if (document.getElementById("ai-execute-btn")?.disabled) return;
   if (!currentAIAdvice) {
     showToast("Uygulanacak aktif bir AI tavsiyesi bulunmuyor.", "error");
     return;
@@ -1532,7 +1604,7 @@ async function executeCurrentAdvice() {
   const tp = currentAIAdvice.tp_price ? Number(currentAIAdvice.tp_price) : null;
 
   const conf = confirm(
-    `🤖 DeepSeek AI Emri:\n\nSembol: ${symbol}\nYön: ${sig}\nLot: 0.01\nSL: ${sl || 'Belirtilmedi'}\nTP: ${tp || 'Belirtilmedi'}\nMagic No: 123456\n\nBu işlemi MT5 hesabınızda açmak istiyor musunuz?`
+    `🤖 DeepSeek AI Emri:\n\nSembol: ${symbol}\nYön: ${sig}\nLot: 0.01\nSL: ${sl || 'Belirtilmedi'}\nTP: ${tp || 'Belirtilmedi'}\n\nBu işlemi MT5 hesabınızda açmak istiyor musunuz?`
   );
   if (!conf) return;
 
@@ -1553,11 +1625,11 @@ async function executeCurrentAdvice() {
 
     const data = await res.json();
     if (res.ok && data.success) {
-      showToast(`🚀 AI Emri Başarıyla Açıldı! Bilet: #${data.ticket || 'Tamam'}`, "success");
+      showToast(`${data.partial ? "Emir kısmen gerçekleşti" : data.pending ? "Emir kabul edildi; gerçekleşme bekleniyor" : "Emir gerçekleşti"} · #${data.ticket}`, "success");
       fetchPositions();
       fetchAccount();
     } else {
-      showToast(`❌ Emir Reddedildi: ${data.detail || data.error}`, "error");
+      showToast(`${data.uncertain ? "Emir sonucu belirsiz; MT5 durumunu kontrol edin" : "Emir tamamlanamadı"}: ${data.detail || data.error}`, "error");
     }
   } catch (err) {
     showToast(`❌ İstek Hatası: ${err.message}`, "error");

@@ -4,7 +4,9 @@ import math
 import time
 import threading
 from typing import Dict, Any, List, Optional
-import requests
+import hashlib
+from app.mt5_bridge import HMA_MAGIC
+from app.mt5_client import MT5DataError
 
 logger = logging.getLogger("StrategyBot")
 logger.setLevel(logging.INFO)
@@ -28,8 +30,6 @@ class StrategyBot:
         self.use_take_profit = False
         self.tp_points = 400
         self.close_opposite = True
-        self.telegram_token = ""
-        self.telegram_chat_id = ""
 
         # State tracking
         self.last_candle_time = 0
@@ -48,15 +48,6 @@ class StrategyBot:
             self.logs.pop()
         logger.info(f"[{level}] {message}")
 
-    def send_telegram(self, text: str):
-        if not self.telegram_token or not self.telegram_chat_id:
-            return
-        try:
-            url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
-            requests.post(url, json={"chat_id": self.telegram_chat_id, "text": text, "parse_mode": "HTML"}, timeout=5)
-        except Exception as e:
-            logger.warning(f"Telegram notification failed: {e}")
-
     def update_config(self, data: Dict[str, Any]):
         if "symbol" in data: self.symbol = data["symbol"].upper()
         if "timeframe_minutes" in data: self.timeframe_minutes = int(data["timeframe_minutes"])
@@ -69,9 +60,8 @@ class StrategyBot:
         if "use_take_profit" in data: self.use_take_profit = bool(data["use_take_profit"])
         if "tp_points" in data: self.tp_points = int(data["tp_points"])
         if "close_opposite" in data: self.close_opposite = bool(data["close_opposite"])
-        if "telegram_token" in data: self.telegram_token = str(data["telegram_token"]).strip()
-        if "telegram_chat_id" in data: self.telegram_chat_id = str(data["telegram_chat_id"]).strip()
 
+        self.last_candle_time = 0
         self.log(f"Bot ayarları güncellendi: {self.symbol} | HMA: {self.hma_period} | 2.MA: {self.second_ma_type}({self.second_ma_period}) | Lot: {self.lot_size}")
 
     def get_status(self) -> Dict[str, Any]:
@@ -93,7 +83,6 @@ class StrategyBot:
             "last_signal_price": self.last_signal_price,
             "current_hma": round(self.current_hma, 5),
             "current_ma2": round(self.current_ma2, 5),
-            "has_telegram": bool(self.telegram_token and self.telegram_chat_id),
             "logs": self.logs[:15]
         }
 
@@ -156,7 +145,6 @@ class StrategyBot:
 
     async def run_loop(self):
         self.log(f"🚀 HMA Kesişim Botu Başlatıldı ({self.symbol} M{self.timeframe_minutes})")
-        await asyncio.to_thread(self.send_telegram, f"🤖 <b>HMA Crossover Bot Başlatıldı!</b>\nSembol: {self.symbol}\nZaman: M{self.timeframe_minutes}\nHMA: {self.hma_period}\n2. MA: {self.second_ma_type}({self.second_ma_period})")
 
         while self.is_running:
             try:
@@ -165,7 +153,7 @@ class StrategyBot:
                 logger.error(f"Strategy error: {e}")
                 self.log(f"Hata: {str(e)}", "ERROR")
 
-            await asyncio.sleep(5) # Kontrol aralığı: 5 saniye
+            await asyncio.sleep(0.5) # Yeni kapanmış mumu hızlı algıla; RPC verisi toplu aktarılır.
 
     async def check_strategy(self):
         await asyncio.to_thread(self._check_strategy)
@@ -176,7 +164,8 @@ class StrategyBot:
         if not self.mt5.ensure_connected():
             return
 
-        rates = self.mt5.get_rates(self.symbol, timeframe=self.timeframe_minutes, count=100)
+        rates = self.mt5.get_rates(self.symbol, timeframe=self.timeframe_minutes,
+                                   count=max(100, 5 * max(self.hma_period, self.second_ma_period) + 20))
         if not rates or len(rates) < max(self.hma_period, self.second_ma_period) + 15:
             return
 
@@ -185,6 +174,10 @@ class StrategyBot:
         # Convert to reverse order (index 0 = current open candle, 1 = last closed candle, 2 = previous closed)
         rev_rates = list(reversed(rates))
         closes = [r["close"] for r in rev_rates]
+
+        latest_closed_candle_time = rev_rates[1]["time"]
+        if latest_closed_candle_time == self.last_candle_time:
+            return
 
         # Calculate for shift=1 (last closed candle)
         hma1 = self.calc_hma(closes, self.hma_period, shift=1)
@@ -216,7 +209,6 @@ class StrategyBot:
             self.last_signal_time = now_str
             self.last_signal_price = current_price
             self.log(f"🟢 [AL SİNYALİ] HMA({round(hma1, 5)}) > {self.second_ma_type}({round(ma2_1, 5)}) @ {current_price}", "SIGNAL")
-            self.send_telegram(f"🟢 <b>[AL SİNYALİ] {self.symbol}</b>\nFiyat: {current_price}\nHMA: {round(hma1, 5)}\n2.MA: {round(ma2_1, 5)}")
 
             # Execute Trade
             if self._stop_event.is_set():
@@ -229,7 +221,8 @@ class StrategyBot:
 
             sl = self.sl_points if self.use_stop_loss else 0
             tp = self.tp_points if self.use_take_profit else 0
-            res = self.mt5.open_order(self.symbol, "BUY", self.lot_size, sl_points=sl, tp_points=tp, comment="HMA Bot BUY")
+            res = self.mt5.open_order(self.symbol, "BUY", self.lot_size, sl_points=sl, tp_points=tp, comment="HMA Bot BUY", magic=HMA_MAGIC,
+                                      request_id=self.order_id("BUY"), stop_event=self._stop_event)
             if res.get("success"):
                 self.log(f"✅ BUY Emri Açıldı: #{res.get('ticket')} @ {res.get('price')}")
             else:
@@ -240,7 +233,6 @@ class StrategyBot:
             self.last_signal_time = now_str
             self.last_signal_price = current_price
             self.log(f"🔴 [SAT SİNYALİ] HMA({round(hma1, 5)}) < {self.second_ma_type}({round(ma2_1, 5)}) @ {current_price}", "SIGNAL")
-            self.send_telegram(f"🔴 <b>[SAT SİNYALİ] {self.symbol}</b>\nFiyat: {current_price}\nHMA: {round(hma1, 5)}\n2.MA: {round(ma2_1, 5)}")
 
             # Execute Trade
             if self._stop_event.is_set():
@@ -253,26 +245,37 @@ class StrategyBot:
 
             sl = self.sl_points if self.use_stop_loss else 0
             tp = self.tp_points if self.use_take_profit else 0
-            res = self.mt5.open_order(self.symbol, "SELL", self.lot_size, sl_points=sl, tp_points=tp, comment="HMA Bot SELL")
+            res = self.mt5.open_order(self.symbol, "SELL", self.lot_size, sl_points=sl, tp_points=tp, comment="HMA Bot SELL", magic=HMA_MAGIC,
+                                      request_id=self.order_id("SELL"), stop_event=self._stop_event)
             if res.get("success"):
                 self.log(f"✅ SELL Emri Açıldı: #{res.get('ticket')} @ {res.get('price')}")
             else:
                 self.log(f"❌ SELL Emri Başarısız: {res.get('error')}", "ERROR")
 
     def close_positions_by_type(self, pos_type: str):
-        positions = self.mt5.get_positions()
+        try:
+            positions = self.mt5.get_positions(fresh=True)
+        except MT5DataError as exc:
+            self.log(str(exc), "ERROR")
+            return False
         for p in positions:
-            if p["symbol"] == self.symbol and p["type"] == pos_type:
+            if p["symbol"] == self.symbol and p["type"] == pos_type and p.get("magic") == HMA_MAGIC:
                 self.log(f"Ters sinyal nedeniyle #{p['ticket']} ({pos_type}) pozisyonu kapatılıyor...")
                 if self._stop_event.is_set():
                     return False
-                result = self.mt5.close_position(p["ticket"])
+                result = self.mt5.close_position(p["ticket"], expected_magic=HMA_MAGIC)
                 if not result.get("success"):
                     return False
         return True
 
+    def order_id(self, direction):
+        identity = (self.mt5.login_id, self.mt5.server, self.symbol, self.timeframe_minutes,
+                    self.last_candle_time, direction)
+        return "hma-" + hashlib.sha256(repr(identity).encode()).hexdigest()
+
     def start(self):
         if not self.is_running and (self.task is None or self.task.done()):
+            self.mt5.automation_stopped.clear()
             self._stop_event.clear()
             self.is_running = True
             self.task = asyncio.create_task(self.run_loop())
