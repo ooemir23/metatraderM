@@ -8,9 +8,9 @@ const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:a
   };
   let reply = () => {throw new Error('network response lost');};
   const context = vm.createContext({console,Date,AbortController,crypto:require('node:crypto').webcrypto,
-    localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
+    localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k),get length(){return storage.size},key:i=>Array.from(storage.keys())[i]},
     document:{addEventListener(){},getElementById:node,querySelectorAll:()=>[]},window:{addEventListener(){}},
-    setTimeout(){},clearTimeout(){},setInterval(){},confirm:()=>true,
+    setTimeout(){},clearTimeout(){},setInterval(){},confirmAction:async()=>true,
     fetch:async(url,opts)=>{sent.push({url,payload:JSON.parse(opts.body)});return reply();}});
   vm.runInContext(fs.readFileSync('app/static/app.js','utf8'),context);
   context.fetchPositions=()=>{};context.fetchAccount=()=>{};context.fetchHistory=()=>{};
@@ -44,5 +44,18 @@ const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:a
   release({ok:false,json:async()=>({success:false,uncertain:true,error:'unknown',request_id:'close-42'})});
   await closing;
   assert.ok(storage.has('close-intent:42'));
+  context.refreshOrderRecovery();
+  assert.equal(node('order-reset-btn').hidden,false,'uncertain close exposes recovery');
+  context.confirmAction=async()=>false;
+  await context.clearUncertainOrder();
+  assert.ok(storage.has('close-intent:42'),'cancel must preserve intent');
+  context.confirmAction=async()=>true;
+  await context.clearUncertainOrder();
+  assert.equal(storage.has('close-intent:42'),false);
+  assert.equal(node('order-reset-btn').hidden,true,'resolved errors do not expose recovery');
+  storage.set('close-intent:99','old');
+  context.confirmAction=async()=>{storage.set('close-intent:99','new');return true};
+  await context.clearUncertainOrder();
+  assert.equal(storage.get('close-intent:99'),'new','confirmation must not erase a newer request');
   console.log('Trade safety UI: uncertain intent reuse, invalid lot, partial close and double close PASS');
 })().catch(e=>{console.error(e);process.exitCode=1;});

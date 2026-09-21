@@ -365,10 +365,18 @@ async function executeCurrentAdvice() {
   const sl = currentAIAdvice.sl_price ? Number(currentAIAdvice.sl_price) : null;
   const tp = currentAIAdvice.tp_price ? Number(currentAIAdvice.tp_price) : null;
 
-  const conf = confirm(
-    `🤖 DeepSeek AI Emri:\n\nSembol: ${symbol}\nYön: ${sig}\nLot: 0.01\nSL: ${sl || 'Belirtilmedi'}\nTP: ${tp || 'Belirtilmedi'}\n\nBu işlemi MT5 hesabınızda açmak istiyor musunuz?`
-  );
-  if (!conf) return;
+  const advice = {...currentAIAdvice};
+  const conf = await confirmAction({
+    title: "AI emrini onayla",
+    message: "Bu emir MT5 hesabınıza gönderilecek.",
+    details: [["Sembol", symbol], ["Yön", sig === "BUY" ? "Alış" : "Satış"], ["Lot", "0.01"], ["Stop loss", sl || "Belirtilmedi"], ["Take profit", tp || "Belirtilmedi"]],
+    confirmLabel: "Emri gönder"
+  });
+  if (!conf || document.getElementById("ai-execute-btn")?.disabled) return;
+  if (Number(advice.expires_at || 0) * 1000 <= Date.now()) {
+    showToast("Tavsiyenin süresi doldu; yeniden analiz alın.", "error");
+    return;
+  }
 
   const btn = document.getElementById("ai-execute-btn");
   let originalHtml = "";
@@ -382,7 +390,7 @@ async function executeCurrentAdvice() {
     const res = await fetch("/api/ai/execute", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({recommendation: {...currentAIAdvice, suggested_lot: 0.01}})
+      body: JSON.stringify({recommendation: {...advice, suggested_lot: 0.01}})
     });
 
     const data = await res.json();

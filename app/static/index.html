@@ -647,7 +647,7 @@
           <div id="order-notice" class="order-notice" data-tone="neutral" role="status" aria-live="polite" aria-atomic="true">
             <span id="order-notice-title" class="order-notice-title">İşlem durumu</span>
             <span id="order-notice-message">Emir sonucu ve işlem uyarıları burada gösterilir.</span>
-            <button type="button" onclick="clearUncertainOrder()" class="text-xs underline">Belirsiz emirleri kontrol ettim · yeni talebe izin ver</button>
+            <button id="order-reset-btn" type="button" onclick="clearUncertainOrder()" hidden>MT5 kontrolü ve yeni talep</button>
           </div>
         </div>
 
@@ -896,6 +896,7 @@
   <!-- TOAST NOTIFICATION CONTAINER -->
   <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
+  <script src="/static/notifications.js"></script>
   <script src="/static/app.js"></script>
   <script src="/static/trading.js"></script>
 </body>

@@ -55,6 +55,7 @@ async function guardedAction(key, endpoint, payload) {
     return null;
   } finally {
     actionLocks.delete(key);
+    if (typeof refreshOrderRecovery === "function") refreshOrderRecovery();
   }
 }
 async function savePositionStops() {

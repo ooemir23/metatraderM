@@ -15,7 +15,7 @@ const assert = require('node:assert/strict');
     const ctx = vm.createContext({console, Date, AbortController,
       document:{addEventListener(){}, getElementById:node, querySelectorAll:()=>[]},
       window:{addEventListener(){}}, setTimeout:()=>0,clearTimeout(){},setInterval:()=>0,
-      confirm:()=>true,
+      confirmAction:async()=>true,
       fetch: async (url, opts) => {
         if (url.endsWith('/status')) return {ok:true,json:async()=>({success:true,
           memory:{last_analyzed:'2026-09-19',analyzed_trades_count:5,persona:{style:'test',summary:'summary'}},

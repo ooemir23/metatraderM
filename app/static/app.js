@@ -965,15 +965,41 @@ const closePending = new Set();
 function newOrderId() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, "0")).join("");
 }
-function clearUncertainOrder() {
-  if (orderPending || closePending.size || (typeof actionLocks !== "undefined" && actionLocks.size)) return;
-  if (!confirm("MT5 açık pozisyonları, bekleyen emirleri ve işlem geçmişini kontrol ettiniz mi? Bu sembolde al/sat ve tüm kapatma düğmeleri yeni talep gönderebilecek. Yeni emir ayrı bir işlem açabilir.")) return;
-  localStorage.removeItem("order-intent:" + currentSymbol);
-  for (let i = localStorage.length - 1; i >= 0; i--) {
-    const key = localStorage.key(i);
-    if (key.startsWith("close-intent:") || key.startsWith("close-bulk:") || key.startsWith("managed-intent:")) localStorage.removeItem(key);
+function unresolvedIntents(symbol = currentSymbol) {
+  const entries = new Map();
+  try {
+    const orderKey = "order-intent:" + symbol;
+    if (localStorage.getItem(orderKey)) entries.set(orderKey, localStorage.getItem(orderKey));
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key.startsWith("close-intent:") || key.startsWith("close-bulk:") || key.startsWith("managed-intent:")) entries.set(key, localStorage.getItem(key));
+    }
+  } catch (_) { /* Storage failures are reported by order submission. */ }
+  return entries;
+}
+function tradeActionBusy() {
+  return orderPending || closePending.size || (typeof actionLocks !== "undefined" && actionLocks.size);
+}
+function refreshOrderRecovery() {
+  const button = document.getElementById("order-reset-btn");
+  if (button) button.hidden = !!tradeActionBusy() || !unresolvedIntents().size;
+}
+async function clearUncertainOrder() {
+  if (tradeActionBusy()) return;
+  const symbol = currentSymbol, entries = unresolvedIntents(symbol);
+  if (!entries.size) return;
+  const approved = await confirmAction({
+    title: "Önce MT5 durumunu kontrol edin",
+    message: "Sonucu doğrulanamayan talepler var. Yeni talep, önceki işlem gerçekleştiyse ikinci bir işlem açabilir. Bu işlem günlük zarar sınırını kaldırmaz.",
+    details: [["Al / sat sembolü", symbol], ["Kontrol edilecek talep", entries.size]],
+    acknowledgement: "MT5 açık pozisyonlarını, bekleyen emirleri ve işlem geçmişini kontrol ettim. Kapatma ve yönetim talepleri diğer sembolleri de kapsayabilir.",
+    confirmLabel: "Yeni talebe izin ver"
+  });
+  if (!approved || tradeActionBusy() || currentSymbol !== symbol) return;
+  for (const [key, value] of entries) {
+    if (localStorage.getItem(key) === value) localStorage.removeItem(key);
   }
-  setOrderNotice(currentSymbol, "Yeni emir hazır", "Önceki emir kaydı korunuyor; sonraki tıklama yeni bir işlem talebidir.", "neutral");
+  setOrderNotice(symbol, "Yeni talep hazır", "Sonraki tıklama yeni bir işlem talebi oluşturur. Risk kontrolleri geçerlidir.", "neutral");
 }
 
 function renderOrderNotice(flash = false) {
@@ -982,6 +1008,7 @@ function renderOrderNotice(flash = false) {
   const notice = orderNotices.get(currentSymbol) || {
     title: "İşlem durumu", message: "Emir sonucu ve işlem uyarıları burada gösterilir.", tone: "neutral"
   };
+  refreshOrderRecovery();
   box.dataset.tone = notice.tone;
   document.getElementById("order-notice-title").textContent = notice.title;
   document.getElementById("order-notice-message").textContent = notice.message;
@@ -1069,6 +1096,7 @@ async function submitOrder(type) {
     setOrderNotice(symbol, "Yanıt alınamadı", "Emir sonucu belirsiz olabilir. Yeniden göndermeden önce açık pozisyonları kontrol edin.", "error", true);
   } finally {
     orderPending = false;
+    refreshOrderRecovery();
     buttons.forEach(btn => { if (btn) btn.disabled = false; });
   }
 }
@@ -1107,6 +1135,7 @@ async function closePosition(ticket) {
     showToast("Kapatma sonucu belirsiz; MT5 durumunu kontrol edin.", "error");
   } finally {
     closePending.delete(ticket);
+    refreshOrderRecovery();
   }
 }
 
@@ -1152,6 +1181,7 @@ async function closeFilteredPositions(filterType) {
     showToast(`❌ Hata: ${err.message}`, "error");
   } finally {
     closePending.delete("bulk");
+    refreshOrderRecovery();
   }
 }
 
@@ -1603,10 +1633,18 @@ async function executeCurrentAdvice() {
   const sl = currentAIAdvice.sl_price ? Number(currentAIAdvice.sl_price) : null;
   const tp = currentAIAdvice.tp_price ? Number(currentAIAdvice.tp_price) : null;
 
-  const conf = confirm(
-    `🤖 DeepSeek AI Emri:\n\nSembol: ${symbol}\nYön: ${sig}\nLot: 0.01\nSL: ${sl || 'Belirtilmedi'}\nTP: ${tp || 'Belirtilmedi'}\n\nBu işlemi MT5 hesabınızda açmak istiyor musunuz?`
-  );
-  if (!conf) return;
+  const advice = {...currentAIAdvice};
+  const conf = await confirmAction({
+    title: "AI emrini onayla",
+    message: "Bu emir MT5 hesabınıza gönderilecek.",
+    details: [["Sembol", symbol], ["Yön", sig === "BUY" ? "Alış" : "Satış"], ["Lot", "0.01"], ["Stop loss", sl || "Belirtilmedi"], ["Take profit", tp || "Belirtilmedi"]],
+    confirmLabel: "Emri gönder"
+  });
+  if (!conf || document.getElementById("ai-execute-btn")?.disabled) return;
+  if (Number(advice.expires_at || 0) * 1000 <= Date.now()) {
+    showToast("Tavsiyenin süresi doldu; yeniden analiz alın.", "error");
+    return;
+  }
 
   const btn = document.getElementById("ai-execute-btn");
   let originalHtml = "";
@@ -1620,7 +1658,7 @@ async function executeCurrentAdvice() {
     const res = await fetch("/api/ai/execute", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({recommendation: {...currentAIAdvice, suggested_lot: 0.01}})
+      body: JSON.stringify({recommendation: {...advice, suggested_lot: 0.01}})
     });
 
     const data = await res.json();
