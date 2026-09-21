@@ -31,6 +31,11 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - DASHBOARD_USER=${DASHBOARD_USER:-admin}
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:?Set DASHBOARD_PASSWORD in .env}
+      - ENABLE_DEBUG_API=${ENABLE_DEBUG_API:-0}
+      - DAILY_LOSS_LIMIT=${DAILY_LOSS_LIMIT:-500}
+      - TRADING_STATE_DIR=/config
       - MT5_HOST=metatrader5
       - MT5_PORT=8001
       - MT5_LOGIN=${MT5_LOGIN:-0}

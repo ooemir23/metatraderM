@@ -145,7 +145,7 @@
             </button>
             <button id="tab-btn-closed" onclick="switchPositionTab('closed')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200">
               <i class="ph-bold ph-clock-counter-clockwise"></i>
-              <span>Kapalı Pozisyonlar</span>
+              <span>Kapanış Hareketleri</span>
               <span id="history-count-badge" class="px-1.5 py-0.5 rounded-full bg-gray-800 text-gray-400 text-[10px] font-mono">0</span>
             </button>
             <button id="tab-btn-reports" onclick="switchPositionTab('reports')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200">
@@ -168,15 +168,15 @@
               <i class="ph-bold ph-trend-down"></i>
               <span>Zararda Olanları Kapat</span>
             </button>
-            <button onclick="closeFilteredPositions('all')" class="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 text-xs font-semibold flex items-center gap-1 transition active:scale-95" title="Tüm açık pozisyonları kapat">
+            <button onclick="closeFilteredPositions('all')" class="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 text-xs font-semibold flex items-center gap-1 transition active:scale-95" title="Otomasyonu durdur, bekleyen emirleri iptal et ve tüm açık pozisyonları kapat">
               <i class="ph-bold ph-x-circle"></i>
-              <span>Tümünü Kapat</span>
+              <span>Tümünü Kapat / İptal</span>
             </button>
           </div>
 
           <!-- CLOSED POSITIONS SUMMARY (Visible when closed tab active) -->
           <div id="closed-summary-bar" class="hidden flex items-center gap-3 text-xs font-mono">
-            <span class="text-gray-400">Toplam Net: <strong id="history-total-profit" class="text-white">$0.00</strong></span>
+            <span class="text-gray-400">Gösterilen kapanışlar net: <strong id="history-total-profit" class="text-white">$0.00</strong></span>
             <button onclick="fetchHistory()" class="px-2 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs flex items-center gap-1 transition" title="Yenile">
               <i class="ph-bold ph-arrows-clockwise"></i>
               <span class="font-sans">Yenile</span>
@@ -265,6 +265,7 @@
 
         <!-- REPORTS & ANALYTICS CONTAINER -->
         <div id="reports-container" class="flex-1 flex flex-col gap-3 hidden overflow-y-auto pr-1">
+          <p id="reports-basis" class="text-xs text-gray-400">Net hesap hareketleri ve kapanmış pozisyon istatistikleri · UTC</p>
           <!-- TOP 4 KPI CARDS -->
           <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
             <!-- TODAY P/L -->
@@ -631,6 +632,7 @@
             </div>
           </div>
 
+          <p class="text-[11px] text-gray-400 mb-2"><span id="live-feed-status">Canlı veri bekleniyor</span> · <span id="tick-age">Fiyat bekleniyor</span></p>
           <!-- BIG BUY & SELL BUTTONS -->
           <div class="grid grid-cols-2 gap-2.5">
             <button id="order-sell-btn" onclick="submitOrder('SELL')" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-gradient-to-b from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-extrabold shadow-lg shadow-red-600/20 active:scale-[0.98] transition">
@@ -645,8 +647,23 @@
           <div id="order-notice" class="order-notice" data-tone="neutral" role="status" aria-live="polite" aria-atomic="true">
             <span id="order-notice-title" class="order-notice-title">İşlem durumu</span>
             <span id="order-notice-message">Emir sonucu ve işlem uyarıları burada gösterilir.</span>
+            <button type="button" onclick="clearUncertainOrder()" class="text-xs underline">Belirsiz emirleri kontrol ettim · yeni talebe izin ver</button>
           </div>
         </div>
+
+        <details class="bg-[#121620] p-4 rounded-2xl border border-gray-800 text-xs">
+          <summary class="text-white font-bold cursor-pointer">Bekleyen emir oluştur / yönet</summary>
+          <p class="text-gray-400 my-2">Aktif sembol için fiyat girin. Emir iptal edilene kadar brokerda kalır ve panel kapalıyken de çalışır. Günlük zarar sınırı yerleştirme anında kontrol edilir; gelecekteki tetiklenmeyi garantiyle durdurmaz.</p>
+          <div class="grid grid-cols-2 gap-2">
+            <label>Tür<select id="pending-type" class="w-full bg-gray-800 p-2 rounded"><option>BUY_LIMIT</option><option>SELL_LIMIT</option><option>BUY_STOP</option><option>SELL_STOP</option></select></label>
+            <label>Emir fiyatı<input id="pending-price" type="number" step="any" min="0" class="w-full bg-gray-800 p-2 rounded"></label>
+            <label>Lot<input id="pending-volume" type="number" step="0.01" value="0.01" min="0.01" class="w-full bg-gray-800 p-2 rounded"></label>
+            <label>SL (puan)<input id="pending-sl" type="number" step="1" value="200" min="0" class="w-full bg-gray-800 p-2 rounded"></label>
+            <label>TP (puan)<input id="pending-tp" type="number" step="1" value="400" min="0" class="w-full bg-gray-800 p-2 rounded"></label>
+          </div>
+          <button onclick="submitPendingOrder()" class="mt-3 py-2 px-3 rounded bg-cyan-700 text-white font-semibold">Bekleyen emir gönder</button>
+          <div id="pending-orders-list" class="mt-3" aria-live="polite">Emirler yükleniyor…</div>
+        </details>
 
         <!-- CARD 2: HMA CROSSOVER STRATEGY BOT -->
         <div class="bg-[#121620] p-3 sm:p-4 rounded-2xl border border-gray-800/80 shadow-xl flex-1 flex flex-col justify-between">
@@ -789,14 +806,6 @@
           <input type="checkbox" id="cfg-close-opp" checked class="w-4 h-4 rounded bg-[#1c2233] text-cyan-500 focus:ring-0">
           <label for="cfg-close-opp" class="text-gray-300">Ters sinyalde açık pozisyonu otomatik kapat</label>
         </div>
-        <div>
-          <label class="block text-gray-400 mb-1">Telegram Bot Token (İsteğe Bağlı)</label>
-          <input type="text" id="cfg-tg-token" placeholder="Örn: 123456:ABC-DEF..." class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none">
-        </div>
-        <div>
-          <label class="block text-gray-400 mb-1">Telegram Chat ID (İsteğe Bağlı)</label>
-          <input type="text" id="cfg-tg-chat" placeholder="Örn: 987654321" class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none">
-        </div>
       </div>
 
       <div class="flex items-center justify-end gap-2 mt-5 pt-3 border-t border-gray-800">
@@ -842,7 +851,8 @@
         </div>
 
         <div>
-          <label class="block text-gray-300 font-semibold mb-1">Günlük Maksimum Zarar Limiti ($)</label>
+          <label class="block text-gray-300 font-semibold mb-1">Günlük Zarar Limiti (hesap para birimi, UTC)</label>
+          <p class="text-xs text-gray-400">Manuel, HMA ve AI yeni emirlerini kapsar. Gerçekleşen net sonuç ve açık zarar birlikte değerlendirilir.</p>
           <input type="number" id="ai-cfg-max-loss" value="50.0" step="5" min="0" class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-purple-500 focus:outline-none">
           <p class="text-[11px] text-gray-500 mt-0.5">Günün toplam zararı bu tutarı aşarsa AI otopilot otomatik durur.</p>
         </div>
@@ -867,9 +877,26 @@
     </div>
   </div>
 
+  <dialog id="position-editor" class="bg-[#121620] text-gray-200 rounded-2xl border border-gray-700 p-5 w-[min(94vw,440px)] backdrop:bg-black/70">
+    <h2 id="position-editor-title" class="font-bold text-white mb-3"></h2>
+    <p class="text-xs text-gray-400 mb-3">SL/TP alanları fiyat cinsindedir. 0 ilgili korumayı kaldırır.</p>
+    <div class="grid grid-cols-2 gap-3 text-xs">
+      <label>Stop Loss fiyatı<input id="edit-sl" type="number" step="any" min="0" class="w-full bg-gray-800 p-2 rounded mt-1"></label>
+      <label>Take Profit fiyatı<input id="edit-tp" type="number" step="any" min="0" class="w-full bg-gray-800 p-2 rounded mt-1"></label>
+    </div>
+    <button onclick="savePositionStops()" class="my-3 px-3 py-2 rounded bg-cyan-700 text-white text-xs">SL/TP güncelle</button>
+    <div class="border-t border-gray-700 pt-3 text-xs">
+      <label>Kapatılacak lot<input id="partial-volume" type="number" min="0" step="any" class="w-full bg-gray-800 p-2 rounded mt-1" placeholder="Örn. 0.01"></label>
+      <button onclick="partialClosePosition()" class="mt-3 px-3 py-2 rounded bg-rose-700 text-white">Kısmi kapat</button>
+    </div>
+    <p id="position-editor-status" role="status" class="text-xs text-amber-300 mt-3"></p>
+    <button onclick="document.getElementById('position-editor').close()" class="mt-4 text-xs underline">Pencereyi kapat</button>
+  </dialog>
+
   <!-- TOAST NOTIFICATION CONTAINER -->
   <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
   <script src="/static/app.js"></script>
+  <script src="/static/trading.js"></script>
 </body>
 </html>

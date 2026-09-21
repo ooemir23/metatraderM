@@ -6,6 +6,9 @@ import requests
 import hashlib
 import threading
 import tempfile
+import uuid
+import math
+from app.mt5_bridge import AI_MAGIC
 from functools import wraps
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
@@ -49,6 +52,8 @@ class DeepSeekAdvisor:
         self.cost_state = {"usage_days": {}, "last_requests": {}, "advice_cache": {},
                            "learn_digest": None, "autopilot_bucket": None}
         self.mt5 = mt5_client
+        self.autopilot_generation = 0
+        self._auto_stop = threading.Event()
         self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY", DEFAULT_API_KEY)
         self.model = os.getenv("DEEPSEEK_MODEL", DEFAULT_MODEL)
         
@@ -58,7 +63,7 @@ class DeepSeekAdvisor:
             "mode": "ADVISORY",  # "ADVISORY" (manual confirm), "SEMI_AUTO", "FULL_AUTO"
             "min_confidence": 75,
             "max_lot": 0.05,
-            "daily_loss_limit": 500.0,
+            "daily_loss_limit": float(os.getenv("DAILY_LOSS_LIMIT", "500")),
             "allowed_symbols": ["EURUSD", "XAUUSD", "GBPUSD", "BTCUSD"],
             "last_auto_trade_time": 0
         }
@@ -90,6 +95,10 @@ class DeepSeekAdvisor:
         }
 
         self.load_memory()
+        if not self.autopilot.get("enabled"):
+            self._auto_stop.set()
+        if self.mt5:
+            self.mt5.daily_loss_limit = float(self.autopilot["daily_loss_limit"])
 
     def load_memory(self):
         for path in MEMORY_PATHS:
@@ -317,6 +326,7 @@ Fiyat, puan ve lot birimlerini karıştırma. Belirsizlikte HOLD kullan."""
             rec = self._request_json(payload, 25, "advice:" + symbol + ":" + timeframe_name)
             if rec.get("action") not in ("BUY", "SELL", "HOLD"):
                 raise ValueError("AI tavsiye yönü geçersiz.")
+            rec["id"] = str(uuid.uuid4())
             rec["generated_at"] = time.strftime("%H:%M:%S")
             rec["symbol"] = symbol
 
@@ -333,55 +343,47 @@ Fiyat, puan ve lot birimlerini karıştırma. Belirsizlikte HOLD kullan."""
             logger.error(f"Error getting market advice: {e}")
             return {"success": False, "error": str(e)}
 
-    def execute_recommendation(self, rec: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def execute_recommendation(self, rec=None, *, automatic=False, generation=None):
         if not self.mt5:
             return {"success": False, "error": "MT5 istemcisi bağlı değil."}
-
-        target_rec = rec or self.memory.get("latest_recommendation")
-        if not target_rec:
-            return {"success": False, "error": "Uygulanacak geçerli bir tavsiye bulunamadı."}
-
-        if float(target_rec.get("expires_at", 0)) <= time.time():
-            return {"success": False, "error": "Tavsiyenin süresi doldu; güncel analiz alın."}
-        action = target_rec.get("action", "").upper()
-        if action not in ("BUY", "SELL"):
-            return {"success": False, "error": f"Bu işlem türü açılamaz ({action}). Sadece BUY veya SELL emirleri açılabilir."}
-
-        symbol = target_rec.get("symbol", "EURUSD").upper()
-        volume = float(target_rec.get("suggested_lot") or self.autopilot.get("max_lot", 0.01))
-        volume = min(volume, float(self.autopilot.get("max_lot", 0.10)))
-        sl = int(target_rec.get("sl_points", 0))
-        tp = int(target_rec.get("tp_points", 0))
-
-        logger.info(f"Executing DeepSeek AI Trade: {symbol} {action} {volume} lot (SL:{sl}, TP:{tp})")
-        conf_score = target_rec.get("confidence", 80)
-        res = self.mt5.open_order(
-            symbol=symbol,
-            order_type=action,
-            volume=volume,
-            sl_points=sl,
-            tp_points=tp,
-            comment=f"DeepSeek AI ({conf_score}%)"
-        )
-
-        if res.get("success"):
+        candidate = (self.memory.get("latest_recommendation") or {}) if rec is None else rec
+        # Use the server-side recommendation; only the requested lot may be overridden.
+        target = next((entry["recommendation"] for entry in self.cost_state["advice_cache"].values()
+                       if entry["recommendation"].get("id") and entry["recommendation"]["id"] == candidate.get("id")), None)
+        if not target:
+            return {"success": False, "error": "Tavsiye doğrulanamadı; güncel analiz alın."}
+        auto_stop = self._auto_stop
+        if automatic and (generation != self.autopilot_generation or not self.autopilot.get("enabled")
+                          or self.autopilot.get("mode") != "FULL_AUTO"):
+            return {"success": False, "error": "Otomatik işlem durduruldu veya ayarları değişti."}
+        try:
+            if float(target.get("expires_at", 0)) <= time.time():
+                raise ValueError("Tavsiyenin süresi doldu; güncel analiz alın.")
+            action = target.get("action", "").upper()
+            if action not in ("BUY", "SELL"):
+                raise ValueError("Bekleme tavsiyesinde işlem açılamaz.")
+            symbol = target["symbol"].upper()
+            if automatic and symbol not in self.autopilot["allowed_symbols"]:
+                raise ValueError("Sembol otomatik işlem listesinde değil.")
+            volume = float(candidate.get("suggested_lot") or target.get("suggested_lot") or .01)
+            volume = min(volume, float(self.autopilot["max_lot"]))
+            if not math.isfinite(volume) or volume <= 0:
+                raise ValueError("Geçersiz lot miktarı.")
+            sl, tp = int(target.get("sl_points", 0)), int(target.get("tp_points", 0))
+        except (ValueError, TypeError, KeyError, OverflowError) as exc:
+            return {"success": False, "error": str(exc)}
+        res = self.mt5.open_order(symbol, action, volume, sl_points=sl, tp_points=tp,
+                                  comment="AI Trade", magic=AI_MAGIC,
+                                  request_id="ai-" + target["id"],
+                                  stop_event=auto_stop if automatic else None)
+        if res.get("success") or res.get("uncertain"):
             self.autopilot["last_auto_trade_time"] = time.time()
             self.save_memory()
-            ticket_num = res.get("ticket")
-            deal_price = res.get("price")
-            return {
-                "success": True,
-                "ticket": ticket_num,
-                "price": deal_price,
-                "message": f"✅ DeepSeek AI Emri Açıldı: {symbol} {action} #{ticket_num} @ {deal_price}"
-            }
-        else:
-            return {
-                "success": False,
-                "error": res.get("error", "MT5 emir gönderimi başarısız oldu.")
-            }
+        return res
 
     def update_autopilot(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        self.autopilot_generation += 1
+        self._auto_stop.set()
         if "enabled" in config:
             self.autopilot["enabled"] = bool(config["enabled"])
         if "mode" in config:
@@ -389,13 +391,23 @@ Fiyat, puan ve lot birimlerini karıştırma. Belirsizlikte HOLD kullan."""
         if "min_confidence" in config:
             self.autopilot["min_confidence"] = max(50, min(99, int(config["min_confidence"])))
         if "max_lot" in config:
-            self.autopilot["max_lot"] = max(0.01, min(5.0, float(config["max_lot"])))
+            self.autopilot["max_lot"] = float(config["max_lot"])
         if "daily_loss_limit" in config:
-            self.autopilot["daily_loss_limit"] = max(10.0, float(config["daily_loss_limit"]))
+            self.autopilot["daily_loss_limit"] = float(config["daily_loss_limit"])
         if "allowed_symbols" in config and isinstance(config["allowed_symbols"], list):
             self.autopilot["allowed_symbols"] = [str(s).upper() for s in config["allowed_symbols"]]
 
-        self.save_memory()
+        if self.mt5:
+            self.mt5.daily_loss_limit = float(self.autopilot["daily_loss_limit"])
+            if self.autopilot["enabled"]:
+                self.mt5.automation_stopped.clear()
+        if self.autopilot["enabled"]:
+            # Old in-flight analyses/orders retain the signalled event.
+            self._auto_stop = threading.Event()
+        if not self.save_memory():
+            self._auto_stop.set()
+            self.autopilot["enabled"] = False
+            return {"success": False, "error": "Ayarlar diske kaydedilemedi; otopilot durduruldu."}
         return {"success": True, "autopilot": self.autopilot}
 
     def get_status(self) -> Dict[str, Any]:
@@ -404,6 +416,8 @@ Fiyat, puan ve lot birimlerini karıştırma. Belirsizlikte HOLD kullan."""
             "usage": dict(self._usage()),
             "limits": {"daily_calls": self.daily_call_limit, "daily_tokens": self.daily_token_limit,
                        "timezone": "UTC"},
+            "risk_day_timezone": "UTC",
+            "risk_scope": "Tüm yeni emirler; gerçekleşen net sonuç + açık net zarar; hesap para birimi",
             "api_configured": bool(self.api_key),
             "model": self.model,
             "memory": self.memory,

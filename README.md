@@ -1,3 +1,5 @@
+> Web panelindeki emir güvenliği, hız düzeltmeleri ve zorunlu panel parolası kurulumu: [Emir güvenliği düzeltmeleri](docs/EMIR_GUVENLIGI_DUZELTMELERI.md). Telegram entegrasyonu kaldırılmıştır.
+
 # HMA Crossover Expert Advisor (MetaTrader 5)
 
 Bu robot (Expert Advisor), **Hull Moving Average (HMA)** ile seçeceğiniz **2. bir Hareketli Ortalama (İkinci HMA, EMA, SMA veya LWMA)** kesişimini baz alarak otomatik alım-satım yapan ve sinyal üreten profesyonel bir algoritmadır.
@@ -20,12 +22,11 @@ Bu robot (Expert Advisor), **Hull Moving Average (HMA)** ile seçeceğiniz **2. 
    * İster manuel olarak kapatıp sadece ters sinyalde pozisyonu kapatabilirsiniz, isterseniz istediğiniz puan mesafesinde koruyucu stop koyabilirsiniz.
 3. **Esnek Çalışma Modu:**
    * **Tam Otomatik:** Şartlar sağlandığında hem sinyal verir hem de emri doğrudan açar (`InpAllowTrading = true`).
-   * **Sadece Sinyal:** İşlem açmaz, sadece ekrana, telefona ve Telegram'a sinyal gönderir (`InpAllowTrading = false`).
-4. **Çok Kanallı Bildirim Sistemi:**
+   * **Sadece Sinyal:** İşlem açmaz, sadece ekrana ve telefona sinyal gönderir (`InpAllowTrading = false`).
+4. **Bildirim Sistemi:**
    * MT5 Ekran Pop-up Uyarısı (`Alert`)
    * MT5 Mobil Uygulaması Push Bildirimi (`SendNotification`)
    * İsteğe bağlı sesli uyari (`PlaySound`)
-   * **Telegram Bot Entegrasyonu:** Doğrudan cep telefonunuzdaki Telegram grubuna/sohbetine anlık sinyal ve işlem raporu iletme.
 5. **Güvenli İşlem Yönetimi:**
    * Sinyaller **mum kapanışında** teyit edilir (Repaint ve mum içi sahte kesişimler önlenir).
    * Ters sinyal geldiğinde mevcut açık pozisyonu otomatik kapatıp yeni yöne dönebilir (`InpCloseOpposite = true`).
@@ -66,23 +67,6 @@ Bu robot (Expert Advisor), **Hull Moving Average (HMA)** ile seçeceğiniz **2. 
 | | `InpTakeProfitPoints`| `400`| Kâr al mesafesi |
 | **Bildirimler** | `InpScreenAlert` | `true` | MT5 pop-up uyarısı |
 | | `InpPushNotification`| `true` | MT5 mobil uygulamasına anlık bildirim |
-| **Telegram** | `InpUseTelegram` | `false` | Telegram bildirimini aktifleştir |
-| | `InpTelegramBotToken`| `""` | BotFather'dan aldığınız token |
-| | `InpTelegramChatID` | `""` | Mesajın iletileceği Chat/Kanal ID |
-
----
-
-## 📱 Telegram Bildirimlerini Aktif Etme
-
-Eğer sinyalleri cep telefonunuza Telegram üzerinden almak isterseniz:
-
-1. Telegram'da **@BotFather** ile konuşup `/newbot` komutuyla ücretsiz bir bot açın ve verilen **API Token**'ı kopyalayın.
-2. Telegram'da **@userinfobot** veya **@getmyid_bot** ile kendi **Chat ID** numaranızı öğrenin.
-3. MT5 Terminalinde üst menüden:
-   * **Araçlar (Tools)** -> **Seçenekler (Options)** -> **Uzman Danışmanlar (Expert Advisors)** sekmesine gidin.
-   * **"Belirtilen URL için WebRequest'e İzin Ver"** seçeneğini işaretleyin.
-   * Listeye çift tıklayıp şu adresi ekleyin: `https://api.telegram.org`
-4. Robotun ayarlarında `InpUseTelegram = true` yapıp Token ve Chat ID bilgilerinizi girin.
 
 ---
 

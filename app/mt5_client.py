@@ -6,6 +6,12 @@ import threading
 import math
 import rpyc
 import tempfile
+import uuid
+from pathlib import Path
+from app import mt5_bridge
+from app.order_journal import OrderJournal
+from app.trading_lock import TradingLock
+from app.reports import build_report
 from typing import Dict, Any, List, Optional
 
 TIMEFRAME_NAMES = {
@@ -42,7 +48,7 @@ def _execute_close_deal(p):
             return {"success": True, "ticket": ticket, "profit": float(p.profit)}
         if code != 10030:
             return {"success": False, "ticket": ticket, "partial": code == 10010,
-                    "pending": code == 10008, "retcode": code, "error": str(result.comment)}
+                    "pending": code == 10008, "uncertain": code in (10012, 10031), "retcode": code, "error": str(result.comment)}
     return {"success": False, "ticket": ticket, "error": str(result.comment)}
 
 def hma_native_close_filter(filter_type="all"):
@@ -64,6 +70,7 @@ def hma_native_close_filter(filter_type="all"):
         return {"success": True, "closed_count": 0, "total_matched": 0, "errors": []}
 
     closed_count = 0
+    uncertain = pending = False
     errors = []
 
     for p in targets:
@@ -71,16 +78,19 @@ def hma_native_close_filter(filter_type="all"):
         if r.get("success"):
             closed_count += 1
         else:
+            uncertain = uncertain or r.get("uncertain", False)
+            pending = pending or r.get("pending", False)
             errors.append("Ticket #" + str(p.ticket) + ": " + str(r.get("error")))
 
     return {
         "success": len(errors) == 0,
         "closed_count": closed_count,
+        "uncertain": uncertain, "pending": pending,
         "total_matched": len(targets),
         "errors": errors
     }
 
-def hma_native_close_ticket(ticket):
+def hma_native_close_ticket(ticket, expected_magic=None):
     ticket = int(ticket)
     positions = mt5.positions_get(ticket=ticket)
     if not positions:
@@ -90,28 +100,27 @@ def hma_native_close_ticket(ticket):
     if not positions:
         return {"success": False, "error": "Position #" + str(ticket) + " bulunamadı"}
 
+    if expected_magic is not None:
+        account = mt5.account_info()
+        if account is None or account.margin_mode != 2 or positions[0].magic != expected_magic:
+            return {"success": False, "error": "Strateji sahipliği/hedging hesabı doğrulanamadı."}
     return _execute_close_deal(positions[0])
 '''
 
 NATIVE_HISTORY_SCRIPT = '''
 import MetaTrader5 as mt5
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 def hma_native_get_history(days=30):
     try:
         days_int = int(days) if days else 30
-        from_date = datetime.now() - timedelta(days=days_int)
-        to_date = datetime.now() + timedelta(days=2)
+        from_date = datetime.now(timezone.utc) - timedelta(days=days_int)
+        to_date = datetime.now(timezone.utc)
         
         deals = mt5.history_deals_get(from_date, to_date)
-        if deals is None or len(deals) == 0:
-            deals = mt5.history_deals_get(datetime(2020, 1, 1), to_date)
-        if deals is None or len(deals) == 0:
-            deals = mt5.history_deals_get(0, 2147483647)
-            
         if deals is None:
-            return []
+            raise RuntimeError("İşlem geçmişi okunamadı")
             
         res = []
         for d in deals:
@@ -153,9 +162,13 @@ def hma_native_get_history(days=30):
                 })
         res.reverse()
         return res
-    except Exception as e:
-        return []
+    except Exception:
+        raise
 '''
+
+class MT5DataError(RuntimeError):
+    pass
+
 
 class MT5Client:
     def __init__(self, host: Optional[str] = None, port: Optional[int] = None):
@@ -169,7 +182,12 @@ class MT5Client:
         self.last_ping_time = 0
         self.last_auto_login_attempt = 0
         self.auto_login_cooldown = 20
-        self._lock = threading.RLock()
+        self._lock = TradingLock()
+        self.journal = OrderJournal()
+        self._reports_cache = {}
+        self.daily_loss_limit = float(os.getenv("DAILY_LOSS_LIMIT", "500"))
+        self.automation_stopped = threading.Event()
+        self._bridge_ready = False
         self._account_cache = None
         self._account_cache_time = 0.0
         self._positions_cache = None
@@ -228,6 +246,7 @@ class MT5Client:
                 logger.warning(f"Could not save credentials to {path}: {e}")
 
     def _reset_connection(self):
+        self._bridge_ready = False
         old_conn = self.conn
         self.conn = self.mt5 = None
         self.is_connected = False
@@ -416,42 +435,37 @@ class MT5Client:
                 logger.error(f"Error fetching account info: {e}")
                 return {"connected": False, "error": str(e)}
 
-    def get_positions(self) -> List[Dict[str, Any]]:
-        now = time.time()
-        if self._positions_cache is not None and (now - self._positions_cache_time < 0.5) and self.is_connected:
-            return self._positions_cache
+    def invalidate_trading_cache(self):
+        self._reports_cache.clear()
+        self._account_cache = self._positions_cache = None
+        self._price_cache.clear()
 
-        if not self.ensure_connected():
-            return []
+    def _bridge(self, operation, *args):
+        if not self.conn:
+            return getattr(mt5_bridge, operation)(self.mt5, *args)
+        if not self._bridge_ready:
+            source = Path(mt5_bridge.__file__).read_text(encoding="utf-8")
+            self.conn.execute("import MetaTrader5 as mt5\n" + source)
+            self._bridge_ready = True
+        # Serialize remotely: never iterate an RPyC netref per row/field.
+        return json.loads(str(self.conn.eval(
+            f"json.dumps({operation}(mt5, *{args!r}), allow_nan=False)")))
 
+    def get_positions(self, fresh=False) -> List[Dict[str, Any]]:
         with self._lock:
+            now = time.monotonic()
+            if not fresh and self._positions_cache is not None and now - self._positions_cache_time < .5 and self.is_connected:
+                return self._positions_cache
+            if not self.ensure_connected():
+                raise MT5DataError("MT5 bağlı değil; pozisyonlar doğrulanamadı.")
             try:
-                positions = self.mt5.positions_get()
-                if positions is None:
-                    return []
-
-                result = []
-                for p in positions:
-                    result.append({
-                        "ticket": p.ticket,
-                        "symbol": p.symbol,
-                        "type": "BUY" if p.type == 0 else "SELL",
-                        "type_raw": p.type,
-                        "volume": p.volume,
-                        "price_open": round(p.price_open, 5),
-                        "price_current": round(p.price_current, 5),
-                        "sl": round(p.sl, 5),
-                        "tp": round(p.tp, 5),
-                        "profit": round(p.profit, 2),
-                        "swap": round(p.swap, 2),
-                        "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(p.time))
-                    })
+                result = self._bridge("positions")
                 self._positions_cache = result
-                self._positions_cache_time = time.time()
+                self._positions_cache_time = time.monotonic()
                 return result
-            except Exception as e:
-                logger.error(f"Error fetching positions: {e}")
-                return []
+            except Exception as exc:
+                self._positions_cache = None
+                raise MT5DataError("Pozisyonlar okunamadı; yeni işlem engellendi.") from exc
 
     def get_symbol_price(self, symbol: str) -> Dict[str, Any]:
         now = time.time()
@@ -499,71 +513,43 @@ class MT5Client:
                 logger.exception("Order outcome unknown; automatic retry suppressed")
             return None
 
-    def open_order(self, symbol: str, order_type: str, volume: float, sl_points: int = 0, tp_points: int = 0, comment: str = "HMA Web App") -> Dict[str, Any]:
+    def open_order(self, symbol: str, order_type: str, volume: float, sl_points: int = 0,
+                   tp_points: int = 0, comment: str = "HMA Web App", *,
+                   magic: int = mt5_bridge.MANUAL_MAGIC, request_id: Optional[str] = None,
+                   stop_event=None, pending_type=None, entry_price=None) -> Dict[str, Any]:
         if order_type.upper() not in ("BUY", "SELL"):
             return {"success": False, "error": "Emir yönü BUY veya SELL olmalı"}
         if not math.isfinite(volume) or volume <= 0 or sl_points < 0 or tp_points < 0:
             return {"success": False, "error": "Geçersiz hacim veya SL/TP"}
-        with self._lock:
+        started = time.perf_counter()
+        with self._lock.order():
+            queue_ms = round((time.perf_counter() - started) * 1000, 1)
+            if magic != mt5_bridge.MANUAL_MAGIC and (self.automation_stopped.is_set() or (stop_event and stop_event.is_set())):
+                return {"success": False, "error": "Otomatik işlemler durduruldu."}
             if not self.ensure_connected():
-                return {"success": False, "error": f"MT5 bağlı değil: {self.last_error_msg}"}
-
+                return {"success": False, "error": "MT5 bağlı değil."}
+            payload = dict(symbol=symbol.upper(), order_type=order_type.upper(), volume=volume,
+                           sl_points=sl_points, tp_points=tp_points, comment=comment, magic=magic, pending_type=pending_type, entry_price=entry_price)
             try:
-                self.mt5.symbol_select(symbol, True)
-                tick = self.mt5.symbol_info_tick(symbol)
-                info = self.mt5.symbol_info(symbol)
-                if not tick or not info:
-                    return {"success": False, "error": f"Symbol {symbol} bulunamadı veya kapalı"}
+                res = self.journal.run(request_id or str(uuid.uuid4()), payload, lambda: self._bridge(
+                    "open_deal", payload["symbol"], payload["order_type"], volume, sl_points, tp_points,
+                    comment, magic, self.daily_loss_limit, self.login_id, self.server, 10, pending_type, entry_price))
+                return {**res, "queue_ms": queue_ms}
+            except Exception:
+                logger.exception("Emir günlüğü/sonucu kaydedilemedi")
+                return {"success": False, "uncertain": True,
+                        "error": "Emir kaydı doğrulanamadı; broker durumunu kontrol edin."}
+            finally:
+                self.invalidate_trading_cache()
 
-                point = info.point
-                digits = info.digits
-                is_buy = order_type.upper() == "BUY"
+    def close_position(self, ticket: int, pos_data=None, *, expected_magic=None):
+        with self._lock.order():
+            try:
+                return self._close_position(ticket, pos_data, expected_magic=expected_magic)
+            finally:
+                self.invalidate_trading_cache()
 
-                price = tick.ask if is_buy else tick.bid
-                type_code = 0 if is_buy else 1
-
-                sl = 0.0
-                tp = 0.0
-                if sl_points > 0:
-                    sl = round(price - (sl_points * point) if is_buy else price + (sl_points * point), digits)
-                if tp_points > 0:
-                    tp = round(price + (tp_points * point) if is_buy else price - (tp_points * point), digits)
-
-                request = {
-                    "action": 1,
-                    "symbol": str(symbol),
-                    "volume": float(volume),
-                    "type": int(type_code),
-                    "price": float(price),
-                    "sl": float(sl),
-                    "tp": float(tp),
-                    "deviation": 20,
-                    "magic": 123456,
-                    "comment": str(comment),
-                    "type_time": 0,
-                    "type_filling": 1
-                }
-
-                for filling in (1, 0, 2):
-                    request["type_filling"] = filling
-                    result = self.remote_order_send(request)
-                    if result is None:
-                        return {"success": False, "uncertain": True,
-                                "error": "Emir sonucu belirsiz; tekrar göndermeden önce pozisyonları kontrol edin."}
-                    code = int(result.retcode)
-                    if code in (10008, 10009, 10010):
-                        return {"success": True, "partial": code == 10010,
-                                "retcode": code, "ticket": result.order,
-                                "price": result.price, "volume": result.volume,
-                                "comment": str(result.comment)}
-                    if code != 10030:  # Only an explicit invalid filling rejection is safe to retry.
-                        break
-                return {"success": False, "retcode": int(result.retcode), "error": str(result.comment)}
-            except Exception as e:
-                logger.error(f"Error opening order: {e}")
-                return {"success": False, "error": str(e)}
-
-    def close_position(self, ticket: int, pos_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _close_position(self, ticket: int, pos_data: Optional[Dict[str, Any]] = None, *, expected_magic=None) -> Dict[str, Any]:
         with self._lock:
             if not self.ensure_connected():
                 return {"success": False, "error": "MT5 is not connected"}
@@ -571,20 +557,26 @@ class MT5Client:
             if self.conn:
                 try:
                     self.conn.execute(NATIVE_CLOSE_SCRIPT)
-                    res = self.conn.eval(f"hma_native_close_ticket({int(ticket)})")
+                    res = self.conn.eval(f"hma_native_close_ticket({int(ticket)}, {expected_magic!r})")
                     return dict(res)
                 except Exception as e:
                     logger.error(f"Native close_position #{ticket} failed: {e}")
                     return {"success": False, "uncertain": True, "error": "Kapatma sonucu belirsiz; pozisyonu kontrol edin."}
 
             try:
+                if expected_magic is not None:
+                    account = self.mt5.account_info()
+                    owned = next((p for p in self.get_positions(fresh=True) if p["ticket"] == ticket), None)
+                    if account is None or account.margin_mode != 2 or owned is None or owned["magic"] != expected_magic:
+                        return {"success": False, "error": "Strateji sahipliği/hedging hesabı doğrulanamadı."}
+                    pos_data = owned
                 if pos_data:
                     symbol = pos_data["symbol"]
                     volume = float(pos_data["volume"])
                     is_buy = (pos_data.get("type") == "BUY" or pos_data.get("type_raw") == 0)
                     profit = float(pos_data.get("profit", 0.0))
                 else:
-                    positions = self.get_positions()
+                    positions = self.get_positions(fresh=True)
                     matched = [p for p in positions if p["ticket"] == int(ticket)]
                     if not matched:
                         return {"success": False, "error": f"Position #{ticket} bulunamadı"}
@@ -635,8 +627,10 @@ class MT5Client:
                     if last_res is None or last_res.retcode != 10030:
                         break
 
-                err_msg = last_res.comment if last_res else str(self.mt5.last_error())
-                return {"success": False, "error": err_msg}
+                code = int(last_res.retcode) if last_res else None
+                return {"success": False, "retcode": code, "partial": code == 10010,
+                        "pending": code == 10008, "uncertain": code in (None, 10012, 10031),
+                        "error": str(last_res.comment) if last_res else "Kapatma sonucu belirsiz; pozisyonu kontrol edin."}
             except Exception as e:
                 logger.error(f"Error closing position #{ticket}: {e}")
                 return {"success": False, "error": str(e)}
@@ -645,6 +639,15 @@ class MT5Client:
         return self.close_by_filter("all")
 
     def close_by_filter(self, filter_type: str = "all") -> Dict[str, Any]:
+        with self._lock.order():
+            try:
+                return self._close_by_filter(filter_type)
+            except MT5DataError as exc:
+                return {"success": False, "closed_count": 0, "total_matched": 0, "errors": [str(exc)]}
+            finally:
+                self.invalidate_trading_cache()
+
+    def _close_by_filter(self, filter_type: str = "all") -> Dict[str, Any]:
         """
         filter_type: 'all', 'profit', 'loss'
         """
@@ -658,6 +661,7 @@ class MT5Client:
                     res = self.conn.eval(f"hma_native_close_filter({repr(filter_type)})")
                     return {
                         "success": bool(res.get("success")),
+                        "uncertain": bool(res.get("uncertain")), "pending": bool(res.get("pending")),
                         "closed_count": int(res.get("closed_count", 0)),
                         "total_matched": int(res.get("total_matched", 0)),
                         "errors": list(res.get("errors", []))
@@ -666,7 +670,7 @@ class MT5Client:
                     logger.error(f"Native close_by_filter failed: {e}")
                     return {"success": False, "uncertain": True, "closed_count": 0, "errors": ["Kapatma sonucu belirsiz; pozisyonları kontrol edin."]}
 
-            positions = self.get_positions()
+            positions = self.get_positions(fresh=True)
             targets = []
             for p in positions:
                 profit = float(p.get("profit", 0.0))
@@ -678,6 +682,7 @@ class MT5Client:
                     targets.append(p)
 
             closed_count = 0
+            uncertain = pending = False
             errors = []
 
             for p in targets:
@@ -685,11 +690,14 @@ class MT5Client:
                 if res.get("success"):
                     closed_count += 1
                 else:
+                    uncertain = uncertain or res.get("uncertain", False)
+                    pending = pending or res.get("pending", False)
                     errors.append(f"Ticket #{p['ticket']}: {res.get('error')}")
 
             return {
                 "success": len(errors) == 0,
                 "closed_count": closed_count,
+                "uncertain": uncertain, "pending": pending,
                 "total_matched": len(targets),
                 "total_positions": len(positions),
                 "errors": errors
@@ -704,21 +712,7 @@ class MT5Client:
                 name = TIMEFRAME_NAMES.get(timeframe)
                 if name is None:
                     raise ValueError(f"Desteklenmeyen zaman dilimi: {timeframe}")
-                rates = self.mt5.copy_rates_from_pos(symbol, getattr(self.mt5, name), 0, count)
-                if rates is None or len(rates) == 0:
-                    return None
-
-                result = []
-                for r in rates:
-                    result.append({
-                        "time": r[0],
-                        "open": float(r[1]),
-                        "high": float(r[2]),
-                        "low": float(r[3]),
-                        "close": float(r[4]),
-                        "tick_volume": int(r[5])
-                    })
-                return result
+                return self._bridge("rates", symbol, name, count)
             except Exception as e:
                 logger.error(f"Error fetching rates for {symbol}: {e}")
                 return None
@@ -726,28 +720,20 @@ class MT5Client:
     def get_history(self, days: int = 30) -> List[Dict[str, Any]]:
         with self._lock:
             if not self.ensure_connected():
-                return []
+                raise MT5DataError("MT5 bağlı değil; geçmiş doğrulanamadı.")
 
             try:
                 if self.conn:
-                    self.conn.execute(NATIVE_HISTORY_SCRIPT)
-                    raw = self.conn.eval(f"hma_native_get_history({int(days)})")
-                    if not raw:
-                        return []
-                    # Ensure plain python dicts
-                    return [dict(d) for d in raw]
+                    self.conn.execute("import json\n" + NATIVE_HISTORY_SCRIPT)
+                    return json.loads(str(self.conn.eval(f"json.dumps(hma_native_get_history({int(days)}))")))
                 elif self.mt5:
-                    from datetime import datetime, timedelta
+                    from datetime import datetime, timedelta, timezone
                     days_int = int(days) if days else 30
-                    from_date = datetime.now() - timedelta(days=days_int)
-                    to_date = datetime.now() + timedelta(days=2)
+                    from_date = datetime.now(timezone.utc) - timedelta(days=days_int)
+                    to_date = datetime.now(timezone.utc)
                     deals = self.mt5.history_deals_get(from_date, to_date)
-                    if deals is None or len(deals) == 0:
-                        deals = self.mt5.history_deals_get(datetime(2020, 1, 1), to_date)
-                    if deals is None or len(deals) == 0:
-                        deals = self.mt5.history_deals_get(0, 2147483647)
                     if deals is None:
-                        return []
+                        raise RuntimeError("İşlem geçmişi okunamadı")
                     res = []
                     for d in deals:
                         deal_symbol = str(getattr(d, "symbol", ""))
@@ -785,162 +771,73 @@ class MT5Client:
                     return res
                 return []
             except Exception as e:
-                logger.error(f"Error fetching history: {e}")
-                return []
+                raise MT5DataError("İşlem geçmişi okunamadı.") from e
 
     def get_reports(self, days: int = 30) -> Dict[str, Any]:
-        deals = self.get_history(days=days)
-        total_trades = len(deals)
-        
-        empty_res = {
-            "summary": {
-                "total_trades": 0,
-                "winning_trades": 0,
-                "losing_trades": 0,
-                "win_rate": 0.0,
-                "total_profit": 0.0,
-                "gross_profit": 0.0,
-                "gross_loss": 0.0,
-                "profit_factor": 0.0,
-                "today_profit": 0.0,
-                "today_trades": 0,
-                "avg_profit": 0.0,
-                "avg_loss": 0.0,
-                "best_trade": 0.0,
-                "worst_trade": 0.0,
-                "total_volume": 0.0,
-                "total_swap": 0.0,
-                "total_commission": 0.0
-            },
-            "daily": [],
-            "by_symbol": []
-        }
-        
-        if total_trades == 0:
-            return empty_res
+        with self._lock:
+            if not self.ensure_connected():
+                raise MT5DataError("MT5 bağlı değil.")
+            try:
+                activity = self._bridge("report_activity", days)
+            except Exception as exc:
+                raise MT5DataError("Rapor verisi okunamadı.") from exc
+            key = (tuple(activity["account"]), days)
+            # Activity is always fresh; only immutable, fully closed lifetimes are cached.
+            cached = self._reports_cache.setdefault(key, {})
+        candidate_ids = {r["position_id"] for r in activity["deals"]
+                         if r["type"] in (0,1) and r["entry"] in (1,2,3) and r["position_id"]}
+        histories = {}
+        for position_id in candidate_ids - set(activity["open_ids"]):
+            entry = cached.get(position_id)
+            if entry and time.monotonic() - entry[0] < 30:
+                histories[position_id] = entry[1]
+                continue
+            # Release between position histories so orders take precedence over long reports.
+            with self._lock:
+                try:
+                    if not self.ensure_connected():
+                        raise RuntimeError("Bağlantı kesildi")
+                    rows = self._bridge("position_history", position_id, activity["account"])
+                except Exception as exc:
+                    raise MT5DataError("Pozisyon geçmişi tamamlanamadı; rapor gösterilmedi.") from exc
+                cached[position_id] = (time.monotonic(), rows)
+                histories[position_id] = rows
+        return build_report(activity, histories)
 
-        today_str = time.strftime("%Y-%m-%d")
+    def get_pending_orders(self):
+        with self._lock:
+            if not self.ensure_connected():
+                raise MT5DataError("MT5 bağlı değil.")
+            try:
+                return self._bridge("pending_orders")
+            except Exception as exc:
+                raise MT5DataError("Bekleyen emirler okunamadı.") from exc
 
-        winning_deals = [d for d in deals if d["profit"] > 0]
-        losing_deals = [d for d in deals if d["profit"] < 0]
+    def get_live_snapshot(self, symbols):
+        with self._lock:
+            if not self.ensure_connected():
+                raise MT5DataError("MT5 bağlı değil.")
+            try:
+                return self._bridge("live_snapshot", symbols)
+            except Exception as exc:
+                raise MT5DataError("Canlı veriler doğrulanamadı.") from exc
 
-        winning_count = len(winning_deals)
-        losing_count = len(losing_deals)
-        win_rate = round((winning_count / total_trades) * 100, 1) if total_trades > 0 else 0.0
+    def manage_position(self, ticket, operation, values, request_id):
+        with self._lock.order():
+            if not self.ensure_connected():
+                return {"success": False, "error": "MT5 bağlı değil."}
+            try:
+                return self.journal.run(request_id, dict(operation=operation, ticket=ticket, values=values),
+                    lambda: self._bridge("manage_position", ticket, operation, values, self.login_id, self.server))
+            finally:
+                self.invalidate_trading_cache()
 
-        gross_profit = sum(d["profit"] for d in winning_deals)
-        gross_loss = sum(d["profit"] for d in losing_deals)
-        total_profit = sum(d["profit"] for d in deals)
-        total_swap = sum(d.get("swap", 0.0) for d in deals)
-        total_comm = sum(d.get("commission", 0.0) for d in deals)
-        total_vol = sum(d.get("volume", 0.0) for d in deals)
-
-        profit_factor = round(gross_profit / abs(gross_loss), 2) if gross_loss != 0 else (999.0 if gross_profit > 0 else 0.0)
-
-        avg_win = round(gross_profit / winning_count, 2) if winning_count > 0 else 0.0
-        avg_loss = round(gross_loss / losing_count, 2) if losing_count > 0 else 0.0
-
-        best_trade = max((d["profit"] for d in deals), default=0.0)
-        worst_trade = min((d["profit"] for d in deals), default=0.0)
-
-        # Today's profit & trades
-        today_deals = [d for d in deals if d.get("date") == today_str]
-        today_profit = sum(d["profit"] for d in today_deals)
-        today_trades = len(today_deals)
-
-        # Group by date
-        daily_dict = {}
-        for d in deals:
-            d_date = d.get("date", "Unknown")
-            if d_date not in daily_dict:
-                daily_dict[d_date] = {
-                    "date": d_date,
-                    "is_today": (d_date == today_str),
-                    "trades_count": 0,
-                    "winning_trades": 0,
-                    "losing_trades": 0,
-                    "gross_profit": 0.0,
-                    "gross_loss": 0.0,
-                    "profit": 0.0,
-                    "swap": 0.0,
-                    "commission": 0.0,
-                    "volume": 0.0
-                }
-            entry = daily_dict[d_date]
-            entry["trades_count"] += 1
-            p = d["profit"]
-            entry["profit"] += p
-            if p > 0:
-                entry["winning_trades"] += 1
-                entry["gross_profit"] += p
-            elif p < 0:
-                entry["losing_trades"] += 1
-                entry["gross_loss"] += p
-            entry["swap"] += d.get("swap", 0.0)
-            entry["commission"] += d.get("commission", 0.0)
-            entry["volume"] += d.get("volume", 0.0)
-
-        daily_list = []
-        for date_k, val in sorted(daily_dict.items(), reverse=True):
-            val["profit"] = round(val["profit"], 2)
-            val["gross_profit"] = round(val["gross_profit"], 2)
-            val["gross_loss"] = round(val["gross_loss"], 2)
-            val["swap"] = round(val["swap"], 2)
-            val["commission"] = round(val["commission"], 2)
-            val["volume"] = round(val["volume"], 2)
-            val["win_rate"] = round((val["winning_trades"] / val["trades_count"]) * 100, 1) if val["trades_count"] > 0 else 0.0
-            daily_list.append(val)
-
-        # Group by symbol
-        symbol_dict = {}
-        for d in deals:
-            sym = d.get("symbol", "Other")
-            if sym not in symbol_dict:
-                symbol_dict[sym] = {
-                    "symbol": sym,
-                    "trades_count": 0,
-                    "winning_trades": 0,
-                    "losing_trades": 0,
-                    "profit": 0.0,
-                    "volume": 0.0
-                }
-            s_entry = symbol_dict[sym]
-            s_entry["trades_count"] += 1
-            p = d["profit"]
-            s_entry["profit"] += p
-            if p > 0:
-                s_entry["winning_trades"] += 1
-            elif p < 0:
-                s_entry["losing_trades"] += 1
-            s_entry["volume"] += d.get("volume", 0.0)
-
-        symbol_list = []
-        for sym_k, val in sorted(symbol_dict.items(), key=lambda x: x[1]["profit"], reverse=True):
-            val["profit"] = round(val["profit"], 2)
-            val["volume"] = round(val["volume"], 2)
-            val["win_rate"] = round((val["winning_trades"] / val["trades_count"]) * 100, 1) if val["trades_count"] > 0 else 0.0
-            symbol_list.append(val)
-
-        return {
-            "summary": {
-                "total_trades": total_trades,
-                "winning_trades": winning_count,
-                "losing_trades": losing_count,
-                "win_rate": win_rate,
-                "total_profit": round(total_profit, 2),
-                "gross_profit": round(gross_profit, 2),
-                "gross_loss": round(gross_loss, 2),
-                "profit_factor": profit_factor,
-                "today_profit": round(today_profit, 2),
-                "today_trades": today_trades,
-                "avg_profit": avg_win,
-                "avg_loss": avg_loss,
-                "best_trade": round(best_trade, 2),
-                "worst_trade": round(worst_trade, 2),
-                "total_volume": round(total_vol, 2),
-                "total_swap": round(total_swap, 2),
-                "total_commission": round(total_comm, 2)
-            },
-            "daily": daily_list,
-            "by_symbol": symbol_list
-        }
+    def cancel_pending(self, ticket, request_id):
+        with self._lock.order():
+            if not self.ensure_connected():
+                return {"success": False, "error": "MT5 bağlı değil."}
+            try:
+                return self.journal.run(request_id, dict(operation="cancel",ticket=ticket),
+                    lambda: self._bridge("cancel_pending", ticket, self.login_id, self.server))
+            finally:
+                self.invalidate_trading_cache()

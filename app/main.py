@@ -1,13 +1,16 @@
 import os
+import json
 import logging
 from contextlib import asynccontextmanager, suppress
 from typing import Optional, Dict, Any, List, Literal
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, ConfigDict
 
-from app.mt5_client import MT5Client, TIMEFRAME_NAMES
+from app.mt5_client import MT5Client, TIMEFRAME_NAMES, MT5DataError
+from app.security import protect_dashboard
+from app.live_feed import LiveFeed
 from app.strategy_bot import StrategyBot
 from app.ai_advisor import DeepSeekAdvisor
 
@@ -18,6 +21,7 @@ import asyncio
 import time
 
 mt5_client = MT5Client()
+live_feed = LiveFeed(mt5_client)
 bot = StrategyBot(mt5_client)
 ai_advisor = DeepSeekAdvisor(mt5_client)
 
@@ -30,12 +34,13 @@ async def auto_reconnect_loop():
                 connected = await asyncio.to_thread(mt5_client.ensure_connected)
 
             # Autopilot autonomous check
-            if connected and ai_advisor.autopilot.get("enabled") and ai_advisor.autopilot.get("mode") == "FULL_AUTO":
+            if connected and os.getenv("DASHBOARD_PASSWORD") and ai_advisor.autopilot.get("enabled") and ai_advisor.autopilot.get("mode") == "FULL_AUTO":
                 now = time.time()
                 last_time = ai_advisor.autopilot.get("last_auto_trade_time", 0)
                 # Scan once per M15 bucket; trade cooldown is separate from analysis cadence.
                 if now - last_time >= 300 and ai_advisor.claim_autopilot_cycle():
                     symbols = ai_advisor.autopilot.get("allowed_symbols", ["EURUSD", "XAUUSD"])
+                    generation = ai_advisor.autopilot_generation
                     for sym in symbols:
                         tick = await asyncio.to_thread(mt5_client.get_symbol_price, sym)
                         if tick and tick.get("bid"):
@@ -49,7 +54,7 @@ async def auto_reconnect_loop():
                                 min_conf = ai_advisor.autopilot.get("min_confidence", 80)
                                 if action in ("BUY", "SELL") and conf >= min_conf:
                                     logger.info(f"AI FULL_AUTO triggering trade on {sym}: {action} (Confidence: {conf}%)")
-                                    await asyncio.to_thread(ai_advisor.execute_recommendation, rec)
+                                    await asyncio.to_thread(ai_advisor.execute_recommendation, rec, automatic=True, generation=generation)
                                     break
         except Exception as e:
             logger.debug(f"auto_reconnect_loop error: {e}")
@@ -100,19 +105,29 @@ async def lifespan(app: FastAPI):
     ensure_optimized_server_py()
     # MT5 may be offline; the HTTP server must still start and expose status.
     task = asyncio.create_task(auto_reconnect_loop())
+    feed_task = asyncio.create_task(live_feed.run())
     try:
         yield
     finally:
         bot.stop()
         task.cancel()
+        feed_task.cancel()
         with suppress(asyncio.CancelledError):
             await task
+        with suppress(asyncio.CancelledError):
+            await feed_task
         logger.info("Shutting down HMA Trading Application...")
 
 app = FastAPI(title="HMA Trading Dashboard", lifespan=lifespan)
+app.middleware("http")(protect_dashboard)
+
+@app.exception_handler(MT5DataError)
+async def mt5_data_error(request, exc):
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
 
 # Pydantic Schemas
 class OrderRequest(BaseModel):
+    request_id: str = Field(min_length=16, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
     model_config = ConfigDict(allow_inf_nan=False)
     symbol: str
     order_type: Literal["BUY", "SELL"]
@@ -121,7 +136,10 @@ class OrderRequest(BaseModel):
     tp_points: int = Field(default=0, ge=0)
     comment: str = "HMA Web Trade"
 
-class CloseRequest(BaseModel):
+class ActionRequest(BaseModel):
+    request_id: str = Field(min_length=16, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
+
+class CloseRequest(ActionRequest):
     ticket: int = Field(gt=0)
 
 class LoginRequest(BaseModel):
@@ -131,18 +149,16 @@ class LoginRequest(BaseModel):
 
 class BotConfigRequest(BaseModel):
     symbol: Optional[str] = None
-    timeframe_minutes: Optional[int] = None
-    hma_period: Optional[int] = None
-    second_ma_type: Optional[str] = None
-    second_ma_period: Optional[int] = None
-    lot_size: Optional[float] = None
+    timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=43200)
+    hma_period: Optional[int] = Field(default=None, ge=2, le=1000)
+    second_ma_type: Optional[Literal["EMA", "SMA", "LWMA", "HMA"]] = None
+    second_ma_period: Optional[int] = Field(default=None, ge=2, le=1000)
+    lot_size: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
     use_stop_loss: Optional[bool] = None
-    sl_points: Optional[int] = None
+    sl_points: Optional[int] = Field(default=None, ge=0)
     use_take_profit: Optional[bool] = None
-    tp_points: Optional[int] = None
+    tp_points: Optional[int] = Field(default=None, ge=0)
     close_opposite: Optional[bool] = None
-    telegram_token: Optional[str] = None
-    telegram_chat_id: Optional[str] = None
 
 class AIAdviceRequest(BaseModel):
     symbol: Optional[str] = "EURUSD"
@@ -153,11 +169,83 @@ class AIExecuteRequest(BaseModel):
 
 class AIAutopilotRequest(BaseModel):
     enabled: Optional[bool] = None
-    mode: Optional[str] = None
+    mode: Optional[Literal["ADVISORY", "SEMI_AUTO", "FULL_AUTO"]] = None
     min_confidence: Optional[int] = None
-    max_lot: Optional[float] = None
-    daily_loss_limit: Optional[float] = None
+    max_lot: Optional[float] = Field(default=None, gt=0, le=5, allow_inf_nan=False)
+    daily_loss_limit: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
     allowed_symbols: Optional[List[str]] = None
+
+class PendingRequest(OrderRequest):
+    pending_type: Literal["BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP"]
+    entry_price: float = Field(gt=0)
+
+class StopsRequest(CloseRequest):
+    sl: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    tp: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    expected_sl: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    expected_tp: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+
+class PartialCloseRequest(CloseRequest):
+    volume: float = Field(gt=0, allow_inf_nan=False)
+
+
+def trade_response(result):
+    if result.get("success"):
+        return result
+    return JSONResponse(status_code=409 if result.get("conflict") else 400,
+                        content={**result, "detail": result.get("error", "İşlem tamamlanamadı.")})
+
+
+@app.get("/api/live")
+async def live(symbol: str = Query(default="EURUSD", min_length=1, max_length=32, pattern=r"^[A-Za-z0-9_.#-]+$")):
+    try:
+        queue = live_feed.subscribe(symbol.upper())
+    except ValueError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+    async def events():
+        try:
+            yield ": connected\n\n"
+            while True:
+                try:
+                    data = await asyncio.wait_for(queue.get(), timeout=10)
+                    yield "data: " + json.dumps(data, allow_nan=False) + "\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        finally:
+            live_feed.unsubscribe(queue)
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control":"no-cache", "X-Accel-Buffering":"no"})
+
+
+@app.get("/api/orders")
+def pending_orders():
+    return mt5_client.get_pending_orders()
+
+
+@app.post("/api/order/pending")
+def place_pending(req: PendingRequest):
+    return trade_response(mt5_client.open_order(req.symbol.upper(), req.order_type, req.volume,
+        sl_points=req.sl_points, tp_points=req.tp_points, comment="Panel pending", request_id=req.request_id,
+        pending_type=req.pending_type, entry_price=req.entry_price))
+
+
+@app.post("/api/order/cancel")
+def cancel_pending(req: CloseRequest):
+    return trade_response(mt5_client.cancel_pending(req.ticket, "cancel-" + req.request_id))
+
+
+@app.post("/api/position/stops")
+def update_stops(req: StopsRequest):
+    if req.sl is None and req.tp is None:
+        raise HTTPException(status_code=422, detail="En az bir SL/TP fiyatı gerekli.")
+    return trade_response(mt5_client.manage_position(req.ticket, "stops",
+        req.model_dump(exclude={"ticket", "request_id"}, exclude_none=True), "stops-" + req.request_id))
+
+
+@app.post("/api/position/partial-close")
+def partial_close(req: PartialCloseRequest):
+    return trade_response(mt5_client.manage_position(req.ticket, "partial", {"volume":req.volume}, "partial-" + req.request_id))
+
 
 # API Endpoints
 @app.get("/api/account")
@@ -166,6 +254,9 @@ def get_account():
 
 @app.post("/api/account/login")
 def account_login(req: LoginRequest):
+    mt5_client.automation_stopped.set()
+    bot.stop()
+    ai_advisor.update_autopilot({"enabled": False})
     res = mt5_client.login(req.login, req.password, req.server)
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error", "Login failed"))
@@ -176,11 +267,11 @@ def get_positions():
     return mt5_client.get_positions()
 
 @app.get("/api/history")
-def get_history(days: int = 30):
+def get_history(days: int = Query(default=30, ge=1, le=365)):
     return mt5_client.get_history(days=days)
 
 @app.get("/api/reports")
-def get_reports(days: int = 30):
+def get_reports(days: int = Query(default=30, ge=1, le=365)):
     return mt5_client.get_reports(days=days)
 
 @app.get("/api/price/{symbol}")
@@ -195,33 +286,65 @@ def open_order(req: OrderRequest):
         volume=req.volume,
         sl_points=req.sl_points,
         tp_points=req.tp_points,
-        comment=req.comment
+        comment=req.comment, request_id=req.request_id
     )
     if not res.get("success"):
-        return JSONResponse(status_code=400, content={
-            "detail": res.get("error", "Order failed"),
-            "retcode": res.get("retcode"), "uncertain": res.get("uncertain", False)
-        })
+        return JSONResponse(status_code=409 if res.get("conflict") else 400,
+                            content={**res, "detail": res.get("error", "Order failed")})
     return res
 
 @app.post("/api/order/close")
 def close_order(req: CloseRequest):
-    res = mt5_client.close_position(req.ticket)
+    res = mt5_client.journal.run("close-" + req.request_id, {"ticket": req.ticket},
+                                 lambda: mt5_client.close_position(req.ticket))
     if not res.get("success"):
-        raise HTTPException(status_code=400, detail=res.get("error", "Close failed"))
+        return JSONResponse(status_code=400, content={**res, "detail": res.get("error", "Close failed")})
     return res
 
+def flatten_account(request_id):
+    with mt5_client._lock.order():
+        errors, cancelled = [], 0
+        uncertain = pending = False
+        try:
+            orders = mt5_client.get_pending_orders()
+            for order in orders:
+                result = mt5_client.cancel_pending(order["ticket"], f"flatten-{request_id}-{order['ticket']}")
+                if result.get("success") and not result.get("pending") and not result.get("partial"):
+                    cancelled += 1
+                else:
+                    errors.append(f"Emir #{order['ticket']}: {result.get('error') or 'İptal doğrulanamadı'}")
+                    uncertain |= bool(result.get("uncertain"))
+                    pending |= bool(result.get("pending"))
+        except MT5DataError as exc:
+            errors.append(str(exc))
+        # Close exposure even if a pending-order query/cancel failed.
+        result = mt5_client.close_by_filter("all")
+        result["errors"] = errors + result.get("errors", [])
+        result["success"] = bool(result.get("success")) and not result["errors"]
+        result["cancelled_count"] = cancelled
+        result["uncertain"] = bool(result.get("uncertain")) or uncertain
+        result["pending"] = bool(result.get("pending")) or pending
+        return result
+
+
 @app.post("/api/order/close-all")
-def close_all_orders():
-    return mt5_client.close_by_filter("all")
+def close_all_orders(req: ActionRequest):
+    # Set the stop flag before waiting for the MT5 lock. Already sent orders cannot be recalled.
+    mt5_client.automation_stopped.set()
+    bot.stop()
+    ai_advisor.update_autopilot({"enabled": False})
+    return mt5_client.journal.run("bulk-" + req.request_id, {"filter": "all", "cancel_pending": True},
+                                 lambda: flatten_account(req.request_id))
 
 @app.post("/api/order/close-profit")
-def close_profit_orders():
-    return mt5_client.close_by_filter("profit")
+def close_profit_orders(req: ActionRequest):
+    return mt5_client.journal.run("bulk-" + req.request_id, {"filter": "profit"},
+                                 lambda: mt5_client.close_by_filter("profit"))
 
 @app.post("/api/order/close-loss")
-def close_loss_orders():
-    return mt5_client.close_by_filter("loss")
+def close_loss_orders(req: ActionRequest):
+    return mt5_client.journal.run("bulk-" + req.request_id, {"filter": "loss"},
+                                 lambda: mt5_client.close_by_filter("loss"))
 
 @app.get("/api/debug/inspect")
 def debug_inspect():
@@ -323,6 +446,8 @@ def update_bot_config(req: BotConfigRequest):
     if bot.is_running or (bot.task is not None and not bot.task.done()):
         raise HTTPException(status_code=409, detail="Ayarları değiştirmeden önce botu durdurun ve mevcut döngünün bitmesini bekleyin.")
     data = req.model_dump(exclude_unset=True, exclude_none=True)
+    if data.get("timeframe_minutes", bot.timeframe_minutes) not in TIMEFRAME_NAMES:
+        raise HTTPException(status_code=422, detail="Desteklenmeyen zaman dilimi")
     bot.update_config(data)
     return bot.get_status()
 
@@ -368,7 +493,7 @@ def get_ai_advice(req: AIAdviceRequest):
 def execute_ai_advice(req: AIExecuteRequest):
     res = ai_advisor.execute_recommendation(req.recommendation)
     if not res.get("success"):
-        raise HTTPException(status_code=400, detail=res.get("error", "İşlem açılamadı"))
+        return JSONResponse(status_code=400, content={**res, "detail": res.get("error", "İşlem açılamadı")})
     return res
 
 @app.post("/api/ai/autopilot")
