@@ -9,7 +9,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  document:{addEventListener(){},getElementById:node,querySelectorAll:()=>[]},window:{addEventListener(){}},
  localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
  setInterval(){},setTimeout(){},clearTimeout(){},confirm:()=>true,
- fetch:async(url,opts)=>{sent.push({url,...JSON.parse(opts.body)});return {ok:true,json:async()=>reply};}});
+ fetch:async(url,opts)=>{sent.push({url,...JSON.parse(opts?.body || "{}")});return {ok:true,json:async()=>reply};}});
  for(const name of ['app','trading']) vm.runInContext(fs.readFileSync(`app/static/${name}.js`,'utf8'),ctx);
  ctx.showToast=()=>{};ctx.fetchPositions=()=>{};ctx.fetchAccount=()=>{};ctx.fetchPendingOrders=()=>{};
  const position={ticket:1,symbol:'EURUSD',type:'BUY',volume:.03,sl:1.08,tp:1.12};
@@ -32,5 +32,15 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  old.onmessage({data:JSON.stringify({account:{},positions:[],orders:[],prices:{}})});assert.equal(renders,0);
  current.onmessage({data:JSON.stringify({account:{},positions:[],orders:[],prices:{}})});assert.equal(renders,1);assert.equal(ctx.liveFeedHealthy(),true);
  current.onerror();assert.equal(ctx.liveFeedHealthy(),false);
+ storage.set('order-intent:EURUSD',JSON.stringify({request_id:'lost-open'}));
+ reply={found:true,uncertain:true};await ctx.checkReconciledOrders();
+ assert.ok(storage.has('order-intent:EURUSD'));
+ reply={found:true,reconciled:true,pending:true,success:true};await ctx.checkReconciledOrders();
+ assert.ok(storage.has('order-intent:EURUSD'));
+ reply={found:true,reconciled:true,pending:false,uncertain:false,success:true,ticket:42};
+ const beforeCheck=sent.length;await ctx.checkReconciledOrders();
+ assert.equal(storage.has('order-intent:EURUSD'),false);
+ assert.equal(storage.has('managed-intent:pending:EURUSD'),false);
+ assert.ok(sent.slice(beforeCheck).every(x=>x.url.startsWith('/api/operations/status?')),'reconciliation only reads');
  console.log('Position management, pending intent reuse and SSE lifecycle PASS');
 })().catch(e=>{console.error(e);process.exitCode=1;});

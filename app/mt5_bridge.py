@@ -300,3 +300,44 @@ def position_history(mt5, position_id, account_scope):
     if rows is None:
         raise RuntimeError('Pozisyon yaşam döngüsü okunamadı.')
     return [_deal_row(d) for d in rows]
+
+
+def account_identity(mt5):
+    account = _account(mt5)
+    return [int(account.login), str(account.server)]
+
+
+def reconcile_open(mt5, metadata, created):
+    """Positive broker evidence only. Absence never authorizes another send."""
+    if account_identity(mt5) != metadata['account']:
+        return None
+    start = datetime.fromtimestamp(created - 60, timezone.utc)
+    history = mt5.history_orders_get(start, datetime.now(timezone.utc))
+    active = mt5.orders_get()
+    if history is None or active is None:
+        return None
+    expected = metadata['order']
+    matches = {}
+    for order in list(history) + list(active):
+        if (str(order.comment) == metadata['tag'] and str(order.symbol) == expected['symbol']
+                and int(order.magic) == expected['magic'] and int(order.type) == expected['type']
+                and float(order.time_setup) >= created - 60
+                and math.isclose(float(order.volume_initial), expected['volume'], abs_tol=1e-8)):
+            matches[int(order.ticket)] = order
+    if len(matches) != 1:
+        return None
+    order = next(iter(matches.values()))
+    state = int(order.state)
+    if state not in (1, 2, 3, 4, 5, 6):
+        return None
+    filled = max(0., float(order.volume_initial) - float(order.volume_current))
+    if state == 4:
+        filled = float(order.volume_initial)
+    pending = state in (1, 3)
+    success = pending or state == 4 or filled > 0
+    return {'success': success, 'uncertain': False, 'pending': pending,
+            'partial': 0 < filled < expected['volume'], 'ticket': int(order.ticket),
+            'volume': filled, 'broker_state': state,
+            'retcode': 10008 if pending else (10010 if 0 < filled < expected['volume'] else 10009 if success else 10006),
+            'error': '' if success else 'Broker emri iptal etti, reddetti veya süresi doldu.',
+            'comment': 'Broker emir geçmişinden doğrulandı.'}

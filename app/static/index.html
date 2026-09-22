@@ -651,6 +651,12 @@
           </div>
         </div>
 
+        <details class="bg-[#121620] p-4 rounded-2xl border border-gray-800 text-xs" ontoggle="if(this.open) fetchExecutionHealth()">
+          <summary class="text-gray-300 cursor-pointer">Emir gecikmesi ve doğrulama</summary>
+          <p id="execution-health" class="text-gray-400 mt-3" role="status">Ölçüm yükleniyor…</p>
+          <p class="text-gray-500 mt-2">Son 500 talep · Sunucu işleme süresi; broker gerçekleşme süresi değildir. Sonucu belirsiz yeni açılış emirleri otomatik kontrol edilir.</p>
+        </details>
+
         <details class="bg-[#121620] p-4 rounded-2xl border border-gray-800 text-xs">
           <summary class="text-white font-bold cursor-pointer">Bekleyen emir oluştur / yönet</summary>
           <p class="text-gray-400 my-2">Aktif sembol için fiyat girin. Emir iptal edilene kadar brokerda kalır ve panel kapalıyken de çalışır. Günlük zarar sınırı yerleştirme anında kontrol edilir; gelecekteki tetiklenmeyi garantiyle durdurmaz.</p>

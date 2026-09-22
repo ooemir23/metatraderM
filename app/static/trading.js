@@ -149,3 +149,38 @@ document.addEventListener('DOMContentLoaded',()=>{
   },2000);
 });
 window.addEventListener('beforeunload',()=>{if(liveSource)liveSource.close();});
+
+async function fetchExecutionHealth() {
+  const label = document.getElementById('execution-health');
+  try {
+    const response = await fetch('/api/operations/latency');
+    if (!response.ok) throw new Error('Ölçüm alınamadı.');
+    const data = await response.json(), run = data.execution_ms, queue = data.queue_ms;
+    const format = value => value == null ? '—' : `${value} ms`;
+    label.textContent = `İşleme (${run.count}): ortanca ${format(run.p50)} · %95 ${format(run.p95)} · en yüksek ${format(run.max)}. Kuyruk (${queue.count}): %95 ${format(queue.p95)}.`;
+  } catch (_) { label.textContent = 'Gecikme bilgisi şu anda alınamıyor.'; }
+}
+let checkingOrderResults = false;
+async function checkReconciledOrders() {
+  if (checkingOrderResults || tradeActionBusy()) return;
+  checkingOrderResults = true;
+  const symbol = currentSymbol;
+  try {
+   for (const key of ['order-intent:' + symbol, 'managed-intent:pending:' + symbol]) {
+    const stored = localStorage.getItem(key);
+    if (!stored) continue;
+    const intent = JSON.parse(stored);
+    const response = await fetch('/api/operations/status?request_id=' + encodeURIComponent(intent.request_id));
+    if (!response.ok) continue;
+    const result = await response.json();
+    if (!result.reconciled || result.uncertain || result.pending || tradeActionBusy() || localStorage.getItem(key) !== stored) continue;
+    localStorage.removeItem(key);
+    setOrderNotice(symbol, result.success ? 'Emir brokerdan doğrulandı' : 'Emir tamamlanmadı',
+      result.success ? `Bilet #${result.ticket}${result.partial ? ' · Kısmi gerçekleşme' : ''}. Yeni emir gönderilmedi.` : result.error,
+      result.success ? 'success' : 'error');
+    fetchPositions(true); fetchAccount(true); fetchPendingOrders();
+   }
+  } catch (_) { /* Unknown remains protected; never resend. */ }
+  finally { checkingOrderResults = false; }
+}
+setInterval(checkReconciledOrders, 15000);

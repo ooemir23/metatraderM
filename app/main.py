@@ -60,6 +60,24 @@ async def auto_reconnect_loop():
             logger.debug(f"auto_reconnect_loop error: {e}")
         await asyncio.sleep(5)
 
+async def maintenance_loop():
+    from app.maintenance import create_backup
+    last_backup = 0
+    while True:
+        try:
+            if time.time() - last_backup >= 86400:
+                backup_path = await asyncio.to_thread(create_backup)
+                logger.info("Doğrulanmış durum yedeği oluşturuldu: %s", backup_path)
+                last_backup = time.time()
+        except Exception:
+            logger.exception("Yedekleme tamamlanamadı")
+        try:
+            if mt5_client.is_connected:
+                await asyncio.to_thread(mt5_client.reconcile_orders)
+        except Exception:
+            logger.exception("Emir doğrulama tamamlanamadı")
+        await asyncio.sleep(30)
+
 def ensure_optimized_server_py():
     p = "/config/server.py"
     if os.path.exists(p) or os.path.exists("/config"):
@@ -106,16 +124,20 @@ async def lifespan(app: FastAPI):
     # MT5 may be offline; the HTTP server must still start and expose status.
     task = asyncio.create_task(auto_reconnect_loop())
     feed_task = asyncio.create_task(live_feed.run())
+    maintenance_task = asyncio.create_task(maintenance_loop())
     try:
         yield
     finally:
         bot.stop()
         task.cancel()
         feed_task.cancel()
+        maintenance_task.cancel()
         with suppress(asyncio.CancelledError):
             await task
         with suppress(asyncio.CancelledError):
             await feed_task
+        with suppress(asyncio.CancelledError):
+            await maintenance_task
         logger.info("Shutting down HMA Trading Application...")
 
 app = FastAPI(title="HMA Trading Dashboard", lifespan=lifespan)
@@ -248,6 +270,14 @@ def partial_close(req: PartialCloseRequest):
 
 
 # API Endpoints
+@app.get("/api/operations/latency")
+def operation_latency():
+    return mt5_client.journal.latency()
+
+@app.get("/api/operations/status")
+def operation_status(request_id: str = Query(min_length=1, max_length=250)):
+    return mt5_client.journal.status(request_id)
+
 @app.get("/api/account")
 def get_account():
     return mt5_client.get_account_info()

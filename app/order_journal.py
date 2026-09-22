@@ -25,13 +25,15 @@ class OrderJournal:
         db = sqlite3.connect(path, timeout=5)
         os.chmod(path, 0o600)
         db.execute('CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result TEXT, created REAL NOT NULL)')
+        db.execute('CREATE TABLE IF NOT EXISTS order_metadata (id TEXT PRIMARY KEY, data TEXT NOT NULL)')
+        db.execute('CREATE TABLE IF NOT EXISTS order_checks (id TEXT PRIMARY KEY, checked REAL NOT NULL)')
         try:
             with db:
                 yield db
         finally:
             db.close()
 
-    def run(self, request_id, payload, send):
+    def run(self, request_id, payload, send, *, metadata=None, queue_ms=None):
         fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True, allow_nan=False).encode()).hexdigest()
         with self._connect() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -44,6 +46,8 @@ class OrderJournal:
                     'error': 'Emir işleniyor veya sonucu belirsiz; broker durumunu kontrol edin.'}
                 return {**result, 'replayed': True, 'request_id': request_id}
             db.execute('INSERT INTO orders VALUES (?, ?, NULL, ?)', (request_id, fingerprint, time.time()))
+            if metadata:
+                db.execute('INSERT INTO order_metadata VALUES (?, ?)', (request_id, json.dumps(metadata, allow_nan=False)))
         started = time.perf_counter()
         try:
             result = send()
@@ -52,7 +56,48 @@ class OrderJournal:
                       'error': 'Emir sonucu doğrulanamadı; aynı emir yeniden gönderilmeyecek.'}
         result = {**result, 'request_id': request_id,
                   'execution_ms': round((time.perf_counter() - started) * 1000, 1)}
+        if queue_ms is not None:
+            result['queue_ms'] = queue_ms
         # If saving fails, the committed pending record still prevents a second send.
         with self._connect() as db:
             db.execute('UPDATE orders SET result=? WHERE id=?', (json.dumps(result, allow_nan=False), request_id))
         return result
+
+    def unresolved(self, limit=20):
+        with self._connect() as db:
+            rows = db.execute("SELECT o.id, o.created, o.result, m.data FROM orders o JOIN order_metadata m ON m.id=o.id LEFT JOIN order_checks c ON c.id=o.id WHERE o.created<? AND (o.result IS NULL OR json_extract(o.result, '$.uncertain')=1 OR json_extract(o.result, '$.pending')=1) ORDER BY COALESCE(c.checked, 0), o.created LIMIT ?", (time.time()-30, limit)).fetchall()
+            for row in rows:
+                db.execute('INSERT OR REPLACE INTO order_checks VALUES (?, ?)', (row[0], time.time()))
+        return [dict(id=r[0], created=r[1], result=json.loads(r[2]) if r[2] else None, metadata=json.loads(r[3])) for r in rows]
+
+    def resolve(self, request_id, result):
+        with self._connect() as db:
+            row = db.execute('SELECT result FROM orders WHERE id=?', (request_id,)).fetchone()
+            if not row:
+                return
+            old = json.loads(row[0]) if row[0] else {}
+            if row[0] and not (old.get('uncertain') or old.get('pending')):
+                return
+            merged = {**old, **result, 'request_id': request_id, 'reconciled': True, 'reconciled_at': time.time()}
+            db.execute('UPDATE orders SET result=? WHERE id=?', (json.dumps(merged, allow_nan=False), request_id))
+
+    def status(self, request_id):
+        with self._connect() as db:
+            row = db.execute('SELECT result FROM orders WHERE id=?', (request_id,)).fetchone()
+        if not row:
+            return {'found': False}
+        return {'found': True, **(json.loads(row[0]) if row[0] else {'uncertain': True})}
+
+    def latency(self):
+        with self._connect() as db:
+            rows = db.execute('SELECT result FROM orders WHERE result IS NOT NULL ORDER BY created DESC LIMIT 500').fetchall()
+        results = [json.loads(r[0]) for r in rows]
+        def stats(key):
+            values = sorted(r[key] for r in results if isinstance(r.get(key), (int, float)))
+            if not values:
+                return {'count': 0, 'p50': None, 'p95': None, 'max': None}
+            import math
+            return {'count': len(values), 'p50': values[math.ceil(len(values)*.50)-1],
+                    'p95': values[math.ceil(len(values)*.95)-1], 'max': values[-1]}
+        return {'sample_limit': 500, 'execution_ms': stats('execution_ms'), 'queue_ms': stats('queue_ms'),
+                'scope': 'Sunucu emir işleme süresi; broker gerçekleşme veya ağ gidiş dönüş süresi değildir.'}

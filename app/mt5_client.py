@@ -1,4 +1,5 @@
 import os
+import hashlib
 import logging
 import time
 import json
@@ -531,9 +532,16 @@ class MT5Client:
             payload = dict(symbol=symbol.upper(), order_type=order_type.upper(), volume=volume,
                            sl_points=sl_points, tp_points=tp_points, comment=comment, magic=magic, pending_type=pending_type, entry_price=entry_price)
             try:
-                res = self.journal.run(request_id or str(uuid.uuid4()), payload, lambda: self._bridge(
+                request_id = request_id or str(uuid.uuid4())
+                account_scope = self._bridge("account_identity")
+                tag = "vm:" + hashlib.sha256((str(account_scope) + request_id).encode()).hexdigest()[:24]
+                order_kind = {"BUY_LIMIT": 2, "SELL_LIMIT": 3, "BUY_STOP": 4, "SELL_STOP": 5}.get(pending_type, 0 if payload['order_type'] == 'BUY' else 1)
+                metadata = {'account': account_scope, 'tag': tag, 'order': {
+                    'symbol': payload['symbol'], 'magic': magic, 'type': order_kind, 'volume': volume}}
+                res = self.journal.run(request_id, payload, lambda: self._bridge(
                     "open_deal", payload["symbol"], payload["order_type"], volume, sl_points, tp_points,
-                    comment, magic, self.daily_loss_limit, self.login_id, self.server, 10, pending_type, entry_price))
+                    tag, magic, self.daily_loss_limit, account_scope[0], account_scope[1], 10, pending_type, entry_price),
+                    metadata=metadata, queue_ms=queue_ms)
                 return {**res, "queue_ms": queue_ms}
             except Exception:
                 logger.exception("Emir günlüğü/sonucu kaydedilemedi")
@@ -841,3 +849,13 @@ class MT5Client:
                     lambda: self._bridge("cancel_pending", ticket, self.login_id, self.server))
             finally:
                 self.invalidate_trading_cache()
+
+    def reconcile_orders(self):
+        for row in self.journal.unresolved():
+            with self._lock:
+                if not self.is_connected:
+                    return
+                result = self._bridge('reconcile_open', row['metadata'], row['created'])
+                if result:
+                    self.journal.resolve(row['id'], result)
+                    self.invalidate_trading_cache()
