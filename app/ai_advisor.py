@@ -207,7 +207,8 @@ class DeepSeekAdvisor:
             return {"success": False, "error": str(exc)}
 
     @serialized_analysis
-    def analyze_user_trades(self, deals: List[Dict[str, Any]], stats: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def analyze_user_trades(self, deals: List[Dict[str, Any]], stats: Optional[Dict[str, Any]] = None,
+                            language: str = "tr") -> Dict[str, Any]:
         if not deals or len(deals) == 0:
             return {
                 "success": False,
@@ -226,7 +227,8 @@ class DeepSeekAdvisor:
             clean_deals.append({"ticket": d.get("ticket"), "symbol": symbol, "side": side,
                                 "lot": d.get("volume"), "net": round(profit, 2),
                                 "time": d.get("time")})
-        learning_digest = digest({"model": self.model, "version": 2, "trades": clean_deals})
+        language = "en" if language == "en" else "tr"
+        learning_digest = digest({"model": self.model, "version": 2, "language": language, "trades": clean_deals})
         if self.cost_state.get("learn_digest") == learning_digest:
             return {"success": True, "cached": True, "memory": self.memory}
         system_prompt = """İşlem geçmişini özetleyen bir analiz yardımcısısın. Sadece verinin desteklediği
@@ -234,6 +236,12 @@ bulguları yaz; psikoloji, strateji başarısı veya kâr garantisi uydurma. Tü
 {"persona":{"title":"","summary":"","style":"","risk_profile":""},
 "learning_status":"Analiz edildi","strengths":[],"weaknesses":[],"learned_rules":[],"revenue_tips":[]}.
 Her listede en fazla 3 kısa madde, summary en fazla 2 cümle olsun."""
+        if language == "en":
+            system_prompt = """Summarize the trading history using only evidence in the data. Do not infer
+trading psychology, claim a strategy is profitable, or promise returns. Write concise, natural English JSON:
+{"persona":{"title":"","summary":"","style":"","risk_profile":""},
+"learning_status":"Analyzed","strengths":[],"weaknesses":[],"learned_rules":[],"revenue_tips":[]}.
+Use at most three short items per list and two sentences in the summary."""
         user_content = json.dumps({"count": len(clean_deals), "by_symbol_side": groups,
                                   "recent_examples": clean_deals[:8]},
                                  ensure_ascii=False, separators=(",", ":"))
@@ -243,7 +251,7 @@ Her listede en fazla 3 kısa madde, summary en fazla 2 cümle olsun."""
                 "model": self.model,
                 "messages": [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"İşte kullanıcının işlem geçmişi verileri:\n{user_content}"}
+                    {"role": "user", "content": f"{'Trading history data' if language == 'en' else 'İşte kullanıcının işlem geçmişi verileri'}:\n{user_content}"}
                 ],
                 "response_format": {"type": "json_object"},
                 "temperature": 0.3,
@@ -256,8 +264,9 @@ Her listede en fazla 3 kısa madde, summary en fazla 2 cümle olsun."""
             self.cost_state["learn_digest"] = learning_digest
 
             self.memory["last_analyzed"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            self.memory["language"] = language
             self.memory["analyzed_trades_count"] = len(clean_deals)
-            self.memory["learning_status"] = parsed.get("learning_status", "Öğrenildi")
+            self.memory["learning_status"] = parsed.get("learning_status", "Analyzed" if language == "en" else "Öğrenildi")
             self.memory["persona"] = parsed.get("persona", self.memory["persona"])
             self.memory["strengths"] = parsed.get("strengths", [])
             self.memory["weaknesses"] = parsed.get("weaknesses", [])
@@ -280,7 +289,8 @@ Her listede en fazla 3 kısa madde, summary en fazla 2 cümle olsun."""
         rates: Optional[List[Dict[str, Any]]] = None,
         open_positions: Optional[List[Dict[str, Any]]] = None,
         hma_val: Optional[float] = None,
-        ma2_val: Optional[float] = None
+        ma2_val: Optional[float] = None,
+        language: str = "tr"
     ) -> Dict[str, Any]:
         symbol = symbol.upper()
         if not rates or len(rates) < 2 or not tick or not tick.get("bid"):
@@ -289,8 +299,12 @@ Her listede en fazla 3 kısa madde, summary en fazla 2 cümle olsun."""
         candle_time = int(closed[-1]["time"])
         positions = [{k: p.get(k) for k in ("ticket", "symbol", "type", "volume", "sl", "tp")}
                      for p in (open_positions or [])]
-        profile = {"persona": self.memory.get("persona"), "rules": self.memory.get("learned_rules", [])[:3]}
+        language = "en" if language == "en" else "tr"
+        matching_profile = (self.memory.get("language") or "tr") == language
+        profile = {"persona": self.memory.get("persona") if matching_profile else None,
+                   "rules": self.memory.get("learned_rules", [])[:3] if matching_profile else []}
         cache_key = digest({"symbol": symbol, "timeframe": timeframe_name, "candle": candle_time,
+                            "language": language,
                             "positions": positions, "profile": profile, "model": self.model})
         entry = self.cost_state["advice_cache"].get(cache_key)
         if entry:
@@ -301,6 +315,12 @@ veri yetersizse HOLD seç. Türkçe en fazla 2 kısa cümle gerekçe ver. Yalnı
 action (BUY/SELL/HOLD), confidence (0-100), entry_price, sl_points (>=0), tp_points (>=0),
 sl_price, tp_price, suggested_lot, reasoning, risk_reward_ratio, action_title.
 Fiyat, puan ve lot birimlerini karıştırma. Belirsizlikte HOLD kullan."""
+        if language == "en":
+            system_prompt = """Assess the closed candles and profile summary. Do not promise returns.
+Choose HOLD when the evidence is insufficient. Write a clear English rationale in at most two short
+sentences. Return only these JSON fields: action (BUY/SELL/HOLD), confidence (0-100), entry_price,
+sl_points (>=0), tp_points (>=0), sl_price, tp_price, suggested_lot, reasoning,
+risk_reward_ratio, action_title. Keep prices, points, and lots distinct; prefer HOLD when uncertain."""
         user_content = json.dumps({
             "symbol": symbol, "timeframe": timeframe_name,
             "bid": tick.get("bid"), "ask": tick.get("ask"), "spread_points": tick.get("spread"),
@@ -316,7 +336,7 @@ Fiyat, puan ve lot birimlerini karıştırma. Belirsizlikte HOLD kullan."""
                 "model": self.model,
                 "messages": [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Piyasa durumu ve kullanıcının öğrenilen profili:\n{user_content}"}
+                    {"role": "user", "content": f"{'Market conditions and the user profile' if language == 'en' else 'Piyasa durumu ve kullanıcının öğrenilen profili'}:\n{user_content}"}
                 ],
                 "response_format": {"type": "json_object"},
                 "temperature": 0.2,
@@ -329,6 +349,7 @@ Fiyat, puan ve lot birimlerini karıştırma. Belirsizlikte HOLD kullan."""
             rec["id"] = str(uuid.uuid4())
             rec["generated_at"] = time.strftime("%H:%M:%S")
             rec["symbol"] = symbol
+            rec["language"] = language
 
             rec["expires_at"] = time.time() + 900
             self.cost_state["advice_cache"][cache_key] = {"expires_at": rec["expires_at"], "recommendation": rec}

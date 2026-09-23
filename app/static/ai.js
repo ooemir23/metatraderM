@@ -64,6 +64,13 @@ async function fetchAIStatus() {
 
 function renderAIMemory(memory, config) {
   if (!memory) return;
+  const selectedLanguage = window.MT5I18n?.language() || "tr";
+  const profilePending = memory.last_analyzed && (memory.language || "tr") !== selectedLanguage;
+  if (profilePending) {
+    memory = {...memory, persona: {style: selectedLanguage === "en" ? "Pending" : "Bekleniyor",
+      summary: selectedLanguage === "en" ? "Analyze your trading history to generate an English trading profile." : "Türkçe işlem profilini oluşturmak için geçmiş işlemlerinizi analiz edin."},
+      learned_rules: [], learned_habits: [], strengths: [], weaknesses: [], revenue_tips: []};
+  }
 
   const statusBadge = document.getElementById("ai-status-badge");
   const tradesCount = document.getElementById("ai-learned-trades-count");
@@ -72,7 +79,12 @@ function renderAIMemory(memory, config) {
   const lastDate = document.getElementById("ai-last-learned-date");
   const personaDesc = document.getElementById("ai-persona-desc");
 
-  if (memory.last_analyzed && (memory.analyzed_trades_count || 0) > 0) {
+  if (profilePending) {
+    if (statusBadge) {
+      statusBadge.innerText = selectedLanguage === "en" ? "English profile pending" : "Türkçe profil bekleniyor";
+      statusBadge.className = "text-base font-bold text-amber-400";
+    }
+  } else if (memory.last_analyzed && (memory.analyzed_trades_count || 0) > 0) {
     if (statusBadge) {
       statusBadge.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span> Öğrenildi & Aktif`;
       statusBadge.className = "text-base font-bold text-emerald-400 flex items-center gap-2";
@@ -291,7 +303,7 @@ async function triggerAILearn() {
     const res = await fetch("/api/ai/learn", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ days: 90 })
+      body: JSON.stringify({ days: 90, language: window.MT5I18n?.language?.() || "tr" })
     });
 
     const data = await res.json();
@@ -329,7 +341,7 @@ async function triggerAIAdvice() {
     const res = await fetch("/api/ai/advice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbol: currentSymbol, timeframe: "M15" })
+      body: JSON.stringify({ symbol: currentSymbol, timeframe: "M15", language: window.MT5I18n?.language?.() || "tr" })
     });
 
     const data = await res.json();
@@ -492,7 +504,7 @@ function showToast(message, type = "info") {
 
 function formatMoney(val) {
   if (val === undefined || val === null || isNaN(val)) return "0.00";
-  return Number(val).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return Number(val).toLocaleString(window.MT5I18n?.language?.() === "en" ? "en-US" : "tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function escapeHtml(text) {

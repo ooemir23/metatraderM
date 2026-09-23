@@ -110,6 +110,35 @@ def test_unchanged_history_does_not_relearn(setup):
     assert post.call_count==2
 
 
+def test_learning_language_changes_profile_and_prompt(setup):
+    a, post, response, clock = setup
+    response.json.return_value['choices'][0]['message']['content'] = json.dumps({'persona': {}, 'learned_rules': []})
+    trades = [{'ticket': 1, 'symbol': 'EURUSD', 'type': 'BUY', 'profit': 1}]
+    assert a.analyze_user_trades(trades, language='tr')['success']
+    clock[0] += 61
+    assert a.analyze_user_trades(trades, language='en')['success']
+    assert a.memory['language'] == 'en'
+    assert 'natural English' in post.call_args.kwargs['json']['messages'][0]['content']
+    assert a.analyze_user_trades(trades, language='en')['cached']
+    assert post.call_count == 2
+
+
+def test_advice_cache_is_separate_for_each_language(setup):
+    a, post, response, clock = setup
+    rates = [{'time': 100, 'close': 1}, {'time': 1000, 'close': 2}]
+    tick = {'bid': 1, 'ask': 1.1, 'spread': 10}
+    def request(language):
+        return a.get_market_advice('EURUSD', rates=rates, tick=tick, language=language)
+    assert request('tr')['success']
+    clock[0] += 61
+    english = request('en')
+    assert english['success'] and english['recommendation']['language'] == 'en'
+    assert 'clear English rationale' in post.call_args.kwargs['json']['messages'][0]['content']
+    assert request('en')['cached']
+    assert request('tr')['cached']
+    assert post.call_count == 2
+
+
 def test_autopilot_holds_and_errors_cannot_repeat_within_bucket(setup):
     a,post,res,clock=setup
     assert a.claim_autopilot_cycle()

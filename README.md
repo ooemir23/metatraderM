@@ -1,5 +1,9 @@
 > Web panelindeki emir güvenliği, hız düzeltmeleri ve zorunlu panel parolası kurulumu: [Emir güvenliği düzeltmeleri](docs/EMIR_GUVENLIGI_DUZELTMELERI.md). Telegram entegrasyonu kaldırılmıştır.
 
+## Panel dili / Interface language
+
+Terminal ve AI Danışmanı sayfalarının üst kısmındaki **Türkçe / English** menüsünden dili seçin. Seçim aynı tarayıcıda saklanır ve iki sayfada da uygulanır; ilk açılışta tarayıcı dili kullanılır. Grafik arayüzü, sayı biçimi ve yeni AI analizleri seçilen dili izler. Daha önce farklı dilde oluşturulmuş bir AI işlem profili varsa, seçtiğiniz dilde yeni bir profil oluşturmak için **İşlemlerimi Analiz Et & Öğren / Analyze My Trading History** düğmesini kullanın. Bu işlem AI sağlayıcısına ücretli istek gönderebilir ve mevcut istek sınırlarına tabidir.
+
 ## Web paneli için güncel güvenlik davranışı
 
 - Broker girişinde **Demo Hesap** veya **Gerçek Hesap** açıkça seçilir. MT5'in bildirdiği gerçek hesap türü, numara ve sunucu eşleşmeden giriş kabul edilmez. Sunucu adı brokerın verdiği tam adla girilir; uygulama adı otomatik değiştirmez. Eski kayıtlarda hesap türü yoksa panelden yeniden giriş gerekir.

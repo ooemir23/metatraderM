@@ -192,6 +192,10 @@ class BotConfigRequest(BaseModel):
 class AIAdviceRequest(BaseModel):
     symbol: Optional[str] = "EURUSD"
     timeframe: Optional[str] = "M15"
+    language: Literal["tr", "en"] = "tr"
+
+class AILearnRequest(BaseModel):
+    language: Literal["tr", "en"] = "tr"
 
 class AIExecuteRequest(BaseModel):
     recommendation: Dict[str, Any]
@@ -531,9 +535,9 @@ def get_ai_status():
     return ai_advisor.get_status()
 
 @app.post("/api/ai/learn")
-def trigger_ai_learning():
+def trigger_ai_learning(req: Optional[AILearnRequest] = None):
     deals = mt5_client.get_history(days=90)
-    res = ai_advisor.analyze_user_trades(deals)
+    res = ai_advisor.analyze_user_trades(deals, language=req.language if req else "tr")
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error", "Öğrenme analizi başarısız"))
     return res
@@ -557,7 +561,8 @@ def get_ai_advice(req: AIAdviceRequest):
         rates=rates,
         open_positions=open_pos,
         hma_val=hma_val,
-        ma2_val=ma2_val
+        ma2_val=ma2_val,
+        language=req.language
     )
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error", "Tavsiye üretilemedi"))
