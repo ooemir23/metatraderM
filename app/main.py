@@ -19,11 +19,14 @@ logger = logging.getLogger("HMATradingApp")
 
 import asyncio
 import time
+import threading
 
 mt5_client = MT5Client()
 live_feed = LiveFeed(mt5_client)
 bot = StrategyBot(mt5_client)
 ai_advisor = DeepSeekAdvisor(mt5_client)
+flatten_active = threading.Event()
+flatten_guard = threading.Lock()
 
 async def auto_reconnect_loop():
     while True:
@@ -34,7 +37,7 @@ async def auto_reconnect_loop():
                 connected = await asyncio.to_thread(mt5_client.ensure_connected)
 
             # Autopilot autonomous check
-            if connected and os.getenv("DASHBOARD_PASSWORD") and ai_advisor.autopilot.get("enabled") and ai_advisor.autopilot.get("mode") == "FULL_AUTO":
+            if connected and os.getenv("DASHBOARD_PASSWORD") and not mt5_client.journal.trading_halted() and ai_advisor.autopilot.get("enabled") and ai_advisor.autopilot.get("mode") == "FULL_AUTO":
                 now = time.time()
                 last_time = ai_advisor.autopilot.get("last_auto_trade_time", 0)
                 # Scan once per M15 bucket; trade cooldown is separate from analysis cadence.
@@ -121,6 +124,9 @@ except Exception as e:
 async def lifespan(app: FastAPI):
     logger.info("Starting HMA Trading Web Application...")
     ensure_optimized_server_py()
+    if mt5_client.journal.trading_halted():
+        mt5_client.automation_stopped.set()
+        ai_advisor.update_autopilot({"enabled": False})
     # MT5 may be offline; the HTTP server must still start and expose status.
     task = asyncio.create_task(auto_reconnect_loop())
     feed_task = asyncio.create_task(live_feed.run())
@@ -167,7 +173,8 @@ class CloseRequest(ActionRequest):
 class LoginRequest(BaseModel):
     login: int = Field(gt=0)
     password: str = Field(min_length=1)
-    server: str = "Tickmill-Demo"
+    server: str = Field(min_length=1)
+    account_type: Literal["DEMO", "REAL"]
 
 class BotConfigRequest(BaseModel):
     symbol: Optional[str] = None
@@ -196,6 +203,7 @@ class AIAutopilotRequest(BaseModel):
     max_lot: Optional[float] = Field(default=None, gt=0, le=5, allow_inf_nan=False)
     daily_loss_limit: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
     allowed_symbols: Optional[List[str]] = None
+    confirm_real_full_auto: bool = False
 
 class PendingRequest(OrderRequest):
     pending_type: Literal["BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP"]
@@ -278,6 +286,25 @@ def operation_latency():
 def operation_status(request_id: str = Query(min_length=1, max_length=250)):
     return mt5_client.journal.status(request_id)
 
+@app.get("/api/trading/status")
+def trading_status():
+    return {"new_orders_halted": mt5_client.journal.trading_halted(),
+            "flatten_active": flatten_active.is_set()}
+
+@app.post("/api/trading/resume")
+def resume_new_orders():
+    with mt5_client._lock.order():
+        if flatten_active.is_set():
+            raise HTTPException(status_code=409, detail="Toplu kapatma sürüyor; bitmesini bekleyin.")
+        if not mt5_client.ensure_connected():
+            raise HTTPException(status_code=503, detail="MT5 bağlantısı doğrulanamadı.")
+        try:
+            mt5_client._selected_account()
+        except MT5DataError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        mt5_client.journal.set_trading_halted(False)
+        return {"new_orders_halted": False}
+
 @app.get("/api/account")
 def get_account():
     return mt5_client.get_account_info()
@@ -287,7 +314,7 @@ def account_login(req: LoginRequest):
     mt5_client.automation_stopped.set()
     bot.stop()
     ai_advisor.update_autopilot({"enabled": False})
-    res = mt5_client.login(req.login, req.password, req.server)
+    res = mt5_client.login(req.login, req.password, req.server, req.account_type)
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error", "Login failed"))
     return res
@@ -349,6 +376,13 @@ def flatten_account(request_id):
             errors.append(str(exc))
         # Close exposure even if a pending-order query/cancel failed.
         result = mt5_client.close_by_filter("all")
+        try:
+            remaining_orders = mt5_client.get_pending_orders()
+            remaining_positions = mt5_client.get_positions(fresh=True)
+            if remaining_orders or remaining_positions:
+                errors.append(f"Brokerda hâlâ {len(remaining_positions)} pozisyon ve {len(remaining_orders)} bekleyen emir var.")
+        except MT5DataError as exc:
+            errors.append("Kapatma sonrası broker durumu doğrulanamadı: " + str(exc))
         result["errors"] = errors + result.get("errors", [])
         result["success"] = bool(result.get("success")) and not result["errors"]
         result["cancelled_count"] = cancelled
@@ -359,12 +393,20 @@ def flatten_account(request_id):
 
 @app.post("/api/order/close-all")
 def close_all_orders(req: ActionRequest):
-    # Set the stop flag before waiting for the MT5 lock. Already sent orders cannot be recalled.
-    mt5_client.automation_stopped.set()
-    bot.stop()
-    ai_advisor.update_autopilot({"enabled": False})
-    return mt5_client.journal.run("bulk-" + req.request_id, {"filter": "all", "cancel_pending": True},
-                                 lambda: flatten_account(req.request_id))
+    if not flatten_guard.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Toplu kapatma zaten sürüyor.")
+    flatten_active.set()
+    try:
+        # Persist before waiting for MT5; queued manual and automated opens must stop too.
+        mt5_client.journal.set_trading_halted(True)
+        mt5_client.automation_stopped.set()
+        bot.stop()
+        ai_advisor.update_autopilot({"enabled": False})
+        return mt5_client.journal.run("bulk-" + req.request_id, {"filter": "all", "cancel_pending": True},
+                                     lambda: flatten_account(req.request_id))
+    finally:
+        flatten_active.clear()
+        flatten_guard.release()
 
 @app.post("/api/order/close-profit")
 def close_profit_orders(req: ActionRequest):
@@ -468,6 +510,8 @@ async def toggle_bot():
     if bot.is_running:
         bot.stop()
     else:
+        if mt5_client.journal.trading_halted():
+            raise HTTPException(status_code=409, detail="Yeni emirler durduruldu; önce işlemlere devam edin.")
         bot.start()
     return {"is_running": bot.is_running}
 
@@ -528,7 +572,21 @@ def execute_ai_advice(req: AIExecuteRequest):
 
 @app.post("/api/ai/autopilot")
 def update_ai_autopilot(req: AIAutopilotRequest):
-    data = req.model_dump(exclude_unset=True)
+    data = req.model_dump(exclude_unset=True, exclude={"confirm_real_full_auto"})
+    if data.get("enabled") and mt5_client.journal.trading_halted():
+        raise HTTPException(status_code=409, detail="Yeni emirler durduruldu; önce işlemlere devam edin.")
+    enabled = data.get("enabled", ai_advisor.autopilot.get("enabled"))
+    mode = data.get("mode", ai_advisor.autopilot.get("mode"))
+    if enabled and mode == "FULL_AUTO":
+        with mt5_client._lock:
+            if not mt5_client.ensure_connected():
+                raise HTTPException(status_code=503, detail="MT5 bağlantısı doğrulanamadı.")
+            try:
+                mt5_client._selected_account()
+            except MT5DataError as exc:
+                raise HTTPException(status_code=409, detail=str(exc))
+        if mt5_client.account_type == "REAL" and not req.confirm_real_full_auto:
+            raise HTTPException(status_code=409, detail="Gerçek hesapta tam otomatik işlem için açık onay gerekli.")
     return ai_advisor.update_autopilot(data)
 
 @app.get("/api/debug/server-log")

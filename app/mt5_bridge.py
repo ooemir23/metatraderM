@@ -36,7 +36,8 @@ def risk(mt5):
     now = datetime.now(timezone.utc)
     deals = mt5.history_deals_get(now.replace(hour=0, minute=0, second=0, microsecond=0), now)
     current = mt5.positions_get()
-    if deals is None or current is None:
+    pending = mt5.orders_get()
+    if deals is None or current is None or pending is None:
         raise RuntimeError('Günlük risk verisi okunamadı; yeni emir engellendi.')
     # Include opening commissions and separate commission/charge deals, not deposits/credits.
     excluded = {2, 3, 5, 6}  # BALANCE, CREDIT, CORRECTION, BONUS
@@ -45,13 +46,14 @@ def risk(mt5):
     floating = sum(float(p.profit) + float(p.swap) for p in current)
     if not math.isfinite(realized) or not math.isfinite(floating):
         raise RuntimeError('Risk verisi geçersiz; yeni emir engellendi.')
-    return account, current, realized, floating
+    return account, current, pending, realized, floating
 
 
 def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, magic,
-              daily_loss_limit, expected_login, expected_server, max_tick_age=10, pending_type=None, entry_price=None):
+              daily_loss_limit, expected_login, expected_server, max_tick_age=10, pending_type=None, entry_price=None,
+              max_order_lots=.10, max_total_lots=.50, max_open_orders=10):
     try:
-        account, current, realized, floating = risk(mt5)
+        account, current, pending, realized, floating = risk(mt5)
         if expected_login and (int(account.login) != expected_login or str(account.server) != expected_server):
             return {'success': False, 'error': 'Aktif MT5 hesabı seçilen hesapla uyuşmuyor.'}
         # Open gains cannot mask realized losses. Amounts are in account currency, day is UTC.
@@ -59,6 +61,16 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
         if not math.isfinite(daily_loss_limit) or daily_loss_limit <= 0 or loss >= daily_loss_limit:
             return {'success': False, 'error': 'Günlük zarar sınırı: yeni emir engellendi.',
                     'daily_loss': loss, 'daily_loss_limit': daily_loss_limit, 'currency': str(account.currency)}
+        if (not all(math.isfinite(x) and x > 0 for x in (volume, max_order_lots, max_total_lots))
+                or max_open_orders < 1):
+            return {'success': False, 'error': 'Geçersiz hesap risk sınırı; yeni emir engellendi.'}
+        if volume > max_order_lots + 1e-9:
+            return {'success': False, 'error': 'Emir lotu yapılandırılan üst sınırı aşıyor.'}
+        committed = sum(float(p.volume) for p in current) + sum(float(o.volume_current) for o in pending)
+        if not math.isfinite(committed) or committed < 0:
+            return {'success': False, 'error': 'Açık hacim doğrulanamadı; yeni emir engellendi.'}
+        if committed + volume > max_total_lots + 1e-9 or len(current) + len(pending) + 1 > max_open_orders:
+            return {'success': False, 'error': 'Toplam açık/bekleyen işlem sınırı aşılıyor.'}
         if magic in (HMA_MAGIC, AI_MAGIC) and int(account.margin_mode) != 2:
             return {"success": False, "error": "Otomatik stratejiler için hedging hesabı gerekli; netting sahipliği birleştirir."}
         same_symbol = [p for p in current if str(p.symbol) == symbol]
@@ -260,7 +272,7 @@ def cancel_pending(mt5, ticket, expected_login, expected_server):
 
 def live_snapshot(mt5, symbols):
     account = _account(mt5)
-    fields = ('login','balance','equity','profit','margin','margin_free','margin_level','currency','server','leverage')
+    fields = ('login','trade_mode','balance','equity','profit','margin','margin_free','margin_level','currency','server','leverage')
     account_data = {k:getattr(account, k) for k in fields}
     account_data['connected'] = True
     account_data['server_time'] = time.strftime('%H:%M:%S')
@@ -305,6 +317,11 @@ def position_history(mt5, position_id, account_scope):
 def account_identity(mt5):
     account = _account(mt5)
     return [int(account.login), str(account.server)]
+
+
+def account_status(mt5):
+    account = _account(mt5)
+    return [int(account.login), str(account.server), int(account.trade_mode)]
 
 
 def reconcile_open(mt5, metadata, created):

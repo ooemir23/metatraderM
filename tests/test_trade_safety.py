@@ -17,11 +17,13 @@ from app.strategy_bot import StrategyBot
 def client(monkeypatch):
     monkeypatch.setattr(MT5Client, 'load_credentials', lambda self: None)
     c = MT5Client()
+    c.login_id, c.server, c.account_type = 1, 'test', 'DEMO'
     c.is_connected = True
     c.last_ping_time = time.time()
     c.mt5 = Mock()
-    c.mt5.account_info.return_value = NS(login=1, server='test', currency='EUR', margin_mode=2)
+    c.mt5.account_info.return_value = NS(login=1, server='test', trade_mode=0, currency='EUR', margin_mode=2)
     c.mt5.positions_get.return_value = []
+    c.mt5.orders_get.return_value = []
     c.mt5.history_deals_get.return_value = []
     c.mt5.symbol_info.return_value = NS(point=.00001, digits=5, volume_step=.01, volume_min=.01,
         volume_max=10, trade_stops_level=10, filling_mode=3, trade_exemode=2)
@@ -39,10 +41,90 @@ def deal(profit=0, kind=0, commission=0, swap=0, fee=0):
     return NS(profit=profit, type=kind, commission=commission, swap=swap, fee=fee)
 
 
-@pytest.mark.parametrize('source', ['positions_get', 'history_deals_get', 'account_info'])
+@pytest.mark.parametrize('source', ['positions_get', 'orders_get', 'history_deals_get', 'account_info'])
 def test_missing_risk_data_blocks_orders(client, source):
     getattr(client.mt5, source).return_value = None
     assert not client.open_order('EURUSD', 'BUY', .01)['success']
+    client.mt5.order_send.assert_not_called()
+
+
+def test_account_switch_blocks_open_close_and_cancel(client):
+    client.mt5.account_info.return_value.login = 42
+    assert not client.open_order('EURUSD', 'BUY', .01)['success']
+    assert not client.close_position(1)['success']
+    assert not client.close_by_filter('all')['success']
+    assert not client.cancel_pending(5, 'account-switch-cancel')['success']
+    client.mt5.order_send.assert_not_called()
+
+
+def test_missing_selected_account_blocks_trading(client):
+    client.login_id = 0
+    result = client.open_order('EURUSD', 'BUY', .01)
+    assert not result['success'] and not result.get('uncertain')
+    client.mt5.order_send.assert_not_called()
+
+
+def test_account_type_mismatch_blocks_orders(client):
+    client.mt5.account_info.return_value.trade_mode = 2
+    result = client.open_order('EURUSD', 'BUY', .01)
+    assert not result['success'] and 'türü' in result['error']
+    client.mt5.order_send.assert_not_called()
+
+
+def test_login_rejects_broker_type_mismatch(client):
+    client.mt5.initialize.return_value = True
+    client.mt5.account_info.return_value = NS(login=3, server='broker-live', trade_mode=2)
+    result = client.login(3, 'password', 'broker-live', 'DEMO')
+    assert not result['success'] and 'Gerçek' in result['error']
+    assert (client.login_id, client.server, client.account_type) == (1, 'test', 'DEMO')
+
+
+def test_real_login_requires_real_broker_mode(client, monkeypatch):
+    client.mt5.initialize.return_value = True
+    client.mt5.account_info.return_value = NS(login=3, server='broker-live', trade_mode=2)
+    monkeypatch.setattr(client, 'save_credentials', lambda: None)
+    result = client.login(3, 'password', 'broker-live', 'REAL')
+    assert result['success'] and result['account_type'] == 'REAL'
+    assert client._selected_account() == [3, 'broker-live']
+
+
+def test_login_does_not_save_unverified_account(client):
+    client.mt5.initialize.return_value = True
+    result = client.login(3, 'password', 'new-broker', 'REAL')
+    assert not result['success']
+    assert (client.login_id, client.server) == (1, 'test')
+
+
+def test_open_exposure_limits_count_pending_orders(client):
+    client.mt5.orders_get.return_value = [NS(volume_current=.45)]
+    result = client.open_order('EURUSD', 'BUY', .06)
+    assert not result['success'] and 'Toplam' in result['error']
+    client.mt5.order_send.assert_not_called()
+
+
+def test_per_order_and_position_count_limits(client):
+    assert 'üst sınırı' in client.open_order('EURUSD', 'BUY', .11)['error']
+    client.mt5.positions_get.return_value = [pos(ticket=i) for i in range(10)]
+    assert 'Toplam' in client.open_order('EURUSD', 'BUY', .01)['error']
+    client.mt5.order_send.assert_not_called()
+
+
+def test_flatten_halt_persists_across_client_restart(client, monkeypatch):
+    client.journal.set_trading_halted(True)
+    assert not client.open_order('EURUSD', 'BUY', .01)['success']
+    other = MT5Client()
+    assert other.journal.trading_halted()
+    client.mt5.order_send.assert_not_called()
+
+
+def test_queued_manual_open_is_blocked_by_flatten_halt(client):
+    responses = []
+    with client._lock:
+        worker = threading.Thread(target=lambda: responses.append(client.open_order('EURUSD', 'BUY', .01)))
+        worker.start()
+        client.journal.set_trading_halted(True)
+    worker.join(2)
+    assert responses and not responses[0]['success']
     client.mt5.order_send.assert_not_called()
 
 
@@ -208,6 +290,27 @@ def test_cross_site_mutations_rejected():
     assert response.status_code == 403
 
 
+def test_account_login_requires_explicit_demo_or_real_choice():
+    base = {'login': 3, 'password': 'example', 'server': 'broker-server'}
+    assert authenticated_web().post('/api/account/login', json=base).status_code == 422
+    assert authenticated_web().post('/api/account/login', json={**base, 'account_type':'CONTEST'}).status_code == 422
+
+
+def test_real_full_auto_requires_explicit_confirmation(monkeypatch):
+    from app import main
+    monkeypatch.setattr(main.mt5_client, 'account_type', 'REAL')
+    monkeypatch.setattr(main.mt5_client, 'ensure_connected', lambda: True)
+    monkeypatch.setattr(main.mt5_client, '_selected_account', lambda: [3, 'broker-live'])
+    update = Mock(return_value={'success': True})
+    monkeypatch.setattr(main.ai_advisor, 'update_autopilot', update)
+    payload = {'enabled': True, 'mode': 'FULL_AUTO'}
+    assert authenticated_web().post('/api/ai/autopilot', json=payload).status_code == 409
+    update.assert_not_called()
+    response = authenticated_web().post('/api/ai/autopilot', json={**payload, 'confirm_real_full_auto': True})
+    assert response.status_code == 200
+    update.assert_called_once_with(payload)
+
+
 def test_api_position_failure_returns_error_not_empty_list(monkeypatch):
     from app import main
     monkeypatch.setattr(main.mt5_client, 'get_positions', Mock(side_effect=MT5DataError('no data')))
@@ -226,9 +329,34 @@ def test_close_all_stops_automation_before_close(monkeypatch):
         return {'success': True, 'closed_count': 1, 'total_matched': 1, 'errors': []}
     monkeypatch.setattr(main.mt5_client, 'close_by_filter', close)
     monkeypatch.setattr(main.mt5_client, 'get_pending_orders', lambda: [])
+    monkeypatch.setattr(main.mt5_client, 'get_positions', lambda fresh=False: [])
     response = authenticated_web().post('/api/order/close-all', json={'request_id':'close-all-test-123'})
     assert response.json()['success']
+    assert main.mt5_client.journal.trading_halted()
+    assert authenticated_web().get('/api/trading/status').json()['new_orders_halted']
     main.mt5_client.automation_stopped.clear()
+
+
+def test_resume_requires_verified_account_and_clears_halt(monkeypatch):
+    from app import main
+    main.mt5_client.journal.set_trading_halted(True)
+    monkeypatch.setattr(main.mt5_client, 'ensure_connected', lambda: True)
+    monkeypatch.setattr(main.mt5_client, '_selected_account', Mock(side_effect=MT5DataError('Yanlış hesap')))
+    assert authenticated_web().post('/api/trading/resume', json={}).status_code == 409
+    assert main.mt5_client.journal.trading_halted()
+    monkeypatch.setattr(main.mt5_client, '_selected_account', lambda: [1, 'test'])
+    assert authenticated_web().post('/api/trading/resume', json={}).json()['new_orders_halted'] is False
+    assert not main.mt5_client.journal.trading_halted()
+
+
+def test_flatten_reports_remaining_broker_exposure(monkeypatch):
+    from app import main
+    calls = iter([[], [{'ticket': 8}]])
+    monkeypatch.setattr(main.mt5_client, 'get_pending_orders', lambda: next(calls))
+    monkeypatch.setattr(main.mt5_client, 'get_positions', lambda fresh=False: [])
+    monkeypatch.setattr(main.mt5_client, 'close_by_filter', lambda kind: {'success': True, 'closed_count': 0, 'errors': []})
+    result = main.flatten_account('verify-remaining')
+    assert not result['success'] and '1 bekleyen emir' in result['errors'][0]
 
 
 def test_ai_uses_saved_recommendation_and_preserves_execution_state(monkeypatch, tmp_path):
@@ -325,7 +453,7 @@ def test_remote_bridge_serializes_full_result_once(client, monkeypatch):
     from rpyc.utils.server import ThreadedServer
     from app.mt5_client import rpyc
     fake = ModuleType('MetaTrader5')
-    for name in ('account_info','positions_get','history_deals_get','symbol_select','symbol_info','symbol_info_tick','order_send'):
+    for name in ('account_info','positions_get','orders_get','history_deals_get','symbol_select','symbol_info','symbol_info_tick','order_send'):
         setattr(fake, name, getattr(client.mt5, name))
     monkeypatch.setitem(sys.modules, 'MetaTrader5', fake)
     disconnected = threading.Event()

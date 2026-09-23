@@ -27,6 +27,7 @@ class OrderJournal:
         db.execute('CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result TEXT, created REAL NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS order_metadata (id TEXT PRIMARY KEY, data TEXT NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS order_checks (id TEXT PRIMARY KEY, checked REAL NOT NULL)')
+        db.execute('CREATE TABLE IF NOT EXISTS trading_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
         try:
             with db:
                 yield db
@@ -62,6 +63,17 @@ class OrderJournal:
         with self._connect() as db:
             db.execute('UPDATE orders SET result=? WHERE id=?', (json.dumps(result, allow_nan=False), request_id))
         return result
+
+    def set_trading_halted(self, halted):
+        with self._connect() as db:
+            db.execute('INSERT OR REPLACE INTO trading_state VALUES (?, ?)',
+                       ('new_orders_halted', '1' if halted else '0'))
+
+    def trading_halted(self):
+        with self._connect() as db:
+            row = db.execute('SELECT value FROM trading_state WHERE key=?',
+                             ('new_orders_halted',)).fetchone()
+        return bool(row and row[0] == '1')
 
     def unresolved(self, limit=20):
         with self._connect() as db:

@@ -204,7 +204,9 @@ def test_new_mutations_require_valid_fields_and_preserve_uncertainty(monkeypatch
 def test_flatten_cancels_pending_before_closing_positions(monkeypatch):
     from app import main
     calls=[]
-    monkeypatch.setattr(main.mt5_client,'get_pending_orders',lambda:[{'ticket':5}])
+    pending_reads = iter([[{'ticket':5}], []])
+    monkeypatch.setattr(main.mt5_client,'get_pending_orders',lambda:next(pending_reads))
+    monkeypatch.setattr(main.mt5_client,'get_positions',lambda fresh=False:[])
     monkeypatch.setattr(main.mt5_client,'cancel_pending',lambda *a:calls.append('cancel') or {'success':True})
     monkeypatch.setattr(main.mt5_client,'close_by_filter',lambda *a:calls.append('close') or {'success':True,'closed_count':1})
     result=main.flatten_account('test-id')

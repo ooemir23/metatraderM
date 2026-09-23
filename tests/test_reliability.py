@@ -17,12 +17,14 @@ from app.mt5_bridge import HMA_MAGIC
 def client(monkeypatch):
     monkeypatch.setattr(MT5Client, 'load_credentials', lambda self: None)
     c = MT5Client()
+    c.login_id, c.server, c.account_type = 1, 'test', 'DEMO'
     c.mt5 = Mock()
     c.mt5.terminal_info.return_value = NS(connected=True)
     c.mt5.symbol_info.return_value = NS(point=.00001, digits=5, volume_step=.01, volume_min=.01, volume_max=100, trade_stops_level=0, filling_mode=3, trade_exemode=2)
     c.mt5.symbol_info_tick.return_value = NS(ask=1.1, bid=1.0999, time=time.time())
-    c.mt5.account_info.return_value = NS(login=1, server="test", currency="USD", margin_mode=2)
+    c.mt5.account_info.return_value = NS(login=1, server="test", trade_mode=0, currency="USD", margin_mode=2)
     c.mt5.positions_get.return_value = []
+    c.mt5.orders_get.return_value = []
     c.mt5.history_deals_get.return_value = []
     c.is_connected = True
     c.last_ping_time = time.time()
@@ -49,6 +51,7 @@ def test_only_invalid_filling_is_retried(client):
 
 def test_unknown_result_is_not_resent_through_other_transport(client):
     client.conn = Mock()
+    client._selected_account = Mock(return_value=[1, 'test'])
     client.conn.eval.side_effect = TimeoutError('response lost after broker accepted')
     res = client.open_order('EURUSD', 'BUY', .01)
     assert res['uncertain']
@@ -59,6 +62,7 @@ def test_unknown_result_is_not_resent_through_other_transport(client):
 @pytest.mark.parametrize('operation', ['close_position', 'close_by_filter'])
 def test_unknown_close_does_not_fall_back(client, operation):
     client.conn = Mock()
+    client._selected_account = Mock(return_value=[1, 'test'])
     client.conn.eval.side_effect = TimeoutError()
     args = (123,) if operation == 'close_position' else ('all',)
     assert getattr(client, operation)(*args)['uncertain']
@@ -127,6 +131,18 @@ def test_native_close_partial_not_reported_closed_or_retried(monkeypatch):
     response = ns['_execute_close_deal'](NS(ticket=12, symbol='EURUSD', type=0, volume=.02))
     assert response['partial'] and not response['success']
     mt5.order_send.assert_called_once()
+
+
+def test_native_close_rechecks_account_at_send(monkeypatch):
+    import sys
+    mt5 = Mock()
+    mt5.account_info.return_value = NS(login=2, server='other')
+    monkeypatch.setitem(sys.modules, 'MetaTrader5', mt5)
+    ns = {}
+    exec(NATIVE_CLOSE_SCRIPT, ns)
+    response = ns['_execute_close_deal'](NS(ticket=12, symbol='EURUSD', type=0), 1, 'test')
+    assert not response['success']
+    mt5.order_send.assert_not_called()
 
 
 def test_close_failure_prevents_opposite_order(client):

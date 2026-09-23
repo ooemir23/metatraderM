@@ -7,7 +7,7 @@ services:
     container_name: mt5-server
     restart: unless-stopped
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     environment:
       - CUSTOM_USER=admin
       - PASSWORD=${VNC_PASSWORD:?Set VNC_PASSWORD in .env}
@@ -29,12 +29,15 @@ services:
     container_name: volta-trading-web
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - DASHBOARD_USER=${DASHBOARD_USER:-admin}
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:?Set DASHBOARD_PASSWORD in .env}
       - ENABLE_DEBUG_API=${ENABLE_DEBUG_API:-0}
       - DAILY_LOSS_LIMIT=${DAILY_LOSS_LIMIT:-500}
+      - MAX_ORDER_LOTS=${MAX_ORDER_LOTS:-0.10}
+      - MAX_TOTAL_OPEN_LOTS=${MAX_TOTAL_OPEN_LOTS:-0.50}
+      - MAX_OPEN_ORDERS=${MAX_OPEN_ORDERS:-10}
       - TRADING_STATE_DIR=/config
       - BACKUP_DIR=/config/backups
       - MT5_HOST=metatrader5
@@ -42,6 +45,7 @@ services:
       - MT5_LOGIN=${MT5_LOGIN:-0}
       - MT5_PASSWORD=${MT5_PASSWORD:-}
       - MT5_SERVER=${MT5_SERVER:-Tickmill-Demo}
+      - MT5_ACCOUNT_TYPE=${MT5_ACCOUNT_TYPE:-}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - AI_DAILY_CALL_LIMIT=${AI_DAILY_CALL_LIMIT:-100}
       - AI_DAILY_TOKEN_LIMIT=${AI_DAILY_TOKEN_LIMIT:-100000}

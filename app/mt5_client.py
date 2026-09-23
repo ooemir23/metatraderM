@@ -27,10 +27,13 @@ logger.setLevel(logging.INFO)
 NATIVE_CLOSE_SCRIPT = '''
 import MetaTrader5 as mt5
 
-def _execute_close_deal(p):
+def _execute_close_deal(p, expected_login=0, expected_server=""):
     ticket, symbol = int(p.ticket), str(p.symbol)
     is_buy = p.type == 0
     for filling in (1, 0, 2):
+        account = mt5.account_info()
+        if expected_login and (account is None or int(account.login) != expected_login or str(account.server) != expected_server):
+            return {"success": False, "ticket": ticket, "error": "Aktif MT5 hesabı değişti; kapatma engellendi."}
         tick = mt5.symbol_info_tick(symbol)
         if not tick:
             return {"success": False, "ticket": ticket, "error": "Fiyat alınamadı"}
@@ -52,7 +55,10 @@ def _execute_close_deal(p):
                     "pending": code == 10008, "uncertain": code in (10012, 10031), "retcode": code, "error": str(result.comment)}
     return {"success": False, "ticket": ticket, "error": str(result.comment)}
 
-def hma_native_close_filter(filter_type="all"):
+def hma_native_close_filter(filter_type="all", expected_login=0, expected_server=""):
+    account = mt5.account_info()
+    if expected_login and (account is None or int(account.login) != expected_login or str(account.server) != expected_server):
+        return {"success": False, "closed_count": 0, "total_matched": 0, "errors": ["Aktif MT5 hesabı değişti; kapatma engellendi."]}
     positions = mt5.positions_get()
     if positions is None:
         return {"success": False, "closed_count": 0, "total_matched": 0, "errors": ["No positions or MT5 error: " + str(mt5.last_error())]}
@@ -75,7 +81,7 @@ def hma_native_close_filter(filter_type="all"):
     errors = []
 
     for p in targets:
-        r = _execute_close_deal(p)
+        r = _execute_close_deal(p, expected_login, expected_server)
         if r.get("success"):
             closed_count += 1
         else:
@@ -91,8 +97,11 @@ def hma_native_close_filter(filter_type="all"):
         "errors": errors
     }
 
-def hma_native_close_ticket(ticket, expected_magic=None):
+def hma_native_close_ticket(ticket, expected_magic=None, expected_login=0, expected_server=""):
     ticket = int(ticket)
+    account = mt5.account_info()
+    if expected_login and (account is None or int(account.login) != expected_login or str(account.server) != expected_server):
+        return {"success": False, "error": "Aktif MT5 hesabı değişti; kapatma engellendi."}
     positions = mt5.positions_get(ticket=ticket)
     if not positions:
         all_p = mt5.positions_get()
@@ -105,7 +114,7 @@ def hma_native_close_ticket(ticket, expected_magic=None):
         account = mt5.account_info()
         if account is None or account.margin_mode != 2 or positions[0].magic != expected_magic:
             return {"success": False, "error": "Strateji sahipliği/hedging hesabı doğrulanamadı."}
-    return _execute_close_deal(positions[0])
+    return _execute_close_deal(positions[0], expected_login, expected_server)
 '''
 
 NATIVE_HISTORY_SCRIPT = '''
@@ -187,6 +196,9 @@ class MT5Client:
         self.journal = OrderJournal()
         self._reports_cache = {}
         self.daily_loss_limit = float(os.getenv("DAILY_LOSS_LIMIT", "500"))
+        self.max_order_lots = float(os.getenv("MAX_ORDER_LOTS", "0.10"))
+        self.max_total_lots = float(os.getenv("MAX_TOTAL_OPEN_LOTS", "0.50"))
+        self.max_open_orders = int(os.getenv("MAX_OPEN_ORDERS", "10"))
         self.automation_stopped = threading.Event()
         self._bridge_ready = False
         self._account_cache = None
@@ -200,6 +212,7 @@ class MT5Client:
         self.login_id = int(os.getenv("MT5_LOGIN", "0"))
         self.password = os.getenv("MT5_PASSWORD", "")
         self.server = os.getenv("MT5_SERVER", "Tickmill-Demo")
+        self.account_type = os.getenv("MT5_ACCOUNT_TYPE", "").upper()
 
         # Load persisted credentials from volume if available
         self.load_credentials()
@@ -216,6 +229,7 @@ class MT5Client:
                     if data.get("login"): self.login_id = int(data["login"])
                     if data.get("password"): self.password = str(data["password"])
                     if data.get("server"): self.server = str(data["server"])
+                    self.account_type = str(data.get("account_type") or self.account_type).upper()
                     logger.info(f"Loaded credentials from {path}: #{self.login_id} @ {self.server}")
                     return
                 except Exception as e:
@@ -225,7 +239,8 @@ class MT5Client:
         data = {
             "login": self.login_id,
             "password": self.password,
-            "server": self.server
+            "server": self.server,
+            "account_type": self.account_type
         }
         for path in ["/config/credentials.json", "/tmp/credentials.json"]:
             try:
@@ -305,7 +320,7 @@ class MT5Client:
                 self._reset_connection()
                 return False
 
-    def login(self, login_id: int, password: str, server: str) -> Dict[str, Any]:
+    def login(self, login_id: int, password: str, server: str, account_type: str) -> Dict[str, Any]:
         if not self._lock.acquire(timeout=15.0):
             return {"success": False, "error": "MT5 meşgul, lütfen birkaç saniye sonra tekrar deneyin."}
         try:
@@ -317,10 +332,9 @@ class MT5Client:
 
             try:
                 server_clean = str(server).strip()
-                if "tickmill" in server_clean.lower() and "demo" in server_clean.lower():
-                    server_clean = "Tickmill-Demo"
-                elif "tickmill" in server_clean.lower() and "live" in server_clean.lower():
-                    server_clean = "Tickmill-Live"
+                account_type = str(account_type).upper()
+                if not server_clean or account_type not in ("DEMO", "REAL"):
+                    return {"success": False, "error": "Geçerli sunucu ve Demo/Gerçek hesap türü seçin."}
 
                 ok = False
                 try:
@@ -335,19 +349,28 @@ class MT5Client:
                         ok = False
 
                 if ok:
+                    active = self.mt5.account_info()
+                    if active is None or int(active.login) != int(login_id) or str(active.server) != server_clean:
+                        return {"success": False, "error": "Giriş sonrası aktif broker hesabı doğrulanamadı."}
+                    actual_mode = int(active.trade_mode)
+                    if actual_mode != (0 if account_type == "DEMO" else 2):
+                        self.invalidate_trading_cache()
+                        actual_name = {0: "Demo", 1: "Yarışma", 2: "Gerçek"}.get(actual_mode, "Bilinmeyen")
+                        return {"success": False, "error": f"Seçilen hesap türü broker hesabıyla uyuşmuyor (broker: {actual_name}). Doğru tür ve sunucuyla yeniden giriş yapın."}
                     self.login_id = int(login_id)
                     self.password = str(password)
                     self.server = server_clean
+                    self.account_type = account_type
                     self.is_connected = True
                     self._account_cache = self._positions_cache = None
                     self._price_cache.clear()
                     self.save_credentials()
-                    return {"success": True, "login": login_id, "server": server_clean}
+                    return {"success": True, "login": login_id, "server": server_clean, "account_type": account_type}
                 else:
                     err = self.mt5.last_error()
                     return {"success": False, "error": f"Login hatası: {err}"}
-            except Exception as e:
-                return {"success": False, "error": str(e)}
+            except Exception:
+                return {"success": False, "error": "Giriş doğrulanamadı; broker sunucusu ve hesap türünü kontrol edin."}
         finally:
             self._lock.release()
 
@@ -393,7 +416,7 @@ class MT5Client:
             try:
                 acc = self.mt5.account_info()
                 now = time.time()
-                if acc is None and self.login_id and self.password:
+                if acc is None and self.login_id and self.password and self.account_type in ("DEMO", "REAL"):
                     if now - self.last_auto_login_attempt > self.auto_login_cooldown:
                         self.last_auto_login_attempt = now
                         try:
@@ -417,6 +440,9 @@ class MT5Client:
                 res = {
                     "connected": True,
                     "login": acc.login,
+                    "account_type": {0: "DEMO", 1: "CONTEST", 2: "REAL"}.get(int(acc.trade_mode), "UNKNOWN"),
+                    "account_mismatch": self.login_id <= 0 or int(acc.login) != self.login_id or str(acc.server) != self.server
+                                        or int(acc.trade_mode) != {"DEMO": 0, "REAL": 2}.get(self.account_type),
                     "balance": round(acc.balance, 2),
                     "equity": round(acc.equity, 2),
                     "profit": round(acc.profit, 2),
@@ -451,6 +477,15 @@ class MT5Client:
         # Serialize remotely: never iterate an RPyC netref per row/field.
         return json.loads(str(self.conn.eval(
             f"json.dumps({operation}(mt5, *{args!r}), allow_nan=False)")))
+
+    def _selected_account(self):
+        expected_mode = {"DEMO": 0, "REAL": 2}.get(self.account_type)
+        if self.login_id <= 0 or not self.server or expected_mode is None:
+            raise MT5DataError("İşlem için panelden Demo veya Gerçek hesap seçerek yeniden giriş yapın.")
+        active = self._bridge("account_status")
+        if active != [self.login_id, self.server, expected_mode]:
+            raise MT5DataError("Aktif MT5 hesabı, sunucusu veya türü kayıtlı seçimle uyuşmuyor; işlem engellendi.")
+        return active[:2]
 
     def get_positions(self, fresh=False) -> List[Dict[str, Any]]:
         with self._lock:
@@ -525,6 +560,8 @@ class MT5Client:
         started = time.perf_counter()
         with self._lock.order():
             queue_ms = round((time.perf_counter() - started) * 1000, 1)
+            if self.journal.trading_halted():
+                return {"success": False, "error": "Tümünü kapat sonrası yeni emirler durduruldu; panelden açıkça devam edin."}
             if magic != mt5_bridge.MANUAL_MAGIC and (self.automation_stopped.is_set() or (stop_event and stop_event.is_set())):
                 return {"success": False, "error": "Otomatik işlemler durduruldu."}
             if not self.ensure_connected():
@@ -533,16 +570,19 @@ class MT5Client:
                            sl_points=sl_points, tp_points=tp_points, comment=comment, magic=magic, pending_type=pending_type, entry_price=entry_price)
             try:
                 request_id = request_id or str(uuid.uuid4())
-                account_scope = self._bridge("account_identity")
+                account_scope = self._selected_account()
                 tag = "vm:" + hashlib.sha256((str(account_scope) + request_id).encode()).hexdigest()[:24]
                 order_kind = {"BUY_LIMIT": 2, "SELL_LIMIT": 3, "BUY_STOP": 4, "SELL_STOP": 5}.get(pending_type, 0 if payload['order_type'] == 'BUY' else 1)
                 metadata = {'account': account_scope, 'tag': tag, 'order': {
                     'symbol': payload['symbol'], 'magic': magic, 'type': order_kind, 'volume': volume}}
                 res = self.journal.run(request_id, payload, lambda: self._bridge(
                     "open_deal", payload["symbol"], payload["order_type"], volume, sl_points, tp_points,
-                    tag, magic, self.daily_loss_limit, account_scope[0], account_scope[1], 10, pending_type, entry_price),
+                    tag, magic, self.daily_loss_limit, account_scope[0], account_scope[1], 10, pending_type, entry_price,
+                    self.max_order_lots, self.max_total_lots, self.max_open_orders),
                     metadata=metadata, queue_ms=queue_ms)
                 return {**res, "queue_ms": queue_ms}
+            except MT5DataError as exc:
+                return {"success": False, "error": str(exc)}
             except Exception:
                 logger.exception("Emir günlüğü/sonucu kaydedilemedi")
                 return {"success": False, "uncertain": True,
@@ -561,11 +601,15 @@ class MT5Client:
         with self._lock:
             if not self.ensure_connected():
                 return {"success": False, "error": "MT5 is not connected"}
+            try:
+                self._selected_account()
+            except MT5DataError as exc:
+                return {"success": False, "error": str(exc)}
 
             if self.conn:
                 try:
                     self.conn.execute(NATIVE_CLOSE_SCRIPT)
-                    res = self.conn.eval(f"hma_native_close_ticket({int(ticket)}, {expected_magic!r})")
+                    res = self.conn.eval(f"hma_native_close_ticket({int(ticket)}, {expected_magic!r}, {self.login_id}, {self.server!r})")
                     return dict(res)
                 except Exception as e:
                     logger.error(f"Native close_position #{ticket} failed: {e}")
@@ -614,6 +658,7 @@ class MT5Client:
 
                 last_res = None
                 for f in fillings:
+                    self._selected_account()
                     t = self.mt5.symbol_info_tick(symbol)
                     cp = (t.bid if is_buy else t.ask) if t else close_price
                     request = {
@@ -662,11 +707,15 @@ class MT5Client:
         with self._lock:
             if not self.ensure_connected():
                 return {"success": False, "closed_count": 0, "total_matched": 0, "errors": ["MT5 is not connected"]}
+            try:
+                self._selected_account()
+            except MT5DataError as exc:
+                return {"success": False, "closed_count": 0, "total_matched": 0, "errors": [str(exc)]}
 
             if self.conn:
                 try:
                     self.conn.execute(NATIVE_CLOSE_SCRIPT)
-                    res = self.conn.eval(f"hma_native_close_filter({repr(filter_type)})")
+                    res = self.conn.eval(f"hma_native_close_filter({repr(filter_type)}, {self.login_id}, {self.server!r})")
                     return {
                         "success": bool(res.get("success")),
                         "uncertain": bool(res.get("uncertain")), "pending": bool(res.get("pending")),
@@ -826,7 +875,14 @@ class MT5Client:
             if not self.ensure_connected():
                 raise MT5DataError("MT5 bağlı değil.")
             try:
-                return self._bridge("live_snapshot", symbols)
+                snapshot = self._bridge("live_snapshot", symbols)
+                account = snapshot["account"]
+                actual_mode = int(account["trade_mode"])
+                account["account_type"] = {0: "DEMO", 1: "CONTEST", 2: "REAL"}.get(actual_mode, "UNKNOWN")
+                account["account_mismatch"] = (self.login_id <= 0 or int(account["login"]) != self.login_id
+                                               or str(account["server"]) != self.server
+                                               or actual_mode != {"DEMO": 0, "REAL": 2}.get(self.account_type))
+                return snapshot
             except Exception as exc:
                 raise MT5DataError("Canlı veriler doğrulanamadı.") from exc
 
@@ -834,6 +890,10 @@ class MT5Client:
         with self._lock.order():
             if not self.ensure_connected():
                 return {"success": False, "error": "MT5 bağlı değil."}
+            try:
+                self._selected_account()
+            except MT5DataError as exc:
+                return {"success": False, "error": str(exc)}
             try:
                 return self.journal.run(request_id, dict(operation=operation, ticket=ticket, values=values),
                     lambda: self._bridge("manage_position", ticket, operation, values, self.login_id, self.server))
@@ -844,6 +904,10 @@ class MT5Client:
         with self._lock.order():
             if not self.ensure_connected():
                 return {"success": False, "error": "MT5 bağlı değil."}
+            try:
+                self._selected_account()
+            except MT5DataError as exc:
+                return {"success": False, "error": str(exc)}
             try:
                 return self.journal.run(request_id, dict(operation="cancel",ticket=ticket),
                     lambda: self._bridge("cancel_pending", ticket, self.login_id, self.server))

@@ -422,6 +422,7 @@ let isFetchingPrice = false;
 // Polling loop for real-time updates
 function startPolling() {
   fetchAccount();
+  refreshTradingStatus();
   fetchPositions();
   fetchHistory();
   fetchPrice();
@@ -432,6 +433,7 @@ function startPolling() {
   setInterval(fetchPositions, 2000);
   setInterval(fetchPrice, 1500);
   setInterval(fetchBotStatus, 3000);
+  setInterval(refreshTradingStatus, 5000);
   setInterval(() => {
     if (currentPositionTab === "closed") fetchHistory();
     else if (currentPositionTab === "reports") fetchReports();
@@ -512,8 +514,10 @@ function showAccountConnectionError(message) {
 
 // Fetch Account Info
 let accountCurrency = "USD";
+let currentAccountType = null;
 function renderAccountData(data) {
     accountCurrency = data.currency || accountCurrency;
+    currentAccountType = data.connected ? data.account_type : null;
     const indicator = document.getElementById("status-indicator");
     const statusText = document.getElementById("status-text");
     const lastSyncText = document.getElementById("last-sync-text");
@@ -522,10 +526,20 @@ function renderAccountData(data) {
 
     const nowStr = new Date().toLocaleTimeString("tr-TR");
 
-    if (data.connected) {
-      indicator.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
-      statusText.innerText = `MT5 Bağlı (#${data.login})`;
-      statusText.className = "text-emerald-400 font-semibold";
+    if (data.connected && data.account_mismatch) {
+      indicator.className = "w-2 h-2 rounded-full bg-rose-400 animate-pulse";
+      statusText.innerText = `Hesap uyuşmuyor (#${data.login}); işlem engellendi`;
+      statusText.className = "text-rose-400 font-semibold";
+      if (lastSyncText) lastSyncText.innerText = `Son Veri: ${data.server_time || nowStr}`;
+      if (uptimeText) {
+        uptimeText.innerText = "Hesap doğrulanmadı";
+        uptimeBadge.className = "text-[11px] font-mono px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center gap-1";
+      }
+    } else if (data.connected) {
+      const real = data.account_type === "REAL";
+      indicator.className = `w-2 h-2 rounded-full ${real ? "bg-rose-400" : "bg-emerald-400"} animate-pulse`;
+      statusText.innerText = `${real ? "GERÇEK" : "DEMO"} Hesap #${data.login}`;
+      statusText.className = `${real ? "text-rose-400" : "text-emerald-400"} font-semibold`;
       if (lastSyncText) lastSyncText.innerText = `Son Veri: ${data.server_time || nowStr}`;
       if (uptimeText) {
         uptimeText.innerText = `Bağlı: ${data.connected_since || "Aktif"}`;
@@ -1140,6 +1154,28 @@ async function closePosition(ticket) {
 }
 
 // Close Filtered Positions (all, profit, loss) - Instant 1-Click
+async function refreshTradingStatus() {
+  try {
+    const response = await fetch('/api/trading/status');
+    if (!response.ok) return;
+    const state = await response.json();
+    const button = document.getElementById('resume-trading-btn');
+    if (button) button.classList.toggle('hidden', !state.new_orders_halted);
+  } catch (_) {}
+}
+
+async function resumeTrading() {
+  try {
+    const response = await fetch('/api/trading/resume', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Yeni emirler başlatılamadı.');
+    showToast('Yeni emirlere yeniden izin verildi.', 'success');
+    refreshTradingStatus();
+  } catch (error) {
+    showToast(error.message || 'Yeni emirler başlatılamadı.', 'error');
+  }
+}
+
 async function closeFilteredPositions(filterType) {
   if (closePending.has("bulk")) return;
   closePending.add("bulk");
@@ -1182,6 +1218,7 @@ async function closeFilteredPositions(filterType) {
   } finally {
     closePending.delete("bulk");
     refreshOrderRecovery();
+    refreshTradingStatus();
   }
 }
 
@@ -1274,36 +1311,58 @@ function escapeHtml(text) {
 function toggleLoginModal() {
   const modal = document.getElementById("login-modal");
   modal.classList.toggle("hidden");
+  if (modal.classList.contains("hidden")) {
+    document.getElementById("login-pass").value = "";
+  } else {
+    document.getElementById(currentAccountType === "REAL" ? "login-mode-real" : "login-mode-demo").checked = true;
+    updateLoginMode();
+  }
+}
+
+function updateLoginMode() {
+  const real = document.getElementById("login-mode-real").checked;
+  const help = document.getElementById("login-mode-help");
+  help.textContent = real
+    ? "Gerçek hesapta gönderilen emirler gerçek para ile işlem yapar. Brokerın tam sunucu adını girin."
+    : "Demo hesapta sanal bakiye kullanılır. Brokerın tam sunucu adını girin.";
+  help.className = `mt-1 text-[11px] ${real ? "text-rose-300" : "text-gray-400"}`;
 }
 
 async function submitLogin() {
   const acc = parseInt(document.getElementById("login-acc").value);
   const pass = document.getElementById("login-pass").value;
-  const srv = document.getElementById("login-srv").value;
+  const srv = document.getElementById("login-srv").value.trim();
+  const accountType = document.getElementById("login-mode-real").checked ? "REAL" : "DEMO";
+  const button = document.getElementById("login-submit-btn");
 
-  if (!acc || !pass || !srv) {
+  if (!Number.isSafeInteger(acc) || acc <= 0 || !pass || !srv) {
     showToast("Lütfen tüm alanları doldurun.", "error");
     return;
   }
 
+  if (button.disabled) return;
+  button.disabled = true;
   try {
     showToast("Broker hesabına bağlanılıyor...", "info");
     const res = await fetch("/api/account/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ login: acc, password: pass, server: srv })
+      body: JSON.stringify({ login: acc, password: pass, server: srv, account_type: accountType })
     });
 
     const data = await res.json();
     if (res.ok && data.success) {
-      showToast(`✅ Giriş Başarılı! Hesap: #${data.login}`, "success");
+      showToast(`${accountType === "REAL" ? "Gerçek" : "Demo"} hesaba giriş başarılı: #${data.login}`, "success");
       toggleLoginModal();
-      fetchAccount();
+      fetchAccount(true);
     } else {
       showToast(`❌ Giriş Başarısız: ${data.detail || data.error}`, "error");
     }
   } catch (err) {
     showToast(`❌ Bağlantı Hatası: ${err.message}`, "error");
+  } finally {
+    document.getElementById("login-pass").value = "";
+    button.disabled = false;
   }
 }
 
@@ -1691,6 +1750,16 @@ async function saveAIAutopilot() {
   const maxLoss = parseFloat(document.getElementById("ai-cfg-max-loss")?.value || "50.0");
   const symsRaw = document.getElementById("ai-cfg-symbols")?.value || "EURUSD,GBPUSD";
   const symbols = symsRaw.split(",").map(s => s.trim().toUpperCase()).filter(s => s.length > 0);
+  let confirmRealFullAuto = false;
+  if (mode === "FULL_AUTO" && currentAccountType === "REAL") {
+    confirmRealFullAuto = await confirmAction({
+      title: "Gerçek hesapta otomatik işlem",
+      message: "Otopilot bu gerçek hesapta sizden ayrıca emir onayı almadan işlem açabilir.",
+      details: [["Mod", "Tam otomatik"], ["Azami lot", String(maxLot)], ["Semboller", symbols.join(", ")]],
+      confirmLabel: "Gerçek hesapta etkinleştir"
+    });
+    if (!confirmRealFullAuto) return;
+  }
 
   try {
     const res = await fetch("/api/ai/autopilot", {
@@ -1702,7 +1771,8 @@ async function saveAIAutopilot() {
         max_lot: maxLot,
         min_confidence: minConf,
         daily_loss_limit: maxLoss,
-        allowed_symbols: symbols
+        allowed_symbols: symbols,
+        confirm_real_full_auto: confirmRealFullAuto
       })
     });
 

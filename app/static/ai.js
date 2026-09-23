@@ -4,6 +4,7 @@
 
 let currentSymbol = "EURUSD";
 let currentAIAdvice = null;
+let currentAIAccountType = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   fetchAccount();
@@ -19,14 +20,22 @@ async function fetchAccount() {
     const res = await fetch("/api/account");
     if (!res.ok) return;
     const data = await res.json();
+    currentAIAccountType = data.connected && !data.account_mismatch ? data.account_type : null;
 
     const balEl = document.getElementById("ai-acc-balance");
     const profEl = document.getElementById("ai-acc-profit");
+    const typeEl = document.getElementById("ai-account-type");
+    const currency = data.currency || "USD";
 
-    if (balEl) balEl.innerText = `$${formatMoney(data.balance)}`;
+    if (typeEl) {
+      const real = data.connected && data.account_type === "REAL" && !data.account_mismatch;
+      typeEl.innerText = data.account_mismatch ? "HESAP UYUŞMUYOR" : real ? `GERÇEK #${data.login}` : data.connected ? `DEMO #${data.login}` : "HESAP BEKLENİYOR";
+      typeEl.className = `px-2 py-1 rounded-lg border font-bold ${real ? "border-rose-500/40 bg-rose-500/10 text-rose-300" : data.account_mismatch ? "border-rose-500/40 bg-rose-500/10 text-rose-300" : data.connected ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300"}`;
+    }
+    if (balEl) balEl.innerText = `${currency} ${formatMoney(data.balance)}`;
     if (profEl) {
       const p = parseFloat(data.profit || 0);
-      profEl.innerText = `${p >= 0 ? '+' : ''}$${formatMoney(p)}`;
+      profEl.innerText = `${p >= 0 ? '+' : ''}${currency} ${formatMoney(p)}`;
       profEl.className = p >= 0 ? "font-bold text-emerald-400 text-xs sm:text-sm" : "font-bold text-rose-400 text-xs sm:text-sm";
     }
   } catch (err) {
@@ -422,6 +431,16 @@ async function saveAIAutopilot() {
   const maxLoss = parseFloat(document.getElementById("ai-cfg-max-loss")?.value || "50.0");
   const symsRaw = document.getElementById("ai-cfg-symbols")?.value || "EURUSD,GBPUSD";
   const symbols = symsRaw.split(",").map(s => s.trim().toUpperCase()).filter(s => s.length > 0);
+  let confirmRealFullAuto = false;
+  if (mode === "FULL_AUTO" && currentAIAccountType === "REAL") {
+    confirmRealFullAuto = await confirmAction({
+      title: "Gerçek hesapta otomatik işlem",
+      message: "Otopilot bu gerçek hesapta sizden ayrıca emir onayı almadan işlem açabilir.",
+      details: [["Mod", "Tam otomatik"], ["Azami lot", String(maxLot)], ["Semboller", symbols.join(", ")]],
+      confirmLabel: "Gerçek hesapta etkinleştir"
+    });
+    if (!confirmRealFullAuto) return;
+  }
 
   try {
     const res = await fetch("/api/ai/autopilot", {
@@ -433,7 +452,8 @@ async function saveAIAutopilot() {
         max_lot: maxLot,
         min_confidence: minConf,
         daily_loss_limit: maxLoss,
-        allowed_symbols: symbols
+        allowed_symbols: symbols,
+        confirm_real_full_auto: confirmRealFullAuto
       })
     });
 

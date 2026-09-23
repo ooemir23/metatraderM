@@ -1,5 +1,14 @@
 > Web panelindeki emir güvenliği, hız düzeltmeleri ve zorunlu panel parolası kurulumu: [Emir güvenliği düzeltmeleri](docs/EMIR_GUVENLIGI_DUZELTMELERI.md). Telegram entegrasyonu kaldırılmıştır.
 
+## Web paneli için güncel güvenlik davranışı
+
+- Broker girişinde **Demo Hesap** veya **Gerçek Hesap** açıkça seçilir. MT5'in bildirdiği gerçek hesap türü, numara ve sunucu eşleşmeden giriş kabul edilmez. Sunucu adı brokerın verdiği tam adla girilir; uygulama adı otomatik değiştirmez. Eski kayıtlarda hesap türü yoksa panelden yeniden giriş gerekir.
+- Panelde broker hesabına giriş yapılmadan veya MT5'teki aktif hesap kayıtlı hesapla uyuşmadan yeni emir ve kapatma gönderilmez. Hesap değiştirildiğinde panel uyarı gösterir.
+- **Tümünü Kapat / İptal** yeni emirleri kalıcı olarak durdurur. Brokerda kalan pozisyon ve bekleyen emirler son kez doğrulanır. MT5 durumunu kontrol ettikten sonra panelde **Yeni Emirlere Devam Et** düğmesini kullanın. Durdurma durumu yeniden başlatmada da korunur.
+- Yeni emir başına, toplam açık ve bekleyen lota ve toplam işlem sayısına sınır uygulanır. Varsayılan değerler sırasıyla `0.10`, `0.50` ve `10`; `.env` içinde `MAX_ORDER_LOTS`, `MAX_TOTAL_OPEN_LOTS`, `MAX_OPEN_ORDERS` ile ayarlanır. Bunlar farklı sembollerde aynı parasal riski temsil etmez; günlük zarar sınırı ve broker teminat kontrolleri ayrıca geçerlidir. Sınır okunamayan broker verisinde yeni emir engellenir.
+- Compose portları yalnız sunucunun `127.0.0.1` adresine bağlar. Dokploy panel yönlendiricisi yalnız HTTPS kullanır. MT5 container'ı paylaşılan proxy ağından çıkarıldı ve masaüstü için herkese açık HTTP yönlendiricisi kaldırıldı; gerektiğinde SSH tüneliyle yerel `3001` portuna erişin. Dağıtımda container yeniden oluşturulmadan mevcut port, ağ ve yönlendiriciler değişmez.
+- Testler: `.venv/bin/python -m pytest -q` ve `for t in tests/*.cjs; do node "$t"; done`.
+
 # HMA Crossover Expert Advisor (MetaTrader 5)
 
 Bu robot (Expert Advisor), **Hull Moving Average (HMA)** ile seçeceğiniz **2. bir Hareketli Ortalama (İkinci HMA, EMA, SMA veya LWMA)** kesişimini baz alarak otomatik alım-satım yapan ve sinyal üreten profesyonel bir algoritmadır.
@@ -39,7 +48,7 @@ Bu robot (Expert Advisor), **Hull Moving Average (HMA)** ile seçeceğiniz **2. 
 1. MetaTrader 5 terminalinizi açın.
 2. Klavyeden **F4** tuşuna basarak (veya menüden `Araçlar` -> `MetaQuotes Dil Düzenleyicisi`) **MetaEditor**'ü açın.
 3. Sol taraftaki *Navigator* panelinde **`Experts`** klasörüne sağ tıklayıp **Yeni Dosya (New)** deyin veya:
-   * [`HMA_Crossover_EA.mq5`](file:///home/ooemir/Documents/antigravity/optimistic-volta/HMA_Crossover_EA.mq5) dosyasını kopyalayıp doğrudan `MQL5/Experts/` klasörünün içine yapıştırın.
+   * [`HMA_Crossover_EA.mq5`](HMA_Crossover_EA.mq5) dosyasını kopyalayıp doğrudan `MQL5/Experts/` klasörünün içine yapıştırın.
 4. Dosyayı MetaEditor içinde açın ve üst menüdeki **Derle (Compile)** butonuna basın (Klavye kısayolu: **F7**).
    * Alttaki pencerede `0 errors, 0 warnings` mesajını görmelisiniz.
 5. MetaTrader 5 terminaline geri dönün:
