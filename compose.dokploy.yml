@@ -13,6 +13,12 @@ services:
       traefik.http.routers.mt5-trade-https.entrypoints: websecure
       traefik.http.routers.mt5-trade-https.service: mt5-mt5platform-jtahyh-6-web
       traefik.http.routers.mt5-trade-https.tls.certresolver: letsencrypt
+      traefik.http.routers.mt5-trade-http.rule: Host(`trade.46.225.94.54.sslip.io`)
+      traefik.http.routers.mt5-trade-http.entrypoints: web
+      traefik.http.routers.mt5-trade-http.service: mt5-mt5platform-jtahyh-6-web
+      traefik.http.routers.mt5-trade-http.middlewares: mt5-trade-redirect
+      traefik.http.middlewares.mt5-trade-redirect.redirectscheme.scheme: https
+      traefik.http.middlewares.mt5-trade-redirect.redirectscheme.permanent: "true"
     networks: [default, dokploy-network]
 networks:
   dokploy-network:
