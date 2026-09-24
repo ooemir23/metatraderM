@@ -49,8 +49,12 @@ class DeepSeekAdvisor:
         self._state_lock = threading.RLock()
         self.daily_call_limit = max(1, int(os.getenv("AI_DAILY_CALL_LIMIT", "100")))
         self.daily_token_limit = max(1000, int(os.getenv("AI_DAILY_TOKEN_LIMIT", "100000")))
+        self.autopilot_budget_fraction = min(1.0, max(0.1, float(os.getenv('AI_AUTOPILOT_BUDGET_FRACTION', '0.8'))))
         self.cost_state = {"usage_days": {}, "last_requests": {}, "advice_cache": {},
-                           "learn_digest": None, "autopilot_bucket": None}
+                           "learn_digest": None, "autopilot_bucket": None,
+                           "usage_by_operation": {}}
+        self.account_states = {}
+        self.account_scope = None
         self.mt5 = mt5_client
         self.autopilot_generation = 0
         self._auto_stop = threading.Event()
@@ -93,8 +97,10 @@ class DeepSeekAdvisor:
             ],
             "latest_recommendation": None
         }
+        self._empty_memory = json.loads(json.dumps(self.memory))
 
         self.load_memory()
+        self.sync_account_scope()
         if not self.autopilot.get("enabled"):
             self._auto_stop.set()
         if self.mt5:
@@ -108,6 +114,8 @@ class DeepSeekAdvisor:
                         data = json.load(f)
                     if isinstance(data.get("cost_state"), dict):
                         self.cost_state.update(data["cost_state"])
+                    self.account_states = data.get("account_states", {})
+                    self.account_scope = data.get("account_scope")
                     if "memory" in data:
                         self.memory.update(data["memory"])
                     if "autopilot" in data:
@@ -120,7 +128,8 @@ class DeepSeekAdvisor:
     def save_memory(self):
         with self._state_lock:
             data = {"memory": self.memory, "autopilot": self.autopilot,
-                    "cost_state": self.cost_state,
+                    "cost_state": self.cost_state, "account_states": self.account_states,
+                    "account_scope": self.account_scope,
                     "saved_at": time.strftime("%Y-%m-%d %H:%M:%S")}
             for path in MEMORY_PATHS:
                 temp_path = None
@@ -139,6 +148,34 @@ class DeepSeekAdvisor:
                     if temp_path and os.path.exists(temp_path):
                         os.unlink(temp_path)
             return False
+
+    def sync_account_scope(self):
+        """Never reuse a learned profile or recommendation across broker accounts."""
+        login_id = getattr(self.mt5, 'login_id', 0) if self.mt5 else 0
+        if not isinstance(login_id, int) or login_id <= 0:
+            return
+        scope = digest([login_id, str(self.mt5.server), str(self.mt5.account_type)])
+        with self._state_lock:
+            if scope == self.account_scope:
+                return
+            if self.account_scope:
+                self.account_states[self.account_scope] = {
+                    'memory': self.memory, 'advice_cache': self.cost_state['advice_cache'],
+                    'learn_digest': self.cost_state['learn_digest']}
+            elif self.memory.get('last_analyzed') or self.cost_state['advice_cache']:
+                # Retain old data for recovery without attributing it to an unverified account.
+                self.account_states.setdefault('legacy_unscoped', {
+                    'memory': self.memory, 'advice_cache': self.cost_state['advice_cache'],
+                    'learn_digest': self.cost_state['learn_digest']})
+            state = self.account_states.get(scope, {})
+            self.memory = state.get('memory', json.loads(json.dumps(self._empty_memory)))
+            self.cost_state['advice_cache'] = state.get('advice_cache', {})
+            self.cost_state['learn_digest'] = state.get('learn_digest')
+            self.account_scope = scope
+            self.autopilot['enabled'] = False
+            self.autopilot_generation += 1
+            self._auto_stop.set()
+            self.save_memory()
 
     def _usage(self, day=None):
         day = day or datetime.now(timezone.utc).date().isoformat()
@@ -161,7 +198,13 @@ class DeepSeekAdvisor:
             self.cost_state["last_requests"][operation] = time.time()
             usage["calls"] += 1  # Reserve before sending, including failed/ambiguous requests.
             usage["unknown_usage_calls"] += 1
+            daily_operations = self.cost_state['usage_by_operation'].setdefault(day, {})
+            operation_usage = daily_operations.setdefault(operation, {
+                'calls': 0, 'total_tokens': 0, 'unknown_usage_calls': 0})
+            operation_usage['calls'] += 1
+            operation_usage['unknown_usage_calls'] += 1
             self.cost_state["usage_days"] = dict(sorted(self.cost_state["usage_days"].items())[-7:])
+            self.cost_state['usage_by_operation'] = dict(sorted(self.cost_state['usage_by_operation'].items())[-7:])
             if not self.save_memory():
                 raise RuntimeError("AI kullanım sayacı kaydedilemedi; istek gönderilmedi.")
         response = requests.post(DEEPSEEK_API_URL,
@@ -178,6 +221,9 @@ class DeepSeekAdvisor:
                     usage[key] += max(0, int(reported.get(key, 0)))
                 usage["cache_hit_tokens"] += max(0, int(reported.get("prompt_cache_hit_tokens", 0)))
                 usage["unknown_usage_calls"] = max(0, usage["unknown_usage_calls"] - 1)
+                operation_usage = self.cost_state['usage_by_operation'][day][operation]
+                operation_usage['total_tokens'] += max(0, int(reported.get('total_tokens', 0)))
+                operation_usage['unknown_usage_calls'] = max(0, operation_usage['unknown_usage_calls'] - 1)
                 self.save_memory()
         choice = data["choices"][0]
         if choice.get("finish_reason") == "length":
@@ -196,6 +242,12 @@ class DeepSeekAdvisor:
             self.cost_state["autopilot_bucket"] = bucket
             return self.save_memory()
 
+    def autopilot_budget_available(self):
+        usage = self._usage()
+        return (usage['calls'] < self.daily_call_limit * self.autopilot_budget_fraction
+                and usage['total_tokens'] < self.daily_token_limit * self.autopilot_budget_fraction
+                and usage['unknown_usage_calls'] == 0)
+
     @serialized_analysis
     def test_connection(self) -> Dict[str, Any]:
         try:
@@ -209,6 +261,7 @@ class DeepSeekAdvisor:
     @serialized_analysis
     def analyze_user_trades(self, deals: List[Dict[str, Any]], stats: Optional[Dict[str, Any]] = None,
                             language: str = "tr") -> Dict[str, Any]:
+        self.sync_account_scope()
         if not deals or len(deals) == 0:
             return {
                 "success": False,
@@ -290,8 +343,10 @@ Use at most three short items per list and two sentences in the summary."""
         open_positions: Optional[List[Dict[str, Any]]] = None,
         hma_val: Optional[float] = None,
         ma2_val: Optional[float] = None,
-        language: str = "tr"
+        language: str = "tr",
+        source: str = "manual"
     ) -> Dict[str, Any]:
+        self.sync_account_scope()
         symbol = symbol.upper()
         if not rates or len(rates) < 2 or not tick or not tick.get("bid"):
             return {"success": False, "error": "Güncel fiyat ve kapanmış mum verisi gerekli."}
@@ -343,7 +398,7 @@ risk_reward_ratio, action_title. Keep prices, points, and lots distinct; prefer 
                 "max_tokens": 400
             }
 
-            rec = self._request_json(payload, 25, "advice:" + symbol + ":" + timeframe_name)
+            rec = self._request_json(payload, 25, "advice:" + source + ":" + symbol + ":" + timeframe_name)
             if rec.get("action") not in ("BUY", "SELL", "HOLD"):
                 raise ValueError("AI tavsiye yönü geçersiz.")
             rec["id"] = str(uuid.uuid4())
@@ -365,6 +420,7 @@ risk_reward_ratio, action_title. Keep prices, points, and lots distinct; prefer 
             return {"success": False, "error": str(e)}
 
     def execute_recommendation(self, rec=None, *, automatic=False, generation=None):
+        self.sync_account_scope()
         if not self.mt5:
             return {"success": False, "error": "MT5 istemcisi bağlı değil."}
         candidate = (self.memory.get("latest_recommendation") or {}) if rec is None else rec
@@ -391,6 +447,8 @@ risk_reward_ratio, action_title. Keep prices, points, and lots distinct; prefer 
             if not math.isfinite(volume) or volume <= 0:
                 raise ValueError("Geçersiz lot miktarı.")
             sl, tp = int(target.get("sl_points", 0)), int(target.get("tp_points", 0))
+            if sl <= 0 or tp <= 0:
+                raise ValueError('AI emri için Stop Loss ve Kâr Al zorunlu.')
         except (ValueError, TypeError, KeyError, OverflowError) as exc:
             return {"success": False, "error": str(exc)}
         res = self.mt5.open_order(symbol, action, volume, sl_points=sl, tp_points=tp,
@@ -432,10 +490,15 @@ risk_reward_ratio, action_title. Keep prices, points, and lots distinct; prefer 
         return {"success": True, "autopilot": self.autopilot}
 
     def get_status(self) -> Dict[str, Any]:
+        self.sync_account_scope()
+        day = datetime.now(timezone.utc).date().isoformat()
         return {
             "success": True,
             "usage": dict(self._usage()),
+            "usage_by_operation": self.cost_state['usage_by_operation'].get(day, {}),
+            "account_scope": self.account_scope,
             "limits": {"daily_calls": self.daily_call_limit, "daily_tokens": self.daily_token_limit,
+                       "autopilot_budget_fraction": self.autopilot_budget_fraction,
                        "timezone": "UTC"},
             "risk_day_timezone": "UTC",
             "risk_scope": "Tüm yeni emirler; gerçekleşen net sonuç + açık net zarar; hesap para birimi",

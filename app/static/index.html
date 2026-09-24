@@ -435,10 +435,12 @@
                 <i class="ph-bold ph-lightning text-amber-400"></i>
               </div>
               <div class="text-sm md:text-base font-bold text-white flex items-center gap-1">
-                <span class="text-purple-400">DeepSeek</span> V3
+                <span class="text-purple-400">DeepSeek</span> Chat
               </div>
               <div id="ai-last-learned-date" class="text-[10px] text-gray-500 mt-0.5">Son Güncelleme: -</div>
 <div id="ai-usage" class="text-xs text-gray-400 mt-1">AI kullanım bilgisi yükleniyor...</div>
+<div id="ai-usage-breakdown" class="text-[11px] text-gray-500 mt-1"></div>
+<div id="ai-performance" class="text-[11px] text-gray-400 mt-1">AI işlem sonuçları yükleniyor...</div>
             </div>
           </div>
 
@@ -878,7 +880,7 @@
           <label class="block text-gray-300 font-semibold mb-1">Otopilot Çalışma Modu</label>
           <select id="ai-cfg-mode" class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-sans focus:border-purple-500 focus:outline-none">
             <option value="DISABLED">Kapalı (Sadece manuel analiz & tavsiye)</option>
-            <option value="SEMI_AUTO">Yarı Otomatik (AI tavsiye üretir, siz tek tıkla onaylarsınız)</option>
+            <option value="SEMI_AUTO">Onaylı İşlem (tavsiyeyi siz istersiniz, emri siz onaylarsınız)</option>
             <option value="FULL_AUTO">Tam Otomatik (AI piyasayı tarar, şartlar uyduğunda MT5'te doğrudan açar)</option>
           </select>
           <p class="text-[11px] text-gray-500 mt-1">Tam otomatik modda AI periyodik olarak piyasayı tarar ve eşik üstü fırsatlarda bağımsız emir gönderir.</p>
@@ -911,7 +913,7 @@
           <span class="font-bold flex items-center gap-1 text-purple-300 mb-0.5">
             <i class="ph-bold ph-shield-check"></i> Güvenlik Koruması
           </span>
-          AI tarafından açılan pozisyonlar <code>777888</code> Magic Number ile etiketlenir ve her emirde Stop Loss (SL) ile Kâr Al (TP) otomatik tanımlanır.
+          AI tarafından açılan pozisyonlar <code>123462</code> Magic Number ile etiketlenir; geçerli Stop Loss (SL), Kâr Al (TP) ve işlem başına risk sınırı olmadan emir gönderilmez.
         </div>
       </div>
 

@@ -428,6 +428,8 @@ function startPolling() {
   fetchPrice();
   fetchBotStatus();
   fetchAIStatus();
+  fetchAIPerformance();
+  setInterval(fetchAIPerformance, 300000);
 
   setInterval(fetchAccount, 2000);
   setInterval(fetchPositions, 2000);
@@ -439,6 +441,20 @@ function startPolling() {
     else if (currentPositionTab === "reports") fetchReports();
     else if (currentPositionTab === "ai") fetchAIStatus();
   }, 5000);
+}
+
+async function fetchAIPerformance() {
+  const el = document.getElementById('ai-performance');
+  if (!el) return;
+  try {
+    const response = await fetch('/api/ai/performance');
+    if (!response.ok) return;
+    const data = await response.json();
+    const english = window.MT5I18n?.language?.() === 'en';
+    el.innerText = english
+      ? `Last ${data.days} days · ${data.account_type} · ${data.closed_positions} closed AI positions · ${data.wins} wins / ${data.losses} losses · Net ${data.net} ${data.currency}`
+      : `Son ${data.days} gün · ${data.account_type} · ${data.closed_positions} kapanmış AI pozisyonu · ${data.wins} kâr / ${data.losses} zarar · Net ${data.net} ${data.currency}`;
+  } catch (error) { console.debug('AI performance unavailable', error); }
 }
 
 // Switch between Open, Closed Positions, Reports, and AI tabs
@@ -1386,6 +1402,15 @@ async function fetchAIStatus() {
     if (usageEl && data.usage) {
       usageEl.innerText = `Bugün (UTC): ${data.usage.calls}/${data.limits.daily_calls} AI çağrısı · ${data.usage.total_tokens.toLocaleString("tr-TR")}/${Number(data.limits.daily_tokens).toLocaleString("tr-TR")} raporlanan token` +
         (data.usage.unknown_usage_calls ? ` · ${data.usage.unknown_usage_calls} isteğin token bilgisi alınamadı` : "");
+    }
+    const breakdownEl = document.getElementById("ai-usage-breakdown");
+    if (breakdownEl) {
+      const rows = Object.entries(data.usage_by_operation || {}).sort((a, b) => b[1].total_tokens - a[1].total_tokens);
+      const english = window.MT5I18n?.language?.() === 'en';
+      breakdownEl.innerText = rows.length ? rows.map(([name, row]) => {
+        const label = name === 'learn' ? (english ? 'Trading profile' : 'İşlem profili') : name === 'ping' ? (english ? 'Connection test' : 'Bağlantı testi') : name.startsWith('advice:autopilot:') ? (english ? 'Automatic scan' : 'Otomatik tarama') + ' ' + name.split(':')[2] : (english ? 'Manual advice' : 'Manuel tavsiye') + ' ' + (name.split(':')[2] || '');
+        return `${label}: ${row.calls} ${english ? 'calls' : 'çağrı'} · ${Number(row.total_tokens).toLocaleString(english ? 'en-US' : 'tr-TR')} token${row.unknown_usage_calls ? ` · ${row.unknown_usage_calls} ${english ? 'unknown' : 'belirsiz'}` : ''}`;
+      }).join(' | ') : '';
     }
   } catch (err) {
     console.error("AI Status fetch error:", err);

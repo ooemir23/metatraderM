@@ -178,7 +178,8 @@ def broker_compatibility(mt5, symbol, expected_login, expected_server, tick_offs
 
 def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, magic,
               daily_loss_limit, expected_login, expected_server, max_tick_age=10, pending_type=None, entry_price=None,
-              max_order_lots=.10, max_total_lots=.50, max_open_orders=10, tick_offset=0):
+              max_order_lots=.10, max_total_lots=.50, max_open_orders=10, tick_offset=0,
+              ai_max_trade_risk_pct=1.0):
     try:
         account, current, pending, realized, floating = risk(mt5)
         if expected_login and (int(account.login) != expected_login or str(account.server) != expected_server):
@@ -236,6 +237,18 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
                 raise ValueError('Emir fiyatı piyasanın doğru tarafında ve minimum mesafe dışında olmalı.')
         sl = round(price + (-1 if buy else 1) * sl_points * info.point, info.digits) if sl_points else 0.0
         tp = round(price + (1 if buy else -1) * tp_points * info.point, info.digits) if tp_points else 0.0
+        if magic == AI_MAGIC:
+            if sl_points <= 0 or tp_points <= 0 or not sl or not tp:
+                return {'success': False, 'error': 'AI emri için geçerli Stop Loss ve Kâr Al zorunlu.'}
+            equity = float(account.equity)
+            calc_profit = getattr(mt5, 'order_calc_profit', None)
+            outcome = calc_profit(0 if buy else 1, symbol, volume, price, sl) if calc_profit else None
+            if (outcome is None or not math.isfinite(float(outcome)) or float(outcome) >= 0
+                    or not math.isfinite(equity) or equity <= 0
+                    or not math.isfinite(ai_max_trade_risk_pct) or ai_max_trade_risk_pct <= 0):
+                return {'success': False, 'error': 'AI stop riski broker tarafından doğrulanamadı.'}
+            if -float(outcome) > equity * ai_max_trade_risk_pct / 100:
+                return {'success': False, 'error': 'AI emrinin stop riski hesap özsermaye sınırını aşıyor.'}
         exit_price = price if pending_type else float(tick.bid if buy else tick.ask)
         minimum = float(info.trade_stops_level) * info.point
         if ((sl and ((exit_price-sl if buy else sl-exit_price) < minimum)) or

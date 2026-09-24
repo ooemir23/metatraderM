@@ -154,6 +154,7 @@ def hma_native_get_history(days=30):
                 
                 res.append({
                     "ticket": int(d.ticket),
+                    "magic": int(getattr(d, "magic", 0)),
                     "order": int(d.order),
                     "position_id": int(getattr(d, "position_id", d.order)),
                     "symbol": deal_symbol,
@@ -199,6 +200,7 @@ class MT5Client:
         self.max_order_lots = float(os.getenv("MAX_ORDER_LOTS", "0.10"))
         self.max_total_lots = float(os.getenv("MAX_TOTAL_OPEN_LOTS", "0.50"))
         self.max_open_orders = int(os.getenv("MAX_OPEN_ORDERS", "10"))
+        self.ai_max_trade_risk_pct = float(os.getenv("AI_MAX_TRADE_RISK_PCT", "1"))
         self.tick_clock_offset = int(os.getenv('MT5_TICK_CLOCK_OFFSET_SECONDS', '0'))
         if abs(self.tick_clock_offset) > 14*3600 or self.tick_clock_offset % 3600:
             raise ValueError('MT5_TICK_CLOCK_OFFSET_SECONDS must be a whole-hour offset within 14 hours')
@@ -622,7 +624,8 @@ class MT5Client:
                 res = self.journal.run(request_id, payload, lambda: self._bridge(
                     "open_deal", payload["symbol"], payload["order_type"], volume, sl_points, tp_points,
                     tag, magic, self.daily_loss_limit, account_scope[0], account_scope[1], 10, pending_type, entry_price,
-                    self.max_order_lots, self.max_total_lots, self.max_open_orders, self.tick_clock_offset),
+                    self.max_order_lots, self.max_total_lots, self.max_open_orders, self.tick_clock_offset,
+                    self.ai_max_trade_risk_pct),
                     metadata=metadata, queue_ms=queue_ms)
                 return {**res, "queue_ms": queue_ms}
             except MT5DataError as exc:
@@ -852,6 +855,7 @@ class MT5Client:
                             type_name = "BUY" if deal_type == 0 else ("SELL" if deal_type == 1 else str(deal_type))
                             res.append({
                                 "ticket": int(d.ticket),
+                                "magic": int(getattr(d, "magic", 0)),
                                 "order": int(d.order),
                                 "position_id": int(getattr(d, "position_id", d.order)),
                                 "symbol": deal_symbol,

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from app.order_journal import state_path
 
-STATE_FILES = ('orders.sqlite3', 'credentials.json', 'ai_memory.json', 'trading_totp_secret')
+STATE_FILES = ('orders.sqlite3', 'credentials.json', 'ai_memory.json', 'trading_totp_secret', 'trading_totp_secret_2')
 
 
 def verify_backup(directory):
@@ -49,7 +49,7 @@ def create_backup(root=None, destination=None, keep=14):
             else:
                 # Config writers use atomic replacement, so each file is complete.
                 data = source.read_bytes()
-                if name == 'trading_totp_secret':
+                if name.startswith('trading_totp_secret'):
                     if not re.fullmatch(rb'[A-Z2-7]{32}', data.strip()):
                         raise ValueError('Invalid TOTP secret')
                 else:

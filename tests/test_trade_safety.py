@@ -305,7 +305,7 @@ def test_real_full_auto_requires_explicit_confirmation(monkeypatch):
     monkeypatch.setattr(main.ai_advisor, 'update_autopilot', update)
     payload = {'enabled': True, 'mode': 'FULL_AUTO'}
     assert authenticated_web().post('/api/ai/autopilot', json=payload).status_code == 403
-    monkeypatch.setattr(main.security_sessions, 'verify_totp', lambda code: True)
+    monkeypatch.setattr(main.security_sessions, 'verify_totp', lambda code, username=None: True)
     token = base64.b64encode(b'test:test-panel-password').decode()
     web = TestClient(main.app, base_url='https://testserver', headers={'Authorization': 'Basic ' + token})
     assert web.post('/api/security/unlock', json={'code':'123456'}).status_code == 200

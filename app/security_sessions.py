@@ -15,11 +15,12 @@ SESSION_SECONDS = 15 * 60
 COOKIE = 'trade_unlock'
 
 
-def _secret():
-    configured = os.getenv('TRADING_TOTP_SECRET', '').strip()
+def _secret(username=None):
+    second = username and username == os.getenv('DASHBOARD_USER_2', '').strip() and username != os.getenv('DASHBOARD_USER', 'admin')
+    configured = os.getenv('TRADING_TOTP_SECRET_2' if second else 'TRADING_TOTP_SECRET', '').strip()
     if configured:
         return configured
-    path = state_path('trading_totp_secret')
+    path = state_path('trading_totp_secret_2' if second else 'trading_totp_secret')
     if not path.exists():
         try:
             with path.open('x', encoding='ascii') as stream:
@@ -32,12 +33,14 @@ def _secret():
 
 def initialize():
     _secret()
+    if os.getenv('DASHBOARD_USER_2') and os.getenv('DASHBOARD_PASSWORD_2'):
+        _secret(os.getenv('DASHBOARD_USER_2'))
 
 
-def verify_totp(code, now=None):
+def verify_totp(code, now=None, username=None):
     if not isinstance(code, str) or len(code) != 6 or not code.isascii() or not code.isdigit():
         return False
-    secret = _secret().upper().replace(' ', '')
+    secret = _secret(username).upper().replace(' ', '')
     try:
         key = base64.b32decode(secret + '=' * ((-len(secret)) % 8), casefold=True)
     except ValueError:
@@ -94,10 +97,13 @@ def session_expires(token, username):
     return row[0] if row and row[0] > time.time() else 0
 
 
-def active_session(username):
+def active_session(username=None):
     with _connect() as db:
-        row = db.execute('SELECT 1 FROM sessions WHERE username=? AND expires>? LIMIT 1',
-                         (username, time.time())).fetchone()
+        if username is None:
+            row = db.execute('SELECT 1 FROM sessions WHERE expires>? LIMIT 1', (time.time(),)).fetchone()
+        else:
+            row = db.execute('SELECT 1 FROM sessions WHERE username=? AND expires>? LIMIT 1',
+                             (username, time.time())).fetchone()
     return bool(row)
 
 
