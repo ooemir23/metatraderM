@@ -487,6 +487,47 @@ class MT5Client:
             raise MT5DataError("Aktif MT5 hesabı, sunucusu veya türü kayıtlı seçimle uyuşmuyor; işlem engellendi.")
         return active[:2]
 
+    def trade_preview(self, symbol, order_type, volume, sl_points=0, pending_type=None, entry_price=None):
+        with self._lock:
+            if not self.ensure_connected():
+                return {'success': False, 'error': 'MT5 bağlı değil.'}
+            try:
+                login, server = self._selected_account()
+                return self._bridge('trade_preview', symbol.upper(), order_type, volume, sl_points,
+                                    pending_type, entry_price, login, server)
+            except (MT5DataError, Exception) as exc:
+                return {'success': False, 'error': str(exc)}
+
+    def get_symbol_spec(self, symbol):
+        with self._lock:
+            if not self.ensure_connected():
+                raise MT5DataError('MT5 bağlı değil.')
+            self._selected_account()
+            try:
+                return self._bridge('symbol_spec', symbol.upper())
+            except Exception as exc:
+                raise MT5DataError('Broker sembol özellikleri alınamadı.') from exc
+
+    def broker_compatibility(self, symbol):
+        with self._lock:
+            if not self.ensure_connected():
+                raise MT5DataError('MT5 bağlı değil.')
+            login, server = self._selected_account()
+            try:
+                return self._bridge('broker_compatibility', symbol.upper(), login, server)
+            except Exception as exc:
+                raise MT5DataError('Broker emir kontrolleri alınamadı.') from exc
+
+    def get_risk_status(self):
+        with self._lock:
+            if not self.ensure_connected():
+                raise MT5DataError('MT5 bağlı değil.')
+            login, server = self._selected_account()
+            try:
+                return self._bridge('risk_status', login, server, self.daily_loss_limit)
+            except Exception as exc:
+                raise MT5DataError('Günlük risk durumu doğrulanamadı.') from exc
+
     def get_positions(self, fresh=False) -> List[Dict[str, Any]]:
         with self._lock:
             now = time.monotonic()

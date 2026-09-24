@@ -1060,6 +1060,7 @@ function orderErrorMessage(data) {
 // Submit Buy/Sell Order
 async function submitOrder(type) {
   if (orderPending) return;
+  if (typeof scheduleTradePreview === "function") scheduleTradePreview(type);
   const symbol = currentSymbol;
   const volume = Number(document.getElementById("lot-input").value);
   if (!Number.isFinite(volume) || volume <= 0) {

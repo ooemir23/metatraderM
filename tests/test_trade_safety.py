@@ -304,11 +304,28 @@ def test_real_full_auto_requires_explicit_confirmation(monkeypatch):
     update = Mock(return_value={'success': True})
     monkeypatch.setattr(main.ai_advisor, 'update_autopilot', update)
     payload = {'enabled': True, 'mode': 'FULL_AUTO'}
-    assert authenticated_web().post('/api/ai/autopilot', json=payload).status_code == 409
+    assert authenticated_web().post('/api/ai/autopilot', json=payload).status_code == 403
+    monkeypatch.setattr(main.security_sessions, 'verify_totp', lambda code: True)
+    token = base64.b64encode(b'test:test-panel-password').decode()
+    web = TestClient(main.app, base_url='https://testserver', headers={'Authorization': 'Basic ' + token})
+    assert web.post('/api/security/unlock', json={'code':'123456'}).status_code == 200
+    assert web.post('/api/ai/autopilot', json=payload).status_code == 409
     update.assert_not_called()
-    response = authenticated_web().post('/api/ai/autopilot', json={**payload, 'confirm_real_full_auto': True})
+    response = web.post('/api/ai/autopilot', json={**payload, 'confirm_real_full_auto': True})
     assert response.status_code == 200
     update.assert_called_once_with(payload)
+
+
+def test_real_open_requires_second_factor_but_emergency_close_stays_available(monkeypatch):
+    from app import main
+    monkeypatch.setattr(main.mt5_client, 'account_type', 'REAL')
+    open_order = Mock(return_value={'success':True, 'ticket':5})
+    monkeypatch.setattr(main.mt5_client, 'open_order', open_order)
+    payload = {'request_id':'real-order-test-12345', 'symbol':'EURUSD', 'order_type':'BUY', 'volume':.01}
+    assert authenticated_web().post('/api/order/open', json=payload).status_code == 403
+    open_order.assert_not_called()
+    monkeypatch.setattr(main.mt5_client, 'close_position', Mock(return_value={'success':True}))
+    assert authenticated_web().post('/api/order/close', json={'request_id':'real-close-test-12345','ticket':5}).status_code == 200
 
 
 def test_api_position_failure_returns_error_not_empty_list(monkeypatch):

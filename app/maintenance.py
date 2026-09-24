@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import shutil
+import re
 import sqlite3
 import tempfile
 import time
@@ -11,7 +12,7 @@ from pathlib import Path
 
 from app.order_journal import state_path
 
-STATE_FILES = ('orders.sqlite3', 'credentials.json', 'ai_memory.json')
+STATE_FILES = ('orders.sqlite3', 'credentials.json', 'ai_memory.json', 'trading_totp_secret')
 
 
 def verify_backup(directory):
@@ -48,7 +49,11 @@ def create_backup(root=None, destination=None, keep=14):
             else:
                 # Config writers use atomic replacement, so each file is complete.
                 data = source.read_bytes()
-                json.loads(data)
+                if name == 'trading_totp_secret':
+                    if not re.fullmatch(rb'[A-Z2-7]{32}', data.strip()):
+                        raise ValueError('Invalid TOTP secret')
+                else:
+                    json.loads(data)
                 target.write_bytes(data)
             target.chmod(0o600)
             files[name] = hashlib.sha256(target.read_bytes()).hexdigest()

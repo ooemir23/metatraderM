@@ -3,7 +3,7 @@ import json
 import logging
 from contextlib import asynccontextmanager, suppress
 from typing import Optional, Dict, Any, List, Literal
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, ConfigDict
@@ -13,6 +13,8 @@ from app.security import protect_dashboard
 from app.live_feed import LiveFeed
 from app.strategy_bot import StrategyBot
 from app.ai_advisor import DeepSeekAdvisor
+from app import security_sessions
+from app.backtest import simulate
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("HMATradingApp")
@@ -29,12 +31,25 @@ flatten_active = threading.Event()
 flatten_guard = threading.Lock()
 
 async def auto_reconnect_loop():
+    was_connected = False
     while True:
         try:
             if not mt5_client.is_connected:
                 connected = await asyncio.to_thread(mt5_client.connect)
             else:
                 connected = await asyncio.to_thread(mt5_client.ensure_connected)
+            if was_connected and not connected:
+                mt5_client.journal.event('error', 'connection', 'MT5 connection lost')
+            elif connected and not was_connected:
+                mt5_client.journal.event('info', 'connection', 'MT5 connection restored')
+            was_connected = bool(connected)
+            if mt5_client.account_type == 'REAL' and not security_sessions.active_session(os.getenv('DASHBOARD_USER', 'admin')):
+                if bot.is_running:
+                    bot.stop()
+                    mt5_client.journal.event('warning', 'security', 'Real-account automation stopped: unlock expired')
+                if ai_advisor.autopilot.get('enabled'):
+                    ai_advisor.update_autopilot({'enabled': False})
+                    mt5_client.journal.event('warning', 'security', 'Real-account AI autopilot stopped: unlock expired')
 
             # Autopilot autonomous check
             if connected and os.getenv("DASHBOARD_PASSWORD") and not mt5_client.journal.trading_halted() and ai_advisor.autopilot.get("enabled") and ai_advisor.autopilot.get("mode") == "FULL_AUTO":
@@ -66,6 +81,7 @@ async def auto_reconnect_loop():
 async def maintenance_loop():
     from app.maintenance import create_backup
     last_backup = 0
+    last_risk_alert = 0
     while True:
         try:
             if time.time() - last_backup >= 86400:
@@ -79,6 +95,19 @@ async def maintenance_loop():
                 await asyncio.to_thread(mt5_client.reconcile_orders)
         except Exception:
             logger.exception("Emir doğrulama tamamlanamadı")
+        try:
+            if mt5_client.is_connected and mt5_client.login_id:
+                status = await asyncio.to_thread(mt5_client.get_risk_status)
+                level = 2 if status['ratio'] >= 1 else 1 if status['ratio'] >= .8 else 0
+                if level > last_risk_alert:
+                    mt5_client.journal.event('error' if level == 2 else 'warning', 'risk',
+                        f"Daily loss {status['daily_loss']} / {status['daily_loss_limit']} {status['currency']}")
+                    if level == 2:
+                        bot.stop()
+                        ai_advisor.update_autopilot({'enabled': False})
+                last_risk_alert = level
+        except Exception:
+            logger.debug('Risk alert data unavailable')
         await asyncio.sleep(30)
 
 def ensure_optimized_server_py():
@@ -123,6 +152,7 @@ except Exception as e:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting HMA Trading Web Application...")
+    security_sessions.initialize()
     ensure_optimized_server_py()
     if mt5_client.journal.trading_halted():
         mt5_client.automation_stopped.set()
@@ -213,6 +243,104 @@ class PendingRequest(OrderRequest):
     pending_type: Literal["BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP"]
     entry_price: float = Field(gt=0)
 
+class PreviewRequest(BaseModel):
+    symbol: str = Field(pattern=r"^[A-Za-z0-9_.#-]+$", max_length=32)
+    order_type: Literal["BUY", "SELL"]
+    volume: float = Field(gt=0, allow_inf_nan=False)
+    sl_points: int = Field(ge=0)
+    pending_type: Optional[Literal["BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP"]] = None
+    entry_price: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
+
+class UnlockRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=6, pattern=r"^[0-9]{6}$")
+
+class BacktestRequest(BaseModel):
+    symbol: str = Field(pattern=r"^[A-Za-z0-9_.#-]+$", max_length=32)
+    timeframe_minutes: int = 15
+    candles: int = Field(default=600, ge=100, le=1000)
+    hma_period: int = Field(default=14, ge=2, le=100)
+    second_ma_type: Literal['EMA','SMA','LWMA','HMA'] = 'EMA'
+    second_ma_period: int = Field(default=34, ge=2, le=100)
+    sl_points: int = Field(default=200, ge=0, le=10000)
+    tp_points: int = Field(default=0, ge=0, le=10000)
+    commission_points: float = Field(default=0, ge=0, le=1000, allow_inf_nan=False)
+
+@app.post('/api/backtest')
+def run_backtest(req: BacktestRequest):
+    if req.timeframe_minutes not in TIMEFRAME_NAMES:
+        raise HTTPException(status_code=422, detail='Desteklenmeyen zaman dilimi.')
+    rates = mt5_client.get_rates(req.symbol.upper(), req.timeframe_minutes, req.candles + 1)
+    if not rates or len(rates) < 2:
+        raise HTTPException(status_code=503, detail='Mum verisi alınamadı.')
+    # Last candle is still forming; never use it as historical evidence.
+    rates = rates[:-1]
+    price = mt5_client.get_symbol_price(req.symbol.upper())
+    info = mt5_client.get_symbol_spec(req.symbol.upper())
+    if not info or not info.get('point') or not price.get('bid'):
+        raise HTTPException(status_code=503, detail='Broker sembol özellikleri doğrulanamadı.')
+    try:
+        return simulate(rates, req.hma_period, req.second_ma_type, req.second_ma_period,
+                        req.sl_points, req.tp_points, float(info['point']), float(price.get('spread', 0)),
+                        req.commission_points)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+@app.get('/api/broker/diagnostics')
+def broker_diagnostics(symbol: str = Query(default='EURUSD', pattern=r'^[A-Za-z0-9_.#-]+$', max_length=32)):
+    spec = mt5_client.get_symbol_spec(symbol)
+    checks = mt5_client.broker_compatibility(symbol)
+    account = mt5_client.get_account_info()
+    return {'account_verified': bool(account.get('connected') and not account.get('account_mismatch')),
+            'account_type': spec['account_type'], 'position_mode': 'HEDGING' if spec['account_mode'] == 2 else 'NETTING_OR_EXCHANGE',
+            'strategy_automation_supported': spec['account_mode'] == 2,
+            'market_order_supported': bool(spec['order_mode'] & 1),
+            'limit_order_supported': bool(spec['order_mode'] & 2),
+            'stop_order_supported': bool(spec['order_mode'] & 4),
+            'gtc_supported': bool(spec['expiration_mode'] & 1),
+            'fok_supported': bool(spec['filling_mode'] & 1),
+            'ioc_supported': bool(spec['filling_mode'] & 2),
+            'quote_age_seconds': max(0, int(time.time()-spec['tick_time'])),
+            'symbol': spec, 'dry_run': checks}
+
+def require_real_unlock(request: Request):
+    if mt5_client.account_type == 'REAL':
+        username = os.getenv('DASHBOARD_USER', 'admin')
+        token = request.cookies.get(security_sessions.COOKIE)
+        if not security_sessions.session_expires(token, username):
+            raise HTTPException(status_code=403, detail='Gerçek hesap işlemi için ikinci doğrulama gerekli.')
+
+@app.get('/api/security/status')
+def security_status(request: Request):
+    expires = security_sessions.session_expires(request.cookies.get(security_sessions.COOKIE),
+                                                os.getenv('DASHBOARD_USER', 'admin'))
+    return {'real_account_requires_otp': True, 'unlocked': bool(expires),
+            'seconds_remaining': max(0, int(expires - time.time()))}
+
+@app.post('/api/security/unlock')
+def security_unlock(req: UnlockRequest):
+    username = os.getenv('DASHBOARD_USER', 'admin')
+    if not security_sessions.allow_attempt(username):
+        raise HTTPException(status_code=429, detail='Çok fazla deneme; beş dakika bekleyin.')
+    valid = security_sessions.verify_totp(req.code)
+    security_sessions.record_attempt(username, valid)
+    if not valid:
+        raise HTTPException(status_code=401, detail='Doğrulama kodu geçersiz.')
+    token, expires = security_sessions.unlock(username)
+    response = JSONResponse({'unlocked': True, 'seconds_remaining': int(expires - time.time())})
+    response.set_cookie(security_sessions.COOKIE, token, max_age=security_sessions.SESSION_SECONDS,
+                        secure=True, httponly=True, samesite='strict', path='/')
+    return response
+
+@app.post('/api/security/lock')
+def security_lock(request: Request):
+    security_sessions.revoke(request.cookies.get(security_sessions.COOKIE))
+    if mt5_client.account_type == 'REAL':
+        bot.stop()
+        ai_advisor.update_autopilot({'enabled': False})
+    response = JSONResponse({'unlocked': False})
+    response.delete_cookie(security_sessions.COOKIE, path='/')
+    return response
+
 class StopsRequest(CloseRequest):
     sl: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     tp: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
@@ -255,9 +383,15 @@ async def live(symbol: str = Query(default="EURUSD", min_length=1, max_length=32
 def pending_orders():
     return mt5_client.get_pending_orders()
 
+@app.post("/api/trade/preview")
+def trade_preview(req: PreviewRequest):
+    result = mt5_client.trade_preview(req.symbol, req.order_type, req.volume,
+                                      req.sl_points, req.pending_type, req.entry_price)
+    return trade_response(result)
+
 
 @app.post("/api/order/pending")
-def place_pending(req: PendingRequest):
+def place_pending(req: PendingRequest, _: None = Depends(require_real_unlock)):
     return trade_response(mt5_client.open_order(req.symbol.upper(), req.order_type, req.volume,
         sl_points=req.sl_points, tp_points=req.tp_points, comment="Panel pending", request_id=req.request_id,
         pending_type=req.pending_type, entry_price=req.entry_price))
@@ -269,7 +403,7 @@ def cancel_pending(req: CloseRequest):
 
 
 @app.post("/api/position/stops")
-def update_stops(req: StopsRequest):
+def update_stops(req: StopsRequest, _: None = Depends(require_real_unlock)):
     if req.sl is None and req.tp is None:
         raise HTTPException(status_code=422, detail="En az bir SL/TP fiyatı gerekli.")
     return trade_response(mt5_client.manage_position(req.ticket, "stops",
@@ -286,6 +420,14 @@ def partial_close(req: PartialCloseRequest):
 def operation_latency():
     return mt5_client.journal.latency()
 
+@app.get('/api/operations/events')
+def operation_events(after: int = Query(default=0, ge=0)):
+    return mt5_client.journal.events(after=after)
+
+@app.get('/api/risk/status')
+def account_risk_status():
+    return mt5_client.get_risk_status()
+
 @app.get("/api/operations/status")
 def operation_status(request_id: str = Query(min_length=1, max_length=250)):
     return mt5_client.journal.status(request_id)
@@ -296,7 +438,7 @@ def trading_status():
             "flatten_active": flatten_active.is_set()}
 
 @app.post("/api/trading/resume")
-def resume_new_orders():
+def resume_new_orders(_: None = Depends(require_real_unlock)):
     with mt5_client._lock.order():
         if flatten_active.is_set():
             raise HTTPException(status_code=409, detail="Toplu kapatma sürüyor; bitmesini bekleyin.")
@@ -307,6 +449,7 @@ def resume_new_orders():
         except MT5DataError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
         mt5_client.journal.set_trading_halted(False)
+        mt5_client.journal.event('info', 'trading', 'New orders resumed')
         return {"new_orders_halted": False}
 
 @app.get("/api/account")
@@ -314,13 +457,18 @@ def get_account():
     return mt5_client.get_account_info()
 
 @app.post("/api/account/login")
-def account_login(req: LoginRequest):
+def account_login(req: LoginRequest, request: Request):
+    if req.account_type == 'REAL':
+        username = os.getenv('DASHBOARD_USER', 'admin')
+        if not security_sessions.session_expires(request.cookies.get(security_sessions.COOKIE), username):
+            raise HTTPException(status_code=403, detail='Gerçek hesaba giriş için ikinci doğrulama gerekli.')
     mt5_client.automation_stopped.set()
     bot.stop()
     ai_advisor.update_autopilot({"enabled": False})
     res = mt5_client.login(req.login, req.password, req.server, req.account_type)
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error", "Login failed"))
+    mt5_client.journal.event('info', 'account', 'Broker account connected')
     return res
 
 @app.get("/api/positions")
@@ -340,7 +488,7 @@ def get_price(symbol: str):
     return mt5_client.get_symbol_price(symbol.upper())
 
 @app.post("/api/order/open")
-def open_order(req: OrderRequest):
+def open_order(req: OrderRequest, _: None = Depends(require_real_unlock)):
     res = mt5_client.open_order(
         symbol=req.symbol.upper(),
         order_type=req.order_type.upper(),
@@ -403,6 +551,7 @@ def close_all_orders(req: ActionRequest):
     try:
         # Persist before waiting for MT5; queued manual and automated opens must stop too.
         mt5_client.journal.set_trading_halted(True)
+        mt5_client.journal.event('warning', 'trading', 'Emergency close-all started')
         mt5_client.automation_stopped.set()
         bot.stop()
         ai_advisor.update_autopilot({"enabled": False})
@@ -510,10 +659,11 @@ def get_bot_status():
     return bot.get_status()
 
 @app.post("/api/bot/toggle")
-async def toggle_bot():
+async def toggle_bot(request: Request):
     if bot.is_running:
         bot.stop()
     else:
+        require_real_unlock(request)
         if mt5_client.journal.trading_halted():
             raise HTTPException(status_code=409, detail="Yeni emirler durduruldu; önce işlemlere devam edin.")
         bot.start()
@@ -569,15 +719,17 @@ def get_ai_advice(req: AIAdviceRequest):
     return res
 
 @app.post("/api/ai/execute")
-def execute_ai_advice(req: AIExecuteRequest):
+def execute_ai_advice(req: AIExecuteRequest, _: None = Depends(require_real_unlock)):
     res = ai_advisor.execute_recommendation(req.recommendation)
     if not res.get("success"):
         return JSONResponse(status_code=400, content={**res, "detail": res.get("error", "İşlem açılamadı")})
     return res
 
 @app.post("/api/ai/autopilot")
-def update_ai_autopilot(req: AIAutopilotRequest):
+def update_ai_autopilot(req: AIAutopilotRequest, request: Request):
     data = req.model_dump(exclude_unset=True, exclude={"confirm_real_full_auto"})
+    if data.get('enabled', ai_advisor.autopilot.get('enabled')):
+        require_real_unlock(request)
     if data.get("enabled") and mt5_client.journal.trading_halted():
         raise HTTPException(status_code=409, detail="Yeni emirler durduruldu; önce işlemlere devam edin.")
     enabled = data.get("enabled", ai_advisor.autopilot.get("enabled"))

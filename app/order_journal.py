@@ -28,6 +28,7 @@ class OrderJournal:
         db.execute('CREATE TABLE IF NOT EXISTS order_metadata (id TEXT PRIMARY KEY, data TEXT NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS order_checks (id TEXT PRIMARY KEY, checked REAL NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS trading_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+        db.execute('CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, created REAL NOT NULL, level TEXT NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, request_id TEXT)')
         try:
             with db:
                 yield db
@@ -62,7 +63,24 @@ class OrderJournal:
         # If saving fails, the committed pending record still prevents a second send.
         with self._connect() as db:
             db.execute('UPDATE orders SET result=? WHERE id=?', (json.dumps(result, allow_nan=False), request_id))
+            level = 'warning' if result.get('uncertain') or result.get('pending') or result.get('partial') else ('info' if result.get('success') else 'error')
+            state = 'uncertain' if result.get('uncertain') else 'pending' if result.get('pending') else 'partial' if result.get('partial') else 'filled' if result.get('success') else 'rejected'
+            db.execute('INSERT INTO events (created,level,kind,message,request_id) VALUES (?,?,?,?,?)',
+                       (time.time(), level, 'order', state, request_id))
         return result
+
+    def event(self, level, kind, message, request_id=None):
+        if level not in ('info', 'warning', 'error'):
+            raise ValueError('Invalid event level')
+        with self._connect() as db:
+            db.execute('INSERT INTO events (created,level,kind,message,request_id) VALUES (?,?,?,?,?)',
+                       (time.time(), level, str(kind)[:40], str(message)[:300], request_id))
+
+    def events(self, after=0, limit=50):
+        with self._connect() as db:
+            rows = db.execute('SELECT id,created,level,kind,message,request_id FROM events WHERE id>? ORDER BY id DESC LIMIT ?',
+                              (after, min(max(limit, 1), 100))).fetchall()
+        return [dict(id=r[0], created=r[1], level=r[2], kind=r[3], message=r[4], request_id=r[5]) for r in reversed(rows)]
 
     def set_trading_halted(self, halted):
         with self._connect() as db:
@@ -92,6 +110,9 @@ class OrderJournal:
                 return
             merged = {**old, **result, 'request_id': request_id, 'reconciled': True, 'reconciled_at': time.time()}
             db.execute('UPDATE orders SET result=? WHERE id=?', (json.dumps(merged, allow_nan=False), request_id))
+            db.execute('INSERT INTO events (created,level,kind,message,request_id) VALUES (?,?,?,?,?)',
+                       (time.time(), 'warning' if merged.get('uncertain') or merged.get('pending') else 'info',
+                        'reconciliation', 'resolved' if not merged.get('uncertain') and not merged.get('pending') else 'still uncertain', request_id))
 
     def status(self, request_id):
         with self._connect() as db:
