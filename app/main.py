@@ -299,7 +299,7 @@ def broker_diagnostics(symbol: str = Query(default='EURUSD', pattern=r'^[A-Za-z0
             'gtc_supported': bool(spec['expiration_mode'] & 1),
             'fok_supported': bool(spec['filling_mode'] & 1),
             'ioc_supported': bool(spec['filling_mode'] & 2),
-            'quote_age_seconds': max(0, int(time.time()-spec['tick_time'])),
+            'quote_age_seconds': max(0, int(time.time()-(spec['tick_time']-mt5_client.tick_clock_offset))),
             'symbol': spec, 'dry_run': checks}
 
 def require_real_unlock(request: Request):

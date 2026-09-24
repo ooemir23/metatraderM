@@ -60,7 +60,7 @@ def risk_status(mt5, expected_login, expected_server, daily_loss_limit):
 
 
 def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entry_price,
-                  expected_login, expected_server):
+                  expected_login, expected_server, tick_offset=0):
     """Broker-calculated figures only; unknown values remain unknown."""
     try:
         account, current, pending, realized, floating = risk(mt5)
@@ -68,7 +68,7 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
             raise ValueError('Aktif hesap değişti; risk önizlemesi geçersiz.')
         if order_type not in ('BUY', 'SELL') or not math.isfinite(volume) or volume <= 0 or sl_points < 0:
             raise ValueError('Geçersiz emir parametresi.')
-        info, tick = _market(mt5, symbol)
+        info, tick = _market(mt5, symbol, tick_offset)
         if not _volume_valid(info, volume):
             raise ValueError('Lot miktarı broker sınırlarına uymuyor.')
         if pending_type:
@@ -118,7 +118,7 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
                 'free_margin': float(account.margin_free), 'spread_points': round((tick.ask-tick.bid)/info.point, 1),
                 'existing_stop_risk': round(existing_risk, 2), 'positions_without_stop': unprotected,
                 'daily_loss': round(loss, 2), 'pending_orders': len(pending),
-                'commission_included': False, 'quote_time': int(tick.time)}
+                'commission_included': False, 'quote_time': int(tick.time)-tick_offset}
     except Exception as exc:
         return {'success': False, 'error': str(exc)}
 
@@ -142,13 +142,13 @@ def symbol_spec(mt5, symbol):
             'account_type':{0:'DEMO',1:'CONTEST',2:'REAL'}.get(int(account.trade_mode),'UNKNOWN')}
 
 
-def broker_compatibility(mt5, symbol, expected_login, expected_server):
+def broker_compatibility(mt5, symbol, expected_login, expected_server, tick_offset=0):
     """OrderCheck matrix; this function never calls order_send."""
     account = mt5.account_info()
     if account is None or int(account.login) != expected_login or str(account.server) != expected_server:
         raise RuntimeError('Aktif broker hesabı doğrulanamadı.')
     spec = symbol_spec(mt5, symbol)
-    info, tick = _market(mt5, symbol)
+    info, tick = _market(mt5, symbol, tick_offset)
     if not callable(getattr(mt5, 'order_check', None)):
         return {'available':False, 'checks':[], 'symbol':symbol}
     volume = float(info.volume_min)
@@ -178,7 +178,7 @@ def broker_compatibility(mt5, symbol, expected_login, expected_server):
 
 def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, magic,
               daily_loss_limit, expected_login, expected_server, max_tick_age=10, pending_type=None, entry_price=None,
-              max_order_lots=.10, max_total_lots=.50, max_open_orders=10):
+              max_order_lots=.10, max_total_lots=.50, max_open_orders=10, tick_offset=0):
     try:
         account, current, pending, realized, floating = risk(mt5)
         if expected_login and (int(account.login) != expected_login or str(account.server) != expected_server):
@@ -212,7 +212,8 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
         tick = mt5.symbol_info_tick(symbol)
         if info is None or tick is None:
             return {'success': False, 'error': 'Güncel sembol/fiyat bilgisi alınamadı.'}
-        if time.time() - float(tick.time) > max_tick_age or tick.bid <= 0 or tick.ask < tick.bid:
+        age = time.time() - (float(tick.time) - tick_offset)
+        if not math.isfinite(age) or not 0 <= age <= max_tick_age or tick.bid <= 0 or tick.ask < tick.bid:
             return {'success': False, 'error': 'Fiyat eski veya geçersiz; yeni emir engellendi.'}
         step = float(info.volume_step)
         if step <= 0 or volume < info.volume_min or volume > info.volume_max or not math.isclose(volume / step, round(volume / step), abs_tol=1e-7):
@@ -285,11 +286,12 @@ def _account(mt5, expected_login=0, expected_server=''):
     return account
 
 
-def _market(mt5, symbol):
+def _market(mt5, symbol, tick_offset=0):
     info, tick = mt5.symbol_info(symbol), mt5.symbol_info_tick(symbol)
     if info is None or tick is None:
         raise ValueError('Sembol veya fiyat bilgisi alınamadı.')
-    if not all(math.isfinite(float(v)) for v in (tick.bid, tick.ask, tick.time)) or not 0 <= time.time() - tick.time <= 10 or tick.bid <= 0 or tick.ask < tick.bid:
+    age = time.time() - (float(tick.time) - tick_offset)
+    if not all(math.isfinite(float(v)) for v in (tick.bid, tick.ask, tick.time, age)) or not 0 <= age <= 10 or tick.bid <= 0 or tick.ask < tick.bid:
         raise ValueError('Fiyat eski veya geçersiz; işlem gönderilmedi.')
     return info, tick
 
@@ -329,7 +331,7 @@ def pending_orders(mt5):
                  magic=int(o.magic), time=int(o.time_setup), expiration=int(o.time_expiration)) for o in orders]
 
 
-def manage_position(mt5, ticket, operation, values, expected_login, expected_server):
+def manage_position(mt5, ticket, operation, values, expected_login, expected_server, tick_offset=0):
     try:
         _account(mt5, expected_login, expected_server)
         rows = mt5.positions_get(ticket=ticket)
@@ -338,7 +340,7 @@ def manage_position(mt5, ticket, operation, values, expected_login, expected_ser
         if len(rows) != 1 or int(rows[0].ticket) != ticket:
             raise ValueError('Pozisyon artık açık değil; listeyi yenileyin.')
         p = rows[0]
-        info, tick = _market(mt5, str(p.symbol))
+        info, tick = _market(mt5, str(p.symbol), tick_offset)
         buy = int(p.type) == 0
         exit_price = float(tick.bid if buy else tick.ask)
         if operation == 'stops':
@@ -397,7 +399,7 @@ def cancel_pending(mt5, ticket, expected_login, expected_server):
     return {**_send_once(mt5, dict(action=8, order=ticket)), 'order_ticket': ticket}
 
 
-def live_snapshot(mt5, symbols):
+def live_snapshot(mt5, symbols, tick_offset=0):
     account = _account(mt5)
     fields = ('login','trade_mode','balance','equity','profit','margin','margin_free','margin_level','currency','server','leverage')
     account_data = {k:getattr(account, k) for k in fields}
@@ -407,7 +409,7 @@ def live_snapshot(mt5, symbols):
     for symbol in symbols:
         tick, info = mt5.symbol_info_tick(symbol), mt5.symbol_info(symbol)
         if tick is not None and info is not None:
-            ticks[symbol] = dict(symbol=symbol, bid=float(tick.bid), ask=float(tick.ask), time=int(tick.time),
+            ticks[symbol] = dict(symbol=symbol, bid=float(tick.bid), ask=float(tick.ask), time=int(tick.time)-tick_offset,
                                  spread=round((tick.ask-tick.bid)/info.point) if info.point else 0)
     return dict(account=account_data, positions=positions(mt5), orders=pending_orders(mt5),
                 prices=ticks, sampled_at=time.time())

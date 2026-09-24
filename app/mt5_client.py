@@ -199,6 +199,9 @@ class MT5Client:
         self.max_order_lots = float(os.getenv("MAX_ORDER_LOTS", "0.10"))
         self.max_total_lots = float(os.getenv("MAX_TOTAL_OPEN_LOTS", "0.50"))
         self.max_open_orders = int(os.getenv("MAX_OPEN_ORDERS", "10"))
+        self.tick_clock_offset = int(os.getenv('MT5_TICK_CLOCK_OFFSET_SECONDS', '0'))
+        if abs(self.tick_clock_offset) > 14*3600 or self.tick_clock_offset % 3600:
+            raise ValueError('MT5_TICK_CLOCK_OFFSET_SECONDS must be a whole-hour offset within 14 hours')
         self.automation_stopped = threading.Event()
         self._bridge_ready = False
         self._account_cache = None
@@ -494,7 +497,7 @@ class MT5Client:
             try:
                 login, server = self._selected_account()
                 return self._bridge('trade_preview', symbol.upper(), order_type, volume, sl_points,
-                                    pending_type, entry_price, login, server)
+                                    pending_type, entry_price, login, server, self.tick_clock_offset)
             except (MT5DataError, Exception) as exc:
                 return {'success': False, 'error': str(exc)}
 
@@ -514,7 +517,7 @@ class MT5Client:
                 raise MT5DataError('MT5 bağlı değil.')
             login, server = self._selected_account()
             try:
-                return self._bridge('broker_compatibility', symbol.upper(), login, server)
+                return self._bridge('broker_compatibility', symbol.upper(), login, server, self.tick_clock_offset)
             except Exception as exc:
                 raise MT5DataError('Broker emir kontrolleri alınamadı.') from exc
 
@@ -567,7 +570,7 @@ class MT5Client:
                     "bid": round(tick.bid, digits),
                     "ask": round(tick.ask, digits),
                     "spread": spread,
-                    "time": tick.time
+                    "time": int(tick.time)-self.tick_clock_offset
                 }
                 self._price_cache[symbol] = res
                 self._price_cache_time[symbol] = time.time()
@@ -619,7 +622,7 @@ class MT5Client:
                 res = self.journal.run(request_id, payload, lambda: self._bridge(
                     "open_deal", payload["symbol"], payload["order_type"], volume, sl_points, tp_points,
                     tag, magic, self.daily_loss_limit, account_scope[0], account_scope[1], 10, pending_type, entry_price,
-                    self.max_order_lots, self.max_total_lots, self.max_open_orders),
+                    self.max_order_lots, self.max_total_lots, self.max_open_orders, self.tick_clock_offset),
                     metadata=metadata, queue_ms=queue_ms)
                 return {**res, "queue_ms": queue_ms}
             except MT5DataError as exc:
@@ -916,7 +919,7 @@ class MT5Client:
             if not self.ensure_connected():
                 raise MT5DataError("MT5 bağlı değil.")
             try:
-                snapshot = self._bridge("live_snapshot", symbols)
+                snapshot = self._bridge("live_snapshot", symbols, self.tick_clock_offset)
                 account = snapshot["account"]
                 actual_mode = int(account["trade_mode"])
                 account["account_type"] = {0: "DEMO", 1: "CONTEST", 2: "REAL"}.get(actual_mode, "UNKNOWN")
@@ -937,7 +940,8 @@ class MT5Client:
                 return {"success": False, "error": str(exc)}
             try:
                 return self.journal.run(request_id, dict(operation=operation, ticket=ticket, values=values),
-                    lambda: self._bridge("manage_position", ticket, operation, values, self.login_id, self.server))
+                    lambda: self._bridge("manage_position", ticket, operation, values, self.login_id, self.server,
+                                         self.tick_clock_offset))
             finally:
                 self.invalidate_trading_cache()
 

@@ -43,6 +43,20 @@ def test_broker_trade_preview_uses_profit_and_margin_api(client):
     assert not trade_preview(client.mt5, 'EURUSD', 'BUY', .01, 200, None, None, 2, 'test')['success']
 
 
+def test_explicit_broker_clock_offset_keeps_future_or_stale_quotes_out(client):
+    client.mt5.account_info.return_value = NS(login=1, server='test', trade_mode=0,
+        currency='USD', equity=1000, margin_free=800, margin_mode=2)
+    client.mt5.order_calc_profit.return_value = -20
+    client.mt5.order_calc_margin.return_value = 50
+    client.mt5.symbol_info_tick.return_value.time = time.time() + 10800
+    assert not trade_preview(client.mt5, 'EURUSD', 'BUY', .01, 200, None, None, 1, 'test')['success']
+    client.tick_clock_offset = 10800
+    assert client.trade_preview('EURUSD','BUY',.01,200)['success']
+    assert client.open_order('EURUSD','BUY',.01)['success']
+    client.mt5.symbol_info_tick.return_value.time -= 60
+    assert not client.open_order('EURUSD','BUY',.01)['success']
+
+
 def test_daily_risk_status_uses_verified_account_and_broker_values(client):
     client.mt5.account_info.return_value.currency = 'EUR'
     client.mt5.history_deals_get.return_value = [NS(type=0, profit=-400, commission=-10, swap=0, fee=0)]
