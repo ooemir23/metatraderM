@@ -38,7 +38,8 @@ async function refreshTradePreview() {
     if (result.positions_without_stop) label.textContent += en
       ? ` · ${result.positions_without_stop} open positions without a stop`
       : ` · ${result.positions_without_stop} açık pozisyonda stop yok`;
-    label.textContent += en ? ' · Commission excluded' : ' · Komisyon hariç';
+    label.textContent += en ? ' · Estimate only: commissions, swaps and slippage excluded. Actual loss can exceed this figure.'
+      : ' · Tahmin: komisyon, swap ve kayma hariç. Gerçek zarar bu tutarı aşabilir.';
   } catch (error) {
     label.textContent = error.message || 'Risk verisi doğrulanamadı.';
   }

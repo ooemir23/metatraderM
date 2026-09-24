@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from app.mt5_client import MT5Client, TIMEFRAME_NAMES, MT5DataError
 from app.mt5_bridge import AI_MAGIC
+from app.ai_performance import summarize as summarize_ai_performance
 from app.security import protect_dashboard
 from app.live_feed import LiveFeed
 from app.strategy_bot import StrategyBot
@@ -466,6 +467,10 @@ def resume_new_orders(_: None = Depends(require_real_unlock)):
 def get_account():
     return mt5_client.get_account_info()
 
+@app.get('/api/auth/me')
+def current_operator(request: Request):
+    return {'username': request.state.dashboard_user, 'role': request.state.dashboard_role}
+
 @app.post("/api/account/login")
 def account_login(req: LoginRequest, request: Request):
     if req.account_type == 'REAL':
@@ -702,18 +707,11 @@ def get_ai_performance():
         mt5_client._selected_account()
         account_type = mt5_client.account_type
         deals = mt5_client.get_history(days=90)
-    ai_positions = {d['position_id'] for d in deals if d.get('magic') == AI_MAGIC and d.get('position_id')}
-    ai_deals = [d for d in deals if d.get('position_id') in ai_positions]
-    closed = {d['position_id'] for d in ai_deals if d.get('entry') in (1, 2, 3)}
-    by_position = {}
-    for deal in ai_deals:
-        if deal['position_id'] in closed:
-            by_position[deal['position_id']] = by_position.get(deal['position_id'], 0) + sum(
-                float(deal.get(key, 0) or 0) for key in ('profit', 'commission', 'swap', 'fee'))
-    values = list(by_position.values())
-    return {'account_type': account_type, 'days': 90, 'closed_positions': len(values),
-            'wins': sum(value > 0 for value in values), 'losses': sum(value < 0 for value in values),
-            'net': round(sum(values), 2), 'currency': mt5_client.get_account_info().get('currency', '')}
+        open_ids = [p['ticket'] for p in mt5_client.get_positions(fresh=True)]
+    return {'account_type': account_type, 'days': 90,
+            **summarize_ai_performance(deals, ai_advisor.execution_records, open_ids),
+            'currency': mt5_client.get_account_info().get('currency', ''),
+            'basis': 'Brokerın 90 günlük geçmişinde AI etiketi bulunan ve tamamen kapanmış pozisyonlar. Model güveni başarı olasılığı değildir; geçmiş maliyetleri veya eşleşmeyen emirler eksik olabilir.'}
 
 @app.post("/api/ai/learn")
 def trigger_ai_learning(req: Optional[AILearnRequest] = None):

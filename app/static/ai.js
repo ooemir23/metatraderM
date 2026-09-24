@@ -25,9 +25,11 @@ async function fetchAIPerformance() {
     if (!response.ok) return;
     const data = await response.json();
     const english = window.MT5I18n?.language?.() === 'en';
+    const buckets = Object.entries(data.confidence_buckets || {}).map(([range, row]) =>
+      `${range}%: ${row.count} ${english ? 'trades' : 'işlem'} / ${row.win_rate_pct ?? '-'}%`).join(' · ');
     el.innerText = english
-      ? `Last ${data.days} days · ${data.account_type} · ${data.closed_positions} closed AI positions · ${data.wins} wins / ${data.losses} losses · Net ${data.net} ${data.currency}`
-      : `Son ${data.days} gün · ${data.account_type} · ${data.closed_positions} kapanmış AI pozisyonu · ${data.wins} kâr / ${data.losses} zarar · Net ${data.net} ${data.currency}`;
+      ? `Last ${data.days} days · ${data.account_type} · ${data.closed_positions} closed AI positions · ${data.wins} wins / ${data.losses} losses · Net ${data.net} ${data.currency}\nCosts ${data.costs} · Max drawdown ${data.max_drawdown} · Profit factor ${data.profit_factor ?? '-'} · Mean adverse slippage ${data.mean_adverse_slippage_pct ?? '-'}%\nConfidence (observed outcomes only): ${buckets}\n${data.early_sample ? 'Early sample: fewer than 30 closed positions. ' : ''}Model confidence is not a validated win probability. Costs and fills may be incomplete.`
+      : `Son ${data.days} gün · ${data.account_type} · ${data.closed_positions} kapanmış AI pozisyonu · ${data.wins} kâr / ${data.losses} zarar · Net ${data.net} ${data.currency}\nMaliyetler ${data.costs} · En yüksek düşüş ${data.max_drawdown} · Kâr faktörü ${data.profit_factor ?? '-'} · Ortalama olumsuz kayma %${data.mean_adverse_slippage_pct ?? '-'}\nGüven aralıkları (yalnız gerçekleşenler): ${buckets}\n${data.early_sample ? 'Erken örneklem: 30’dan az kapanmış pozisyon. ' : ''}Modelin güveni doğrulanmış kazanma olasılığı değildir. Maliyet ve gerçekleşmeler eksik olabilir.`;
   } catch (error) { console.debug('AI performance unavailable', error); }
 }
 

@@ -12,9 +12,9 @@ Alan referansları: [MetaQuotes emir özellikleri](https://www.mql5.com/en/docs/
 
 ## Yedekleme
 
-Uygulama açılışında ve her 24 saatte bir `/config/backups` altında yedek oluşturur; son 14 yedek saklanır. `BACKUP_DIR` ile başka bir bağlı diske yönlendirilebilir. Kapsam: `orders.sqlite3`, `credentials.json`, `ai_memory.json`. SQLite çevrimiçi backup API ile tutarlı kopyalanır; JSON ve SHA-256 özeti, SQLite bütünlüğü doğrulanır. Parolalı dosyalar 0600, yedek klasörü 0700 izinleriyle saklanır. Başarı/hata uygulama günlüğüne yazılır.
+Uygulama açılışında ve her 24 saatte bir `/config/backups` altında yedek oluşturur; son 14 yedek saklanır. `BACKUP_DIR` ile başka bir bağlı diske yönlendirilebilir. Kapsam: `orders.sqlite3`, `credentials.json`, `ai_memory.json` ve iki TOTP anahtarı. SQLite çevrimiçi backup API ile tutarlı kopyalanır; JSON ve SHA-256 özeti, SQLite bütünlüğü doğrulanır. Parolalı dosyalar 0600, yedek klasörü 0700 izinleriyle saklanır. Başarı/hata uygulama günlüğüne yazılır.
 
-Bu yedekler MT5/Wine kurulumunun tamamını veya Dokploy ortam sırlarını içermez. Varsayılan konum aynı disktedir; sunucu/disk kaybına karşı ayrıca güvenli harici depoya kopyalanmalıdır. Harici hedef verilmediği için dış bir servise veri gönderilmez.
+Sunucudaki yalnızca yedek dışa aktarma komutuna izin veren SSH anahtarı, yerel bilgisayara günlük GPG şifreli kopya indirir. `scripts/offsite_backup.py` her kopyayı açıp SHA-256 ve SQLite bütünlüğünü doğrular, boş dizine geri yükleyip dosyaları karşılaştırır; son 30 arşivi saklar. Codex uygulamasında günlük 03:30 otomasyonu kuruludur. Yerel bilgisayar kapalıysa çalışma gecikir; son başarılı yedeğin tarihi düzenli kontrol edilmelidir. Arşivler `/home/ooemir/.config/metatraderm/offsite/archives` altındadır. SSH özel anahtarı ve GPG özel anahtarı aynı bilgisayardaki korumalı dizindedir; ikinci bir güvenli yerde ayrıca saklanmalıdır. Bu yedekler MT5/Wine kurulumunun tamamını veya Dokploy ortam sırlarını içermez.
 
 Manuel işlemler (container içinde):
 
@@ -45,7 +45,7 @@ compose -p mt5-mt5platform-jtahyh -f docker-compose.yml -f compose.dokploy.yml u
 
 ## Sürümler ve ölçüm
 
-Python 3.11 imajı digest ile, 29 Python bağımlılığı `app/requirements.lock` ile sabittir. Güncelleme bilinçli yapılmalı ve Python 3.11 testleri tekrar çalıştırılmalıdır. MT5/Wine imajı bu değişiklikte yükseltilmez.
+Python 3.11 ve MT5/Wine imajları digest ile, 29 Python bağımlılığı `app/requirements.lock` ile sabittir. Güncelleme bilinçli yapılmalı ve Python 3.11 testleri tekrar çalıştırılmalıdır. MT5/Wine imajı bu değişiklikte yükseltilmez.
 
 Paneldeki “Emir gecikmesi ve doğrulama” alanı son 500 kaydın ortanca, %95 ve en yüksek sunucu işleme süresini gösterir. Kuyruk ölçümü yeni açılış talepleri içindir. Tekrar sorgular yeni örnek sayılmaz. Bu değerler brokerın gerçek gerçekleşme süresi veya kullanıcı ağ gecikmesi değildir.
 

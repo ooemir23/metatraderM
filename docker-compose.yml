@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # 1. MetaTrader 5 Engine
   metatrader5:
-    image: ghcr.io/gmag11/metatrader5-docker:latest
+    image: ghcr.io/gmag11/metatrader5-docker@sha256:2fdff449cf70b74c242319828b6859592ab52dfb05690d9a989c75107dabf4c1
     container_name: mt5-server
     restart: unless-stopped
     ports:
@@ -35,6 +35,7 @@ services:
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:?Set DASHBOARD_PASSWORD in .env}
       - DASHBOARD_USER_2=${DASHBOARD_USER_2:-}
       - DASHBOARD_PASSWORD_2=${DASHBOARD_PASSWORD_2:-}
+      - DASHBOARD_ROLE_2=${DASHBOARD_ROLE_2:-TRADER}
       - ENABLE_DEBUG_API=${ENABLE_DEBUG_API:-0}
       - DAILY_LOSS_LIMIT=${DAILY_LOSS_LIMIT:-500}
       - MAX_ORDER_LOTS=${MAX_ORDER_LOTS:-0.10}

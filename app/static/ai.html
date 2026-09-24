@@ -52,6 +52,7 @@
           <option value="tr">Türkçe</option>
           <option value="en">English</option>
         </select>
+        <span id="operator-role" class="text-[10px] px-2 py-1 rounded-lg bg-gray-800 text-gray-300 border border-gray-700"></span>
         <span id="ai-account-type" class="px-2 py-1 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-300 font-bold">HESAP BEKLENİYOR</span>
         <div class="bg-[#181d2a] px-3 py-1.5 rounded-xl border border-gray-800/80 hidden md:block">
           <span class="text-gray-400 text-[10px] block font-sans">Hesap / Bakiye</span>
@@ -134,7 +135,7 @@
         <div id="ai-last-learned-date" class="text-xs text-gray-500 mt-1 font-mono">Son Güncelleme: -</div>
 <div id="ai-usage" class="text-xs text-gray-400 mt-1">AI kullanım bilgisi yükleniyor...</div>
 <div id="ai-usage-breakdown" class="text-[11px] text-gray-500 mt-1"></div>
-<div id="ai-performance" class="text-[11px] text-gray-400 mt-1">AI işlem sonuçları yükleniyor...</div>
+<div id="ai-performance" class="text-[11px] text-gray-400 mt-1 whitespace-pre-line">AI işlem sonuçları yükleniyor...</div>
       </div>
     </div>
 
@@ -387,5 +388,6 @@
   <script src="/static/operations.js"></script>
   <script src="/static/notifications.js"></script>
   <script src="/static/ai.js"></script>
+  <script src="/static/permissions.js"></script>
 </body>
 </html>

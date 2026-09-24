@@ -55,6 +55,7 @@ class DeepSeekAdvisor:
                            "usage_by_operation": {}}
         self.account_states = {}
         self.account_scope = None
+        self.execution_records = []
         self.mt5 = mt5_client
         self.autopilot_generation = 0
         self._auto_stop = threading.Event()
@@ -116,6 +117,7 @@ class DeepSeekAdvisor:
                         self.cost_state.update(data["cost_state"])
                     self.account_states = data.get("account_states", {})
                     self.account_scope = data.get("account_scope")
+                    self.execution_records = data.get('execution_records', [])
                     if "memory" in data:
                         self.memory.update(data["memory"])
                     if "autopilot" in data:
@@ -129,7 +131,7 @@ class DeepSeekAdvisor:
         with self._state_lock:
             data = {"memory": self.memory, "autopilot": self.autopilot,
                     "cost_state": self.cost_state, "account_states": self.account_states,
-                    "account_scope": self.account_scope,
+                    "account_scope": self.account_scope, "execution_records": self.execution_records,
                     "saved_at": time.strftime("%Y-%m-%d %H:%M:%S")}
             for path in MEMORY_PATHS:
                 temp_path = None
@@ -161,16 +163,19 @@ class DeepSeekAdvisor:
             if self.account_scope:
                 self.account_states[self.account_scope] = {
                     'memory': self.memory, 'advice_cache': self.cost_state['advice_cache'],
-                    'learn_digest': self.cost_state['learn_digest']}
+                    'learn_digest': self.cost_state['learn_digest'],
+                    'execution_records': self.execution_records}
             elif self.memory.get('last_analyzed') or self.cost_state['advice_cache']:
                 # Retain old data for recovery without attributing it to an unverified account.
                 self.account_states.setdefault('legacy_unscoped', {
                     'memory': self.memory, 'advice_cache': self.cost_state['advice_cache'],
-                    'learn_digest': self.cost_state['learn_digest']})
+                    'learn_digest': self.cost_state['learn_digest'],
+                    'execution_records': self.execution_records})
             state = self.account_states.get(scope, {})
             self.memory = state.get('memory', json.loads(json.dumps(self._empty_memory)))
             self.cost_state['advice_cache'] = state.get('advice_cache', {})
             self.cost_state['learn_digest'] = state.get('learn_digest')
+            self.execution_records = state.get('execution_records', [])
             self.account_scope = scope
             self.autopilot['enabled'] = False
             self.autopilot_generation += 1
@@ -401,6 +406,14 @@ risk_reward_ratio, action_title. Keep prices, points, and lots distinct; prefer 
             rec = self._request_json(payload, 25, "advice:" + source + ":" + symbol + ":" + timeframe_name)
             if rec.get("action") not in ("BUY", "SELL", "HOLD"):
                 raise ValueError("AI tavsiye yönü geçersiz.")
+            confidence = float(rec.get('confidence'))
+            if not math.isfinite(confidence) or not 0 <= confidence <= 100:
+                raise ValueError('AI güven değeri geçersiz.')
+            rec['confidence'] = confidence
+            if rec['action'] in ('BUY', 'SELL'):
+                if (not isinstance(rec.get('sl_points'), int) or rec['sl_points'] <= 0 or
+                        not isinstance(rec.get('tp_points'), int) or rec['tp_points'] <= 0):
+                    raise ValueError('AI önerisi geçerli SL/TP içermiyor.')
             rec["id"] = str(uuid.uuid4())
             rec["generated_at"] = time.strftime("%H:%M:%S")
             rec["symbol"] = symbol
@@ -451,12 +464,31 @@ risk_reward_ratio, action_title. Keep prices, points, and lots distinct; prefer 
                 raise ValueError('AI emri için Stop Loss ve Kâr Al zorunlu.')
         except (ValueError, TypeError, KeyError, OverflowError) as exc:
             return {"success": False, "error": str(exc)}
+        expected_price = None
+        try:
+            quote = self.mt5.get_symbol_price(symbol)
+            if isinstance(quote, dict):
+                expected_price = float(quote['ask' if action == 'BUY' else 'bid'])
+                if not math.isfinite(expected_price) or expected_price <= 0:
+                    expected_price = None
+        except (AttributeError, KeyError, ValueError, TypeError):
+            pass
         res = self.mt5.open_order(symbol, action, volume, sl_points=sl, tp_points=tp,
                                   comment="AI Trade", magic=AI_MAGIC,
                                   request_id="ai-" + target["id"],
                                   stop_event=auto_stop if automatic else None)
         if res.get("success") or res.get("uncertain"):
             self.autopilot["last_auto_trade_time"] = time.time()
+            request_id = 'ai-' + target['id']
+            if not any(row.get('request_id') == request_id for row in self.execution_records):
+                self.execution_records.append({
+                    'request_id': request_id, 'symbol': symbol, 'action': action,
+                    'confidence': target['confidence'] if 'confidence' in target else None,
+                    'expected_price': expected_price, 'fill_price': res.get('price'),
+                    'order_ticket': res.get('ticket'), 'volume': volume,
+                    'automatic': automatic, 'created': time.time(),
+                    'uncertain': bool(res.get('uncertain'))})
+                self.execution_records = self.execution_records[-500:]
             self.save_memory()
         return res
 
