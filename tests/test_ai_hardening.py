@@ -91,7 +91,7 @@ def test_ai_outcomes_use_only_closed_ai_positions(monkeypatch):
     monkeypatch.setattr(main.mt5_client, 'get_account_info', lambda: {'currency': 'USD'})
     monkeypatch.setattr(main.mt5_client, 'get_positions', lambda fresh=False: [])
     monkeypatch.setattr(main.mt5_client, 'account_type', 'DEMO')
-    monkeypatch.setattr(main.mt5_client, 'get_history', lambda days: [
+    monkeypatch.setattr(main.mt5_client, 'get_history', lambda days, include_ai_entries=False: [
         {'magic': AI_MAGIC, 'position_id': 7, 'entry': 0, 'profit': 0, 'commission': -1},
         {'magic': 0, 'position_id': 7, 'entry': 1, 'profit': 6, 'commission': -1},
         {'magic': AI_MAGIC, 'position_id': 8, 'entry': 0, 'profit': 0},

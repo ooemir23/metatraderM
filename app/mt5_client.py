@@ -122,11 +122,11 @@ import MetaTrader5 as mt5
 import time
 from datetime import datetime, timedelta, timezone
 
-def hma_native_get_history(days=30):
+def hma_native_get_history(days=30, clock_offset=0, include_ai_entries=False):
     try:
         days_int = int(days) if days else 30
-        from_date = datetime.now(timezone.utc) - timedelta(days=days_int)
-        to_date = datetime.now(timezone.utc)
+        to_date = datetime.now(timezone.utc) + timedelta(seconds=int(clock_offset))
+        from_date = to_date - timedelta(days=days_int)
         
         deals = mt5.history_deals_get(from_date, to_date)
         if deals is None:
@@ -141,7 +141,8 @@ def hma_native_get_history(days=30):
             
             # Filter: we want exit deals (entry in 1: OUT, 2: INOUT, 3: OUT_BY) or deals with realized profit/loss
             # Must have a trading symbol (excludes deposit/withdrawal balance deals)
-            if deal_symbol != "" and (deal_entry in (1, 2, 3) or deal_profit != 0):
+            if deal_symbol != "" and (deal_entry in (1, 2, 3) or deal_profit != 0 or
+                                      (include_ai_entries and int(getattr(d, "magic", 0)) == 123462)):
                 t = int(getattr(d, "time", 0))
                 try:
                     time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t)) if t else "-"
@@ -821,7 +822,7 @@ class MT5Client:
                 logger.error(f"Error fetching rates for {symbol}: {e}")
                 return None
 
-    def get_history(self, days: int = 30) -> List[Dict[str, Any]]:
+    def get_history(self, days: int = 30, include_ai_entries=False) -> List[Dict[str, Any]]:
         with self._lock:
             if not self.ensure_connected():
                 raise MT5DataError("MT5 bağlı değil; geçmiş doğrulanamadı.")
@@ -829,12 +830,13 @@ class MT5Client:
             try:
                 if self.conn:
                     self.conn.execute("import json\n" + NATIVE_HISTORY_SCRIPT)
-                    return json.loads(str(self.conn.eval(f"json.dumps(hma_native_get_history({int(days)}))")))
+                    return json.loads(str(self.conn.eval(
+                        f"json.dumps(hma_native_get_history({int(days)}, {int(self.tick_clock_offset)}, {bool(include_ai_entries)}))")))
                 elif self.mt5:
                     from datetime import datetime, timedelta, timezone
                     days_int = int(days) if days else 30
-                    from_date = datetime.now(timezone.utc) - timedelta(days=days_int)
-                    to_date = datetime.now(timezone.utc)
+                    to_date = datetime.now(timezone.utc) + timedelta(seconds=self.tick_clock_offset)
+                    from_date = to_date - timedelta(days=days_int)
                     deals = self.mt5.history_deals_get(from_date, to_date)
                     if deals is None:
                         raise RuntimeError("İşlem geçmişi okunamadı")
@@ -844,7 +846,8 @@ class MT5Client:
                         deal_entry = int(getattr(d, "entry", -1))
                         deal_profit = float(getattr(d, "profit", 0.0))
                         deal_type = int(getattr(d, "type", -1))
-                        if deal_symbol != "" and (deal_entry in (1, 2, 3) or deal_profit != 0):
+                        if deal_symbol != "" and (deal_entry in (1, 2, 3) or deal_profit != 0 or
+                                                  (include_ai_entries and int(getattr(d, "magic", 0)) == mt5_bridge.AI_MAGIC)):
                             t = int(getattr(d, "time", 0))
                             try:
                                 time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t)) if t else "-"

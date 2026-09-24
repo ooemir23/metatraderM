@@ -706,7 +706,7 @@ def get_ai_performance():
     with mt5_client._lock:
         mt5_client._selected_account()
         account_type = mt5_client.account_type
-        deals = mt5_client.get_history(days=90)
+        deals = mt5_client.get_history(days=90, include_ai_entries=True)
         open_ids = [p['ticket'] for p in mt5_client.get_positions(fresh=True)]
     return {'account_type': account_type, 'days': 90,
             **summarize_ai_performance(deals, ai_advisor.execution_records, open_ids),
