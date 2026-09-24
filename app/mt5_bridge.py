@@ -2,7 +2,7 @@
 import json
 import math
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 MANUAL_MAGIC = 123460
 HMA_MAGIC = 123461
@@ -29,12 +29,16 @@ def rates(mt5, symbol, timeframe, count):
                  close=float(r[4]), tick_volume=int(r[5])) for r in rows]
 
 
-def risk(mt5):
+def risk(mt5, tick_offset=0):
     account = mt5.account_info()
     if account is None:
         raise RuntimeError('Hesap bilgisi okunamadı; yeni emir engellendi.')
     now = datetime.now(timezone.utc)
-    deals = mt5.history_deals_get(now.replace(hour=0, minute=0, second=0, microsecond=0), now)
+    # This terminal reports deal timestamps in broker time. Shift the UTC day
+    # window by the measured terminal offset, as with get_history().
+    offset = timedelta(seconds=tick_offset)
+    deals = mt5.history_deals_get(now.replace(hour=0, minute=0, second=0, microsecond=0) + offset,
+                                  now + offset)
     current = mt5.positions_get()
     pending = mt5.orders_get()
     if deals is None or current is None or pending is None:
@@ -49,8 +53,8 @@ def risk(mt5):
     return account, current, pending, realized, floating
 
 
-def risk_status(mt5, expected_login, expected_server, daily_loss_limit):
-    account, current, pending, realized, floating = risk(mt5)
+def risk_status(mt5, expected_login, expected_server, daily_loss_limit, tick_offset=0):
+    account, current, pending, realized, floating = risk(mt5, tick_offset)
     if int(account.login) != expected_login or str(account.server) != expected_server:
         raise RuntimeError('Aktif hesap değişti; risk durumu doğrulanamadı.')
     loss = max(0.0, -(realized + min(0.0, floating)))
@@ -63,7 +67,7 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
                   expected_login, expected_server, tick_offset=0):
     """Broker-calculated figures only; unknown values remain unknown."""
     try:
-        account, current, pending, realized, floating = risk(mt5)
+        account, current, pending, realized, floating = risk(mt5, tick_offset)
         if int(account.login) != expected_login or str(account.server) != expected_server:
             raise ValueError('Aktif hesap değişti; risk önizlemesi geçersiz.')
         if order_type not in ('BUY', 'SELL') or not math.isfinite(volume) or volume <= 0 or sl_points < 0:
@@ -181,7 +185,7 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
               max_order_lots=.10, max_total_lots=.50, max_open_orders=10, tick_offset=0,
               ai_max_trade_risk_pct=1.0):
     try:
-        account, current, pending, realized, floating = risk(mt5)
+        account, current, pending, realized, floating = risk(mt5, tick_offset)
         if expected_login and (int(account.login) != expected_login or str(account.server) != expected_server):
             return {'success': False, 'error': 'Aktif MT5 hesabı seçilen hesapla uyuşmuyor.'}
         # Open gains cannot mask realized losses. Amounts are in account currency, day is UTC.

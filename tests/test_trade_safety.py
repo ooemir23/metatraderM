@@ -167,6 +167,20 @@ def test_utc_day_used_without_fallback_history(client):
     client.mt5.history_deals_get.assert_called_once()
 
 
+def test_broker_clock_offset_applies_to_daily_loss_gate(client):
+    from datetime import datetime, timezone
+    client.tick_clock_offset = 10800
+    broker_now = datetime.now(timezone.utc).timestamp() + 10800
+    def broker_deals(start, end):
+        assert abs(end.timestamp() - broker_now) < 5
+        assert start.hour == 3 and start.minute == 0
+        return [deal(-500)]
+    client.mt5.history_deals_get.side_effect = broker_deals
+    result = client.open_order('EURUSD', 'BUY', .01)
+    assert not result['success'] and result['daily_loss'] == 500
+    client.mt5.order_send.assert_not_called()
+
+
 def test_manual_close_remains_available_above_loss_limit(client):
     client.mt5.history_deals_get.return_value = [deal(-5000)]
     client.mt5.positions_get.return_value = [pos(MANUAL_MAGIC)]

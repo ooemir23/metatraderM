@@ -530,7 +530,7 @@ class MT5Client:
                 raise MT5DataError('MT5 bağlı değil.')
             login, server = self._selected_account()
             try:
-                return self._bridge('risk_status', login, server, self.daily_loss_limit)
+                return self._bridge('risk_status', login, server, self.daily_loss_limit, self.tick_clock_offset)
             except Exception as exc:
                 raise MT5DataError('Günlük risk durumu doğrulanamadı.') from exc
 
