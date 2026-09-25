@@ -24,5 +24,9 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  release({ok:false,json:async()=>({request_id:'test-id',detail:'Not enough money',retcode:10019})});await pending;
  assert.equal(node('order-notice-title').textContent,'İşlem durumu');
  ctx.switchSymbol('EURUSD');assert.match(node('order-notice-title').textContent,/Yetersiz teminat/);
+ const halted=ctx.submitOrder('BUY');
+ release({ok:false,json:async()=>({reason_code:'trading_halted',detail:'Safety lock'})});await halted;
+ assert.equal(storage.has('order-intent:EURUSD'),false,'definitive safety rejection clears the pending intent');
+ assert.equal(node('order-reset-btn').hidden,true,'safety rejection does not require MT5 recovery');
  console.log('Order feedback: localization, animation, duplicate prevention and symbol isolation PASS');
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -1116,7 +1116,8 @@ async function submitOrder(type) {
       body: JSON.stringify(intent)
     });
     const data = await res.json();
-    if (data.request_id && !data.uncertain) localStorage.removeItem("order-intent:" + symbol);
+    if ((data.request_id && !data.uncertain) || data.reason_code === "trading_halted")
+      localStorage.removeItem("order-intent:" + symbol);
     if (res.ok && data.success) {
       const title = data.partial ? "Emir kısmen gerçekleşti" : (data.retcode === 10008 ? "Emir kabul edildi" : "Emir gerçekleşti");
       setOrderNotice(symbol, title, `Bilet #${data.ticket} · Açık pozisyonlardan durumu takip edebilirsiniz.`, "success");
