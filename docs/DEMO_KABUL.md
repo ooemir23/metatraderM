@@ -1,6 +1,6 @@
 # Demo kabul kaydı — 24 Eylül 2026
 
-Hesap: Tickmill-Demo, sonu **3161**. Broker hesap türü `DEMO` olarak doğrulandı. Her canlı deneme öncesinde açık pozisyon ve bekleyen emir listesi boştu. İşlemler yalnız EURUSD üzerinde küçük hacimle yapıldı. Test sonlarında iki liste yeniden boş olarak doğrulandı ve `new_orders_halted=true` geri yüklendi.
+Hesap: Tickmill-Demo, sonu **3161**. Broker hesap türü `DEMO` olarak doğrulandı. Her canlı deneme öncesinde açık pozisyon ve bekleyen emir listesi boştu. İşlemler yalnız EURUSD üzerinde küçük hacimle yapıldı. Test sonlarında iki liste yeniden boş olarak doğrulandı ve `new_orders_halted=true` geri yüklendi. 25 Eylül'de Demo kullanımı için yeni emirler panel API'si üzerinden yeniden açıldı; HMA botu ve AI otopilotu kapalı kaldı.
 
 | Senaryo | Broker sonucu |
 | --- | --- |
