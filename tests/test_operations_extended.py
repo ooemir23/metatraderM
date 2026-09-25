@@ -43,6 +43,19 @@ def test_broker_trade_preview_uses_profit_and_margin_api(client):
     assert not trade_preview(client.mt5, 'EURUSD', 'BUY', .01, 200, None, None, 2, 'test')['success']
 
 
+def test_trade_preview_shows_order_guards_before_submission(client, tmp_path):
+    from app.order_journal import OrderJournal
+    client.journal = OrderJournal(tmp_path / 'orders.db')
+    client.mt5.history_deals_get.return_value = [NS(type=0, profit=-600, commission=0, swap=0, fee=0)]
+    assert 'Günlük zarar sınırı' in client.trade_preview('EURUSD', 'BUY', .01, 200)['error']
+    client.mt5.history_deals_get.return_value = []
+    assert 'üst sınırı' in client.trade_preview('EURUSD', 'BUY', .11, 200)['error']
+    assert 'SL broker' in client.trade_preview('EURUSD', 'BUY', .01, 5)['error']
+    client.mt5.orders_get.return_value = [NS(volume_current=.5)]
+    assert 'Toplam' in client.trade_preview('EURUSD', 'BUY', .01, 200)['error']
+    client.mt5.order_send.assert_not_called()
+
+
 def test_explicit_broker_clock_offset_keeps_future_or_stale_quotes_out(client):
     client.mt5.account_info.return_value = NS(login=1, server='test', trade_mode=0,
         currency='USD', equity=1000, margin_free=800, margin_mode=2)

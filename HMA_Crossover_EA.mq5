@@ -39,10 +39,14 @@ input ENUM_APPLIED_PRICE InpSecondMAPrice    = PRICE_CLOSE;     // 2. Indikator 
 //=== ISLEM & RISK YONETIMI ===
 input group "=== Islem ve Risk Yonetimi ==="
 input double             InpLotSize          = 0.01;            // Islem Lot Miktari
-input bool               InpAllowTrading     = true;            // Otomatik Al/Sat Yapilsin mi? (false = Sadece Sinyal)
+input bool               InpAllowTrading     = false;           // Otomatik islem bilincli olarak acilir
 input bool               InpCloseOpposite    = true;            // Ters Sinyalde Mevcut Pozisyonu Kapat
 input ulong              InpMagicNumber      = 882211;          // EA Magic Number (Benzersiz Numara)
 input ulong              InpDeviation        = 10;              // Maksimum Slippage (Sapma)
+input double             InpDailyLossLimit   = 500.0;           // Hesap para biriminde UTC gunluk zarar siniri
+input double             InpMaxOrderLots     = 0.10;            // Tek emir ust limiti
+input double             InpMaxTotalLots     = 0.50;            // Tum pozisyon ve bekleyen emirlerin toplam lotu
+input int                InpMaxOpenOrders    = 10;              // Pozisyon + bekleyen emir sayisi
 
 //=== STOP LOSS & TAKE PROFIT ===
 input group "=== Stop Loss ve Take Profit Ayarlari ==="
@@ -73,6 +77,12 @@ int            m_ma2_handle = INVALID_HANDLE;
 //+------------------------------------------------------------------+
 int OnInit()
 {
+   if(InpDailyLossLimit <= 0 || InpMaxOrderLots <= 0 || InpMaxTotalLots <= 0 ||
+      InpMaxOpenOrders < 1 || InpLotSize <= 0 || InpLotSize > InpMaxOrderLots)
+   {
+      Print("Gecersiz EA risk ayari; baslatma engellendi.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
    // Sembol bilgilerini yukle
    if(!m_symbol.Name(_Symbol))
    {
@@ -216,6 +226,7 @@ void ProcessSignal(ENUM_ORDER_TYPE orderType, double val1, double val2)
       return;
 
    if(!m_symbol.RefreshRates()) return;
+   if(!CanOpenTrade()) return;
 
    // Stop Loss ve Take Profit Seviyelerini Hesapla
    double sl = 0.0;
@@ -258,6 +269,77 @@ void ProcessSignal(ENUM_ORDER_TYPE orderType, double val1, double val2)
          Print("SELL Emri Acilamadi! Hata: ", m_trade.ResultRetcodeDescription());
       }
    }
+}
+
+// Broker hesabinin tamamini esas alir; web paneliyle ayni varsayilan sinirlar.
+// Web panelinin SQLite kilidine erisemedigi icin iki motor birlikte otomatik calistirilmamalidir.
+bool CanOpenTrade()
+{
+   if(AccountInfoInteger(ACCOUNT_MARGIN_MODE) != ACCOUNT_MARGIN_MODE_RETAIL_HEDGING)
+   {
+      Print("EA icin hedging hesabi gerekli.");
+      return false;
+   }
+
+   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   double step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   if(step <= 0 || InpLotSize < minLot || InpLotSize > maxLot ||
+      MathAbs(InpLotSize / step - MathRound(InpLotSize / step)) > 0.0000001)
+   {
+      Print("EA lotu broker kurallarina uymuyor.");
+      return false;
+   }
+
+   int serverOffset = (int)(TimeTradeServer() - TimeGMT());
+   datetime utcNow = TimeGMT();
+   datetime utcStart = utcNow - utcNow % 86400;
+   if(!HistorySelect(utcStart + serverOffset, TimeTradeServer()))
+   {
+      Print("Gunluk islem gecmisi okunamadi; yeni emir engellendi.");
+      return false;
+   }
+   double realized = 0.0;
+   for(int i = 0; i < HistoryDealsTotal(); i++)
+   {
+      ulong ticket = HistoryDealGetTicket(i);
+      if(ticket == 0) return false;
+      int kind = (int)HistoryDealGetInteger(ticket, DEAL_TYPE);
+      if(kind == 2 || kind == 3 || kind == 5 || kind == 6) continue;
+      realized += HistoryDealGetDouble(ticket, DEAL_PROFIT) +
+                  HistoryDealGetDouble(ticket, DEAL_COMMISSION) +
+                  HistoryDealGetDouble(ticket, DEAL_SWAP) +
+                  HistoryDealGetDouble(ticket, DEAL_FEE);
+   }
+
+   double floating = 0.0;
+   double committed = 0.0;
+   int openCount = PositionsTotal() + OrdersTotal();
+   for(int i = 0; i < PositionsTotal(); i++)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket)) return false;
+      floating += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+      committed += PositionGetDouble(POSITION_VOLUME);
+   }
+   for(int i = 0; i < OrdersTotal(); i++)
+   {
+      ulong ticket = OrderGetTicket(i);
+      if(ticket == 0) return false;
+      committed += OrderGetDouble(ORDER_VOLUME_CURRENT);
+   }
+   if(!MathIsValidNumber(realized) || !MathIsValidNumber(floating) || !MathIsValidNumber(committed))
+      return false;
+   double loss = MathMax(0.0, -(realized + MathMin(0.0, floating)));
+   if(loss >= InpDailyLossLimit || InpLotSize > InpMaxOrderLots ||
+      committed + InpLotSize > InpMaxTotalLots || openCount + 1 > InpMaxOpenOrders)
+   {
+      PrintFormat("EA risk siniri: zarar %.2f/%.2f, lot %.2f/%.2f, islem %d/%d",
+                  loss, InpDailyLossLimit, committed + InpLotSize, InpMaxTotalLots,
+                  openCount + 1, InpMaxOpenOrders);
+      return false;
+   }
+   return true;
 }
 
 //+------------------------------------------------------------------+
