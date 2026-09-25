@@ -55,4 +55,4 @@ Paneldeki “Emir gecikmesi ve doğrulama” alanı son 500 kaydın ortanca, %95
 
 Testler; gerçek TCP/RPyC bağlantısının yanıt sırasında kesilmesini (sahte broker), yeniden bağlantıyı, süreç/günlük yeniden açılışını, aynı talebin tekrar gönderilmemesini, yanlış hesap/etiket ve kısmi gerçekleşmeleri, yedek bütünlüğünü ve geri yüklenen günlüğün tekrar gönderimi engellemesini kapsar. Gerçek hesapta emir göndererek kesinti testi yapılmaz.
 
-Doğrulama sonucu: Python 3.11 ve sabit bağımlılıklarla 118 test, dört JavaScript test dosyası geçti. İzole yerel ortamda önceki `2ff85ee` sürümü yeni şemalı günlükle başlatıldı; parola korumalı HTTP erişimi ve eski isteğin tekrar gönderilmeden okunması doğrulandı.
+Doğrulama sonucu: Son yerel çalışmada 153 Python testi ve beş JavaScript test dosyası geçti. İzole yerel ortamda önceki `2ff85ee` sürümü yeni şemalı günlükle başlatıldı; parola korumalı HTTP erişimi ve eski isteğin tekrar gönderilmeden okunması doğrulandı. Üretim Demo kabul sonuçları ayrı kayıttadır.
