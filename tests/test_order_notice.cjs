@@ -8,6 +8,8 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  const ctx=vm.createContext({console,Date,AbortController,crypto:require("node:crypto").webcrypto,localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},document:{addEventListener(){},getElementById:node,querySelectorAll:()=>[]},window:{addEventListener(){}},setInterval(){},setTimeout(){},clearTimeout(){},
  fetch:async()=>{calls++;return new Promise(resolve=>{release=resolve;});}});
  vm.runInContext(fs.readFileSync('app/static/app.js','utf8'),ctx);
+ assert.deepEqual(Array.from(ctx.orderErrorMessage({reason_code:'trading_halted',detail:'Safety lock'})),
+   ['Yeni emirler durduruldu','Safety lock']);
  ctx.initTradingView=()=>{};ctx.fetchPrice=()=>{};ctx.fetchPositions=()=>{};ctx.fetchAccount=()=>{};
  const request=ctx.submitOrder('BUY');
  assert.equal(node('order-buy-btn').disabled,true);

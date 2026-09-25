@@ -608,7 +608,8 @@ class MT5Client:
         with self._lock.order():
             queue_ms = round((time.perf_counter() - started) * 1000, 1)
             if self.journal.trading_halted():
-                return {"success": False, "error": "Tümünü kapat sonrası yeni emirler durduruldu; panelden açıkça devam edin."}
+                return {"success": False, "reason_code": "trading_halted",
+                        "error": "Yeni emirler güvenlik kilidi nedeniyle durduruldu. Hesabı ve günlük zarar limitini kontrol edin; ardından panelden devam edin."}
             if magic != mt5_bridge.MANUAL_MAGIC and (self.automation_stopped.is_set() or (stop_event and stop_event.is_set())):
                 return {"success": False, "error": "Otomatik işlemler durduruldu."}
             if not self.ensure_connected():

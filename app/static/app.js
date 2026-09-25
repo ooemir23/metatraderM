@@ -1060,6 +1060,7 @@ function orderErrorMessage(data) {
   const raw = typeof data.detail === "string" ? data.detail : (data.error || "Emir reddedildi. Girdiğiniz değerleri kontrol edin.");
   const code = Number(data.retcode);
   if (data.uncertain) return ["Emir sonucu belirsiz", "Tekrar göndermeden önce açık pozisyonları kontrol edin."];
+  if (data.reason_code === "trading_halted") return ["Yeni emirler durduruldu", raw];
   if (code === 10018 || /market closed/i.test(raw))
     return ["Son emir: piyasa kapalı", "Bu sembolde işlem seansı kapalı. Piyasa açıldığında yeniden deneyin."];
   if (code === 10027 || /autotrading disabled/i.test(raw))
@@ -1180,6 +1181,8 @@ async function refreshTradingStatus() {
     const state = await response.json();
     const button = document.getElementById('resume-trading-btn');
     if (button) button.classList.toggle('hidden', !state.new_orders_halted);
+    const warning = document.getElementById('trading-halt-message');
+    if (warning) warning.classList.toggle('hidden', !state.new_orders_halted);
   } catch (_) {}
 }
 

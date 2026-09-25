@@ -647,6 +647,7 @@
             <div class="flex items-center justify-between gap-2"><strong class="text-cyan-200">İşlem öncesi risk</strong><button type="button" onclick="refreshTradePreview()" class="text-cyan-300 underline">Hesapla</button></div>
             <p id="trade-preview" role="status" class="mt-1 text-gray-300">Yön ve lot seçildiğinde broker verileriyle hesaplanır.</p>
           </div>
+          <p id="trading-halt-message" class="hidden mb-2 rounded-lg border border-amber-700/50 bg-amber-950/30 px-2 py-1.5 text-[11px] text-amber-200" role="status">Yeni emirler güvenlik kilidi nedeniyle durduruldu. Hesabı ve günlük zarar limitini kontrol edin; ardından Yeni Emirlere Devam Et düğmesini kullanın.</p>
           <!-- BIG BUY & SELL BUTTONS -->
           <div class="grid grid-cols-2 gap-2.5">
             <button id="order-sell-btn" onclick="submitOrder('SELL')" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-gradient-to-b from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-extrabold shadow-lg shadow-red-600/20 active:scale-[0.98] transition">

@@ -64,6 +64,16 @@ def test_missing_selected_account_blocks_trading(client):
     client.mt5.order_send.assert_not_called()
 
 
+def test_safety_lock_blocks_buy_without_claiming_close_all(client, tmp_path):
+    client.journal = OrderJournal(tmp_path / 'halted.db')
+    client.journal.set_trading_halted(True)
+    result = client.open_order('EURUSD', 'BUY', .01)
+    assert result['reason_code'] == 'trading_halted'
+    assert 'güvenlik kilidi' in result['error']
+    assert 'Tümünü kapat' not in result['error']
+    client.mt5.order_send.assert_not_called()
+
+
 def test_account_type_mismatch_blocks_orders(client):
     client.mt5.account_info.return_value.trade_mode = 2
     result = client.open_order('EURUSD', 'BUY', .01)
