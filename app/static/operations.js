@@ -1,53 +1,65 @@
 // Read-only broker risk and operations panels. No order is placed here.
 let previewTimer;
 let previewSide = 'BUY';
-function scheduleTradePreview(side) {
-  if (side) previewSide = side;
-  clearTimeout(previewTimer);
-  previewTimer = setTimeout(refreshTradePreview, 350);
-}
-async function refreshTradePreview() {
-  const label = document.getElementById('trade-preview');
-  if (!label) return;
+let previewGeneration = 0;
+function tradePreviewIdentity() {
   const symbol = window.currentSymbol || currentSymbol;
   const volume = Number(document.getElementById('lot-input')?.value);
   const sl_points = Number(document.getElementById('sl-input')?.value);
+  return {symbol, volume, sl_points, side:previewSide,
+    key:JSON.stringify([symbol, previewSide, volume, sl_points])};
+}
+function scheduleTradePreview(side) {
+  if (side) previewSide = side;
+  clearTimeout(previewTimer);
+  const generation = ++previewGeneration;
+  previewTimer = setTimeout(() => refreshTradePreview(generation), 350);
+}
+async function refreshTradePreview(scheduledGeneration) {
+  const label = document.getElementById('trade-preview');
+  if (!label) return;
+  if (scheduledGeneration === undefined) clearTimeout(previewTimer);
+  const generation = scheduledGeneration === undefined ? ++previewGeneration : scheduledGeneration;
+  if (generation !== previewGeneration) return;
+  const {symbol, volume, sl_points, side, key} = tradePreviewIdentity();
   if (!Number.isFinite(volume) || volume <= 0 || !Number.isInteger(sl_points) || sl_points < 0) {
     label.textContent = 'Geçerli lot ve stop mesafesi girin.';
     return;
   }
-  const identity = `${symbol}:${previewSide}:${volume}:${sl_points}`;
-  label.textContent = 'Risk hesaplanıyor…';
+  // Leave the last result visible while refreshing; replacing it with a short
+  // loading message makes the order card jump whenever the pointer moves.
+  const isCurrent = () => generation === previewGeneration && tradePreviewIdentity().key === key;
   try {
     const response = await fetch('/api/trade/preview', {method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({symbol,order_type:previewSide,volume,sl_points})});
+      body:JSON.stringify({symbol,order_type:side,volume,sl_points})});
     const result = await response.json();
-    if (`${currentSymbol}:${previewSide}:${Number(document.getElementById('lot-input')?.value)}:${Number(document.getElementById('sl-input')?.value)}` !== identity) return;
+    if (!isCurrent()) return;
     if (!response.ok || !result.success) throw new Error(result.detail || result.error || 'Risk verisi alınamadı.');
     const money = n => `${Number(n).toLocaleString(window.MT5I18n?.language() === 'en' ? 'en-US' : 'tr-TR', {maximumFractionDigits:2})} ${result.currency}`;
     const en = window.MT5I18n?.language() === 'en';
-    label.textContent = result.stop_risk == null
+    let message = result.stop_risk == null
       ? (en ? 'No verified stop-loss risk. Set a stop before trading.' : 'Doğrulanmış stop riski yok. İşlemden önce stop belirleyin.')
       : (en ? `Stop risk ${money(result.stop_risk)} (${result.risk_pct_equity}% of equity)` : `Stop riski ${money(result.stop_risk)} (varlığın %${result.risk_pct_equity}'i)`);
-    label.textContent += result.margin_required == null
+    message += result.margin_required == null
       ? (en ? ' · Margin unavailable' : ' · Teminat hesaplanamadı')
       : (en ? ` · Required margin ${money(result.margin_required)}` : ` · Gerekli teminat ${money(result.margin_required)}`);
-    label.textContent += en ? ` · Spread ${result.spread_points} points` : ` · Spread ${result.spread_points} puan`;
-    label.textContent += en ? ` · Existing stop risk ${money(result.existing_stop_risk)} · Daily loss ${money(result.daily_loss)}`
+    message += en ? ` · Spread ${result.spread_points} points` : ` · Spread ${result.spread_points} puan`;
+    message += en ? ` · Existing stop risk ${money(result.existing_stop_risk)} · Daily loss ${money(result.daily_loss)}`
       : ` · Açık stop riski ${money(result.existing_stop_risk)} · Günlük zarar ${money(result.daily_loss)}`;
-    if (result.positions_without_stop) label.textContent += en
+    if (result.positions_without_stop) message += en
       ? ` · ${result.positions_without_stop} open positions without a stop`
       : ` · ${result.positions_without_stop} açık pozisyonda stop yok`;
-    label.textContent += en ? ' · Estimate only: commissions, swaps and slippage excluded. Actual loss can exceed this figure.'
+    message += en ? ' · Estimate only: commissions, swaps and slippage excluded. Actual loss can exceed this figure.'
       : ' · Tahmin: komisyon, swap ve kayma hariç. Gerçek zarar bu tutarı aşabilir.';
+    label.textContent = message;
   } catch (error) {
-    label.textContent = error.message || 'Risk verisi doğrulanamadı.';
+    if (isCurrent()) label.textContent = error.message || 'Risk verisi doğrulanamadı.';
   }
 }
 document.addEventListener('DOMContentLoaded', () => {
   for (const id of ['lot-input','sl-input']) document.getElementById(id)?.addEventListener('input', () => scheduleTradePreview());
-  document.getElementById('order-buy-btn')?.addEventListener('mouseenter', () => scheduleTradePreview('BUY'));
-  document.getElementById('order-sell-btn')?.addEventListener('mouseenter', () => scheduleTradePreview('SELL'));
+  document.getElementById('order-buy-btn')?.addEventListener('mouseenter', () => { if (previewSide !== 'BUY') scheduleTradePreview('BUY'); });
+  document.getElementById('order-sell-btn')?.addEventListener('mouseenter', () => { if (previewSide !== 'SELL') scheduleTradePreview('SELL'); });
   scheduleTradePreview('BUY');
   initializeSecurityControl();
   refreshOperationEvents();
