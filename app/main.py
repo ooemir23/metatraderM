@@ -265,6 +265,10 @@ class PreviewRequest(BaseModel):
 class UnlockRequest(BaseModel):
     code: str = Field(min_length=6, max_length=6, pattern=r"^[0-9]{6}$")
 
+class DailyLimitRequest(BaseModel):
+    amount: float = Field(gt=0, le=1_000_000, allow_inf_nan=False)
+    acknowledge_risk: bool = False
+
 class BacktestRequest(BaseModel):
     symbol: str = Field(pattern=r"^[A-Za-z0-9_.#-]+$", max_length=32)
     timeframe_minutes: int = 15
@@ -439,6 +443,13 @@ def operation_events(after: int = Query(default=0, ge=0)):
 def account_risk_status():
     return mt5_client.get_risk_status()
 
+@app.post('/api/risk/daily-limit')
+def change_daily_loss_limit(req: DailyLimitRequest, _: None = Depends(require_real_unlock)):
+    try:
+        return mt5_client.set_daily_loss_limit(req.amount, req.acknowledge_risk)
+    except MT5DataError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
 @app.get("/api/operations/status")
 def operation_status(request_id: str = Query(min_length=1, max_length=250)):
     return mt5_client.journal.status(request_id)
@@ -459,6 +470,12 @@ def resume_new_orders(_: None = Depends(require_real_unlock)):
             mt5_client._selected_account()
         except MT5DataError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
+        try:
+            risk = mt5_client.get_risk_status()
+        except MT5DataError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if risk['daily_loss'] >= risk['daily_loss_limit']:
+            raise HTTPException(status_code=409, detail='Günlük zarar limiti aşıldı. Yeni emirlere devam etmeden önce limiti gözden geçirin.')
         mt5_client.journal.set_trading_halted(False)
         mt5_client.journal.event('info', 'trading', 'New orders resumed')
         return {"new_orders_halted": False}

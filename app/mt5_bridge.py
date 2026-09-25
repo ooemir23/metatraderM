@@ -60,7 +60,8 @@ def risk_status(mt5, expected_login, expected_server, daily_loss_limit, tick_off
     loss = max(0.0, -(realized + min(0.0, floating)))
     return {'daily_loss':round(loss, 2), 'daily_loss_limit':daily_loss_limit,
             'ratio':round(loss/daily_loss_limit, 4) if daily_loss_limit > 0 else None,
-            'currency':str(account.currency), 'open_positions':len(current), 'pending_orders':len(pending)}
+            'currency':str(account.currency), 'login':int(account.login), 'server':str(account.server),
+            'open_positions':len(current), 'pending_orders':len(pending)}
 
 
 def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entry_price,

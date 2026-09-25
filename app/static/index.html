@@ -177,8 +177,8 @@
               <i class="ph-bold ph-x-circle"></i>
               <span>Tümünü Kapat / İptal</span>
             </button>
-            <button id="resume-trading-btn" onclick="resumeTrading()" class="hidden px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/20 text-xs font-semibold" title="Hesabı kontrol ettikten sonra yeni emirlere yeniden izin ver">
-              Yeni Emirlere Devam Et
+            <button id="resume-trading-btn" onclick="openTradingRiskDialog()" class="hidden px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/20 text-xs font-semibold" title="Günlük risk ve yeni emir kilidini yönet">
+              İşlem Riskini Yönet
             </button>
           </div>
 
@@ -647,7 +647,7 @@
             <div class="flex items-center justify-between gap-2"><strong class="text-cyan-200">İşlem öncesi risk</strong><button type="button" onclick="refreshTradePreview()" class="text-cyan-300 underline">Hesapla</button></div>
             <p id="trade-preview" role="status" class="mt-1 text-gray-300">Yön ve lot seçildiğinde broker verileriyle hesaplanır.</p>
           </div>
-          <p id="trading-halt-message" class="hidden mb-2 rounded-lg border border-amber-700/50 bg-amber-950/30 px-2 py-1.5 text-[11px] text-amber-200" role="status">Yeni emirler güvenlik kilidi nedeniyle durduruldu. Hesabı ve günlük zarar limitini kontrol edin; ardından Yeni Emirlere Devam Et düğmesini kullanın.</p>
+          <button id="trading-halt-message" type="button" onclick="openTradingRiskDialog()" class="hidden mb-2 w-full rounded-lg border border-amber-700/50 bg-amber-950/30 px-2 py-1.5 text-left text-[11px] text-amber-200 hover:bg-amber-900/40" aria-haspopup="dialog">Yeni emirler güvenlik kilidi nedeniyle durduruldu. Günlük riski ve kilidi yönetmek için tıklayın.</button>
           <!-- BIG BUY & SELL BUTTONS -->
           <div class="grid grid-cols-2 gap-2.5">
             <button id="order-sell-btn" onclick="submitOrder('SELL')" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-gradient-to-b from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-extrabold shadow-lg shadow-red-600/20 active:scale-[0.98] transition">
@@ -901,7 +901,7 @@
 
         <div>
           <label class="block text-gray-300 font-semibold mb-1">Günlük Zarar Limiti (hesap para birimi, UTC)</label>
-          <p class="text-xs text-gray-400">Manuel, HMA ve AI yeni emirlerini kapsar. Gerçekleşen net sonuç ve açık zarar birlikte değerlendirilir.</p>
+          <p class="text-xs text-gray-400">Yalnızca AI otopilot bütçesi. Manuel ve HMA emirlerinin günlük limiti İşlem Riskini Yönet penceresindedir.</p>
           <input type="number" id="ai-cfg-max-loss" value="50.0" step="5" min="0" class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-purple-500 focus:outline-none">
           <p class="text-[11px] text-gray-500 mt-0.5">Günün toplam zararı bu tutarı aşarsa AI otopilot otomatik durur.</p>
         </div>
@@ -940,6 +940,27 @@
     </div>
     <p id="position-editor-status" role="status" class="text-xs text-amber-300 mt-3"></p>
     <button onclick="document.getElementById('position-editor').close()" class="mt-4 text-xs underline">Pencereyi kapat</button>
+  </dialog>
+
+  <dialog id="trading-risk-dialog" class="bg-[#121620] text-gray-200 rounded-2xl border border-gray-700 p-5 w-[min(94vw,460px)] backdrop:bg-black/70">
+    <div class="flex items-center justify-between gap-3 border-b border-gray-700 pb-3">
+      <h2 class="font-bold text-white">Günlük Risk ve Emir Kilidi</h2>
+      <button type="button" onclick="document.getElementById('trading-risk-dialog').close()" class="text-gray-400 hover:text-white" aria-label="Kapat">✕</button>
+    </div>
+    <p id="trading-risk-account" class="mt-3 text-xs text-gray-400">Hesap kontrol ediliyor…</p>
+    <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+      <p class="rounded-lg bg-gray-800 p-2">Bugünkü zarar<br><strong id="trading-risk-loss" class="text-rose-300">—</strong></p>
+      <p class="rounded-lg bg-gray-800 p-2">Günlük limit<br><strong id="trading-risk-limit" class="text-white">—</strong></p>
+    </div>
+    <p id="trading-risk-explanation" class="mt-3 text-xs text-amber-300" role="status"></p>
+    <label class="mt-4 block text-xs text-gray-300">Yeni günlük zarar limiti (hesap para birimi)
+      <input id="trading-risk-limit-input" type="number" min="0.01" max="1000000" step="0.01" class="mt-1 w-full rounded-lg border border-gray-600 bg-gray-800 p-2 text-white" disabled>
+    </label>
+    <div class="mt-4 flex flex-wrap justify-end gap-2">
+      <button id="trading-risk-save" type="button" onclick="saveTradingDailyLimit()" class="rounded-lg bg-gray-700 px-3 py-2 text-xs text-white disabled:opacity-50" disabled>Limiti Kaydet</button>
+      <button id="trading-risk-resume" type="button" onclick="resumeTrading()" class="rounded-lg bg-cyan-700 px-3 py-2 text-xs text-white disabled:opacity-50" disabled>Yeni Emirlere Devam Et</button>
+    </div>
+    <p class="mt-3 text-[11px] text-gray-400">Limit değişikliği mevcut zararı silmez. Yeni emirler, kilit açıldıktan sonra da broker ve diğer risk kontrollerinden geçer.</p>
   </dialog>
 
   <!-- TOAST NOTIFICATION CONTAINER -->

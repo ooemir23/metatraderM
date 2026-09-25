@@ -530,9 +530,30 @@ class MT5Client:
                 raise MT5DataError('MT5 bağlı değil.')
             login, server = self._selected_account()
             try:
-                return self._bridge('risk_status', login, server, self.daily_loss_limit, self.tick_clock_offset)
+                limit = self.effective_daily_loss_limit(login, server)
+                return self._bridge('risk_status', login, server, limit, self.tick_clock_offset)
             except Exception as exc:
                 raise MT5DataError('Günlük risk durumu doğrulanamadı.') from exc
+
+    def effective_daily_loss_limit(self, login, server):
+        return self.journal.daily_loss_limit(login, server) or self.daily_loss_limit
+
+    def set_daily_loss_limit(self, value, acknowledge_risk=False):
+        with self._lock.order():
+            if not self.ensure_connected():
+                raise MT5DataError('MT5 bağlı değil.')
+            login, server = self._selected_account()
+            # Verify the broker state before persisting an account-scoped change.
+            try:
+                status = self._bridge('risk_status', login, server,
+                                      self.effective_daily_loss_limit(login, server), self.tick_clock_offset)
+            except Exception as exc:
+                raise MT5DataError('Günlük risk durumu doğrulanamadı.') from exc
+            if value > status['daily_loss_limit'] and not acknowledge_risk:
+                raise MT5DataError('Günlük zarar limitini yükseltmek için açık risk onayı gerekli.')
+            self.journal.set_daily_loss_limit(login, server, value, status['currency'])
+            return {**status, 'daily_loss_limit': value,
+                    'ratio': round(status['daily_loss'] / value, 4)}
 
     def get_positions(self, fresh=False) -> List[Dict[str, Any]]:
         with self._lock:
@@ -619,13 +640,14 @@ class MT5Client:
             try:
                 request_id = request_id or str(uuid.uuid4())
                 account_scope = self._selected_account()
+                daily_loss_limit = self.effective_daily_loss_limit(*account_scope)
                 tag = "vm:" + hashlib.sha256((str(account_scope) + request_id).encode()).hexdigest()[:24]
                 order_kind = {"BUY_LIMIT": 2, "SELL_LIMIT": 3, "BUY_STOP": 4, "SELL_STOP": 5}.get(pending_type, 0 if payload['order_type'] == 'BUY' else 1)
                 metadata = {'account': account_scope, 'tag': tag, 'order': {
                     'symbol': payload['symbol'], 'magic': magic, 'type': order_kind, 'volume': volume}}
                 res = self.journal.run(request_id, payload, lambda: self._bridge(
                     "open_deal", payload["symbol"], payload["order_type"], volume, sl_points, tp_points,
-                    tag, magic, self.daily_loss_limit, account_scope[0], account_scope[1], 10, pending_type, entry_price,
+                    tag, magic, daily_loss_limit, account_scope[0], account_scope[1], 10, pending_type, entry_price,
                     self.max_order_lots, self.max_total_lots, self.max_open_orders, self.tick_clock_offset,
                     self.ai_max_trade_risk_pct),
                     metadata=metadata, queue_ms=queue_ms)

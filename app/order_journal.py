@@ -1,6 +1,7 @@
 """Durable at-most-once submission. Unknown outcomes are never submitted again."""
 import hashlib
 import json
+import math
 import os
 import sqlite3
 import time
@@ -92,6 +93,34 @@ class OrderJournal:
             row = db.execute('SELECT value FROM trading_state WHERE key=?',
                              ('new_orders_halted',)).fetchone()
         return bool(row and row[0] == '1')
+
+    @staticmethod
+    def _daily_limit_key(login, server):
+        scope = json.dumps([int(login), str(server)], ensure_ascii=False)
+        return 'daily_loss_limit:' + hashlib.sha256(scope.encode()).hexdigest()
+
+    def daily_loss_limit(self, login, server):
+        with self._connect() as db:
+            row = db.execute('SELECT value FROM trading_state WHERE key=?',
+                             (self._daily_limit_key(login, server),)).fetchone()
+        if not row:
+            return None
+        value = float(row[0])
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError('Stored daily loss limit is invalid')
+        return value
+
+    def set_daily_loss_limit(self, login, server, value, currency=None):
+        value = float(value)
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError('Daily loss limit must be positive and finite')
+        with self._connect() as db:
+            db.execute('INSERT OR REPLACE INTO trading_state VALUES (?, ?)',
+                       (self._daily_limit_key(login, server), str(value)))
+            if currency:
+                db.execute('INSERT INTO events (created,level,kind,message,request_id) VALUES (?,?,?,?,?)',
+                           (time.time(), 'warning', 'risk',
+                            f'Daily loss limit changed to {value} {currency} for account #{login}', None))
 
     def unresolved(self, limit=20):
         with self._connect() as db:

@@ -1187,15 +1187,120 @@ async function refreshTradingStatus() {
   } catch (_) {}
 }
 
+let tradingRiskDialogState = null;
+let tradingRiskDialogLoad = 0;
+function renderTradingRiskDialog() {
+  const state = tradingRiskDialogState;
+  if (!state) return;
+  const {risk, halted, admin} = state;
+  const en = window.MT5I18n?.language() === 'en';
+  const money = amount => `${Number(amount).toLocaleString(en ? 'en-US' : 'tr-TR', {maximumFractionDigits:2})} ${risk.currency}`;
+  document.getElementById('trading-risk-account').textContent = `#${risk.login} · ${risk.server} · ${risk.currency}`;
+  document.getElementById('trading-risk-loss').textContent = money(risk.daily_loss);
+  document.getElementById('trading-risk-limit').textContent = money(risk.daily_loss_limit);
+  document.getElementById('trading-risk-limit-input').value = risk.daily_loss_limit;
+  document.getElementById('trading-risk-limit-input').disabled = !admin;
+  document.getElementById('trading-risk-save').disabled = !admin;
+  document.getElementById('trading-risk-resume').disabled = !admin || !halted || risk.daily_loss >= risk.daily_loss_limit;
+  document.getElementById('trading-risk-explanation').textContent = !admin
+    ? (en ? 'Only an administrator can change this limit or resume orders.' : 'Limiti değiştirme ve emir kilidini kaldırma yetkisi yalnızca yöneticide.')
+    : risk.daily_loss >= risk.daily_loss_limit
+      ? (en ? 'The daily loss limit has been reached. Review the limit before resuming orders.' : 'Günlük zarar limiti aşıldı. Yeni emirlere devam etmeden önce limiti gözden geçirin.')
+      : halted
+        ? (en ? 'New orders are paused. Review the account before resuming.' : 'Yeni emirler durduruldu. Devam etmeden önce hesabı kontrol edin.')
+        : (en ? 'New orders are already enabled.' : 'Yeni emir kilidi açık değil.');
+}
+
+async function openTradingRiskDialog() {
+  const dialog = document.getElementById('trading-risk-dialog');
+  if (!dialog) return;
+  const load = ++tradingRiskDialogLoad;
+  tradingRiskDialogState = null;
+  document.getElementById('trading-risk-account').textContent = window.MT5I18n?.language() === 'en' ? 'Checking account…' : 'Hesap kontrol ediliyor…';
+  document.getElementById('trading-risk-loss').textContent = '—';
+  document.getElementById('trading-risk-limit').textContent = '—';
+  document.getElementById('trading-risk-explanation').textContent = '';
+  document.getElementById('trading-risk-save').disabled = true;
+  document.getElementById('trading-risk-resume').disabled = true;
+  dialog.showModal();
+  try {
+    const [riskResponse, statusResponse, operatorResponse] = await Promise.all([
+      fetch('/api/risk/status'), fetch('/api/trading/status'), fetch('/api/auth/me')]);
+    if (!riskResponse.ok || !statusResponse.ok || !operatorResponse.ok) throw new Error('Hesap riski doğrulanamadı.');
+    const [risk, status, operator] = await Promise.all([riskResponse.json(), statusResponse.json(), operatorResponse.json()]);
+    if (!dialog.open || load !== tradingRiskDialogLoad) return;
+    tradingRiskDialogState = {risk, halted:status.new_orders_halted, admin:operator.role === 'ADMIN'};
+    renderTradingRiskDialog();
+  } catch (error) {
+    if (dialog.open && load === tradingRiskDialogLoad) document.getElementById('trading-risk-explanation').textContent = error.message;
+  }
+}
+
+async function saveTradingDailyLimit() {
+  const state = tradingRiskDialogState;
+  if (!state?.admin) return;
+  const input = document.getElementById('trading-risk-limit-input');
+  const amount = Number(input.value);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000) {
+    document.getElementById('trading-risk-explanation').textContent = '0 ile 1.000.000 arasında geçerli bir limit girin.';
+    return;
+  }
+  if (amount === state.risk.daily_loss_limit) return;
+  const en = window.MT5I18n?.language() === 'en';
+  let acknowledgeRisk = false;
+  if (amount > state.risk.daily_loss_limit) {
+    acknowledgeRisk = await confirmAction({
+      title: en ? 'Increase daily loss limit' : 'Günlük zarar limitini yükselt',
+      message: en ? 'Increasing this limit can allow new orders after the safety lock is released.' : 'Bu limiti yükseltmek, güvenlik kilidi kaldırıldıktan sonra yeni emirlere izin verebilir.',
+      details: [[en ? 'Current loss' : 'Bugünkü zarar', `${state.risk.daily_loss} ${state.risk.currency}`],
+        [en ? 'Current limit' : 'Mevcut limit', `${state.risk.daily_loss_limit} ${state.risk.currency}`],
+        [en ? 'New limit' : 'Yeni limit', `${amount} ${state.risk.currency}`]],
+      acknowledgement: en ? 'I reviewed the account and accept the higher daily loss limit.' : 'Hesabı kontrol ettim ve daha yüksek günlük zarar limitini kabul ediyorum.',
+      confirmLabel: en ? 'Save higher limit' : 'Yüksek limiti kaydet'
+    });
+    if (!acknowledgeRisk || !document.getElementById('trading-risk-dialog').open) return;
+  }
+  const save = document.getElementById('trading-risk-save');
+  save.disabled = true;
+  try {
+    const response = await fetch('/api/risk/daily-limit', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({amount, acknowledge_risk:acknowledgeRisk})});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Limit kaydedilemedi.');
+    state.risk = data;
+    renderTradingRiskDialog();
+  } catch (error) {
+    document.getElementById('trading-risk-explanation').textContent = error.message;
+  } finally { save.disabled = false; }
+}
+
 async function resumeTrading() {
+  const state = tradingRiskDialogState;
+  if (!state?.admin || !state.halted || state.risk.daily_loss >= state.risk.daily_loss_limit) return;
+  const en = window.MT5I18n?.language() === 'en';
+  const approved = await confirmAction({
+    title: en ? 'Resume new orders' : 'Yeni emirlere devam et',
+    message: en ? 'The safety lock will be released for this account. Orders still pass broker and risk checks.' : 'Bu hesabın güvenlik kilidi kaldırılacak. Emirler broker ve risk kontrollerinden geçmeye devam eder.',
+    details: [[en ? 'Account' : 'Hesap', `#${state.risk.login}`],
+      [en ? 'Daily loss' : 'Bugünkü zarar', `${state.risk.daily_loss} ${state.risk.currency}`],
+      [en ? 'Daily limit' : 'Günlük limit', `${state.risk.daily_loss_limit} ${state.risk.currency}`]],
+    confirmLabel: en ? 'Resume orders' : 'Emirlere devam et'
+  });
+  if (!approved || !document.getElementById('trading-risk-dialog').open) return;
+  const button = document.getElementById('trading-risk-resume');
+  button.disabled = true;
   try {
     const response = await fetch('/api/trading/resume', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'Yeni emirler başlatılamadı.');
     showToast('Yeni emirlere yeniden izin verildi.', 'success');
+    tradingRiskDialogState = null;
+    document.getElementById('trading-risk-dialog')?.close();
     refreshTradingStatus();
   } catch (error) {
-    showToast(error.message || 'Yeni emirler başlatılamadı.', 'error');
+    document.getElementById('trading-risk-explanation').textContent = error.message || 'Yeni emirler başlatılamadı.';
+  } finally {
+    if (tradingRiskDialogState) button.disabled = false;
   }
 }
 
