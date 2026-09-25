@@ -184,14 +184,14 @@ def broker_compatibility(mt5, symbol, expected_login, expected_server, tick_offs
 def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, magic,
               daily_loss_limit, expected_login, expected_server, max_tick_age=10, pending_type=None, entry_price=None,
               max_order_lots=.10, max_total_lots=.50, max_open_orders=10, tick_offset=0,
-              ai_max_trade_risk_pct=1.0):
+              ai_max_trade_risk_pct=1.0, enforce_daily_limit=True):
     try:
         account, current, pending, realized, floating = risk(mt5, tick_offset)
         if expected_login and (int(account.login) != expected_login or str(account.server) != expected_server):
             return {'success': False, 'error': 'Aktif MT5 hesabı seçilen hesapla uyuşmuyor.'}
         # Open gains cannot mask realized losses. Amounts are in account currency, day is UTC.
         loss = max(0.0, -(realized + min(0.0, floating)))
-        if not math.isfinite(daily_loss_limit) or daily_loss_limit <= 0 or loss >= daily_loss_limit:
+        if enforce_daily_limit and (not math.isfinite(daily_loss_limit) or daily_loss_limit <= 0 or loss >= daily_loss_limit):
             return {'success': False, 'error': 'Günlük zarar sınırı: yeni emir engellendi.',
                     'daily_loss': loss, 'daily_loss_limit': daily_loss_limit, 'currency': str(account.currency)}
         if (not all(math.isfinite(x) and x > 0 for x in (volume, max_order_lots, max_total_lots))

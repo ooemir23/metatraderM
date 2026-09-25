@@ -9,7 +9,8 @@ const assert = require('node:assert/strict');
       classList:{toggle(){}},showModal(){this.open=true;},close(){this.open=false;}});
     return nodes.get(id);
   };
-  let risk = {daily_loss:96640,daily_loss_limit:500,currency:'USD',login:25373161,server:'Tickmill-Demo'};
+  let risk = {daily_loss:96640,daily_loss_limit:500,daily_limit_enabled:true,currency:'USD',login:25373161,
+    server:'Tickmill-Demo',account_type:'DEMO'};
   let halted = true;
   const context = vm.createContext({console,Date,AbortController,
     window:{MT5I18n:{language:()=> 'tr'},addEventListener(){}},
@@ -19,15 +20,17 @@ const assert = require('node:assert/strict');
     fetch:async(url,options)=>{
       calls.push({url,body:options?.body && JSON.parse(options.body)});
       if (url === '/api/risk/status') return {ok:true,json:async()=>risk};
-      if (url === '/api/trading/status') return {ok:true,json:async()=>({new_orders_halted:halted})};
+      if (url === '/api/trading/status') return {ok:true,json:async()=>({new_orders_halted:halted,daily_limit_enabled:risk.daily_limit_enabled})};
       if (url === '/api/auth/me') return {ok:true,json:async()=>({role:'ADMIN'})};
       if (url === '/api/risk/daily-limit') {
         risk = {...risk,daily_loss_limit:JSON.parse(options.body).amount};
         return {ok:true,json:async()=>risk};
       }
-      if (url === '/api/trading/resume') {
-        halted = false;
-        return {ok:true,json:async()=>({new_orders_halted:false})};
+      if (url === '/api/trading/lock') {
+        const payload = JSON.parse(options.body);
+        halted = payload.locked;
+        risk = {...risk,daily_limit_enabled:payload.locked};
+        return {ok:true,json:async()=>({new_orders_halted:halted,daily_limit_enabled:risk.daily_limit_enabled})};
       }
       throw Error(url);
     },
@@ -36,15 +39,20 @@ const assert = require('node:assert/strict');
   context.showToast=()=>{};
   await context.openTradingRiskDialog();
   assert.equal(node('trading-risk-dialog').open,true);
-  assert.equal(node('trading-risk-resume').disabled,true,'loss above limit keeps resume unavailable');
+  assert.equal(node('trading-risk-resume').disabled,false,'admin can explicitly unlock despite the loss');
   assert.match(node('trading-risk-loss').textContent,/96\.640/);
   node('trading-risk-limit-input').value='100000';
   await context.saveTradingDailyLimit();
   assert.equal(calls.find(call=>call.url==='/api/risk/daily-limit').body.acknowledge_risk,true);
   assert.equal(confirmations.length,1,'raising an exceeded limit requires confirmation');
   assert.equal(node('trading-risk-resume').disabled,false);
-  await context.resumeTrading();
+  await context.toggleTradingLock();
   assert.equal(halted,false);
-  assert.equal(node('trading-risk-dialog').open,false);
-  console.log('Trading risk dialog: exceeded limit, explicit change and resume PASS');
+  assert.equal(risk.daily_limit_enabled,false);
+  assert.equal(calls.find(call=>call.url==='/api/trading/lock').body.acknowledge_unlimited,true);
+  assert.equal(node('trading-risk-dialog').open,true);
+  await context.toggleTradingLock();
+  assert.equal(halted,true);
+  assert.equal(risk.daily_limit_enabled,true);
+  console.log('Trading risk dialog: explicit limit change and two-way lock toggle PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});

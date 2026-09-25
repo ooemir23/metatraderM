@@ -386,10 +386,10 @@ def test_resume_requires_verified_account_and_clears_halt(monkeypatch):
     assert authenticated_web().post('/api/trading/resume', json={}).status_code == 409
     assert main.mt5_client.journal.trading_halted()
     monkeypatch.setattr(main.mt5_client, '_selected_account', lambda: [1, 'test'])
-    monkeypatch.setattr(main.mt5_client, 'get_risk_status', lambda: {'daily_loss':600, 'daily_loss_limit':500})
+    monkeypatch.setattr(main.mt5_client, 'get_risk_status', lambda: {'daily_loss':600, 'daily_loss_limit':500, 'daily_limit_enabled':True})
     assert authenticated_web().post('/api/trading/resume', json={}).status_code == 409
     assert main.mt5_client.journal.trading_halted()
-    monkeypatch.setattr(main.mt5_client, 'get_risk_status', lambda: {'daily_loss':100, 'daily_loss_limit':500})
+    monkeypatch.setattr(main.mt5_client, 'get_risk_status', lambda: {'daily_loss':100, 'daily_loss_limit':500, 'daily_limit_enabled':True})
     assert authenticated_web().post('/api/trading/resume', json={}).json()['new_orders_halted'] is False
     assert not main.mt5_client.journal.trading_halted()
 

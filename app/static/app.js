@@ -1180,10 +1180,25 @@ async function refreshTradingStatus() {
     const response = await fetch('/api/trading/status');
     if (!response.ok) return;
     const state = await response.json();
+    const en = window.MT5I18n?.language() === 'en';
     const button = document.getElementById('resume-trading-btn');
-    if (button) button.classList.toggle('hidden', !state.new_orders_halted);
+    if (button) {
+      button.classList.toggle('hidden', false);
+      button.textContent = state.new_orders_halted
+        ? (en ? 'Trading Risk · Locked' : 'İşlem Riski · Kilitli')
+        : state.daily_limit_enabled
+          ? (en ? 'Trading Risk · Limited' : 'İşlem Riski · Limitli')
+          : (en ? 'Trading Risk · Free' : 'İşlem Riski · Serbest');
+    }
     const warning = document.getElementById('trading-halt-message');
-    if (warning) warning.classList.toggle('hidden', !state.new_orders_halted);
+    if (warning) {
+      warning.classList.toggle('hidden', false);
+      warning.textContent = state.new_orders_halted
+        ? (en ? 'New orders are locked. Click to manage the lock and daily limit.' : 'Yeni emirler kilitli. Kilidi açmak veya günlük limiti yönetmek için tıklayın.')
+        : state.daily_limit_enabled
+          ? (en ? 'Daily loss protection is on. Click to manage the lock and limit.' : 'Günlük zarar koruması açık. Kilidi ve limiti yönetmek için tıklayın.')
+          : (en ? 'Free trading is on: the daily loss limit is not applied. Click to manage the lock.' : 'Serbest işlem modu açık: günlük zarar sınırı uygulanmıyor. Kilidi yönetmek için tıklayın.');
+    }
   } catch (_) {}
 }
 
@@ -1197,18 +1212,22 @@ function renderTradingRiskDialog() {
   const money = amount => `${Number(amount).toLocaleString(en ? 'en-US' : 'tr-TR', {maximumFractionDigits:2})} ${risk.currency}`;
   document.getElementById('trading-risk-account').textContent = `#${risk.login} · ${risk.server} · ${risk.currency}`;
   document.getElementById('trading-risk-loss').textContent = money(risk.daily_loss);
-  document.getElementById('trading-risk-limit').textContent = money(risk.daily_loss_limit);
+  document.getElementById('trading-risk-limit').textContent = money(risk.daily_loss_limit) +
+    (risk.daily_limit_enabled ? '' : (en ? ' (off)' : ' (kapalı)'));
   document.getElementById('trading-risk-limit-input').value = risk.daily_loss_limit;
   document.getElementById('trading-risk-limit-input').disabled = !admin;
   document.getElementById('trading-risk-save').disabled = !admin;
-  document.getElementById('trading-risk-resume').disabled = !admin || !halted || risk.daily_loss >= risk.daily_loss_limit;
+  const lockButton = document.getElementById('trading-risk-resume');
+  lockButton.disabled = !admin;
+  lockButton.textContent = halted ? (en ? 'Unlock for free trading' : 'Kilidi Aç · Serbest İşlem')
+    : (en ? 'Lock new orders' : 'Yeni Emirleri Kilitle');
   document.getElementById('trading-risk-explanation').textContent = !admin
-    ? (en ? 'Only an administrator can change this limit or resume orders.' : 'Limiti değiştirme ve emir kilidini kaldırma yetkisi yalnızca yöneticide.')
-    : risk.daily_loss >= risk.daily_loss_limit
-      ? (en ? 'The daily loss limit has been reached. Review the limit before resuming orders.' : 'Günlük zarar limiti aşıldı. Yeni emirlere devam etmeden önce limiti gözden geçirin.')
-      : halted
-        ? (en ? 'New orders are paused. Review the account before resuming.' : 'Yeni emirler durduruldu. Devam etmeden önce hesabı kontrol edin.')
-        : (en ? 'New orders are already enabled.' : 'Yeni emir kilidi açık değil.');
+    ? (en ? 'Only an administrator can change the limit or trading lock.' : 'Limiti ve işlem kilidini yalnızca yönetici değiştirebilir.')
+    : halted
+      ? (en ? 'New orders are locked. Unlocking also turns off the daily loss check for this account.' : 'Yeni emirler kilitli. Kilidi açmak bu hesapta günlük zarar kontrolünü de kapatır.')
+      : risk.daily_limit_enabled
+        ? (en ? 'Orders are allowed while the daily loss check remains active.' : 'Günlük zarar kontrolü açıkken yeni emirlere izin veriliyor.')
+        : (en ? 'Free trading is active. The daily loss check is off for this account.' : 'Serbest işlem açık. Bu hesapta günlük zarar kontrolü kapalı.');
 }
 
 async function openTradingRiskDialog() {
@@ -1274,33 +1293,40 @@ async function saveTradingDailyLimit() {
   } finally { save.disabled = false; }
 }
 
-async function resumeTrading() {
+async function toggleTradingLock() {
   const state = tradingRiskDialogState;
-  if (!state?.admin || !state.halted || state.risk.daily_loss >= state.risk.daily_loss_limit) return;
+  if (!state?.admin) return;
   const en = window.MT5I18n?.language() === 'en';
-  const approved = await confirmAction({
-    title: en ? 'Resume new orders' : 'Yeni emirlere devam et',
-    message: en ? 'The safety lock will be released for this account. Orders still pass broker and risk checks.' : 'Bu hesabın güvenlik kilidi kaldırılacak. Emirler broker ve risk kontrollerinden geçmeye devam eder.',
-    details: [[en ? 'Account' : 'Hesap', `#${state.risk.login}`],
-      [en ? 'Daily loss' : 'Bugünkü zarar', `${state.risk.daily_loss} ${state.risk.currency}`],
-      [en ? 'Daily limit' : 'Günlük limit', `${state.risk.daily_loss_limit} ${state.risk.currency}`]],
-    confirmLabel: en ? 'Resume orders' : 'Emirlere devam et'
-  });
-  if (!approved || !document.getElementById('trading-risk-dialog').open) return;
+  const locked = !state.halted;
+  if (!locked) {
+    const approved = await confirmAction({
+      title: en ? 'Unlock for free trading' : 'Kilidi aç ve serbest işlem yap',
+      message: en ? 'New orders will be allowed even though the daily loss limit has been exceeded. Broker margin and order rules still apply.'
+        : 'Günlük zarar limiti aşılmış olsa bile yeni emirlere izin verilecek. Broker teminatı ve emir kuralları geçerli kalır.',
+      details: [[en ? 'Account' : 'Hesap', `#${state.risk.login} · ${state.risk.account_type}`],
+        [en ? 'Daily loss' : 'Bugünkü zarar', `${state.risk.daily_loss} ${state.risk.currency}`],
+        [en ? 'Daily limit' : 'Günlük limit', `${state.risk.daily_loss_limit} ${state.risk.currency}`]],
+      acknowledgement: en ? 'I reviewed the account and accept trading without the daily loss limit.'
+        : 'Hesabı kontrol ettim; günlük zarar sınırı olmadan işlem yapmayı kabul ediyorum.',
+      confirmLabel: en ? 'Unlock trading' : 'Kilidi aç'
+    });
+    if (!approved || !document.getElementById('trading-risk-dialog').open) return;
+  }
   const button = document.getElementById('trading-risk-resume');
   button.disabled = true;
   try {
-    const response = await fetch('/api/trading/resume', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    const response = await fetch('/api/trading/lock', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({locked, acknowledge_unlimited:!locked})});
     const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || 'Yeni emirler başlatılamadı.');
-    showToast('Yeni emirlere yeniden izin verildi.', 'success');
-    tradingRiskDialogState = null;
-    document.getElementById('trading-risk-dialog')?.close();
+    if (!response.ok) throw new Error(data.detail || 'İşlem kilidi değiştirilemedi.');
+    state.halted = data.new_orders_halted;
+    state.risk.daily_limit_enabled = data.daily_limit_enabled;
+    renderTradingRiskDialog();
     refreshTradingStatus();
   } catch (error) {
-    document.getElementById('trading-risk-explanation').textContent = error.message || 'Yeni emirler başlatılamadı.';
+    document.getElementById('trading-risk-explanation').textContent = error.message || 'İşlem kilidi değiştirilemedi.';
   } finally {
-    if (tradingRiskDialogState) button.disabled = false;
+    if (tradingRiskDialogState) button.disabled = !state.admin;
   }
 }
 

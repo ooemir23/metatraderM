@@ -109,7 +109,7 @@ async def maintenance_loop():
         try:
             if mt5_client.is_connected and mt5_client.login_id:
                 status = await asyncio.to_thread(mt5_client.get_risk_status)
-                level = 2 if status['ratio'] >= 1 else 1 if status['ratio'] >= .8 else 0
+                level = 0 if not status['daily_limit_enabled'] else 2 if status['ratio'] >= 1 else 1 if status['ratio'] >= .8 else 0
                 if level > last_risk_alert:
                     mt5_client.journal.event('error' if level == 2 else 'warning', 'risk',
                         f"Daily loss {status['daily_loss']} / {status['daily_loss_limit']} {status['currency']}")
@@ -268,6 +268,10 @@ class UnlockRequest(BaseModel):
 class DailyLimitRequest(BaseModel):
     amount: float = Field(gt=0, le=1_000_000, allow_inf_nan=False)
     acknowledge_risk: bool = False
+
+class TradingLockRequest(BaseModel):
+    locked: bool
+    acknowledge_unlimited: bool = False
 
 class BacktestRequest(BaseModel):
     symbol: str = Field(pattern=r"^[A-Za-z0-9_.#-]+$", max_length=32)
@@ -457,7 +461,32 @@ def operation_status(request_id: str = Query(min_length=1, max_length=250)):
 @app.get("/api/trading/status")
 def trading_status():
     return {"new_orders_halted": mt5_client.journal.trading_halted(),
+            "daily_limit_enabled": mt5_client.journal.daily_limit_enabled(mt5_client.login_id, mt5_client.server),
             "flatten_active": flatten_active.is_set()}
+
+@app.post('/api/trading/lock')
+def set_trading_lock(req: TradingLockRequest, _: None = Depends(require_real_unlock)):
+    with mt5_client._lock.order():
+        if not req.locked:
+            if not req.acknowledge_unlimited:
+                raise HTTPException(status_code=409, detail='Günlük zarar korumasını kapatmak için açık onay gerekli.')
+            if flatten_active.is_set():
+                raise HTTPException(status_code=409, detail='Toplu kapatma sürüyor; bitmesini bekleyin.')
+            if not mt5_client.ensure_connected():
+                raise HTTPException(status_code=503, detail='MT5 bağlantısı doğrulanamadı.')
+            try:
+                login, server = mt5_client._selected_account()
+                mt5_client.get_risk_status()
+            except MT5DataError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+        else:
+            login, server = mt5_client.login_id, mt5_client.server
+        mt5_client.journal.set_trading_mode(login, server, req.locked)
+        if req.locked:
+            mt5_client.automation_stopped.set()
+            bot.stop()
+            ai_advisor.update_autopilot({'enabled': False})
+        return {"new_orders_halted": req.locked, "daily_limit_enabled": req.locked}
 
 @app.post("/api/trading/resume")
 def resume_new_orders(_: None = Depends(require_real_unlock)):
@@ -474,7 +503,7 @@ def resume_new_orders(_: None = Depends(require_real_unlock)):
             risk = mt5_client.get_risk_status()
         except MT5DataError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        if risk['daily_loss'] >= risk['daily_loss_limit']:
+        if risk['daily_limit_enabled'] and risk['daily_loss'] >= risk['daily_loss_limit']:
             raise HTTPException(status_code=409, detail='Günlük zarar limiti aşıldı. Yeni emirlere devam etmeden önce limiti gözden geçirin.')
         mt5_client.journal.set_trading_halted(False)
         mt5_client.journal.event('info', 'trading', 'New orders resumed')

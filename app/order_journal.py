@@ -94,6 +94,23 @@ class OrderJournal:
                              ('new_orders_halted',)).fetchone()
         return bool(row and row[0] == '1')
 
+    def daily_limit_enabled(self, login, server):
+        with self._connect() as db:
+            row = db.execute('SELECT value FROM trading_state WHERE key=?',
+                             (self._daily_limit_key(login, server) + ':enabled',)).fetchone()
+        return not row or row[0] != '0'
+
+    def set_trading_mode(self, login, server, locked):
+        # Update the order lock and account's daily-limit guard together.
+        with self._connect() as db:
+            db.execute('INSERT OR REPLACE INTO trading_state VALUES (?, ?)',
+                       ('new_orders_halted', '1' if locked else '0'))
+            db.execute('INSERT OR REPLACE INTO trading_state VALUES (?, ?)',
+                       (self._daily_limit_key(login, server) + ':enabled', '1' if locked else '0'))
+            db.execute('INSERT INTO events (created,level,kind,message,request_id) VALUES (?,?,?,?,?)',
+                       (time.time(), 'warning', 'trading',
+                        f'Trading lock {"enabled" if locked else "disabled with daily limit bypass"} for account #{login}', None))
+
     @staticmethod
     def _daily_limit_key(login, server):
         scope = json.dumps([int(login), str(server)], ensure_ascii=False)

@@ -531,7 +531,9 @@ class MT5Client:
             login, server = self._selected_account()
             try:
                 limit = self.effective_daily_loss_limit(login, server)
-                return self._bridge('risk_status', login, server, limit, self.tick_clock_offset)
+                return {**self._bridge('risk_status', login, server, limit, self.tick_clock_offset),
+                        'daily_limit_enabled': self.journal.daily_limit_enabled(login, server),
+                        'account_type': self.account_type}
             except Exception as exc:
                 raise MT5DataError('Günlük risk durumu doğrulanamadı.') from exc
 
@@ -641,6 +643,7 @@ class MT5Client:
                 request_id = request_id or str(uuid.uuid4())
                 account_scope = self._selected_account()
                 daily_loss_limit = self.effective_daily_loss_limit(*account_scope)
+                enforce_daily_limit = self.journal.daily_limit_enabled(*account_scope)
                 tag = "vm:" + hashlib.sha256((str(account_scope) + request_id).encode()).hexdigest()[:24]
                 order_kind = {"BUY_LIMIT": 2, "SELL_LIMIT": 3, "BUY_STOP": 4, "SELL_STOP": 5}.get(pending_type, 0 if payload['order_type'] == 'BUY' else 1)
                 metadata = {'account': account_scope, 'tag': tag, 'order': {
@@ -649,7 +652,7 @@ class MT5Client:
                     "open_deal", payload["symbol"], payload["order_type"], volume, sl_points, tp_points,
                     tag, magic, daily_loss_limit, account_scope[0], account_scope[1], 10, pending_type, entry_price,
                     self.max_order_lots, self.max_total_lots, self.max_open_orders, self.tick_clock_offset,
-                    self.ai_max_trade_risk_pct),
+                    self.ai_max_trade_risk_pct, enforce_daily_limit),
                     metadata=metadata, queue_ms=queue_ms)
                 return {**res, "queue_ms": queue_ms}
             except MT5DataError as exc:
