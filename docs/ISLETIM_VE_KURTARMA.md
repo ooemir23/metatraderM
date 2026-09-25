@@ -33,6 +33,8 @@ python -m app.maintenance restore --source /config/backups/YEDEK_ADI --destinati
 
 ## Sürüm geri dönüşü
 
+25 Eylül risk değişikliklerinin yerel doğrulaması: 167 Python testi, yedi JavaScript test dosyası ve MetaEditor derlemesi başarılı. Güncel durum yedeği alındı; web sürümü ayrı hazırlık dizininden oluşturulup yalnız `web-dashboard` konteyneri yenilendi. Dağıtım sonrası Demo hesap ve pozisyon listesi okundu, üst lot sınırını aşan risk önizlemesi reddedildi. Açık pozisyon ve kapalı günlük zarar koruması nedeniyle yeni emirle kabul testi yapılmadı. Ayrı EA varsayılan olarak yalnız sinyal üretir; web otomasyonuyla eşzamanlı otomatik işlem için ortak kilit bulunmaz. Dokploy'un sonraki kaynak dağıtımı bu ayrı hazırlık dizinini kullanmayabilir; kalıcı sürüm için aynı değişiklikler izlenen Git dalına alınmalıdır.
+
 Kod geri dönüşünde **kalıcı `/config` diski ve en yeni emir günlüğü korunur**. Normal sürüm geri dönüşü için durum yedeğini geri yüklemek gerekmez. Otomatik botlar durdurulur; o anki imaj kimliği kaydedilir ve yedek alınır. Önceki sürümden web imajı hazırlanır, yalnızca `web-dashboard` yeniden oluşturulur; MT5 veri diski silinmez ve `down -v` kullanılmaz.
 
 Bu değişiklikten önceki sürüm: `2ff85ee`. Yeni SQLite yan tabloları eski sürüm tarafından yok sayılır; mevcut `orders` tablosunun biçimi değişmez. Geri dönüşten sonra HTTPS/parola, hesap bağlantısı, pozisyon ve bekleyen emir listeleri kontrol edilir. Botlar kendiliğinden başlatılmaz.

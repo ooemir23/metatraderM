@@ -13,7 +13,7 @@ def positions(mt5):
     rows = mt5.positions_get()
     if rows is None:
         raise RuntimeError('Pozisyonlar okunamadı: ' + str(mt5.last_error()))
-    return [dict(ticket=int(p.ticket), symbol=str(p.symbol),
+    return [dict(ticket=int(p.ticket), identifier=int(p.identifier), symbol=str(p.symbol),
                  type='BUY' if p.type == 0 else 'SELL', type_raw=int(p.type),
                  magic=int(p.magic), volume=float(p.volume),
                  price_open=float(p.price_open), price_current=float(p.price_current),
@@ -65,7 +65,9 @@ def risk_status(mt5, expected_login, expected_server, daily_loss_limit, tick_off
 
 
 def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entry_price,
-                  expected_login, expected_server, tick_offset=0):
+                  expected_login, expected_server, tick_offset=0, daily_loss_limit=None,
+                  enforce_daily_limit=True, max_order_lots=None, max_total_lots=None,
+                  max_open_orders=None):
     """Broker-calculated figures only; unknown values remain unknown."""
     try:
         account, current, pending, realized, floating = risk(mt5, tick_offset)
@@ -73,6 +75,19 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
             raise ValueError('Aktif hesap değişti; risk önizlemesi geçersiz.')
         if order_type not in ('BUY', 'SELL') or not math.isfinite(volume) or volume <= 0 or sl_points < 0:
             raise ValueError('Geçersiz emir parametresi.')
+        loss = max(0.0, -(realized + min(0.0, floating)))
+        if enforce_daily_limit and daily_loss_limit is not None and (
+                not math.isfinite(daily_loss_limit) or daily_loss_limit <= 0 or loss >= daily_loss_limit):
+            raise ValueError('Günlük zarar sınırı: yeni emir engellendi.')
+        if max_order_lots is not None and (not math.isfinite(max_order_lots) or volume > max_order_lots + 1e-9):
+            raise ValueError('Emir lotu yapılandırılan üst sınırı aşıyor.')
+        committed = sum(float(p.volume) for p in current) + sum(float(o.volume_current) for o in pending)
+        if not math.isfinite(committed) or committed < 0:
+            raise ValueError('Açık hacim doğrulanamadı; yeni emir engellendi.')
+        if ((max_total_lots is not None and (
+                not math.isfinite(max_total_lots) or committed + volume > max_total_lots + 1e-9)) or
+                (max_open_orders is not None and len(current) + len(pending) + 1 > max_open_orders)):
+            raise ValueError('Toplam açık/bekleyen işlem sınırı aşılıyor.')
         info, tick = _market(mt5, symbol, tick_offset)
         if not _volume_valid(info, volume):
             raise ValueError('Lot miktarı broker sınırlarına uymuyor.')
@@ -91,6 +106,11 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
             if gap <= 0 or gap + info.point*1e-5 < info.trade_stops_level*info.point:
                 raise ValueError('Bekleyen emir fiyatı broker mesafesine uymuyor.')
         sl = round(price + (-1 if order_type == 'BUY' else 1) * sl_points * info.point, info.digits) if sl_points else 0
+        if sl:
+            exit_price = price if pending_type else float(tick.bid if order_type == 'BUY' else tick.ask)
+            stop_distance = exit_price - sl if order_type == 'BUY' else sl - exit_price
+            if stop_distance < float(info.trade_stops_level) * info.point:
+                raise ValueError('SL broker stop mesafesine veya spread mesafesine uymuyor.')
         broker_type = 0 if order_type == 'BUY' else 1
         calc_profit = getattr(mt5, 'order_calc_profit', None)
         calc_margin = getattr(mt5, 'order_calc_margin', None)
@@ -112,7 +132,6 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
                 unprotected += 1
             else:
                 existing_risk += max(0.0, -float(outcome))
-        loss = max(0.0, -(realized + min(0.0, floating)))
         risk_amount = max(0.0, -float(stop_result)) if stop_result is not None else None
         equity = float(account.equity)
         return {'success': True, 'symbol': symbol, 'side': order_type, 'volume': volume,

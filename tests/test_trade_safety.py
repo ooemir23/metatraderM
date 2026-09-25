@@ -33,7 +33,7 @@ def client(monkeypatch):
 
 
 def pos(magic=HMA_MAGIC, profit=0, symbol='EURUSD', side=1, ticket=1):
-    return NS(ticket=ticket, symbol=symbol, type=side, magic=magic, volume=.01,
+    return NS(ticket=ticket, identifier=ticket, symbol=symbol, type=side, magic=magic, volume=.01,
               price_open=1.1, price_current=1.1, sl=0, tp=0, profit=profit, swap=0, time=time.time())
 
 
@@ -150,6 +150,36 @@ def test_bot_closes_only_its_own_positions(client):
     client.close_position = Mock(return_value={'success': True})
     assert StrategyBot(client).close_positions_by_type('SELL')
     client.close_position.assert_called_once_with(1, expected_magic=HMA_MAGIC)
+
+
+def test_filtered_close_uses_profit_plus_swap(client):
+    losing = pos(profit=5, ticket=11)
+    losing.swap = -8
+    winning = pos(profit=-2, ticket=12)
+    winning.swap = 4
+    client.mt5.positions_get.return_value = [losing, winning]
+    client.mt5.history_deals_get.side_effect = lambda *, position: [deal()]
+    client.close_position = Mock(return_value={'success': True})
+    assert client.close_by_filter('profit')['total_matched'] == 1
+    client.close_position.assert_called_once()
+    assert client.close_position.call_args.args[0] == 12
+    client.close_position.reset_mock()
+    assert client.close_by_filter('loss')['total_matched'] == 1
+    assert client.close_position.call_args.args[0] == 11
+
+
+def test_filtered_close_includes_position_history_costs_and_fails_closed(client):
+    a = pos(profit=5, ticket=11)
+    b = pos(profit=2, ticket=12)
+    client.mt5.positions_get.return_value = [a, b]
+    client.mt5.history_deals_get.side_effect = lambda *, position: [deal(profit=20, commission=-7)] if position == 11 else [deal(commission=-1)]
+    client.close_position = Mock(return_value={'success': True})
+    assert client.close_by_filter('profit')['total_matched'] == 1
+    assert client.close_position.call_args.args[0] == 12
+    client.close_position.reset_mock()
+    client.mt5.history_deals_get.side_effect = lambda *, position: None if position == 12 else [deal()]
+    assert not client.close_by_filter('loss')['success']
+    client.close_position.assert_not_called()
 
 
 @pytest.mark.parametrize('magic', [MANUAL_MAGIC, HMA_MAGIC, AI_MAGIC])

@@ -26,6 +26,7 @@ logger.setLevel(logging.INFO)
 
 NATIVE_CLOSE_SCRIPT = '''
 import MetaTrader5 as mt5
+import math
 
 def _execute_close_deal(p, expected_login=0, expected_server=""):
     ticket, symbol = int(p.ticket), str(p.symbol)
@@ -65,10 +66,19 @@ def hma_native_close_filter(filter_type="all", expected_login=0, expected_server
 
     targets = []
     for p in positions:
-        profit = float(p.profit)
-        if filter_type == "profit" and profit > 0:
+        net_profit = float(p.profit) + float(p.swap)
+        if filter_type != "all":
+            deals = mt5.history_deals_get(position=int(p.identifier))
+            if deals is None or len(deals) == 0:
+                return {"success": False, "closed_count": 0, "total_matched": 0,
+                        "errors": ["Pozisyon gecmisi okunamadi; toplu secim guvenle yapilamadi."]}
+            net_profit += sum(float(d.commission) + float(d.fee) for d in deals)
+            if not math.isfinite(net_profit):
+                return {"success": False, "closed_count": 0, "total_matched": 0,
+                        "errors": ["Pozisyon net sonucu gecersiz; toplu secim yapilamadi."]}
+        if filter_type == "profit" and net_profit > 0:
             targets.append(p)
-        elif filter_type == "loss" and profit < 0:
+        elif filter_type == "loss" and net_profit < 0:
             targets.append(p)
         elif filter_type == "all":
             targets.append(p)
@@ -198,6 +208,7 @@ class MT5Client:
         self.journal = OrderJournal()
         self._reports_cache = {}
         self.daily_loss_limit = float(os.getenv("DAILY_LOSS_LIMIT", "500"))
+        self.ai_daily_loss_limit = self.daily_loss_limit
         self.max_order_lots = float(os.getenv("MAX_ORDER_LOTS", "0.10"))
         self.max_total_lots = float(os.getenv("MAX_TOTAL_OPEN_LOTS", "0.50"))
         self.max_open_orders = int(os.getenv("MAX_OPEN_ORDERS", "10"))
@@ -495,12 +506,17 @@ class MT5Client:
 
     def trade_preview(self, symbol, order_type, volume, sl_points=0, pending_type=None, entry_price=None):
         with self._lock:
+            if self.journal.trading_halted():
+                return {'success': False, 'error': 'Yeni emirler güvenlik kilidi nedeniyle durduruldu.'}
             if not self.ensure_connected():
                 return {'success': False, 'error': 'MT5 bağlı değil.'}
             try:
                 login, server = self._selected_account()
                 return self._bridge('trade_preview', symbol.upper(), order_type, volume, sl_points,
-                                    pending_type, entry_price, login, server, self.tick_clock_offset)
+                                    pending_type, entry_price, login, server, self.tick_clock_offset,
+                                    self.effective_daily_loss_limit(login, server),
+                                    self.journal.daily_limit_enabled(login, server), self.max_order_lots,
+                                    self.max_total_lots, self.max_open_orders)
             except (MT5DataError, Exception) as exc:
                 return {'success': False, 'error': str(exc)}
 
@@ -537,8 +553,9 @@ class MT5Client:
             except Exception as exc:
                 raise MT5DataError('Günlük risk durumu doğrulanamadı.') from exc
 
-    def effective_daily_loss_limit(self, login, server):
-        return self.journal.daily_loss_limit(login, server) or self.daily_loss_limit
+    def effective_daily_loss_limit(self, login, server, magic=mt5_bridge.MANUAL_MAGIC):
+        account_limit = self.journal.daily_loss_limit(login, server) or self.daily_loss_limit
+        return min(account_limit, self.ai_daily_loss_limit) if magic == mt5_bridge.AI_MAGIC else account_limit
 
     def set_daily_loss_limit(self, value, acknowledge_risk=False):
         with self._lock.order():
@@ -642,7 +659,7 @@ class MT5Client:
             try:
                 request_id = request_id or str(uuid.uuid4())
                 account_scope = self._selected_account()
-                daily_loss_limit = self.effective_daily_loss_limit(*account_scope)
+                daily_loss_limit = self.effective_daily_loss_limit(*account_scope, magic=magic)
                 enforce_daily_limit = self.journal.daily_limit_enabled(*account_scope)
                 tag = "vm:" + hashlib.sha256((str(account_scope) + request_id).encode()).hexdigest()[:24]
                 order_kind = {"BUY_LIMIT": 2, "SELL_LIMIT": 3, "BUY_STOP": 4, "SELL_STOP": 5}.get(pending_type, 0 if payload['order_type'] == 'BUY' else 1)
@@ -804,10 +821,22 @@ class MT5Client:
             positions = self.get_positions(fresh=True)
             targets = []
             for p in positions:
-                profit = float(p.get("profit", 0.0))
-                if filter_type == "profit" and profit > 0:
+                net_profit = float(p.get("profit", 0.0)) + float(p.get("swap", 0.0))
+                if filter_type != "all":
+                    try:
+                        deals = self.mt5.history_deals_get(position=p.get("identifier", p["ticket"]))
+                    except Exception:
+                        deals = None
+                    if deals is None or len(deals) == 0:
+                        return {"success": False, "closed_count": 0, "total_matched": 0,
+                                "errors": ["Pozisyon geçmişi okunamadı; toplu seçim güvenle yapılamadı."]}
+                    net_profit += sum(float(d.commission) + float(d.fee) for d in deals)
+                    if not math.isfinite(net_profit):
+                        return {"success": False, "closed_count": 0, "total_matched": 0,
+                                "errors": ["Pozisyon net sonucu geçersiz; toplu seçim yapılamadı."]}
+                if filter_type == "profit" and net_profit > 0:
                     targets.append(p)
-                elif filter_type == "loss" and profit < 0:
+                elif filter_type == "loss" and net_profit < 0:
                     targets.append(p)
                 elif filter_type == "all":
                     targets.append(p)

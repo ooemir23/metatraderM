@@ -10,7 +10,8 @@ Terminal ve AI Danışmanı sayfalarının üst kısmındaki **Türkçe / Englis
 - **AI kullanım bütçesi:** Günlük çağrı/token dökümü manuel tavsiye, otomatik tarama, işlem profili ve bağlantı testini ayrı gösterir. Tam otomatik tarama, günlük çağrı veya token sınırının `AI_AUTOPILOT_BUDGET_FRACTION` oranına (varsayılan %80) ulaştığında veya token sonucu bilinmeyen istek varken durur. Manuel istekler kendi günlük sınırına kadar kullanılabilir.
 - **Hesap bazlı AI profili:** Broker numarası, sunucu veya hesap türü değişince profil, öneriler ve yeni işlem kayıtları ayrılır. Önceki sürümden kalan hesap kimliği olmayan profil, `ai_memory.json` içinde `legacy_unscoped` olarak saklanır ancak güvenle eşlenemediği için ilk geçişte yeniden analiz edilmelidir. AI performans paneli 90 günlük kapanmış pozisyonlarda net sonuç, komisyon/swap, kayma, düşüş ve güven aralığı gözlemlerini gösterir. Geçmişin dışındaki maliyetler ve brokerın Magic Number'ı korumadığı işlemler eksik kalabilir; model güveni kazanma olasılığı değildir.
 - **İki panel kullanıcısı:** `DASHBOARD_USER_2` ve `DASHBOARD_PASSWORD_2` birlikte ayarlanırsa ikinci kişi kendi Basic Auth bilgileriyle giriş yapar. İlk kullanıcı `ADMIN`; ikinci kullanıcı `DASHBOARD_ROLE_2=TRADER` (varsayılan), `VIEWER` veya `ADMIN` rolünü alır. Yetki API'de uygulanır; `TRADER` emir açıp kapatabilir fakat hesap/otomasyon ayarlarını ve acil durdurmayı değiştiremez. Gerçek hesap için ikinci kullanıcının TOTP anahtarı `TRADING_STATE_DIR/trading_totp_secret_2`, ilk kullanıcınınki `trading_totp_secret` dosyasındadır; ikisi ayrı doğrulama uygulamalarına eklenmelidir. Dosyalar doğrulanmış yedeğe dahildir.
-- **İşlem öncesi risk** paneli, brokerın `order_calc_profit` ve `order_calc_margin` sonuçlarıyla stop kaybı ve gerekli teminatı gösterir. Komisyon, swap ve kayma dahil değildir. Stop yoksa parasal üst sınır gösterilmez; stopu olmayan mevcut pozisyon sayısı ayrıca belirtilir. Emir anında broker koşulları yeniden doğrulanır.
+- **İşlem öncesi risk** paneli, brokerın `order_calc_profit` ve `order_calc_margin` sonuçlarıyla stop kaybı ve gerekli teminatı gösterir. Günlük zarar, uygulama lot/işlem sınırı ve SL mesafesi engellerini de bildirir. Komisyon, swap ve kayma stop kaybı tahminine dahil değildir. Stop yoksa parasal üst sınır gösterilmez; stopu olmayan mevcut pozisyon sayısı ayrıca belirtilir. Emir anında broker koşulları yeniden doğrulanır.
+- **Günlük zarar limiti:** Panelde kaydedilen limit manuel ve HMA emirlerinde kullanılır; AI emirlerinde hesap limitiyle AI ayarındaki limitin daha düşüğü uygulanır. Kârdaki/zarardaki toplu kapatma, brokerın pozisyon kimliğine bağladığı geçmiş maliyetleri de kullanır; geçmiş okunamazsa filtreli kapatma durur.
 - Bu kurulumdaki MT5 terminali EURUSD/XAUUSD fiyat zamanını sunucu UTC saatinden üç saat ileride bildiriyor. `docker-compose.yml` için varsayılan `MT5_TICK_CLOCK_OFFSET_SECONDS=10800` bu farkı düzeltir; farklı broker veya terminalde ölçülen farkı `.env` ile ayarlayın (UTC zaman damgası için `0`). Düzeltmeden sonra fiyat 10 saniyeden eskiyse veya gelecekteyse yeni emir ve risk önizlemesi reddedilir.
 - **Gerçek hesap doğrulaması** için panelde **İşlem Güvenliği / Trading Security** düğmesini kullanın. Altı haneli TOTP koduyla açılan sunucu oturumu 15 dakika sürer. Süre bitince gerçek hesaptaki HMA botu ve AI otopilotu durur. Demo hesabı bundan etkilenmez. Gerçek hesaba giriş, emir açma, bekleyen emir yerleştirme, stop değiştirme ve otomasyonu başlatma ikinci doğrulama gerektirir. Pozisyon kapatma ve acil toplu kapatma, risk azaltmayı geciktirmemek için temel panel kimliğiyle mümkündür.
 - TOTP anahtarı uygulama açılırken `TRADING_STATE_DIR/trading_totp_secret` dosyasında yalnız sunucuda oluşturulur ve doğrulanan durum yedeğine dahil edilir. Sunucu yöneticisi bu Base32 anahtarı güvenli bir SSH oturumundan okuyup kimlik doğrulama uygulamasına **TOTP / 30 saniye / 6 hane** olarak eklemelidir. Anahtarı sohbet, ekran görüntüsü veya herkese açık loglara koymayın. Oturum kayıtları aynı dizindeki `security_sessions.sqlite3` dosyasında tutulur.
@@ -48,8 +49,8 @@ Bu robot (Expert Advisor), **Hull Moving Average (HMA)** ile seçeceğiniz **2. 
    * Stop Loss tamamen tercihe bağlıdır (`InpUseStopLoss = true/false`).
    * İster manuel olarak kapatıp sadece ters sinyalde pozisyonu kapatabilirsiniz, isterseniz istediğiniz puan mesafesinde koruyucu stop koyabilirsiniz.
 3. **Esnek Çalışma Modu:**
-   * **Tam Otomatik:** Şartlar sağlandığında hem sinyal verir hem de emri doğrudan açar (`InpAllowTrading = true`).
-   * **Sadece Sinyal:** İşlem açmaz, sadece ekrana ve telefona sinyal gönderir (`InpAllowTrading = false`).
+   * **Tam Otomatik:** Şartlar sağlandığında hem sinyal verir hem de emri doğrudan açar (`InpAllowTrading = true`). Hesap genelindeki EA risk sınırları ayrıca uygulanır.
+   * **Sadece Sinyal:** Varsayılandır; işlem açmaz, sadece ekrana ve telefona sinyal gönderir (`InpAllowTrading = false`).
 4. **Bildirim Sistemi:**
    * MT5 Ekran Pop-up Uyarısı (`Alert`)
    * MT5 Mobil Uygulaması Push Bildirimi (`SendNotification`)
@@ -58,6 +59,8 @@ Bu robot (Expert Advisor), **Hull Moving Average (HMA)** ile seçeceğiniz **2. 
    * Sinyaller **mum kapanışında** teyit edilir (Repaint ve mum içi sahte kesişimler önlenir).
    * Ters sinyal geldiğinde mevcut açık pozisyonu otomatik kapatıp yeni yöne dönebilir (`InpCloseOpposite = true`).
    * Grafik üzerinde anlık indikatör değerlerini ve son sinyal durumunu gösteren bilgi paneli içerir.
+
+EA kendi broker verisini kontrol eder; web panelinin kalıcı durdurma kilidini veya emir günlüğünü okuyamaz. Aynı broker hesabında web HMA/AI otomasyonu ile EA otomatik işlemini birlikte açmayın. Panelde günlük limit değiştirirseniz EA girdisini de güncelleyin; iki ayar otomatik eşitlenmez.
 
 ---
 
@@ -86,8 +89,12 @@ Bu robot (Expert Advisor), **Hull Moving Average (HMA)** ile seçeceğiniz **2. 
 | **2. İndikatör** | `InpSecondMAType` | `TYPE_EMA` | 2. İndikatör türü (`HMA`, `EMA`, `SMA`, `LWMA`) |
 | | `InpSecondMAPeriod` | `34` | 2. İndikatör periyodu (Örn: 34, 50, 200) |
 | **İşlem & Risk** | `InpLotSize` | `0.01` | Açılacak işlem lot büyüklüğü |
-| | `InpAllowTrading` | `true` | `true` = Otomatik al/sat, `false` = Sadece sinyal |
+| | `InpAllowTrading` | `false` | `true` = Otomatik al/sat, `false` = Sadece sinyal |
 | | `InpCloseOpposite` | `true` | Ters sinyalde mevcut pozisyon kapatılsın mı? |
+| | `InpDailyLossLimit` | `500` | UTC günü için hesap para birimindeki EA zarar sınırı |
+| | `InpMaxOrderLots` | `0.10` | EA'nın tek emir üst sınırı |
+| | `InpMaxTotalLots` | `0.50` | Hesaptaki açık pozisyon ve bekleyen emir toplamı |
+| | `InpMaxOpenOrders` | `10` | Hesaptaki açık pozisyon ve bekleyen emir sayısı |
 | **Stop Loss / TP** | `InpUseStopLoss` | `true` | **Stop Loss'u Aç / Kapat** |
 | | `InpStopLossPoints`| `200` | Stop mesafesi (Point cinsinden, örn: 20 pip = 200 point) |
 | | `InpUseTakeProfit` | `false` | Take Profit Aç / Kapat |

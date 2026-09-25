@@ -145,6 +145,44 @@ def test_native_close_rechecks_account_at_send(monkeypatch):
     mt5.order_send.assert_not_called()
 
 
+def test_native_filtered_close_uses_profit_plus_swap(monkeypatch):
+    import sys
+    mt5 = Mock()
+    mt5.positions_get.return_value = [
+        NS(ticket=11, identifier=11, profit=5, swap=-8),
+        NS(ticket=12, identifier=12, profit=-2, swap=4),
+    ]
+    mt5.history_deals_get.return_value = [NS(profit=0, commission=0, swap=0, fee=0)]
+    monkeypatch.setitem(sys.modules, 'MetaTrader5', mt5)
+    ns = {}
+    exec(NATIVE_CLOSE_SCRIPT, ns)
+    closed = []
+    ns['_execute_close_deal'] = lambda p, *args: closed.append(p.ticket) or {'success': True}
+    assert ns['hma_native_close_filter']('profit')['total_matched'] == 1
+    assert closed == [12]
+    closed.clear()
+    assert ns['hma_native_close_filter']('loss')['total_matched'] == 1
+    assert closed == [11]
+
+
+def test_native_filtered_close_includes_commission_and_requires_history(monkeypatch):
+    import sys
+    mt5 = Mock()
+    mt5.positions_get.return_value = [NS(ticket=11, identifier=111, profit=5, swap=0)]
+    mt5.history_deals_get.return_value = [NS(profit=0, commission=-8, swap=0, fee=0)]
+    monkeypatch.setitem(sys.modules, 'MetaTrader5', mt5)
+    ns = {}
+    exec(NATIVE_CLOSE_SCRIPT, ns)
+    closed = []
+    ns['_execute_close_deal'] = lambda p, *args: closed.append(p.ticket) or {'success': True}
+    assert ns['hma_native_close_filter']('profit')['total_matched'] == 0
+    assert ns['hma_native_close_filter']('loss')['total_matched'] == 1
+    assert closed == [11]
+    mt5.history_deals_get.return_value = None
+    assert not ns['hma_native_close_filter']('loss')['success']
+    assert closed == [11]
+
+
 def test_close_failure_prevents_opposite_order(client):
     bot = StrategyBot(client)
     bot.send_telegram = Mock()
