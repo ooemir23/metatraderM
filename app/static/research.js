@@ -25,6 +25,14 @@ function renderResearchReport(data) {
   const currency = data.settings.currency;
   const money = value => value == null ? '—' : `${Number(value).toLocaleString('tr-TR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${currency || ''}`;
   const selectedStats = data.selected_holdout ? data.selected_holdout.stats : data.baseline_holdout.stats;
+  if (data.selected) {
+    const total = data.selected.train.count + data.selected.validation.count + selectedStats.count;
+    addText(`Seçilen aday tüm dönemlerde ${total} işlem: eğitim ${data.selected.train.count}, doğrulama ${data.selected.validation.count}, ayrılmış test ${selectedStats.count}. Üstteki özet yalnız son %20'lik ayrılmış testi gösterir. Araştırmada 10 işlem sınırı yoktur.`);
+    const signals = data.selected_holdout.signals;
+    if (signals) addText(`Ayrılmış test sinyalleri: ${signals.crossovers} kesişim, ${signals.confirmed} onay; ${signals.filtered_at_deadline} filtre nedeniyle iptal, ${signals.expired} süre aşımı, ${signals.reversed} ters kesişim nedeniyle iptal. Aynı anda tek araştırma pozisyonu tutulur.`);
+  } else {
+    addText('Araştırmada 10 işlem sınırı yoktur. İşlem sayısı tarih aralığına, kesişimlere ve onay koşullarına göre oluşur.');
+  }
   const cards = document.createElement('div');
   cards.className = 'research-metrics';
   addText(data.selected ? 'Seçilen aday · ayrılmış test özeti' : 'Ham kesişim · ayrılmış test özeti');
@@ -140,7 +148,9 @@ async function runResearchComparison() {
     er_min: number('research-er'), stop_atr: number('research-stop'), target_atr: number('research-target'),
     historical_spread: true, commission_points: number('research-commission'), slippage_points: number('research-slippage'),
     swap_long_points_per_day: number('research-swap-long'), swap_short_points_per_day: number('research-swap-short')};
+  saveResearchSettings();
   button.disabled = true;
+  document.getElementById('research-reset').disabled = true;
   latestResearchReport = null;
   document.getElementById('research-download').disabled = true;
   document.getElementById('research-result').replaceChildren();
@@ -155,31 +165,85 @@ async function runResearchComparison() {
     document.getElementById('research-download').disabled = false;
     status.textContent = data.assessment ? data.assessment.message : (data.selected ? 'Karşılaştırma tamamlandı. Seçilen değerler araştırma adayıdır.' : 'Karşılaştırma tamamlandı; uygun aday yok.');
   } catch (error) { status.textContent = error.message; }
-  finally { button.disabled = false; }
+  finally { button.disabled = false; document.getElementById('research-reset').disabled = false; }
 }
 
-function downloadResearchReport() {
+async function downloadResearchReport() {
   if (!latestResearchReport) return;
-  const blob = new Blob([JSON.stringify(latestResearchReport, null, 2)], {type: 'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'XAUUSD-HMA-KAMA-ATR-report.json';
-  a.click();
-  URL.revokeObjectURL(url);
+  const button = document.getElementById('research-download');
+  if (button.disabled) return;
+  const report = latestResearchReport;
+  button.disabled = true;
+  try {
+    const response = await fetch('/api/research/export', {method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify(report)});
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(typeof error.detail === 'string' ? error.detail : 'Excel raporu oluşturulamadı.');
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const a = document.createElement('a');
+    a.href = url; a.download = 'XAUUSD-HMA-KAMA-ATR-report.xlsx'; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) { document.getElementById('research-status').textContent = error.message; }
+  finally { button.disabled = !latestResearchReport; }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  const end = document.getElementById('research-end');
-  const start = document.getElementById('research-start');
-  if (!end || !start) return;
+const researchSettingsKey = 'metatraderm.research.settings.v1';
+const researchFieldIds = ['research-start', 'research-end', 'research-lot', 'research-capital',
+  'research-hma', 'research-kama', 'research-atr', 'research-er', 'research-stop', 'research-target',
+  'research-commission', 'research-slippage', 'research-swap-long', 'research-swap-short'];
+function researchDefaultSettings() {
   const today = new Date();
-  end.value = today.toISOString().slice(0, 10);
-  end.max = end.value;
-  const earlier = new Date(today);
-  earlier.setUTCFullYear(earlier.getUTCFullYear() - 3);
-  start.value = earlier.toISOString().slice(0, 10);
-  start.max = end.value;
+  const earlier = new Date(today); earlier.setUTCFullYear(earlier.getUTCFullYear() - 3);
+  for (const id of researchFieldIds) {
+    const input = document.getElementById(id);
+    if (input) input.value = input.defaultValue;
+  }
+  const end = document.getElementById('research-end'), start = document.getElementById('research-start');
+  end.value = today.toISOString().slice(0, 10); start.value = earlier.toISOString().slice(0, 10);
+  end.max = start.max = end.value;
+}
+function saveResearchSettings() {
+  try {
+    const values = {};
+    for (const id of researchFieldIds) values[id] = document.getElementById(id).value;
+    localStorage.setItem(researchSettingsKey, JSON.stringify(values));
+  } catch (_) {
+    document.getElementById('research-status').textContent = 'Ayarlar bu tarayıcıda kaydedilemedi; tarayıcı depolama iznini kontrol edin.';
+  }
+}
+function resetResearchSettings() {
+  if (document.getElementById('research-run').disabled) return;
+  try { localStorage.removeItem(researchSettingsKey); }
+  catch (_) {
+    document.getElementById('research-status').textContent = 'Kayıtlı ayarlar silinemedi; tarayıcı depolama iznini kontrol edin.';
+    return;
+  }
+  researchDefaultSettings();
+  latestResearchReport = null;
+  document.getElementById('research-result').replaceChildren();
+  document.getElementById('research-download').disabled = true;
+  document.getElementById('research-status').textContent = 'Ayarlar varsayılanlara sıfırlandı. Yeni rapor için karşılaştırmayı çalıştırın.';
+}
+document.addEventListener('DOMContentLoaded', () => {
+  if (!document.getElementById('research-form')) return;
+  researchDefaultSettings();
+  try {
+    const saved = JSON.parse(localStorage.getItem(researchSettingsKey) || 'null');
+    if (saved && typeof saved === 'object') {
+      for (const id of researchFieldIds) {
+        if (typeof saved[id] === 'string' && saved[id].length <= 100) document.getElementById(id).value = saved[id];
+      }
+    }
+  } catch (_) {
+    document.getElementById('research-status').textContent = 'Kayıtlı ayarlar okunamadı; varsayılan değerler gösteriliyor.';
+  }
+  for (const id of researchFieldIds) {
+    const input = document.getElementById(id);
+    input.addEventListener('input', saveResearchSettings);
+    input.addEventListener('change', saveResearchSettings);
+  }
 });
 
 

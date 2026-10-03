@@ -243,3 +243,12 @@ def test_lot_scales_money_without_changing_signals_and_retains_every_trade():
             assert all(t['entry_price'] > 0 and t['exit_price'] > 0 for t in small['trades'])
     assert len(first['selected_trades']['train']) == first['selected']['train']['count']
     assert len(first['selected_trades']['validation']) == first['selected']['validation']['count']
+
+
+def test_research_has_no_ten_trade_limit():
+    rows = history()
+    result = compare(rows, aggregate(rows), Settings(min_train_trades=1))
+    training = result['selected_trades']['train']
+    assert len(training) == result['selected']['train']['count'] > 10
+    assert result['selected_signals']['train']['confirmed'] >= len(training)
+    assert all('validation_signals' in comparison for comparison in result['comparisons'])

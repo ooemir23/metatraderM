@@ -75,3 +75,12 @@ Botun **Ayarlar** ekranında 2. MA olarak **KAMA** seçilebilir. 2. MA periyodu 
 **Mesafe hesabı → ATR çarpanı** seçilirse stop/hedef son kapanmış mumun Wilder ATR’sinden broker `point` değerine çevrilir ve yukarı yuvarlanır. Stop/hedef ayrıca kendi kullanım kutularıyla açılıp kapatılır. Bunlar girişte sabit mesafelerdir; takip eden stop uygulanmaz. Broker stop, teminat ve mevcut risk kontrolleri emir gönderiminde geçerlidir.
 
 KAMA/ATR araştırma motorunun gösterge hesaplamaları kullanılır; bot, kayan geçmiş penceresiyle çalışır. Yalnız kapanmış mumlar göstergelere girer. Canlı emir yeni mum fark edildiğinde mevcut broker fiyatından gerçekleşir; OHLC araştırmasının sonraki mum açılışı varsayımıyla birebir gerçekleşme garantisi yoktur. Ayar kaydetmek botu başlatmaz; çalışan bot durdurulmadan ayarlar değiştirilemez. Araştırma sonucu bot ayarlarına otomatik aktarılmaz.
+
+
+## Ayarların saklanması ve Excel raporu
+
+Araştırma formundaki tarih, lot, sermaye, gösterge ve maliyet alanları `localStorage` ile aynı tarayıcı/aynı panel adresinde otomatik saklanır; yenileme ve tarayıcıyı yeniden açma ayarları değiştirmez. **Sıfırla** yalnız araştırma ayarlarını varsayılanlara döndürür, saklanan kaydı siler ve mevcut raporu temizler. Araştırma çalışırken bu düğme devre dışıdır. İşlem raporunun kendisi tarayıcıda kalıcı saklanmaz; yeniden açıldığında kaydedilmiş ayarlarla karşılaştırma tekrar çalıştırılır.
+
+**Raporu İndir (.xlsx)** tamamlanmış raporu `/api/research/export` üzerinden Excel’e çevirir; yeniden test başlatmaz veya işlem açmaz. Dosyada Özet, Ayarlar, İşlemler ve Karşılaştırma sayfaları bulunur. Tüm seçilen aday işlemleri ve ham ayrılmış test işlemleri dahil edilir; ekranın 50 satırlık sayfalaması dosyayı sınırlamaz. Sayılar sayısal, UTC tarihler tarih hücresi olarak saklanır; metinler Excel formülü olarak çalıştırılmaz. Endpoint mevcut araştırma yetkileriyle korunur; 16 MiB istek ve toplam 100000 dışa aktarılan satır sınırı yalnız Excel aktarımına aittir.
+
+Araştırma motorunda **10 işlem üst sınırı yoktur**; brokerın canlı açık/bekleyen emir sayısı koruması araştırma simülasyonuna uygulanmaz. Üstteki kartlar yalnız son %20 ayrılmış testi gösterir. Rapor artık eğitim, doğrulama ve ayrılmış test işlem sayılarını birlikte ve toplam olarak açıklar; kesişim/onay/filtre iptali sayaçları az işlem nedenini gösterir. Her araştırma seçeneği aynı anda tek pozisyon taşır. `min_train_trades` üst sınır değil, aday seçimi için minimum eğitim işlem sayısıdır.

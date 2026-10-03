@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager, suppress
 from typing import Optional, Dict, Any, List, Literal
 from fastapi import FastAPI, HTTPException, Query, Request, Depends
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, Response
 from pydantic import BaseModel, Field, ConfigDict
 
 from app.mt5_client import MT5Client, TIMEFRAME_NAMES, MT5DataError
@@ -404,6 +404,33 @@ def research_compare(req: ResearchRequest):
         raise HTTPException(status_code=503, detail='MT5 araştırma verisi alınamadı.') from exc
     finally:
         research_guard.release()
+
+
+research_export_guard = threading.Lock()
+
+
+@app.post('/api/research/export')
+async def research_export(request: Request):
+    from app.research_excel import excel_report, MIME
+    if not research_export_guard.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail='Başka bir Excel raporu hazırlanıyor; tamamlanmasını bekleyin.')
+    try:
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > 16 * 1024 * 1024:
+                raise HTTPException(status_code=413, detail='Excel rapor isteği çok büyük.')
+        report = json.loads(body)
+        try:
+            content = await asyncio.to_thread(excel_report, report)
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            raise HTTPException(status_code=422, detail='Geçersiz veya eksik araştırma raporu: ' + str(exc)) from exc
+        return Response(content, media_type=MIME,
+                        headers={'Content-Disposition': 'attachment; filename="XAUUSD-HMA-KAMA-ATR-report.xlsx"'})
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=422, detail='Geçersiz rapor JSON verisi.') from exc
+    finally:
+        research_export_guard.release()
 
 
 @app.get('/api/broker/diagnostics')

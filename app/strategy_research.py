@@ -296,9 +296,11 @@ def compare(h1, h4, settings=None):
         # H1_H4 unfiltered is the same H1 baseline and is kept explicitly for comparison.
         for config in configs:
             train = evaluate(config, 'train')
+            validation = evaluate(config, 'validation')
             results.append({'config': config, 'train': train['stats'],
                             'train_signals': train['signals'],
-                            'validation': evaluate(config, 'validation')['stats']})
+                            'validation': validation['stats'],
+                            'validation_signals': validation['signals']})
     eligible = [r for r in results if r['config']['filtered'] and
                 r['train']['count'] >= settings.min_train_trades and r['train']['net_points'] > 0]
     # Selection uses TRAIN only. Neither validation nor holdout can change the choice.
@@ -323,6 +325,8 @@ def compare(h1, h4, settings=None):
             'segments': {k: {'start': v[0], 'end_exclusive': v[1]} for k, v in segments.items()},
             'comparisons': results, 'selected': winner, 'selected_holdout': held,
             'baseline_holdout': evaluate(baseline, 'holdout'),
+            'selected_signals': {segment: evaluate(winner['config'], segment)['signals']
+                                 for segment in ('train', 'validation')} if winner else {},
             'selected_trades': {segment: evaluate(winner['config'], segment)['trades']
                                 for segment in ('train', 'validation')} if winner else {},
             'selection_rule': 'Eğitimde en az minimum işlem ve pozitif net puan; net puan/azami düşüş. Doğrulama ve holdout seçimde kullanılmaz.',
