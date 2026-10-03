@@ -331,8 +331,10 @@ research_guard = threading.Lock()
 
 @app.get('/api/research/history')
 def research_history(symbol: str = Query(default='XAUUSD', pattern=r'^[A-Za-z0-9_.#-]+$', max_length=32),
-                     timeframe_minutes: Literal[60, 240] = 60,
+                     timeframe_minutes: int = Query(default=60),
                      start: int = Query(ge=946684800), end: int = Query(ge=946684800)):
+    if timeframe_minutes not in (60, 240):
+        raise HTTPException(status_code=422, detail='Araştırma yalnız H1/H4 destekler.')
     if end <= start or end - start > 5 * 366 * 86400:
         raise HTTPException(status_code=422, detail='En fazla beş yıllık artan tarih aralığı gerekli.')
     if not research_guard.acquire(blocking=False):

@@ -174,8 +174,13 @@ def test_api_validates_and_never_places_orders(monkeypatch):
     assert calls == [60, 240]
     assert r.json()['assumptions']['live_trading_enabled'] is False
     response = web.get('/api/research/history', auth=auth,
-                       params={'start': body['start'], 'end': body['end']})
+                       params={'start': body['start'], 'end': body['end'], 'timeframe_minutes': 60})
     assert response.json()['count'] == len(rows)
+    response = web.get('/api/research/history', auth=auth,
+                       params={'start': body['start'], 'end': body['end'], 'timeframe_minutes': 240})
+    assert response.json()['count'] == len(aggregate(rows))
+    assert web.get('/api/research/history', auth=auth,
+                   params={'start': body['start'], 'end': body['end'], 'timeframe_minutes': 15}).status_code == 422
     main.research_guard.acquire()
     try:
         assert web.post('/api/research/compare', auth=auth, json=body).status_code == 429
