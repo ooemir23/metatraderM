@@ -95,6 +95,7 @@ function renderResearchReport(data) {
       for (const {trade,index} of trades) {
         const detail = document.createElement('details'); detail.className = 'research-trade-diagnosis';
         const title = document.createElement('summary'); title.textContent = `#${index+1} · ${trade.side === 'BUY' ? 'Alış' : 'Satış'} · ${date(trade.entry_time)} UTC · ${money(trade.net_profit)}`;
+        title.className = trade.net_points < 0 ? 'research-trade-loss' : trade.net_points > 0 ? 'research-trade-win' : '';
         detail.appendChild(title);
         const add = text => { const p = document.createElement('p'); p.textContent = text; detail.appendChild(p); };
         add(`Giriş: ${trade.entry_price?.toFixed(2) ?? '—'} · Çıkış: ${trade.exit_price?.toFixed(2) ?? '—'} (${date(trade.exit_time)} UTC) · Lot: ${trade.lot_size} · Bakiye: ${money(trade.balance_after)}.`);

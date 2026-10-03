@@ -241,6 +241,8 @@ body.resizing-positions #tradingview-container iframe {
 .research-outcome-details[hidden] { display: none; }
 .research-trade-diagnosis { border: 1px solid #374151; border-radius: 8px; padding: 12px; margin-top: 10px; }
 .research-trade-diagnosis summary { cursor: pointer; font-weight: 600; color: #f3f4f6; }
+.research-trade-diagnosis summary.research-trade-loss { color: #f87171; }
+.research-trade-diagnosis summary.research-trade-win { color: #4ade80; }
 .research-trade-diagnosis p { margin-top: 8px; color: #cbd5e1; line-height: 1.6; }
 
 .research-metrics .research-outcome-hint { margin-top: 6px; margin-bottom: 0; font-size: 10px; color: #67e8f9; }
