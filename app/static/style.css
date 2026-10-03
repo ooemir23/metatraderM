@@ -233,3 +233,16 @@ body.resizing-positions #tradingview-container iframe {
   #research-panel:fullscreen #research-form > .grid,
   #research-panel.research-fullscreen-fallback #research-form > .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
+
+.research-metrics > button { background: #1f2937; border: 1px solid #64748b; padding: 12px; border-radius: 10px; text-align: left; cursor: pointer; }
+.research-outcome-card:hover, .research-outcome-card[aria-expanded="true"] { border-color: #22d3ee; background: #243448; }
+.research-outcome-card:focus-visible { outline: 2px solid #67e8f9; outline-offset: 3px; }
+.research-outcome-details { margin: 12px 0; padding: 16px; border: 1px solid #475569; border-radius: 12px; background: #111827; }
+.research-outcome-details[hidden] { display: none; }
+.research-trade-diagnosis { border: 1px solid #374151; border-radius: 8px; padding: 12px; margin-top: 10px; }
+.research-trade-diagnosis summary { cursor: pointer; font-weight: 600; color: #f3f4f6; }
+.research-trade-diagnosis p { margin-top: 8px; color: #cbd5e1; line-height: 1.6; }
+
+.research-metrics .research-outcome-hint { margin-top: 6px; margin-bottom: 0; font-size: 10px; color: #67e8f9; }
+
+.research-outcome-details { scroll-margin-top: 72px; }

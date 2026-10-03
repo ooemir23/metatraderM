@@ -84,3 +84,10 @@ Araştırma formundaki tarih, lot, sermaye, gösterge ve maliyet alanları `loca
 **Raporu İndir (.xlsx)** tamamlanmış raporu `/api/research/export` üzerinden Excel’e çevirir; yeniden test başlatmaz veya işlem açmaz. Dosyada Özet, Ayarlar, İşlemler ve Karşılaştırma sayfaları bulunur. Tüm seçilen aday işlemleri ve ham ayrılmış test işlemleri dahil edilir; ekranın 50 satırlık sayfalaması dosyayı sınırlamaz. Sayılar sayısal, UTC tarihler tarih hücresi olarak saklanır; metinler Excel formülü olarak çalıştırılmaz. Endpoint mevcut araştırma yetkileriyle korunur; 16 MiB istek ve toplam 100000 dışa aktarılan satır sınırı yalnız Excel aktarımına aittir.
 
 Araştırma motorunda **10 işlem üst sınırı yoktur**; brokerın canlı açık/bekleyen emir sayısı koruması araştırma simülasyonuna uygulanmaz. Üstteki kartlar yalnız son %20 ayrılmış testi gösterir. Rapor artık eğitim, doğrulama ve ayrılmış test işlem sayılarını birlikte ve toplam olarak açıklar; kesişim/onay/filtre iptali sayaçları az işlem nedenini gösterir. Her araştırma seçeneği aynı anda tek pozisyon taşır. `min_train_trades` üst sınır değil, aday seçimi için minimum eğitim işlem sayısıdır.
+
+
+## İşlem sonuçlarının açıklanması
+
+Kârlı, zararlı ve başa baş kartlarına tıklayınca aynı raporun ilgili işlemleri açılır. Varsayılan dönem kartın ait olduğu ayrılmış testtir; analiz içinden eğitim, doğrulama ve ham test seçilebilir. Her kayıtta yön, lot, giriş/çıkış zamanı ve fiyatları, net sonuç, bakiye, çıkış nedeni, giriş ATR/ER/MA mesafesi ve stop/hedef gösterilir.
+
+Motor, giriş/çıkış bid hareketini spread, gerçekleşme başına kayma, komisyon ve imzalı swap maliyetlerinden ayrı kaydeder. Bu bileşenler net puanı verir; negatif swap kredidir. Stop boşluğu daha kötü açılış gerçekleşmesinden belirlenir. Haber, likidite veya piyasa rejimi veriden kesin çıkarılmaz. Açıklamalar doğrudan gözlenebilen çıkış kuralını ve maliyet etkisini belirtir; öneriler ayrı test hipotezleridir, kârlılık garantisi değildir. Yeni ayrıntılar için eski raporlar yeniden çalıştırılmalıdır.

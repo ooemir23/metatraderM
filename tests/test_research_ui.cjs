@@ -40,5 +40,25 @@ const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:a
   next.events.click(); assert.equal(info.textContent,'101–121 / 121 işlem'); assert.equal(next.disabled,true);
   previous.events.click(); assert.equal(info.textContent,'51–100 / 121 işlem');
   assert.ok(all.some(e=>e.textContent==='Doğru (kârlı)'));
+  const loss = {side:'SELL',lot_size:.01,entry_time:1700000000,exit_time:1700003600,
+    entry_price:2000,exit_price:2001,net_points:-120,net_profit:-1.2,balance_after:9998.8,reason:'stop',
+    diagnostics:{market_points:-100,cost_points:{spread:10,slippage:5,commission:5,swap:0},entry_atr:2,entry_er:.4,entry_distance_atr:.1,stop_price:2001,target_price:1997,stop_gap:false}};
+  ctx.renderResearchReport({settings:{currency:'USD',lot_size:.01,point:.01,contract_size:100},data_quality:{H1:{count:1000,long_intervals:0},H4:{count:250,long_intervals:0}},segments:{train:{start:1700000000},holdout:{end_exclusive:1701000000}},selected:null,baseline_holdout:{stats:{...stats,count:2,losses:1,wins:1},trades:[loss,trades[0]]},comparisons:[]});
+  const collect=()=>{const output=[];const visit=e=>{output.push(e);e.children.forEach(visit);};visit(node('research-result'));return output;};
+  const lossCard=collect().find(e=>e.attrs['aria-label']?.startsWith('Yanlış (zararlı)'));
+  assert.equal(lossCard.tag,'button'); lossCard.events.click();
+  let rendered=collect();
+  assert.equal(lossCard.attrs['aria-expanded'],'true');
+  assert.equal(rendered.find(e=>e.id==='research-outcome-details').hidden,false);
+  assert.equal(rendered.filter(e=>e.className==='research-trade-diagnosis').length,1);
+  assert.ok(rendered.some(e=>e.textContent?.includes('ters yönünde ilerleyerek')));
+  assert.ok(rendered.some(e=>e.textContent?.startsWith('Ne denenebilir?')));
+  assert.ok(rendered.some(e=>e.textContent?.includes('Spread:')));
+  rendered.find(e=>e.textContent==='Detayları kapat').events.click();
+  assert.equal(lossCard.attrs['aria-expanded'],'false');
+  const costDriven=ctx.explainResearchTrade({...loss,reason:'target',diagnostics:{...loss.diagnostics,market_points:10}});
+  assert.match(costDriven.cause,/maliyet|Maliyet/);
+  assert.match(ctx.explainResearchTrade({...loss,reason:'segment end'}).cause,/dönemi sona/);
+  assert.match(ctx.explainResearchTrade({...loss,diagnostics:{...loss.diagnostics,stop_gap:true}}).cause,/ötesinde açıldığı/);
   console.log('Research UI: money summaries, full trade pagination, native/fallback fullscreen and Escape PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});

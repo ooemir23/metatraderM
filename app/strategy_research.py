@@ -162,14 +162,26 @@ def run_segment(rows, study, seconds, start, end, settings, wait=0, distance=0,
         days = max(0, (at // 86400) - (position['entry_time'] // 86400))
         return days * (settings.swap_long_points_per_day if position['side'] == 1 else settings.swap_short_points_per_day)
 
-    def finish(price, at, reason):
+    def finish(price, at, reason, index):
         nonlocal position, equity, peak, drawdown
         net = position['side'] * (price - position['entry']) / settings.point - settings.commission_points - swap(at)
+        exit_slip = 0 if reason == 'target' else settings.slippage_points
+        exit_spread = spread(index) if position['side'] == -1 else 0
+        exit_bid = price + position['side'] * exit_slip * settings.point - exit_spread * settings.point
+        market = position['side'] * (exit_bid - position['entry_bid']) / settings.point
+        costs = {'spread': position['entry_spread'] + exit_spread,
+                 'slippage': settings.slippage_points + exit_slip,
+                 'commission': settings.commission_points, 'swap': swap(at)}
         trades.append({'side': 'BUY' if position['side'] == 1 else 'SELL',
                        'crossover_time': position['crossover_time'],
                        'signal_time': position['signal_time'], 'entry_time': position['entry_time'],
                        'exit_time': at, 'entry_price': position['entry'], 'exit_price': price,
-                       'lot_size': settings.lot_size, 'net_points': round(net, 6), 'reason': reason})
+                       'lot_size': settings.lot_size, 'net_points': round(net, 6), 'reason': reason,
+                       'diagnostics': {'market_points': round(market, 6), 'cost_points': costs,
+                         'entry_atr': position['entry_atr'], 'entry_er': position['entry_er'],
+                         'entry_distance_atr': position['entry_distance_atr'],
+                         'stop_price': position['stop'], 'target_price': position['target'],
+                         'stop_gap': reason == 'stop' and position['side'] * (position['stop'] - (price + position['side'] * exit_slip * settings.point)) > 1e-8}})
         equity += net
         if settings.contract_size is not None:
             factor = settings.point * settings.contract_size * settings.lot_size
@@ -225,10 +237,13 @@ def run_segment(rows, study, seconds, start, end, settings, wait=0, distance=0,
         # Raw reverse closes the previous position, even if filters reject a new entry.
         nxt = rows[i + 1]
         if position and cross and cross != position['side']:
-            finish(exit_price(float(nxt['open']), position['side'], i + 1), execution, 'opposite crossover')
+            finish(exit_price(float(nxt['open']), position['side'], i + 1), execution, 'opposite crossover', i + 1)
         if not position and confirmed:
             entry = float(nxt['open']) + ((spread(i + 1) if confirmed == 1 else 0) + confirmed * settings.slippage_points) * settings.point
             position = {'side': confirmed, 'entry': entry, 'entry_time': execution,
+                        'entry_bid': float(nxt['open']), 'entry_spread': spread(i + 1) if confirmed == 1 else 0,
+                        'entry_atr': atr[i], 'entry_er': er[i],
+                        'entry_distance_atr': abs(hma[i] - kama[i]) / atr[i],
                         'crossover_time': crossover_time,
                         'signal_time': decision, 'stop': entry - confirmed * settings.stop_atr * atr[i],
                         'target': entry + confirmed * settings.target_atr * atr[i] if settings.target_atr else None}
@@ -243,20 +258,20 @@ def run_segment(rows, study, seconds, start, end, settings, wait=0, distance=0,
         if stop_hit:
             fill = min(opening, position['stop']) if side == 1 else max(opening, position['stop'])
             fill -= side * settings.slippage_points * settings.point
-            finish(fill, execution + seconds, 'stop')
+            finish(fill, execution + seconds, 'stop', i + 1)
         else:
             worst = low if side == 1 else high
             worst -= side * settings.slippage_points * settings.point
             marked = equity + side * (worst - position['entry']) / settings.point - settings.commission_points - swap(execution + seconds)
             drawdown = max(drawdown, peak - marked)
             if target_hit:
-                finish(position['target'], execution + seconds, 'target')
+                finish(position['target'], execution + seconds, 'target', i + 1)
             else:
                 marked_close = equity + side * (exit_price(float(nxt['close']), side, i + 1) - position['entry']) / settings.point - settings.commission_points - swap(execution + seconds)
                 peak = max(peak, marked_close)
         # Liquidate at the last fully included bar; segments never share positions.
         if position and (i + 2 == len(rows) or rows[i + 2]['time'] >= end):
-            finish(exit_price(float(nxt['close']), side, i + 1), execution + seconds, 'segment end')
+            finish(exit_price(float(nxt['close']), side, i + 1), execution + seconds, 'segment end', i + 1)
     return {'stats': stats(trades, drawdown, settings), 'signals': counts, 'trades': trades}
 
 

@@ -252,3 +252,19 @@ def test_research_has_no_ten_trade_limit():
     assert len(training) == result['selected']['train']['count'] > 10
     assert result['selected_signals']['train']['confirmed'] >= len(training)
     assert all('validation_signals' in comparison for comparison in result['comparisons'])
+
+
+def test_trade_diagnostics_reconcile_bid_movement_and_signed_costs():
+    rows = history()
+    settings = Settings(historical_spread=True, commission_points=7, slippage_points=3,
+                        swap_long_points_per_day=2, swap_short_points_per_day=-1,
+                        min_train_trades=1, contract_size=100, currency='USD')
+    result = compare(rows, aggregate(rows), settings)
+    trades = result['baseline_holdout']['trades']
+    assert trades and {t['side'] for t in trades} == {'BUY', 'SELL'}
+    for trade in trades:
+        d = trade['diagnostics']
+        assert d['market_points'] - sum(d['cost_points'].values()) == pytest.approx(trade['net_points'], abs=2e-6)
+        assert d['cost_points']['spread'] == 25
+        assert d['cost_points']['slippage'] == (3 if trade['reason'] == 'target' else 6)
+        assert d['entry_atr'] > 0 and 0 <= d['entry_er'] <= 1

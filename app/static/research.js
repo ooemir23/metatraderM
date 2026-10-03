@@ -4,6 +4,32 @@ function researchConfigLabel(c) {
   return `${c.mode.replace('_', ' + ')} · ${c.filtered ? 'filtreli' : 'ham kesişim'} · ${c.wait} mum · %${Math.round(c.distance_atr * 100)} ATR`;
 }
 
+function explainResearchTrade(trade) {
+  const reasons = {stop:'Stop seviyesi görüldü', target:'Hedef seviyesi görüldü',
+    'opposite crossover':'HMA–KAMA ters kesişimi', 'segment end':'Test dönemi sonu'};
+  const d = trade.diagnostics;
+  const costsTurnedLoss = trade.net_points < 0 && d && d.market_points >= 0;
+  let cause, nextTest;
+  if (costsTurnedLoss) {
+    cause = 'Maliyet öncesi fiyat hareketi negatif değildi; spread, kayma, komisyon ve swapın toplam etkisi işlemi net zarara çevirdi.';
+    nextTest = 'Toplam maliyete göre minimum beklenen hareket ve spread filtresini karşılaştırın. Daha sık işlem açmanın ve dar hedeflerin maliyet etkisini ölçün; maliyetleri sıfırlayarak iyileşme varsaymayın.';
+  } else if (trade.reason === 'stop') {
+    cause = d?.stop_gap ? 'Fiyat stopun ötesinde açıldığı için simülasyonda stop seviyesinden daha kötü gerçekleşme oluştu.' : 'Fiyat, pozisyonun ters yönünde ilerleyerek girişte belirlenen stop seviyesine ulaştı.';
+    nextTest = 'Onay bekleme, minimum ER ve ATR mesafesini karşılaştırın. Stop ATR çarpanını farklı değerlerle test edin; stopu genişletirken lotu aynı parasal riske göre azaltın. Açılış boşluğu varsa seans/hafta sonu taşıma kuralını da test edin.';
+  } else if (trade.reason === 'opposite crossover') {
+    cause = 'Ters kesişim çıkış kuralını tetikledi; gerçekleşen giriş ve çıkış arasındaki hareket ile maliyetler net zararla sonuçlandı.';
+    nextTest = 'Hızlı ters kesişimleri azaltmak için onay süresi, minimum ER, MA mesafesi ve H4 filtresini karşılaştırın. Daha az işlem üretirken kaçırılan kazançları ve toplam net sonucu da ölçün.';
+  } else if (trade.reason === 'segment end') {
+    cause = 'İşlem test dönemi sona erdiğinde açık olduğu için son kapanıştan kapatıldı. Bu, stratejinin ayrı bir satış/alış sinyali değildir.';
+    nextTest = 'Bitiş tarihini farklı tarihlere kaydırarak bu zorunlu kapanışın sonuca etkisini ölçün; farklı dönemlerde doğrulayın.';
+  } else {
+    cause = 'Giriş/çıkış fiyatları ve maliyetlerin birleşimi bu net sonucu üretti.';
+    nextTest = 'Giriş kalitesi, çıkış kuralı ve maliyet varsayımlarını ayrı deneylerde karşılaştırın.';
+  }
+  if (trade.net_points >= 0) cause = trade.net_points > 0 ? 'İşlemin fiyat hareketi ve maliyetlerin toplamı pozitif net sonuç verdi.' : 'İşlemin fiyat hareketi ve maliyetleri net olarak birbirini dengeledi.';
+  return {reason:reasons[trade.reason] || trade.reason, cause, nextTest};
+}
+
 function renderResearchReport(data) {
   const root = document.getElementById('research-result');
   root.replaceChildren();
@@ -33,6 +59,62 @@ function renderResearchReport(data) {
   } else {
     addText('Araştırmada 10 işlem sınırı yoktur. İşlem sayısı tarih aralığına, kesişimlere ve onay koşullarına göre oluşur.');
   }
+  const outcomePanel = document.createElement('section');
+  outcomePanel.id = 'research-outcome-details'; outcomePanel.className = 'research-outcome-details';
+  outcomePanel.hidden = true;
+  const outcomeGroups = data.selected ? [
+    ['Seçilen · ayrılmış test', data.selected_holdout.trades],
+    ['Seçilen · eğitim', data.selected_trades?.train || []],
+    ['Seçilen · doğrulama', data.selected_trades?.validation || []],
+    ['Ham kesişim · ayrılmış test', data.baseline_holdout.trades]] : [['Ham kesişim · ayrılmış test', data.baseline_holdout.trades]];
+  let activeOutcomeButton = null;
+  const showOutcomes = (kind, button) => {
+    if (activeOutcomeButton) activeOutcomeButton.setAttribute('aria-expanded', 'false');
+    activeOutcomeButton = button; button.setAttribute('aria-expanded', 'true');
+    outcomePanel.hidden = false; outcomePanel.replaceChildren();
+    const heading = document.createElement('h3'); heading.className = 'font-bold text-white';
+    heading.textContent = kind === 'loss' ? 'Zararlı işlemler · neden ve denenebilecek değişiklikler' : kind === 'win' ? 'Kârlı işlemler · işlem ayrıntıları' : 'Başa baş işlemler · işlem ayrıntıları';
+    const close = document.createElement('button'); close.type = 'button'; close.textContent = 'Detayları kapat';
+    close.className = 'rounded bg-gray-700 px-3 py-2';
+    close.addEventListener('click', () => { outcomePanel.hidden = true; button.setAttribute('aria-expanded', 'false'); });
+    const top = document.createElement('div'); top.className = 'research-trade-toolbar'; top.append(heading, close); outcomePanel.appendChild(top);
+    const label = document.createElement('label'); label.textContent = 'İncelenen dönem: ';
+    const period = document.createElement('select'); period.className = 'rounded bg-gray-800 p-2';
+    period.setAttribute('aria-label', 'İşlem analizi dönemi');
+    outcomeGroups.forEach(([name], index) => { const option = document.createElement('option'); option.value = index; option.textContent = name; period.appendChild(option); });
+    period.value = '0'; label.appendChild(period); outcomePanel.appendChild(label);
+    const explanation = document.createElement('p'); explanation.className = 'my-2 text-gray-400';
+    explanation.textContent = 'Aşağıdaki nedenler işlem kayıtlarına dayanır. Haber, likidite veya piyasanın yatay olması bu veriden kesin belirlenemez. Zararlı sonuç tek başına giriş kararının hatalı olduğunu kanıtlamaz. Önerilen değişiklikleri geçmişte ve yeni bir dönemde maliyetlerle karşılaştırın; zararları ortadan kaldırma garantisi yoktur.';
+    outcomePanel.appendChild(explanation);
+    const list = document.createElement('div'); outcomePanel.appendChild(list);
+    const draw = () => {
+      list.replaceChildren();
+      const trades = outcomeGroups[Number(period.value)][1].map((trade,index) => ({trade,index})).filter(({trade}) => kind === 'loss' ? trade.net_points < 0 : kind === 'win' ? trade.net_points > 0 : trade.net_points === 0);
+      const count = document.createElement('p'); count.className = 'my-2 font-semibold'; count.textContent = `${trades.length} işlem · ${outcomeGroups[Number(period.value)][0]}`; list.appendChild(count);
+      if (!trades.length) { const empty = document.createElement('p'); empty.textContent = 'Bu dönemde bu sonuca sahip işlem yok.'; list.appendChild(empty); }
+      for (const {trade,index} of trades) {
+        const detail = document.createElement('details'); detail.className = 'research-trade-diagnosis';
+        const title = document.createElement('summary'); title.textContent = `#${index+1} · ${trade.side === 'BUY' ? 'Alış' : 'Satış'} · ${date(trade.entry_time)} UTC · ${money(trade.net_profit)}`;
+        detail.appendChild(title);
+        const add = text => { const p = document.createElement('p'); p.textContent = text; detail.appendChild(p); };
+        add(`Giriş: ${trade.entry_price?.toFixed(2) ?? '—'} · Çıkış: ${trade.exit_price?.toFixed(2) ?? '—'} (${date(trade.exit_time)} UTC) · Lot: ${trade.lot_size} · Bakiye: ${money(trade.balance_after)}.`);
+        const analysis = explainResearchTrade(trade);
+        add(`Çıkış nedeni: ${analysis.reason}`);
+        add(`Sonucun açıklaması: ${analysis.cause}`);
+        const diagnostic = trade.diagnostics;
+        if (diagnostic) {
+          const factor = data.settings.point * data.settings.contract_size * trade.lot_size;
+          const amount = points => Number.isFinite(factor) ? money(points * factor) : `${Number(points).toFixed(2)} puan`;
+          add(`Maliyet öncesi fiyat hareketi: ${amount(diagnostic.market_points)}. Spread: ${amount(diagnostic.cost_points.spread)}; kayma: ${amount(diagnostic.cost_points.slippage)}; komisyon: ${amount(diagnostic.cost_points.commission)}; swap maliyeti/kredisi: ${amount(diagnostic.cost_points.swap)}. Net: ${money(trade.net_profit)}. Negatif swap maliyeti kredidir.`);
+          add(`Girişte ATR: ${diagnostic.entry_atr.toFixed(4)} · ER: ${diagnostic.entry_er.toFixed(3)} · HMA–KAMA mesafesi: ${diagnostic.entry_distance_atr.toFixed(3)} ATR · Stop: ${diagnostic.stop_price.toFixed(2)} · Hedef: ${diagnostic.target_price == null ? 'Kapalı' : diagnostic.target_price.toFixed(2)}.`);
+        } else { add('Maliyet ve giriş göstergesi ayrıntıları için karşılaştırmayı bu sürümde yeniden çalıştırın.'); }
+        if (trade.net_points < 0) add(`Ne denenebilir? ${analysis.nextTest}`);
+        detail.open = trades.length <= 10; list.appendChild(detail);
+      }
+    };
+    period.addEventListener('change', draw); draw();
+    if (outcomePanel.scrollIntoView) outcomePanel.scrollIntoView({block:'start',behavior:'smooth'});
+  };
   const cards = document.createElement('div');
   cards.className = 'research-metrics';
   addText(data.selected ? 'Seçilen aday · ayrılmış test özeti' : 'Ham kesişim · ayrılmış test özeti');
@@ -43,12 +125,22 @@ function renderResearchReport(data) {
     ['Doğru (kârlı)', selectedStats.wins], ['Yanlış (zararlı)', selectedStats.losses],
     ['Başa baş', selectedStats.breakeven], ['Getiri', `${selectedStats.return_pct ?? '—'}%`],
     ['Azami düşüş', money(selectedStats.max_drawdown_money)]]) {
-    const card = document.createElement('div');
+    const kind = label === 'Yanlış (zararlı)' ? 'loss' : label === 'Doğru (kârlı)' ? 'win' : label === 'Başa baş' ? 'flat' : null;
+    const card = document.createElement(kind ? 'button' : 'div');
+    if (kind) {
+      card.type = 'button'; card.className = 'research-outcome-card';
+      card.setAttribute('aria-expanded', 'false'); card.setAttribute('aria-controls', 'research-outcome-details');
+      card.setAttribute('aria-label', `${label}: ${value}. İşlem detaylarını göster`);
+      card.addEventListener('click', () => showOutcomes(kind, card));
+    }
     const title = document.createElement('span'); title.textContent = label;
     const valueNode = document.createElement('strong'); valueNode.textContent = String(value);
-    card.append(title, valueNode); cards.appendChild(card);
+    card.append(title, valueNode);
+    if (kind) { const hint = document.createElement('span'); hint.className = 'research-outcome-hint'; hint.textContent = 'İşlemleri incele →'; card.appendChild(hint); }
+    cards.appendChild(card);
   }
   root.appendChild(cards);
+  root.appendChild(outcomePanel);
   addText('Doğru/yanlış, maliyet sonrası kârlı/zararlı işlem demektir. Eğitim, doğrulama ve ayrılmış test ayrı simülasyonlardır; her biri aynı başlangıç sermayesini kullanır.');
   const makeTable = titles => {
     const wrap = document.createElement('div'); wrap.className = 'research-table-scroll';
