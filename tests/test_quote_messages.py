@@ -6,13 +6,15 @@ from test_trade_safety import client
 
 
 @pytest.mark.parametrize('kind, expected', [
-    ('stale', 'Piyasa kapalı olabilir'),
+    ('stale', 'Son fiyat 10 saat 41 dakika 47 saniye önce alındı'),
     ('future', 'broker saat farkı'),
     ('invalid', 'Broker geçerli fiyat bildirmedi'),
 ])
-def test_preview_and_open_explain_quote_failure_without_sending(client, kind, expected):
+def test_preview_and_open_explain_quote_failure_without_sending(client, monkeypatch, kind, expected):
+    now = time.time()
+    monkeypatch.setattr('app.mt5_bridge.time.time', lambda: now)
     tick = client.mt5.symbol_info_tick.return_value
-    tick.time = time.time()
+    tick.time = now
     if kind == 'stale':
         tick.time -= 38507
     elif kind == 'future':

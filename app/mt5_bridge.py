@@ -345,7 +345,9 @@ def _quote_error(tick, tick_offset=0, max_tick_age=10):
     if age < 0:
         return 'Fiyat zamanı sunucu saatinden ileride. Sunucu saati ve broker saat farkı ayarını kontrol edin.'
     if age > max_tick_age:
-        return (f'Son fiyat {int(age)} saniye önce alındı; güncel fiyat bekleniyor. '
+        hours, remainder = divmod(int(age), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return (f'Son fiyat {hours} saat {minutes} dakika {seconds} saniye önce alındı; güncel fiyat bekleniyor. '
                 'Piyasa kapalı olabilir veya MT5 fiyat akışı durmuş olabilir. '
                 'Güncel fiyat gelmeden işlem yapılamaz.')
     return None

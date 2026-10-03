@@ -417,6 +417,7 @@
   ]));
 
   const patterns = [
+    [/^Son fiyat (\d+) saat (\d+) dakika (\d+) saniye önce alındı; güncel fiyat bekleniyor\. Piyasa kapalı olabilir veya MT5 fiyat akışı durmuş olabilir\. Güncel fiyat gelmeden işlem yapılamaz\.$/, (_, hours, minutes, seconds) => `Last quote received ${hours} hours ${minutes} minutes ${seconds} seconds ago; waiting for a current price. The market may be closed or the MT5 price feed may have stopped. Trading requires a current price.`],
     [/^Son fiyat (\d+) saniye önce alındı; güncel fiyat bekleniyor\. Piyasa kapalı olabilir veya MT5 fiyat akışı durmuş olabilir\. Güncel fiyat gelmeden işlem yapılamaz\.$/, (_, seconds) => `Last quote received ${seconds} seconds ago; waiting for a current price. The market may be closed or the MT5 price feed may have stopped. Trading requires a current price.`],
     [/^Son Veri: (.+)$/, (_, value) => `Last update: ${value}`],
     [/^Bağlı: (.+)$/, (_, value) => `Connected since: ${value}`],
