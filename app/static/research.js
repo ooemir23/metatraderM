@@ -21,6 +21,7 @@ function renderResearchReport(data) {
   } else {
     addText('Eğitimde pozitif sonuç ve yeterli işlem sağlayan filtreli aday bulunamadı.');
   }
+  if (data.assessment) addText(data.assessment.message);
   const table = document.createElement('table');
   table.className = 'w-full text-left border-collapse whitespace-nowrap';
   const header = table.createTHead().insertRow();
@@ -80,7 +81,7 @@ async function runResearchComparison() {
     latestResearchReport = data;
     renderResearchReport(data);
     document.getElementById('research-download').disabled = false;
-    status.textContent = data.selected ? 'Karşılaştırma tamamlandı. Seçilen değerler araştırma adayıdır.' : 'Karşılaştırma tamamlandı; uygun aday yok.';
+    status.textContent = data.assessment ? data.assessment.message : (data.selected ? 'Karşılaştırma tamamlandı. Seçilen değerler araştırma adayıdır.' : 'Karşılaştırma tamamlandı; uygun aday yok.');
   } catch (error) { status.textContent = error.message; }
   finally { button.disabled = false; }
 }

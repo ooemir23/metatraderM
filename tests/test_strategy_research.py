@@ -119,6 +119,7 @@ def test_holdout_changes_cannot_change_selection():
     assert before['selected'] == after['selected']
     assert len(before['comparisons']) == 51
     assert before['comparisons'] == after['comparisons']
+    assert before['assessment']['status'] in ('failed_validation', 'insufficient_evidence', 'positive_simulation', 'no_candidate')
 
 
 def test_reject_bad_data_or_missing_spread():

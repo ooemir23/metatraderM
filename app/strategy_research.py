@@ -280,6 +280,17 @@ def compare(h1, h4, settings=None):
                                             r['train']['mean_points']), reverse=True)
     winner = ranked[0] if ranked else None
     held = evaluate(winner['config'], 'holdout') if winner else None
+    if winner is None:
+        assessment = {'status': 'no_candidate', 'message': 'Eğitim koşullarını sağlayan filtreli aday bulunamadı.'}
+    elif winner['validation']['net_points'] <= 0 or held['stats']['net_points'] <= 0:
+        assessment = {'status': 'failed_validation',
+                      'message': 'Eğitimde seçilen aday doğrulama veya ayrılmış testte pozitif net sonuç sağlayamadı. Bu ayar doğrulanmış işlem ayarı değildir.'}
+    elif min(winner['validation']['count'], held['stats']['count']) < settings.min_train_trades:
+        assessment = {'status': 'insufficient_evidence',
+                      'message': 'Doğrulama/ayrılmış test işlem sayısı minimumun altında; pozitif sonuç yeterli kanıt değildir.'}
+    else:
+        assessment = {'status': 'positive_simulation',
+                      'message': 'Doğrulama ve ayrılmış testte pozitif simülasyon sonucu; gerçek tick ve Demo doğrulaması ayrıca gerekli.'}
     baseline = {'mode': winner['config']['mode'] if winner else 'H1', 'wait': 0,
                 'distance_atr': 0, 'filtered': False}
     return {'success': True, 'settings': asdict(settings), 'data_quality': quality,
@@ -287,6 +298,7 @@ def compare(h1, h4, settings=None):
             'comparisons': results, 'selected': winner, 'selected_holdout': held,
             'baseline_holdout': evaluate(baseline, 'holdout'),
             'selection_rule': 'Eğitimde en az minimum işlem ve pozitif net puan; net puan/azami düşüş. Doğrulama ve holdout seçimde kullanılmaz.',
+            'assessment': assessment,
             'status': 'research_candidate' if winner else 'no_eligible_candidate',
             'assumptions': {'units': 'points, fixed exposure; not account currency or compounded returns',
                             'ohlc': 'bid; shorts exit at ask; bar spread is constant within each bar',
