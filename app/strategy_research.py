@@ -22,6 +22,10 @@ class Settings:
     swap_short_points_per_day: float = 0.0
     historical_spread: bool = False
     min_train_trades: int = 20
+    lot_size: float = .01
+    initial_capital: float = 10000.0
+    contract_size: float | None = None
+    currency: str | None = None
 
     def validate(self):
         for key in ('hma_period', 'kama_period', 'kama_fast', 'kama_slow', 'atr_period'):
@@ -37,6 +41,11 @@ class Settings:
                 raise ValueError('Geçersiz maliyet veya risk ayarı.')
         if self.point <= 0 or self.stop_atr <= 0:
             raise ValueError('Point ve ATR stop çarpanı pozitif olmalı.')
+        for value in (self.lot_size, self.initial_capital):
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError('Lot ve başlangıç sermayesi pozitif olmalı.')
+        if self.contract_size is not None and (not math.isfinite(self.contract_size) or self.contract_size <= 0 or not self.currency):
+            raise ValueError('Para hesabı için sözleşme büyüklüğü ve para birimi gerekli.')
         for value in (self.swap_long_points_per_day, self.swap_short_points_per_day):
             if not math.isfinite(value):
                 raise ValueError('Geçersiz swap varsayımı.')
@@ -106,7 +115,7 @@ def closed_higher_indices(lower, higher, lower_seconds=3600, higher_seconds=1440
     return [bisect_right(times, r['time'] + lower_seconds) - 1 for r in lower]
 
 
-def stats(trades, marked_drawdown=0):
+def stats(trades, marked_drawdown=0, settings=None):
     profits = [t['net_points'] for t in trades]
     gains, losses = sum(p for p in profits if p > 0), -sum(p for p in profits if p < 0)
     equity = peak = drawdown = 0.0
@@ -114,12 +123,24 @@ def stats(trades, marked_drawdown=0):
         equity += p
         peak = max(peak, equity)
         drawdown = max(drawdown, peak - equity)
-    return {'count': len(profits), 'net_points': round(equity, 2),
+    result = {'count': len(profits),
+            'wins': sum(p > 0 for p in profits), 'losses': sum(p < 0 for p in profits),
+            'breakeven': sum(p == 0 for p in profits), 'net_points': round(equity, 2),
             'mean_points': round(equity / len(profits), 2) if profits else None,
             'win_rate_pct': round(100 * sum(p > 0 for p in profits) / len(profits), 2) if profits else None,
             'profit_factor': round(gains / losses, 3) if losses else None,
             'max_closed_drawdown_points': round(drawdown, 2),
             'max_drawdown_points': round(max(drawdown, marked_drawdown), 2)}
+    if settings and settings.contract_size is not None:
+        factor = settings.point * settings.contract_size * settings.lot_size
+        result.update(lot_size=settings.lot_size, currency=settings.currency,
+                      initial_capital=settings.initial_capital,
+                      gross_profit=round(gains * factor, 2), gross_loss=round(losses * factor, 2),
+                      net_profit=round(equity * factor, 2),
+                      final_capital=round(settings.initial_capital + equity * factor, 2),
+                      return_pct=round(equity * factor / settings.initial_capital * 100, 2),
+                      max_drawdown_money=round(max(drawdown, marked_drawdown) * factor, 2))
+    return result
 
 
 def run_segment(rows, study, seconds, start, end, settings, wait=0, distance=0,
@@ -147,8 +168,13 @@ def run_segment(rows, study, seconds, start, end, settings, wait=0, distance=0,
         trades.append({'side': 'BUY' if position['side'] == 1 else 'SELL',
                        'crossover_time': position['crossover_time'],
                        'signal_time': position['signal_time'], 'entry_time': position['entry_time'],
-                       'exit_time': at, 'net_points': round(net, 6), 'reason': reason})
+                       'exit_time': at, 'entry_price': position['entry'], 'exit_price': price,
+                       'lot_size': settings.lot_size, 'net_points': round(net, 6), 'reason': reason})
         equity += net
+        if settings.contract_size is not None:
+            factor = settings.point * settings.contract_size * settings.lot_size
+            trades[-1].update(net_profit=round(net * factor, 2), currency=settings.currency,
+                              balance_after=round(settings.initial_capital + equity * factor, 2))
         peak = max(peak, equity)
         drawdown = max(drawdown, peak - equity)
         position = None
@@ -231,7 +257,7 @@ def run_segment(rows, study, seconds, start, end, settings, wait=0, distance=0,
         # Liquidate at the last fully included bar; segments never share positions.
         if position and (i + 2 == len(rows) or rows[i + 2]['time'] >= end):
             finish(exit_price(float(nxt['close']), side, i + 1), execution + seconds, 'segment end')
-    return {'stats': stats(trades, drawdown), 'signals': counts, 'trades': trades[-100:]}
+    return {'stats': stats(trades, drawdown, settings), 'signals': counts, 'trades': trades}
 
 
 def compare(h1, h4, settings=None):
@@ -297,10 +323,12 @@ def compare(h1, h4, settings=None):
             'segments': {k: {'start': v[0], 'end_exclusive': v[1]} for k, v in segments.items()},
             'comparisons': results, 'selected': winner, 'selected_holdout': held,
             'baseline_holdout': evaluate(baseline, 'holdout'),
+            'selected_trades': {segment: evaluate(winner['config'], segment)['trades']
+                                for segment in ('train', 'validation')} if winner else {},
             'selection_rule': 'Eğitimde en az minimum işlem ve pozitif net puan; net puan/azami düşüş. Doğrulama ve holdout seçimde kullanılmaz.',
             'assessment': assessment,
             'status': 'research_candidate' if winner else 'no_eligible_candidate',
-            'assumptions': {'units': 'points, fixed exposure; not account currency or compounded returns',
+            'assumptions': {'units': 'points and account currency when contract_size is supplied; fixed lot, no compounding',
                             'ohlc': 'bid; shorts exit at ask; bar spread is constant within each bar',
                             'fills': 'next bar open; stop first if both touched; target filled at limit',
                             'drawdown': 'bar adverse excursion and close marks; intrabar tick order unknown',
@@ -309,5 +337,5 @@ def compare(h1, h4, settings=None):
                             'commission_points': settings.commission_points,
                             'slippage_points_per_fill': settings.slippage_points,
                             'zero_costs_note': 'Sıfır komisyon/swap/kayma bu maliyetlerin bilinmediği veya sıfır varsayıldığı anlamına gelir.',
-                            'risk_note': 'ATR SL/TP mesafeleri araştırma varsayımı; broker stop/lot/teminat doğrulaması yok.',
+                            'risk_note': 'Her dönem aynı başlangıç sermayesiyle başlar. Sabit lot; teminat, stop-out ve broker SL/TP sınırları simüle edilmez. Parasal bakiye simülasyondur.',
                             'live_trading_enabled': False}}

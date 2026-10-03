@@ -323,6 +323,8 @@ class ResearchRequest(BaseModel):
     slippage_points: float = Field(default=0, ge=0, le=100000, allow_inf_nan=False)
     swap_long_points_per_day: float = Field(default=0, ge=-100000, le=100000, allow_inf_nan=False)
     swap_short_points_per_day: float = Field(default=0, ge=-100000, le=100000, allow_inf_nan=False)
+    lot_size: float = Field(default=.01, gt=0, le=10000, allow_inf_nan=False)
+    initial_capital: float = Field(default=10000, gt=0, le=1e12, allow_inf_nan=False)
     min_train_trades: int = Field(default=20, ge=1, le=1000)
 
 
@@ -367,7 +369,16 @@ def research_compare(req: ResearchRequest):
         spec = mt5_client.get_symbol_spec(req.symbol.upper())
         if not spec or not spec.get('point'):
             raise HTTPException(status_code=503, detail='Broker point değeri okunamadı.')
-        settings = ResearchSettings(**fields, point=float(spec['point']))
+        if not spec.get('linear_profit') or not spec.get('contract_size'):
+            raise HTTPException(status_code=503, detail='Broker sözleşme büyüklüğü/kâr hesaplama türü doğrulanamadı.')
+        if not spec.get('account_currency') or spec.get('profit_currency') != spec['account_currency']:
+            raise HTTPException(status_code=422, detail='Parasal araştırma için sembol kâr para birimi hesap para birimiyle aynı olmalı; tarihsel kur dönüşümü desteklenmiyor.')
+        minimum, maximum, step = (float(spec.get(k, 0)) for k in ('volume_min', 'volume_max', 'volume_step'))
+        if step <= 0 or not minimum <= req.lot_size <= maximum or abs(req.lot_size / step - round(req.lot_size / step)) > 1e-7:
+            raise HTTPException(status_code=422, detail=f'Lot broker sınırlarına uymuyor: min {minimum}, max {maximum}, adım {step}.')
+        settings = ResearchSettings(**fields, point=float(spec['point']),
+                                    contract_size=float(spec['contract_size']), currency=spec['account_currency'])
+        settings.validate()
         h1 = mt5_client.get_research_rates(req.symbol.upper(), 60, req.start, req.end)
         h4 = mt5_client.get_research_rates(req.symbol.upper(), 240, req.start, req.end)
         result = compare_research(h1, h4, settings)

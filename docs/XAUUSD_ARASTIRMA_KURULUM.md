@@ -2,7 +2,7 @@
 
 ## Kurulan kaynak
 
-Web panelindeki **XAUUSD · HMA / KAMA / ATR araştırması** bölümünden tarih aralığı ve maliyet varsayımları girilir. Yeni motor işlem açmaz ve mevcut HMA botunun ayarlarını değiştirmez.
+Web panelindeki **XAUUSD · HMA / KAMA / ATR araştırması** bölümünden tarih aralığı ve maliyet varsayımları girilir. Yeni motor işlem açmaz ve mevcut HMA botunun ayarlarını değiştirmez. Başlıktaki **Tam ekran** düğmesi araştırma bölümünü genişletir; aynı düğme veya Escape ile çıkılır. Rapor başlangıç/son sermaye, toplam pozitif/negatif sonuç, net kazanç/kayıp, kârlı/zararlı/başa baş sayıları ve parasal düşüş gösterir. İşlem dökümü tüm işlemleri 50 satırlık sayfalarla ve dönem seçimiyle sunar; JSON raporu tamamını içerir. Doğru/yanlış, maliyet sonrası kârlı/zararlı anlamındadır.
 
 - HMA(14), KAMA ER periyodu 10, KAMA hızlı/yavaş 2/30, Wilder ATR(14) başlangıç değerleridir; en iyi parametre iddiası yoktur.
 - KAMA ilk değeri ilk ER periyodunun kapanış ortalamasıyla başlatılır. Eğitim başlangıcından önce en büyük gösterge periyodunun beş katı kadar mum ısınma için kullanılır. MT5'in yerleşik iAMA başlangıcıyla birebir eşitlik varsayılmaz.
@@ -26,7 +26,7 @@ MT5 OHLC bid fiyatı kabul edilir; alış ask'tan açılır, satış ask'tan kap
 
 Swap kullanıcı tarafından girilen, takvim günü sınırı başına puan maliyetidir; pozitif değer maliyet, negatif değer kredidir. Bu yaklaşık model brokerın üçlü swap ve tatil takvimini taklit etmez. Sıfır değerler sıfır maliyet varsayımıdır; broker maliyetleri otomatik tespit edilmez.
 
-Sonuçlar sabit hacimde puandır; lot, teminat, hesap para birimine dönüşüm veya bileşik risk boyutlandırması yapılmaz. Düşüş kapanmış sonuçlarla birlikte mum içi olumsuz fiyat hareketi ve kapanış işaretlemelerini içerir; gerçek tick sırası bilinmez. Canlı kullanımdan önce broker gerçek tick verisiyle MT5 Strategy Tester ve Demo doğrulaması gerekir.
+Lot ve başlangıç sermayesi kullanıcı tarafından girilir (varsayılan 0.01 lot / 10000 hesap para birimi). API brokerın lot sınırını/adımını, doğrusal kâr hesabını, sözleşme büyüklüğünü ve sembol kâr para biriminin hesap para birimiyle aynı olduğunu doğrular. Net para = net puan × point × sözleşme büyüklüğü × lot. Her veri bölümü başlangıç sermayesine sıfırlanır; teminat, stop-out ve bileşik risk boyutlandırması yapılmaz. Dosyadan çalışmada `contract_size` ve `currency` verilmezse yalnız puan üretilir. Para için bu alanlar brokerdan doğrulanarak Settings JSON’una eklenmelidir. Düşüş kapanmış sonuçlarla birlikte mum içi olumsuz fiyat hareketi ve kapanış işaretlemelerini içerir; gerçek tick sırası bilinmez. Canlı kullanımdan önce broker gerçek tick verisiyle MT5 Strategy Tester ve Demo doğrulaması gerekir.
 
 ## API ve dosyadan çalışma
 
@@ -62,3 +62,5 @@ compose -p mt5-mt5platform-jtahyh -f docker-compose.yml -f compose.dokploy.yml u
 İlk gerçek broker çalışmasında 1 Ekim 2023–1 Ekim 2026 istek aralığında 17738 H1 ve 4641 H4 kapanmış mum alındı. Ortak test dönemi 6 Kasım 2023–1 Ekim 2026 oldu. Eğitimde H4, 0 mum bekleme, %5 ATR mesafe seçildi; sonraki doğrulama 8 işlemde -1690.81 puan, ayrılmış test 9 işlemde -19713.37 puan üretti. Komisyon/kayma/swap sıfır varsayıldı; tarihsel mum spreadi dahildi. Sunucu ve yerel hesaplama birebir eşleşti. Bu sonuç doğrulanmış işlem ayarı değildir; düşük işlem sayısı ayrıca sınırlayıcıdır.
 
 Raporun `assessment` alanı, seçimi değiştirmeden doğrulama ve ayrılmış testte pozitif net sonucu ve her iki bölümde minimum işlem sayısını kontrol eder. Negatif sonuçta `failed_validation`, az işlemde `insufficient_evidence` gösterilir. Pozitif simülasyon da canlı gerçekleşme garantisi değildir. Görülmüş ayrılmış test verisi, sonraki strateji değişiklikleri için yeni ve görülmemiş veri olarak kabul edilmemelidir.
+
+Parasal model MetaQuotes [sembol kâr hesaplama formüllerine](https://www.mql5.com/en/docs/constants/environment_state/marketinfoconstants) dayanır. Tarihsel döviz dönüşümü gereken semboller ve doğrusal olmayan sözleşmeler API’de reddedilir.

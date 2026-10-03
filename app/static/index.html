@@ -694,12 +694,14 @@
         </details>
 
         <details id="research-panel" class="bg-[#121620] p-4 rounded-2xl border border-gray-800 text-xs">
-          <summary class="text-white font-bold cursor-pointer">XAUUSD · HMA / KAMA / ATR araştırması</summary>
+          <summary class="research-heading text-white font-bold cursor-pointer"><span>XAUUSD · HMA / KAMA / ATR araştırması</span><button id="research-fullscreen" type="button" aria-pressed="false" onclick="toggleResearchFullscreen(event)" class="rounded bg-gray-700 px-3 py-2">⛶ Tam ekran</button></summary>
           <p class="mt-2 text-gray-400">H1, H4 ve H1 giriş + H4 filtre karşılaştırılır. 0–3 mum bekleme ve %0 / %5 / %10 / %20 ATR mesafesi denenir. İlk %60 eğitim, sonraki %20 doğrulama, son %20 ayrılmış testtir. İşlem açmaz.</p>
           <form id="research-form" class="mt-3" onsubmit="event.preventDefault(); runResearchComparison();">
             <div class="grid grid-cols-2 gap-2">
               <label>Başlangıç (UTC)<input id="research-start" type="date" required class="block w-full rounded bg-gray-800 p-2"></label>
               <label>Bitiş (UTC, hariç)<input id="research-end" type="date" required class="block w-full rounded bg-gray-800 p-2"></label>
+              <label>İşlem başına sabit lot<input id="research-lot" type="number" min="0.00000001" step="any" value="0.01" required class="block w-full rounded bg-gray-800 p-2"></label>
+              <label>Başlangıç sermayesi (hesap para birimi)<input id="research-capital" type="number" min="0.01" max="1000000000000" step="0.01" value="10000" required class="block w-full rounded bg-gray-800 p-2"></label>
               <label>HMA periyodu<input id="research-hma" type="number" min="2" max="200" value="14" required class="block w-full rounded bg-gray-800 p-2"></label>
               <label>KAMA ER periyodu<input id="research-kama" type="number" min="2" max="200" value="10" required class="block w-full rounded bg-gray-800 p-2"></label>
               <label>ATR periyodu<input id="research-atr" type="number" min="2" max="200" value="14" required class="block w-full rounded bg-gray-800 p-2"></label>
@@ -711,7 +713,7 @@
               <label>Alış swap maliyeti (puan/gün)<input id="research-swap-long" type="number" min="-100000" max="100000" step="0.1" value="0" required class="block w-full rounded bg-gray-800 p-2"></label>
               <label>Satış swap maliyeti (puan/gün)<input id="research-swap-short" type="number" min="-100000" max="100000" step="0.1" value="0" required class="block w-full rounded bg-gray-800 p-2"></label>
             </div>
-            <p class="mt-2 text-amber-300">KAMA hızlı/yavaş: 2/30. Tarihsel mum spreadi kullanılır. Sıfır maliyetler sıfır varsayımıdır; swap takvim günü başına yaklaşık maliyettir. Sonuçlar sabit hacimde puandır, hesap kârı değildir.</p>
+            <p class="mt-2 text-amber-300">KAMA hızlı/yavaş: 2/30. Tarihsel mum spreadi kullanılır. Sıfır maliyetler sıfır varsayımıdır; swap takvim günü başına yaklaşık maliyettir. Her dönem girilen sermayeyle ve sabit lotla başlar. Parasal sonuçlar broker sözleşmesine göre simülasyondur; teminat ve stop-out hesaplanmaz.</p>
             <div class="mt-3 flex flex-wrap gap-2">
               <button id="research-run" type="submit" class="rounded bg-cyan-700 px-3 py-2 font-semibold">Karşılaştırmayı Çalıştır</button>
               <button id="research-download" type="button" onclick="downloadResearchReport()" disabled class="rounded bg-gray-700 px-3 py-2 disabled:opacity-40">Raporu İndir</button>

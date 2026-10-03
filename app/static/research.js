@@ -22,33 +22,104 @@ function renderResearchReport(data) {
     addText('Eğitimde pozitif sonuç ve yeterli işlem sağlayan filtreli aday bulunamadı.');
   }
   if (data.assessment) addText(data.assessment.message);
-  const table = document.createElement('table');
-  table.className = 'w-full text-left border-collapse whitespace-nowrap';
-  const header = table.createTHead().insertRow();
-  for (const title of ['Seçenek / dönem', 'İşlem', 'Net puan', 'Puan/işlem', 'Kazanç %', 'Azami düşüş']) {
-    const th = document.createElement('th');
-    th.className = 'border-b border-gray-600 px-2 py-2';
-    th.textContent = title;
-    header.appendChild(th);
+  const currency = data.settings.currency;
+  const money = value => value == null ? '—' : `${Number(value).toLocaleString('tr-TR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${currency || ''}`;
+  const selectedStats = data.selected_holdout ? data.selected_holdout.stats : data.baseline_holdout.stats;
+  const cards = document.createElement('div');
+  cards.className = 'research-metrics';
+  addText(data.selected ? 'Seçilen aday · ayrılmış test özeti' : 'Ham kesişim · ayrılmış test özeti');
+  for (const [label, value] of [
+    ['İşlem başına lot', data.settings.lot_size], ['Başlangıç sermayesi', money(selectedStats.initial_capital)],
+    ['Toplam kâr', money(selectedStats.gross_profit)], ['Toplam zarar', money(selectedStats.gross_loss)],
+    ['Net kazanç / kayıp', money(selectedStats.net_profit)], ['Son bakiye', money(selectedStats.final_capital)],
+    ['Doğru (kârlı)', selectedStats.wins], ['Yanlış (zararlı)', selectedStats.losses],
+    ['Başa baş', selectedStats.breakeven], ['Getiri', `${selectedStats.return_pct ?? '—'}%`],
+    ['Azami düşüş', money(selectedStats.max_drawdown_money)]]) {
+    const card = document.createElement('div');
+    const title = document.createElement('span'); title.textContent = label;
+    const valueNode = document.createElement('strong'); valueNode.textContent = String(value);
+    card.append(title, valueNode); cards.appendChild(card);
   }
-  const body = table.createTBody();
-  const addRow = (label, stats) => {
+  root.appendChild(cards);
+  addText('Doğru/yanlış, maliyet sonrası kârlı/zararlı işlem demektir. Eğitim, doğrulama ve ayrılmış test ayrı simülasyonlardır; her biri aynı başlangıç sermayesini kullanır.');
+  const makeTable = titles => {
+    const wrap = document.createElement('div'); wrap.className = 'research-table-scroll';
+    const table = document.createElement('table');
+    table.className = 'w-full text-left border-collapse whitespace-nowrap';
+    const header = table.createTHead().insertRow();
+    for (const title of titles) {
+      const th = document.createElement('th'); th.className = 'border-b border-gray-600 px-2 py-2';
+      th.textContent = title; header.appendChild(th);
+    }
+    const body = table.createTBody(); wrap.appendChild(table);
+    return {wrap, body};
+  };
+  const addCells = (body, values) => {
     const row = body.insertRow();
-    for (const value of [label, stats.count, stats.net_points, stats.mean_points ?? '—', stats.win_rate_pct ?? '—', stats.max_drawdown_points]) {
-      const cell = row.insertCell();
-      cell.className = 'border-b border-gray-800 px-2 py-2';
-      cell.textContent = String(value);
+    for (const value of values) {
+      const cell = row.insertCell(); cell.className = 'border-b border-gray-800 px-2 py-2';
+      cell.textContent = String(value ?? '—');
     }
   };
+  const statTitles = ['Seçenek / dönem', 'Lot', 'Ana para', 'İşlem', 'Doğru', 'Yanlış', 'Başa baş', 'Toplam kâr', 'Toplam zarar', 'Net kazanç/kayıp', 'Son bakiye', 'Kazanç %', 'Azami düşüş', 'Net puan'];
+  const statCells = (label, stats) => [label, data.settings.lot_size, money(stats.initial_capital), stats.count,
+    stats.wins, stats.losses, stats.breakeven, money(stats.gross_profit), money(stats.gross_loss),
+    money(stats.net_profit), money(stats.final_capital), stats.win_rate_pct ?? '—', money(stats.max_drawdown_money), stats.net_points];
+  const summaryTable = makeTable(statTitles);
   if (data.selected) {
-    addRow('Seçilen · eğitim', data.selected.train);
-    addRow('Seçilen · doğrulama', data.selected.validation);
-    addRow('Seçilen · ayrılmış test', data.selected_holdout.stats);
+    addCells(summaryTable.body, statCells('Seçilen · eğitim', data.selected.train));
+    addCells(summaryTable.body, statCells('Seçilen · doğrulama', data.selected.validation));
+    addCells(summaryTable.body, statCells('Seçilen · ayrılmış test', data.selected_holdout.stats));
   }
-  addRow('Ham kesişim · ayrılmış test', data.baseline_holdout.stats);
-  // Display all training comparisons without sorting by held-out performance.
-  for (const item of data.comparisons) addRow(researchConfigLabel(item.config) + ' · eğitim', item.train);
-  root.appendChild(table);
+  addCells(summaryTable.body, statCells('Ham kesişim · ayrılmış test', data.baseline_holdout.stats));
+  root.appendChild(summaryTable.wrap);
+
+  const tradeGroups = [];
+  if (data.selected) {
+    tradeGroups.push(['Seçilen · ayrılmış test', data.selected_holdout.trades],
+      ['Seçilen · eğitim', data.selected_trades?.train || []],
+      ['Seçilen · doğrulama', data.selected_trades?.validation || []]);
+  }
+  tradeGroups.push(['Ham kesişim · ayrılmış test', data.baseline_holdout.trades]);
+  const toolbar = document.createElement('div'); toolbar.className = 'research-trade-toolbar';
+  const label = document.createElement('label'); label.textContent = 'İşlem dökümü: ';
+  const selector = document.createElement('select'); selector.id = 'research-trade-period';
+  selector.className = 'rounded bg-gray-800 p-2'; selector.setAttribute('aria-label', 'İşlem dökümü dönemi');
+  tradeGroups.forEach(([name], index) => {
+    const option = document.createElement('option'); option.value = index; option.textContent = name; selector.appendChild(option);
+  });
+  label.appendChild(selector);
+  const previous = document.createElement('button'); previous.type = 'button'; previous.textContent = 'Önceki';
+  const next = document.createElement('button'); next.type = 'button'; next.textContent = 'Sonraki';
+  for (const button of [previous, next]) button.className = 'rounded bg-gray-700 px-3 py-2 disabled:opacity-40';
+  const pageInfo = document.createElement('span'); pageInfo.setAttribute('aria-live', 'polite');
+  toolbar.append(label, previous, next, pageInfo); root.appendChild(toolbar);
+  const tradeTable = makeTable(['#', 'Yön', 'Lot', 'Giriş (UTC)', 'Çıkış (UTC)', 'Giriş fiyatı', 'Çıkış fiyatı', 'Net kazanç/kayıp', 'İşlem sonrası bakiye', 'Sonuç', 'Çıkış nedeni']);
+  root.appendChild(tradeTable.wrap);
+  let page = 0;
+  const reasons = {'stop': 'Stop', 'target': 'Hedef', 'opposite crossover': 'Ters kesişim', 'segment end': 'Dönem sonu'};
+  const showTrades = () => {
+    const trades = tradeGroups[Number(selector.value)][1];
+    tradeTable.body.replaceChildren();
+    const first = page * 50;
+    trades.slice(first, first + 50).forEach((trade, i) => addCells(tradeTable.body, [first + i + 1,
+      trade.side === 'BUY' ? 'Alış' : 'Satış', trade.lot_size, date(trade.entry_time), date(trade.exit_time),
+      trade.entry_price?.toFixed(2), trade.exit_price?.toFixed(2), money(trade.net_profit), money(trade.balance_after),
+      trade.net_points > 0 ? 'Kârlı' : trade.net_points < 0 ? 'Zararlı' : 'Başa baş', reasons[trade.reason] || trade.reason]));
+    pageInfo.textContent = trades.length ? `${first + 1}–${Math.min(first + 50, trades.length)} / ${trades.length} işlem` : 'İşlem yok';
+    previous.disabled = page === 0; next.disabled = first + 50 >= trades.length;
+  };
+  selector.addEventListener('change', () => { page = 0; showTrades(); });
+  previous.addEventListener('click', () => { if (page > 0) { page--; showTrades(); } });
+  next.addEventListener('click', () => { if (!next.disabled) { page++; showTrades(); } });
+  showTrades();
+
+  const comparisons = document.createElement('details');
+  const comparisonTitle = document.createElement('summary'); comparisonTitle.className = 'my-3 cursor-pointer font-semibold';
+  comparisonTitle.textContent = '51 seçeneğin eğitim sonuçları'; comparisons.appendChild(comparisonTitle);
+  const trainingTable = makeTable(statTitles);
+  for (const item of data.comparisons) addCells(trainingTable.body, statCells(researchConfigLabel(item.config), item.train));
+  comparisons.appendChild(trainingTable.wrap); root.appendChild(comparisons);
   addText('OHLC simülasyonu: aynı mumda stop ve hedef görülürse stop sayılır. Gerçek tick sırası bilinmez. Bu rapor otomatik canlı işlem ayarı oluşturmaz.');
 }
 
@@ -64,6 +135,7 @@ async function runResearchComparison() {
     return;
   }
   const payload = {symbol: 'XAUUSD', start, end,
+    lot_size: number('research-lot'), initial_capital: number('research-capital'),
     hma_period: number('research-hma'), kama_period: number('research-kama'), atr_period: number('research-atr'),
     er_min: number('research-er'), stop_atr: number('research-stop'), target_atr: number('research-target'),
     historical_spread: true, commission_points: number('research-commission'), slippage_points: number('research-slippage'),
@@ -108,4 +180,46 @@ document.addEventListener('DOMContentLoaded', () => {
   earlier.setUTCFullYear(earlier.getUTCFullYear() - 3);
   start.value = earlier.toISOString().slice(0, 10);
   start.max = end.value;
+});
+
+
+let researchPreviousOverflow = null;
+function updateResearchFullscreenButton() {
+  const panel = document.getElementById('research-panel');
+  const active = document.fullscreenElement === panel || panel.classList.contains('research-fullscreen-fallback');
+  const button = document.getElementById('research-fullscreen');
+  button.textContent = active ? '⛶ Tam ekrandan çık' : '⛶ Tam ekran';
+  button.setAttribute('aria-pressed', String(active));
+}
+function exitResearchFallback() {
+  const panel = document.getElementById('research-panel');
+  if (!panel.classList.contains('research-fullscreen-fallback')) return;
+  panel.classList.remove('research-fullscreen-fallback');
+  document.body.style.overflow = researchPreviousOverflow ?? '';
+  researchPreviousOverflow = null;
+  updateResearchFullscreenButton();
+}
+async function toggleResearchFullscreen(event) {
+  event.preventDefault(); event.stopPropagation();
+  const panel = document.getElementById('research-panel');
+  if (document.fullscreenElement === panel) {
+    await document.exitFullscreen(); return;
+  }
+  if (panel.classList.contains('research-fullscreen-fallback')) {
+    exitResearchFallback(); return;
+  }
+  panel.open = true;
+  try {
+    if (!panel.requestFullscreen) throw new Error('Fullscreen unavailable');
+    await panel.requestFullscreen();
+  } catch (_) {
+    researchPreviousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    panel.classList.add('research-fullscreen-fallback');
+  }
+  updateResearchFullscreenButton();
+}
+document.addEventListener('fullscreenchange', updateResearchFullscreenButton);
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') exitResearchFallback();
 });

@@ -198,6 +198,14 @@ def symbol_spec(mt5, symbol):
     if info is None or tick is None:
         raise RuntimeError('Sembol özellikleri veya fiyat alınamadı.')
     return {'symbol':symbol, 'point':float(info.point), 'digits':int(info.digits),
+            'contract_size':float(getattr(info, 'trade_contract_size', 0)),
+            'profit_currency':str(getattr(info, 'currency_profit', '')),
+            'account_currency':str(getattr(account, 'currency', '')),
+            'linear_profit':getattr(info, 'trade_calc_mode', -1) in {
+                getattr(mt5, name, None) for name in ('SYMBOL_CALC_MODE_FOREX',
+                'SYMBOL_CALC_MODE_FOREX_NO_LEVERAGE', 'SYMBOL_CALC_MODE_CFD',
+                'SYMBOL_CALC_MODE_CFDINDEX', 'SYMBOL_CALC_MODE_CFDLEVERAGE',
+                'SYMBOL_CALC_MODE_EXCH_STOCKS', 'SYMBOL_CALC_MODE_EXCH_STOCKS_MOEX')},
             'volume_min':float(info.volume_min), 'volume_max':float(info.volume_max),
             'volume_step':float(info.volume_step), 'stops_level_points':int(info.trade_stops_level),
             'freeze_level_points':int(getattr(info, 'trade_freeze_level', 0)),

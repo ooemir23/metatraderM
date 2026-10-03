@@ -160,7 +160,8 @@ def test_api_validates_and_never_places_orders(monkeypatch):
         calls.append(tf)
         return rows if tf == 60 else aggregate(rows)
     monkeypatch.setattr(main.mt5_client, 'get_research_rates', fetch)
-    monkeypatch.setattr(main.mt5_client, 'get_symbol_spec', lambda _: {'point': .01})
+    monkeypatch.setattr(main.mt5_client, 'get_symbol_spec', lambda _: {'point': .01, 'contract_size': 100, 'linear_profit': True,
+        'profit_currency': 'USD', 'account_currency': 'USD', 'volume_min': .01, 'volume_max': 100, 'volume_step': .01})
     def forbid(*args, **kwargs):
         raise AssertionError('Research cannot send orders')
     monkeypatch.setattr(main.mt5_client, 'open_order', forbid)
@@ -170,10 +171,15 @@ def test_api_validates_and_never_places_orders(monkeypatch):
     assert web.post('/api/research/compare', json=body).status_code == 401
     assert web.post('/api/research/compare', auth=auth, json=dict(body, end=body['start'])).status_code == 422
     assert not calls
+    assert web.post('/api/research/compare', auth=auth, json=dict(body, lot_size=.015)).status_code == 422
+    assert web.post('/api/research/compare', auth=auth, json=dict(body, initial_capital=0)).status_code == 422
+    assert not calls
     r = web.post('/api/research/compare', auth=auth, json=body)
     assert r.status_code == 200, r.text
     assert calls == [60, 240]
     assert r.json()['assumptions']['live_trading_enabled'] is False
+    assert r.json()['settings']['contract_size'] == 100
+    assert r.json()['baseline_holdout']['stats']['currency'] == 'USD'
     response = web.get('/api/research/history', auth=auth,
                        params={'start': body['start'], 'end': body['end'], 'timeframe_minutes': 60})
     assert response.json()['count'] == len(rows)
@@ -205,3 +211,35 @@ def test_client_rejects_account_change_during_chunked_history(monkeypatch):
     with pytest.raises(MT5DataError, match='hesabı değişti'):
         client.get_research_rates('XAUUSD', 60, 1700000000, 1710000000)
     assert calls == ['account_status', 'research_rates', 'account_status']
+
+
+def test_money_stats_use_contract_lot_and_all_trades():
+    from app.strategy_research import stats
+    settings = Settings(point=.01, contract_size=100, currency='USD', lot_size=.2, initial_capital=1000)
+    result = stats([{'net_points': x} for x in (100, -40, 0)], 120, settings)
+    assert (result['wins'], result['losses'], result['breakeven']) == (1, 1, 1)
+    assert result['gross_profit'] == 20
+    assert result['gross_loss'] == 8
+    assert result['net_profit'] == 12
+    assert result['final_capital'] == 1012
+    assert result['return_pct'] == 1.2
+    assert result['max_drawdown_money'] == 24
+
+
+def test_lot_scales_money_without_changing_signals_and_retains_every_trade():
+    rows = history()
+    settings = Settings(contract_size=100, currency='USD', min_train_trades=1)
+    first = compare(rows, aggregate(rows), settings)
+    larger = compare(rows, aggregate(rows), replace(settings, lot_size=.1))
+    assert first['selected']['config'] == larger['selected']['config']
+    for key in ('selected_holdout', 'baseline_holdout'):
+        small, big = first[key], larger[key]
+        assert len(small['trades']) == small['stats']['count']
+        assert small['stats']['count'] == big['stats']['count']
+        assert big['stats']['net_profit'] == pytest.approx(small['stats']['net_profit'] * 10, abs=.06)
+        if small['trades']:
+            assert all(t['lot_size'] == .01 for t in small['trades'])
+            assert small['trades'][-1]['balance_after'] == small['stats']['final_capital']
+            assert all(t['entry_price'] > 0 and t['exit_price'] > 0 for t in small['trades'])
+    assert len(first['selected_trades']['train']) == first['selected']['train']['count']
+    assert len(first['selected_trades']['validation']) == first['selected']['validation']['count']
