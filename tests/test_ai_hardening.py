@@ -30,6 +30,10 @@ def test_ai_order_requires_broker_verified_stop_and_risk(client):
 def test_ai_profile_and_recommendations_stay_with_broker_account(client, monkeypatch, tmp_path):
     monkeypatch.setattr(ai_advisor, 'MEMORY_PATHS', [str(tmp_path / 'ai.json')])
     advisor = ai_advisor.DeepSeekAdvisor(client, api_key='test')
+    account_limit = client.daily_loss_limit
+    assert advisor.update_autopilot({'daily_loss_limit': 100})['success']
+    assert client.ai_daily_loss_limit == 100
+    assert client.daily_loss_limit == account_limit
     advisor.memory['persona']['style'] = 'first'
     advisor.cost_state['advice_cache']['first'] = {'recommendation': {'id': 'first'}}
     advisor.save_memory()

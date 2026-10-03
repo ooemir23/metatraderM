@@ -535,7 +535,7 @@ def account_login(req: LoginRequest, request: Request):
 
 @app.get("/api/positions")
 def get_positions():
-    return mt5_client.get_positions()
+    return mt5_client.get_positions(include_commission=True)
 
 @app.get("/api/history")
 def get_history(days: int = Query(default=30, ge=1, le=365)):

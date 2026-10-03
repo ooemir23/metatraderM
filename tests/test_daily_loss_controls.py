@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.mt5_client import MT5DataError
 from app.order_journal import OrderJournal
 from test_trade_safety import client, deal
+from app.mt5_bridge import AI_MAGIC, MANUAL_MAGIC
 
 
 def test_daily_limit_is_persisted_per_broker_account(tmp_path):
@@ -57,6 +58,21 @@ def test_effective_limit_reaches_manual_order_and_risk_status(client, tmp_path):
     client._bridge = bridge
     client.open_order('EURUSD', 'BUY', .01, request_id='limit-override-test')
     assert sent_limits == [1200]
+
+
+def test_ai_limit_uses_lower_of_ai_and_account_limits(client, tmp_path):
+    client.journal = OrderJournal(tmp_path / 'orders.db')
+    client.journal.set_daily_loss_limit(1, 'test', 500)
+    client.ai_daily_loss_limit = 100
+    client.mt5.history_deals_get.return_value = [deal(profit=-150)]
+    ai = client.open_order('EURUSD', 'BUY', .01, sl_points=200, tp_points=400,
+                           magic=AI_MAGIC, request_id='ai-lower-limit-test')
+    assert not ai['success'] and ai['daily_loss_limit'] == 100
+    assert client.open_order('EURUSD', 'BUY', .01, magic=MANUAL_MAGIC,
+                             request_id='manual-account-limit-test')['success']
+    client.mt5.order_send.assert_called_once()
+    client.ai_daily_loss_limit = 1000
+    assert client.effective_daily_loss_limit(1, 'test', AI_MAGIC) == 500
 
 
 def test_raising_exceeded_limit_requires_explicit_acknowledgement(client, tmp_path):

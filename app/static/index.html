@@ -183,8 +183,9 @@
           </div>
 
           <!-- CLOSED POSITIONS SUMMARY (Visible when closed tab active) -->
-          <div id="closed-summary-bar" class="hidden flex items-center gap-3 text-xs font-mono">
+          <div id="closed-summary-bar" class="hidden flex flex-wrap items-center gap-3 text-xs font-mono">
             <span class="text-gray-400">Gösterilen kapanışlar net: <strong id="history-total-profit" class="text-white">$0.00</strong></span>
+            <span class="text-gray-400">Kapanış komisyonları: <strong id="history-total-commission" class="text-amber-400">$0.00</strong></span>
             <button onclick="fetchHistory()" class="px-2 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs flex items-center gap-1 transition" title="Yenile">
               <i class="ph-bold ph-arrows-clockwise"></i>
               <span class="font-sans">Yenile</span>
@@ -236,13 +237,14 @@
                 <th class="py-2.5 px-3">Açılış</th>
                 <th class="py-2.5 px-3">Güncel</th>
                 <th class="py-2.5 px-3">SL / TP</th>
+                <th class="py-2.5 px-3 text-right" title="Pozisyona ait açılış ve kısmi kapanışlarda şimdiye kadar tahsil edilen komisyon">Tahsil Edilen Komisyon</th>
                 <th class="py-2.5 px-3 text-right">Kâr / Zarar</th>
                 <th class="py-2.5 px-3 text-center">İşlem</th>
               </tr>
             </thead>
             <tbody id="positions-table-body" class="divide-y divide-gray-800/50 font-mono">
               <tr>
-                <td colspan="9" class="py-6 text-center text-gray-500 font-sans">Henüz açık pozisyon bulunmuyor.</td>
+                <td colspan="10" class="py-6 text-center text-gray-500 font-sans">Henüz açık pozisyon bulunmuyor.</td>
               </tr>
             </tbody>
           </table>
@@ -258,14 +260,15 @@
                 <th class="py-2.5 px-3">Yön</th>
                 <th class="py-2.5 px-3">Hacim</th>
                 <th class="py-2.5 px-3">Kapanış Fiyatı</th>
-                <th class="py-2.5 px-3">Swap/Kom.</th>
+                <th class="py-2.5 px-3 text-right">Kapanış Komisyonu</th>
+                <th class="py-2.5 px-3 text-right">Swap / Diğer Ücret</th>
                 <th class="py-2.5 px-3">Kapanış Zamanı</th>
                 <th class="py-2.5 px-3 text-right">Net Kâr / Zarar</th>
               </tr>
             </thead>
             <tbody id="history-table-body" class="divide-y divide-gray-800/50 font-mono">
               <tr>
-                <td colspan="8" class="py-6 text-center text-gray-500 font-sans">Henüz kapalı işlem geçmişi bulunmuyor.</td>
+                <td colspan="9" class="py-6 text-center text-gray-500 font-sans">Henüz kapalı işlem geçmişi bulunmuyor.</td>
               </tr>
             </tbody>
           </table>
@@ -332,7 +335,11 @@
               <span id="rep-total-volume" class="font-bold font-mono text-gray-200">0.00 Lot</span>
             </div>
             <div class="flex items-center justify-between px-2 py-0.5">
-              <span class="text-gray-400 text-[11px]">Swap / Kom.:</span>
+              <span class="text-gray-400 text-[11px]">Toplam Komisyon:</span>
+              <span id="rep-total-commission" class="font-bold font-mono text-amber-400">$0.00</span>
+            </div>
+            <div class="flex items-center justify-between px-2 py-0.5">
+              <span class="text-gray-400 text-[11px]">Swap / Diğer Ücret:</span>
               <span id="rep-total-fee" class="font-bold font-mono text-gray-400">$0.00</span>
             </div>
           </div>

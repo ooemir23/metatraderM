@@ -105,7 +105,7 @@ class DeepSeekAdvisor:
         if not self.autopilot.get("enabled"):
             self._auto_stop.set()
         if self.mt5:
-            self.mt5.daily_loss_limit = float(self.autopilot["daily_loss_limit"])
+            self.mt5.ai_daily_loss_limit = float(self.autopilot["daily_loss_limit"])
 
     def load_memory(self):
         for path in MEMORY_PATHS:
@@ -509,7 +509,7 @@ risk_reward_ratio, action_title. Keep prices, points, and lots distinct; prefer 
             self.autopilot["allowed_symbols"] = [str(s).upper() for s in config["allowed_symbols"]]
 
         if self.mt5:
-            self.mt5.daily_loss_limit = float(self.autopilot["daily_loss_limit"])
+            self.mt5.ai_daily_loss_limit = float(self.autopilot["daily_loss_limit"])
             if self.autopilot["enabled"]:
                 self.mt5.automation_stopped.clear()
         if self.autopilot["enabled"]:
