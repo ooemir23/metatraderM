@@ -69,3 +69,35 @@ def test_same_bid_with_new_tick_is_current(monkeypatch):
     assert quote_status(tick, connected=True)['state'] == 'fresh'
     tick.time -= 60
     assert quote_status(tick, connected=True)['state'] == 'stale'
+
+
+def test_price_enables_unselected_symbol_before_reading_tick(client):
+    info = client.mt5.symbol_info.return_value
+    info.select = False
+    tick = client.mt5.symbol_info_tick.return_value
+    def select(symbol, enabled):
+        info.select = enabled
+        return True
+    client.mt5.symbol_select.side_effect = select
+    client.mt5.symbol_info_tick.side_effect = lambda symbol: tick if info.select else None
+    result = price(client.mt5, 'BTCUSD')
+    client.mt5.symbol_select.assert_called_once_with('BTCUSD', True)
+    assert result['bid'] == tick.bid
+    assert result['quote_status']['state'] == 'fresh'
+    client.mt5.order_send.assert_not_called()
+
+
+def test_selected_symbol_does_not_need_resubscription(client):
+    client.mt5.symbol_info.return_value.select = True
+    assert price(client.mt5, 'EURUSD')['quote_status']['state'] == 'fresh'
+    client.mt5.symbol_select.assert_not_called()
+
+
+def test_failed_symbol_selection_does_not_use_cached_tick(client):
+    client.mt5.symbol_info.return_value.select = False
+    client.mt5.symbol_select.return_value = False
+    result = price(client.mt5, 'BTCUSD')
+    assert result['bid'] == result['ask'] == result['time'] == 0
+    assert result['quote_status']['state'] == 'missing'
+    assert 'MT5 sembolü fiyat takibine alamadı.' in result['quote_status']['message']
+    client.mt5.symbol_info_tick.assert_not_called()

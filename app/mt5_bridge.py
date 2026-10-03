@@ -384,8 +384,17 @@ def _quote_error(tick, tick_offset=0, max_tick_age=10, mt5=None):
 
 
 def price(mt5, symbol, tick_offset=0):
-    tick, info = mt5.symbol_info_tick(symbol), mt5.symbol_info(symbol)
+    info = mt5.symbol_info(symbol)
+    selected = bool(info is not None and getattr(info, 'select', False))
+    if not selected:
+        selected = bool(mt5.symbol_select(symbol, True))
+        if selected:
+            info = mt5.symbol_info(symbol)
+    tick = mt5.symbol_info_tick(symbol) if selected else None
     status = quote_status(tick, tick_offset, connected=broker_connection(mt5))
+    if not selected:
+        status['message'] = status['message'].replace(
+            'MT5 bu sembol için fiyat bildirmedi.', 'MT5 sembolü fiyat takibine alamadı.')
     valid = status['state'] not in ('missing', 'invalid')
     return dict(symbol=symbol, bid=float(tick.bid) if valid else 0.,
                 ask=float(tick.ask) if valid else 0.,

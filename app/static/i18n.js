@@ -415,6 +415,7 @@
     ["MT5 broker bağlantısı doğrulanamadı.", "MT5 broker connection not verified."],
     ["MT5 bağlantısı doğrulanamadı", "MT5 connection not verified"],
     ["MT5 bu sembol için fiyat bildirmedi.", "MT5 has not provided a quote for this symbol."],
+    ["MT5 sembolü fiyat takibine alamadı.", "MT5 could not enable quotes for this symbol."],
     ["MT5 bu sembol için fiyat bildirmedi", "MT5 has not provided a quote for this symbol"],
     ["Broker fiyatı geçersiz", "Broker quote invalid"],
     ["Broker geçerli fiyat bildirmedi.", "The broker did not provide a valid quote."],
