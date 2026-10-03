@@ -1,5 +1,9 @@
 > Web panelindeki emir güvenliği, hız düzeltmeleri ve zorunlu panel parolası kurulumu: [Emir güvenliği düzeltmeleri](docs/EMIR_GUVENLIGI_DUZELTMELERI.md). Telegram entegrasyonu kaldırılmıştır.
 
+## XAUUSD HMA–KAMA–ATR araştırması
+
+Yeni araştırma paneli H1, H4 ve H1 giriş/H4 filtre için kesişim onay süresi ve ATR mesafesini 51 seçenekle karşılaştırır. Parametre seçimi ilk %60 eğitim verisinde yapılır; sonraki %20 doğrulama ve son %20 ayrılmış test seçimde kullanılmaz. Tarih aralığıyla uzun broker geçmişi, mum spreadi, kullanıcı maliyet varsayımları ve JSON rapor indirme desteklenir. Araştırma motoru emir göndermez; mevcut HMA botundan ayrıdır. Kaynak kurulum, API, dosyadan çalışma ve simülasyon sınırları: [XAUUSD araştırma kurulumu](docs/XAUUSD_ARASTIRMA_KURULUM.md). Canlı panelde görünmesi için yeni web kaynağı sunucuya kurulup web imajı yeniden oluşturulmalıdır.
+
 ## Panel dili / Interface language
 
 Terminal ve AI Danışmanı sayfalarının üst kısmındaki **Türkçe / English** menüsünden dili seçin. Seçim aynı tarayıcıda saklanır ve iki sayfada da uygulanır; ilk açılışta tarayıcı dili kullanılır. Grafik arayüzü, sayı biçimi ve yeni AI analizleri seçilen dili izler. Daha önce farklı dilde oluşturulmuş bir AI işlem profili varsa, seçtiğiniz dilde yeni bir profil oluşturmak için **İşlemlerimi Analiz Et & Öğren / Analyze My Trading History** düğmesini kullanın. Bu işlem AI sağlayıcısına ücretli istek gönderebilir ve mevcut istek sınırlarına tabidir.

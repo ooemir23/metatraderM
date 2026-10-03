@@ -867,6 +867,31 @@ class MT5Client:
                 logger.error(f"Error fetching rates for {symbol}: {e}")
                 return None
 
+    def get_research_rates(self, symbol: str, timeframe: int, start: int, end: int):
+        if timeframe not in (60, 240) or end <= start or end - start > 5 * 366 * 86400:
+            raise ValueError('Araştırma H1/H4 ve en fazla beş yıllık artan tarih aralığı destekler.')
+        result, identity = {}, None
+        cursor = int(start)
+        while cursor < end:
+            chunk_end = min(cursor + 90 * 86400, int(end))
+            # Release the shared trading lock between chunks, so a long history
+            # download does not monopolize all quote/order access.
+            with self._lock:
+                if not self.ensure_connected():
+                    raise MT5DataError('MT5 bağlı değil; araştırma geçmişi alınamadı.')
+                active = self._bridge('account_status')
+                if identity is None:
+                    identity = active
+                elif identity != active:
+                    raise MT5DataError('Geçmiş alınırken MT5 hesabı değişti; araştırma iptal edildi.')
+                rows = self._bridge('research_rates', symbol, TIMEFRAME_NAMES[timeframe],
+                                    cursor, chunk_end, self.tick_clock_offset)
+            result.update({r['time']: r for r in rows})
+            if len(result) > 50000:
+                raise ValueError('Araştırma 50000 mum sınırını aşıyor.')
+            cursor = chunk_end
+        return [result[t] for t in sorted(result)]
+
     def get_history(self, days: int = 30, include_ai_entries=False) -> List[Dict[str, Any]]:
         with self._lock:
             if not self.ensure_connected():

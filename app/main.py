@@ -17,6 +17,7 @@ from app.strategy_bot import StrategyBot
 from app.ai_advisor import DeepSeekAdvisor
 from app import security_sessions
 from app.backtest import simulate
+from app.strategy_research import Settings as ResearchSettings, compare as compare_research
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("HMATradingApp")
@@ -303,6 +304,84 @@ def run_backtest(req: BacktestRequest):
                         req.commission_points)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+class ResearchRequest(BaseModel):
+    symbol: str = Field(default='XAUUSD', pattern=r'^[A-Za-z0-9_.#-]+$', max_length=32)
+    start: int = Field(ge=946684800)
+    end: int = Field(ge=946684800)
+    hma_period: int = Field(default=14, ge=2, le=200)
+    kama_period: int = Field(default=10, ge=2, le=200)
+    kama_fast: int = Field(default=2, ge=2, le=200)
+    kama_slow: int = Field(default=30, ge=2, le=200)
+    atr_period: int = Field(default=14, ge=2, le=200)
+    er_min: float = Field(default=.30, ge=0, le=1, allow_inf_nan=False)
+    stop_atr: float = Field(default=2, gt=0, le=20, allow_inf_nan=False)
+    target_atr: float = Field(default=3, ge=0, le=50, allow_inf_nan=False)
+    spread_points: float = Field(default=38, ge=0, le=100000, allow_inf_nan=False)
+    historical_spread: bool = True
+    commission_points: float = Field(default=0, ge=0, le=100000, allow_inf_nan=False)
+    slippage_points: float = Field(default=0, ge=0, le=100000, allow_inf_nan=False)
+    swap_long_points_per_day: float = Field(default=0, ge=-100000, le=100000, allow_inf_nan=False)
+    swap_short_points_per_day: float = Field(default=0, ge=-100000, le=100000, allow_inf_nan=False)
+    min_train_trades: int = Field(default=20, ge=1, le=1000)
+
+
+research_guard = threading.Lock()
+
+
+@app.get('/api/research/history')
+def research_history(symbol: str = Query(default='XAUUSD', pattern=r'^[A-Za-z0-9_.#-]+$', max_length=32),
+                     timeframe_minutes: Literal[60, 240] = 60,
+                     start: int = Query(ge=946684800), end: int = Query(ge=946684800)):
+    if end <= start or end - start > 5 * 366 * 86400:
+        raise HTTPException(status_code=422, detail='En fazla beş yıllık artan tarih aralığı gerekli.')
+    if not research_guard.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail='Başka bir araştırma çalışıyor; tamamlanmasını bekleyin.')
+    try:
+        rows = mt5_client.get_research_rates(symbol.upper(), timeframe_minutes, start, end)
+        return {'symbol': symbol.upper(), 'timeframe_minutes': timeframe_minutes,
+                'requested_start': start, 'requested_end': end, 'count': len(rows),
+                'clock_offset_seconds': mt5_client.tick_clock_offset,
+                'rates': rows}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail='MT5 araştırma geçmişi alınamadı.') from exc
+    finally:
+        research_guard.release()
+
+
+@app.post('/api/research/compare')
+def research_compare(req: ResearchRequest):
+    if req.end <= req.start or req.end - req.start > 5 * 366 * 86400:
+        raise HTTPException(status_code=422, detail='En fazla beş yıllık artan tarih aralığı gerekli.')
+    if not research_guard.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail='Başka bir araştırma çalışıyor; tamamlanmasını bekleyin.')
+    try:
+        fields = req.model_dump(exclude={'symbol', 'start', 'end'})
+        # Validate before fetching broker history.
+        settings = ResearchSettings(**fields)
+        settings.validate()
+        spec = mt5_client.get_symbol_spec(req.symbol.upper())
+        if not spec or not spec.get('point'):
+            raise HTTPException(status_code=503, detail='Broker point değeri okunamadı.')
+        settings = ResearchSettings(**fields, point=float(spec['point']))
+        h1 = mt5_client.get_research_rates(req.symbol.upper(), 60, req.start, req.end)
+        h4 = mt5_client.get_research_rates(req.symbol.upper(), 240, req.start, req.end)
+        result = compare_research(h1, h4, settings)
+        result.update(symbol=req.symbol.upper(), requested_start=req.start, requested_end=req.end,
+                      clock_offset_seconds=mt5_client.tick_clock_offset)
+        return result
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.warning('Research data unavailable: %s', type(exc).__name__)
+        raise HTTPException(status_code=503, detail='MT5 araştırma verisi alınamadı.') from exc
+    finally:
+        research_guard.release()
+
 
 @app.get('/api/broker/diagnostics')
 def broker_diagnostics(symbol: str = Query(default='EURUSD', pattern=r'^[A-Za-z0-9_.#-]+$', max_length=32)):

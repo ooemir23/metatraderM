@@ -693,6 +693,34 @@
           <p id="broker-diagnostics" role="status" class="mt-2 text-gray-200"></p>
         </details>
 
+        <details id="research-panel" class="bg-[#121620] p-4 rounded-2xl border border-gray-800 text-xs">
+          <summary class="text-white font-bold cursor-pointer">XAUUSD · HMA / KAMA / ATR araştırması</summary>
+          <p class="mt-2 text-gray-400">H1, H4 ve H1 giriş + H4 filtre karşılaştırılır. 0–3 mum bekleme ve %0 / %5 / %10 / %20 ATR mesafesi denenir. İlk %60 eğitim, sonraki %20 doğrulama, son %20 ayrılmış testtir. İşlem açmaz.</p>
+          <form id="research-form" class="mt-3" onsubmit="event.preventDefault(); runResearchComparison();">
+            <div class="grid grid-cols-2 gap-2">
+              <label>Başlangıç (UTC)<input id="research-start" type="date" required class="block w-full rounded bg-gray-800 p-2"></label>
+              <label>Bitiş (UTC, hariç)<input id="research-end" type="date" required class="block w-full rounded bg-gray-800 p-2"></label>
+              <label>HMA periyodu<input id="research-hma" type="number" min="2" max="200" value="14" required class="block w-full rounded bg-gray-800 p-2"></label>
+              <label>KAMA ER periyodu<input id="research-kama" type="number" min="2" max="200" value="10" required class="block w-full rounded bg-gray-800 p-2"></label>
+              <label>ATR periyodu<input id="research-atr" type="number" min="2" max="200" value="14" required class="block w-full rounded bg-gray-800 p-2"></label>
+              <label>Minimum ER<input id="research-er" type="number" min="0" max="1" step="0.05" value="0.30" required class="block w-full rounded bg-gray-800 p-2"></label>
+              <label>Stop (ATR çarpanı)<input id="research-stop" type="number" min="0.1" max="20" step="0.1" value="2" required class="block w-full rounded bg-gray-800 p-2"></label>
+              <label>Hedef (ATR; 0 = kapalı)<input id="research-target" type="number" min="0" max="50" step="0.1" value="3" required class="block w-full rounded bg-gray-800 p-2"></label>
+              <label>Komisyon (puan/işlem)<input id="research-commission" type="number" min="0" max="100000" step="0.1" value="0" required class="block w-full rounded bg-gray-800 p-2"></label>
+              <label>Kayma (puan/gerçekleşme)<input id="research-slippage" type="number" min="0" max="100000" step="0.1" value="0" required class="block w-full rounded bg-gray-800 p-2"></label>
+              <label>Alış swap maliyeti (puan/gün)<input id="research-swap-long" type="number" min="-100000" max="100000" step="0.1" value="0" required class="block w-full rounded bg-gray-800 p-2"></label>
+              <label>Satış swap maliyeti (puan/gün)<input id="research-swap-short" type="number" min="-100000" max="100000" step="0.1" value="0" required class="block w-full rounded bg-gray-800 p-2"></label>
+            </div>
+            <p class="mt-2 text-amber-300">KAMA hızlı/yavaş: 2/30. Tarihsel mum spreadi kullanılır. Sıfır maliyetler sıfır varsayımıdır; swap takvim günü başına yaklaşık maliyettir. Sonuçlar sabit hacimde puandır, hesap kârı değildir.</p>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <button id="research-run" type="submit" class="rounded bg-cyan-700 px-3 py-2 font-semibold">Karşılaştırmayı Çalıştır</button>
+              <button id="research-download" type="button" onclick="downloadResearchReport()" disabled class="rounded bg-gray-700 px-3 py-2 disabled:opacity-40">Raporu İndir</button>
+            </div>
+          </form>
+          <p id="research-status" role="status" aria-live="polite" class="mt-3 text-gray-200"></p>
+          <div id="research-result" class="mt-3 overflow-x-auto"></div>
+        </details>
+
         <details class="bg-[#121620] p-4 rounded-2xl border border-gray-800 text-xs">
           <summary class="text-white font-bold cursor-pointer">Bekleyen emir oluştur / yönet</summary>
           <p class="text-gray-400 my-2">Aktif sembol için fiyat girin. Emir iptal edilene kadar brokerda kalır ve panel kapalıyken de çalışır. Günlük zarar sınırı yerleştirme anında kontrol edilir; gelecekteki tetiklenmeyi garantiyle durdurmaz.</p>
@@ -979,5 +1007,6 @@
   <script src="/static/trading.js"></script>
   <script src="/static/operations.js"></script>
   <script src="/static/permissions.js"></script>
+  <script src="/static/research.js"></script>
 </body>
 </html>

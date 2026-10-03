@@ -8,12 +8,12 @@ from starlette.responses import JSONResponse
 
 TRADER_ACTIONS = {
     '/api/security/unlock', '/api/security/lock',
-    '/api/trade/preview', '/api/backtest', '/api/ai/advice', '/api/ai/learn',
+    '/api/trade/preview', '/api/backtest', '/api/research/compare', '/api/ai/advice', '/api/ai/learn',
     '/api/ai/execute', '/api/order/open', '/api/order/pending', '/api/order/cancel',
     '/api/order/close', '/api/order/close-all', '/api/order/close-profit',
     '/api/order/close-loss', '/api/position/stops', '/api/position/partial-close',
 }
-VIEWER_ACTIONS = {'/api/trade/preview', '/api/backtest'}
+VIEWER_ACTIONS = {'/api/trade/preview', '/api/backtest', '/api/research/compare'}
 
 
 async def protect_dashboard(request, call_next):

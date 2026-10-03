@@ -43,6 +43,34 @@ def rates(mt5, symbol, timeframe, count):
                  close=float(r[4]), tick_volume=int(r[5])) for r in rows]
 
 
+def research_rates(mt5, symbol, timeframe, start, end, clock_offset=0):
+    """Read-only, chunked history. End is exclusive; forming bars are excluded."""
+    seconds = {'TIMEFRAME_H1': 3600, 'TIMEFRAME_H4': 14400}.get(timeframe)
+    if seconds is None or end <= start or end - start > 5 * 366 * 86400:
+        raise ValueError('Geçersiz araştırma tarih aralığı.')
+    # Existing installation reports broker-shifted timestamps. Keep raw bar times
+    # and apply its configured offset only when testing whether a bar is closed.
+    cutoff = min(int(end), int(time.time()) + int(clock_offset))
+    result = {}
+    cursor = int(start)
+    while cursor < cutoff:
+        chunk_end = min(cursor + 90 * 86400, cutoff)
+        rows = mt5.copy_rates_range(symbol, getattr(mt5, timeframe),
+                                   datetime.fromtimestamp(cursor, timezone.utc),
+                                   datetime.fromtimestamp(chunk_end - 1, timezone.utc))
+        if rows is None:
+            raise RuntimeError('Geçmiş mumlar okunamadı: ' + str(mt5.last_error()))
+        for r in rows:
+            t = int(r[0])
+            if cursor <= t < chunk_end and t + seconds <= cutoff:
+                result[t] = dict(time=t, open=float(r[1]), high=float(r[2]), low=float(r[3]),
+                                 close=float(r[4]), tick_volume=int(r[5]), spread=int(r[6]))
+        if len(result) > 50000:
+            raise ValueError('Araştırma 50000 mum sınırını aşıyor.')
+        cursor = chunk_end
+    return [result[t] for t in sorted(result)]
+
+
 def risk(mt5, tick_offset=0):
     account = mt5.account_info()
     if account is None:
