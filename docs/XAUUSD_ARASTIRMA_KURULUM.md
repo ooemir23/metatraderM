@@ -64,3 +64,14 @@ compose -p mt5-mt5platform-jtahyh -f docker-compose.yml -f compose.dokploy.yml u
 Raporun `assessment` alanı, seçimi değiştirmeden doğrulama ve ayrılmış testte pozitif net sonucu ve her iki bölümde minimum işlem sayısını kontrol eder. Negatif sonuçta `failed_validation`, az işlemde `insufficient_evidence` gösterilir. Pozitif simülasyon da canlı gerçekleşme garantisi değildir. Görülmüş ayrılmış test verisi, sonraki strateji değişiklikleri için yeni ve görülmemiş veri olarak kabul edilmemelidir.
 
 Parasal model MetaQuotes [sembol kâr hesaplama formüllerine](https://www.mql5.com/en/docs/constants/environment_state/marketinfoconstants) dayanır. Tarihsel döviz dönüşümü gereken semboller ve doğrusal olmayan sözleşmeler API’de reddedilir.
+
+
+## HMA Algoritmik Bot’ta KAMA / ATR
+
+Botun **Ayarlar** ekranında 2. MA olarak **KAMA** seçilebilir. 2. MA periyodu KAMA’nın ER periyodudur; hızlı/yavaş periyotlar ayrıca girilir. Zaman dilimi, ATR periyodu, minimum ER, 0–3 mum onay süresi ve minimum MA mesafesi (ATR oranı) ayarlanır.
+
+**Kesişim onayı** açıksa ER, her iki ortalamanın yön eğimi ve ATR mesafesi birlikte aranır; süre sonunda sağlanmayan aday iptal edilir. Ters ham kesişim, kapatma seçeneği açıksa yalnız HMA botunun karşı yön pozisyonlarını onay beklemeden kapatır. ATR filtresi kapalıyken doğrudan kesişim davranışı korunur.
+
+**Mesafe hesabı → ATR çarpanı** seçilirse stop/hedef son kapanmış mumun Wilder ATR’sinden broker `point` değerine çevrilir ve yukarı yuvarlanır. Stop/hedef ayrıca kendi kullanım kutularıyla açılıp kapatılır. Bunlar girişte sabit mesafelerdir; takip eden stop uygulanmaz. Broker stop, teminat ve mevcut risk kontrolleri emir gönderiminde geçerlidir.
+
+KAMA/ATR araştırma motorunun gösterge hesaplamaları kullanılır; bot, kayan geçmiş penceresiyle çalışır. Yalnız kapanmış mumlar göstergelere girer. Canlı emir yeni mum fark edildiğinde mevcut broker fiyatından gerçekleşir; OHLC araştırmasının sonraki mum açılışı varsayımıyla birebir gerçekleşme garantisi yoktur. Ayar kaydetmek botu başlatmaz; çalışan bot durdurulmadan ayarlar değiştirilemez. Araştırma sonucu bot ayarlarına otomatik aktarılmaz.

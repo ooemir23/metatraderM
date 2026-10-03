@@ -222,8 +222,18 @@ class BotConfigRequest(BaseModel):
     symbol: Optional[str] = None
     timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=43200)
     hma_period: Optional[int] = Field(default=None, ge=2, le=1000)
-    second_ma_type: Optional[Literal["EMA", "SMA", "LWMA", "HMA"]] = None
+    second_ma_type: Optional[Literal["EMA", "SMA", "LWMA", "HMA", "KAMA"]] = None
     second_ma_period: Optional[int] = Field(default=None, ge=2, le=1000)
+    kama_fast: Optional[int] = Field(default=None, ge=2, le=200)
+    kama_slow: Optional[int] = Field(default=None, ge=2, le=200)
+    atr_period: Optional[int] = Field(default=None, ge=2, le=200)
+    use_atr_filter: Optional[bool] = None
+    er_min: Optional[float] = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+    confirmation_bars: Optional[int] = Field(default=None, ge=0, le=3)
+    min_distance_atr: Optional[float] = Field(default=None, ge=0, le=2, allow_inf_nan=False)
+    risk_mode: Optional[Literal["POINTS", "ATR"]] = None
+    atr_stop_multiplier: Optional[float] = Field(default=None, gt=0, le=20, allow_inf_nan=False)
+    atr_target_multiplier: Optional[float] = Field(default=None, ge=0, le=50, allow_inf_nan=False)
     lot_size: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
     use_stop_loss: Optional[bool] = None
     sl_points: Optional[int] = Field(default=None, ge=0)
@@ -830,6 +840,8 @@ def update_bot_config(req: BotConfigRequest):
     data = req.model_dump(exclude_unset=True, exclude_none=True)
     if data.get("timeframe_minutes", bot.timeframe_minutes) not in TIMEFRAME_NAMES:
         raise HTTPException(status_code=422, detail="Desteklenmeyen zaman dilimi")
+    if data.get("kama_fast", bot.kama_fast) >= data.get("kama_slow", bot.kama_slow):
+        raise HTTPException(status_code=422, detail="KAMA hızlı periyodu yavaş periyottan küçük olmalı.")
     bot.update_config(data)
     return bot.get_status()
 

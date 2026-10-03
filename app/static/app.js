@@ -942,12 +942,15 @@ async function fetchPrice(force = false) {
 }
 
 // Fetch Strategy Bot Status
+let latestBotSettings = null;
+
 async function fetchBotStatus() {
   try {
     const res = await fetch("/api/bot/status");
     if (!res.ok) return;
     const bot = await res.json();
 
+    latestBotSettings = bot;
     isBotRunning = bot.is_running;
     const badge = document.getElementById("bot-status-badge");
     const toggleBtn = document.getElementById("bot-toggle-btn");
@@ -970,6 +973,7 @@ async function fetchBotStatus() {
     document.getElementById("bot-disp-ma2-p").innerText = bot.second_ma_period;
     document.getElementById("bot-disp-ma2-val").innerText = bot.current_ma2 || "0.00000";
 
+    document.getElementById("bot-atr-status").textContent = `ATR(${bot.atr_period || 14}): ${Number(bot.current_atr || 0).toFixed(5)} · ER: ${Number(bot.current_er || 0).toFixed(2)} · ${bot.use_atr_filter ? (bot.pending_confirmation ? 'Onay bekleniyor' : 'Filtre açık') : 'Filtre kapalı'} · ${bot.risk_mode === 'ATR' ? 'ATR stop/hedef' : 'Sabit puan stop/hedef'}`;
     const lastSigEl = document.getElementById("bot-last-signal");
     lastSigEl.innerText = bot.last_signal || "YOK";
     if (bot.last_signal === "BUY") {
@@ -1441,14 +1445,47 @@ async function toggleBot() {
 }
 
 // Bot Settings Modal
-function toggleBotSettingsModal() {
+const botSettingInputs = {
+  'cfg-symbol': 'symbol', 'cfg-timeframe': 'timeframe_minutes', 'cfg-hma-period': 'hma_period',
+  'cfg-ma2-type': 'second_ma_type', 'cfg-ma2-period': 'second_ma_period', 'cfg-lot': 'lot_size',
+  'cfg-kama-fast': 'kama_fast', 'cfg-kama-slow': 'kama_slow', 'cfg-atr-period': 'atr_period',
+  'cfg-er-min': 'er_min', 'cfg-confirmation-bars': 'confirmation_bars', 'cfg-distance-atr': 'min_distance_atr',
+  'cfg-risk-mode': 'risk_mode', 'cfg-atr-stop': 'atr_stop_multiplier', 'cfg-atr-target': 'atr_target_multiplier',
+  'cfg-sl-points': 'sl_points', 'cfg-tp-points': 'tp_points'
+};
+const botSettingChecks = {'cfg-close-opp': 'close_opposite', 'cfg-atr-filter': 'use_atr_filter',
+  'cfg-use-sl': 'use_stop_loss', 'cfg-use-tp': 'use_take_profit'};
+async function toggleBotSettingsModal() {
   const modal = document.getElementById("bot-settings-modal");
-  modal.classList.toggle("hidden");
+  if (!modal.classList.contains('hidden')) { modal.classList.add('hidden'); return; }
+  latestBotSettings = null;
+  await fetchBotStatus();
+  if (!latestBotSettings) { showToast('Bot ayarları sunucudan okunamadı.', 'error'); return; }
+  for (const [id, key] of Object.entries(botSettingInputs)) {
+    if (latestBotSettings[key] != null) document.getElementById(id).value = latestBotSettings[key];
+  }
+  for (const [id, key] of Object.entries(botSettingChecks)) document.getElementById(id).checked = !!latestBotSettings[key];
+  modal.classList.remove('hidden');
 }
 
 async function saveBotSettings() {
   const cfg = {
     symbol: document.getElementById("cfg-symbol").value,
+    timeframe_minutes: Number(document.getElementById('cfg-timeframe').value),
+    kama_fast: Number(document.getElementById('cfg-kama-fast').value),
+    kama_slow: Number(document.getElementById('cfg-kama-slow').value),
+    atr_period: Number(document.getElementById('cfg-atr-period').value),
+    use_atr_filter: document.getElementById('cfg-atr-filter').checked,
+    er_min: Number(document.getElementById('cfg-er-min').value),
+    confirmation_bars: Number(document.getElementById('cfg-confirmation-bars').value),
+    min_distance_atr: Number(document.getElementById('cfg-distance-atr').value),
+    risk_mode: document.getElementById('cfg-risk-mode').value,
+    atr_stop_multiplier: Number(document.getElementById('cfg-atr-stop').value),
+    atr_target_multiplier: Number(document.getElementById('cfg-atr-target').value),
+    use_stop_loss: document.getElementById('cfg-use-sl').checked,
+    use_take_profit: document.getElementById('cfg-use-tp').checked,
+    sl_points: Number(document.getElementById('cfg-sl-points').value),
+    tp_points: Number(document.getElementById('cfg-tp-points').value),
     hma_period: parseInt(document.getElementById("cfg-hma-period").value),
     second_ma_type: document.getElementById("cfg-ma2-type").value,
     second_ma_period: parseInt(document.getElementById("cfg-ma2-period").value),
@@ -1462,6 +1499,10 @@ async function saveBotSettings() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(cfg)
     });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(typeof error.detail === 'string' ? error.detail : 'Bot parametreleri geçersiz; sayı sınırlarını kontrol edin.');
+    }
     if (res.ok) {
       showToast("✅ Bot ayarları güncellendi!", "success");
       toggleBotSettingsModal();

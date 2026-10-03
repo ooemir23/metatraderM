@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Optional
 import hashlib
 from app.mt5_bridge import HMA_MAGIC
 from app.mt5_client import MT5DataError
+from app.strategy_research import Settings as IndicatorSettings, indicators
 
 logger = logging.getLogger("StrategyBot")
 logger.setLevel(logging.INFO)
@@ -24,6 +25,19 @@ class StrategyBot:
         self.hma_period = 14
         self.second_ma_type = "EMA" # EMA, SMA, LWMA, HMA
         self.second_ma_period = 34
+        self.kama_fast = 2
+        self.kama_slow = 30
+        self.atr_period = 14
+        self.use_atr_filter = False
+        self.er_min = .30
+        self.confirmation_bars = 0
+        self.min_distance_atr = .05
+        self.risk_mode = "POINTS"
+        self.atr_stop_multiplier = 2.0
+        self.atr_target_multiplier = 3.0
+        self.current_atr = 0.0
+        self.current_er = 0.0
+        self._candidate = None
         self.lot_size = 0.01
         self.use_stop_loss = True
         self.sl_points = 200
@@ -61,6 +75,13 @@ class StrategyBot:
         if "tp_points" in data: self.tp_points = int(data["tp_points"])
         if "close_opposite" in data: self.close_opposite = bool(data["close_opposite"])
 
+        for key in ("kama_fast", "kama_slow", "atr_period", "use_atr_filter", "er_min",
+                    "confirmation_bars", "min_distance_atr", "risk_mode",
+                    "atr_stop_multiplier", "atr_target_multiplier"):
+            if key in data:
+                setattr(self, key, data[key])
+        self._candidate = None
+        self.current_atr = self.current_er = 0.0
         self.last_candle_time = 0
         self.log(f"Bot ayarları güncellendi: {self.symbol} | HMA: {self.hma_period} | 2.MA: {self.second_ma_type}({self.second_ma_period}) | Lot: {self.lot_size}")
 
@@ -73,6 +94,10 @@ class StrategyBot:
             "second_ma_type": self.second_ma_type,
             "second_ma_period": self.second_ma_period,
             "lot_size": self.lot_size,
+            **{key: getattr(self, key) for key in ("kama_fast", "kama_slow", "atr_period",
+                "use_atr_filter", "er_min", "confirmation_bars", "min_distance_atr", "risk_mode",
+                "atr_stop_multiplier", "atr_target_multiplier", "current_atr", "current_er")},
+            "pending_confirmation": self._candidate is not None,
             "use_stop_loss": self.use_stop_loss,
             "sl_points": self.sl_points,
             "use_take_profit": self.use_take_profit,
@@ -165,7 +190,7 @@ class StrategyBot:
             return
 
         rates = self.mt5.get_rates(self.symbol, timeframe=self.timeframe_minutes,
-                                   count=max(100, 5 * max(self.hma_period, self.second_ma_period) + 20))
+                                   count=max(100, 5 * max(self.hma_period, self.second_ma_period, self.kama_slow, self.atr_period) + 20))
         if not rates or len(rates) < max(self.hma_period, self.second_ma_period) + 15:
             return
 
@@ -179,78 +204,93 @@ class StrategyBot:
         if latest_closed_candle_time == self.last_candle_time:
             return
 
-        # Calculate for shift=1 (last closed candle)
-        hma1 = self.calc_hma(closes, self.hma_period, shift=1)
-        ma2_1 = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=1)
-
-        # Calculate for shift=2 (previous closed candle)
-        hma2 = self.calc_hma(closes, self.hma_period, shift=2)
-        ma2_2 = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=2)
-
-        self.current_hma = hma1
-        self.current_ma2 = ma2_1
-
-        latest_closed_candle_time = rev_rates[1]["time"]
-        if latest_closed_candle_time == self.last_candle_time:
-            # Already checked this closed candle
-            return
-
+        study = None
+        if self.second_ma_type == "KAMA" or self.use_atr_filter or self.risk_mode == "ATR":
+            closed = rates[:-1]
+            study = indicators(closed, IndicatorSettings(hma_period=self.hma_period,
+                kama_period=self.second_ma_period, kama_fast=self.kama_fast,
+                kama_slow=self.kama_slow, atr_period=self.atr_period))
+            if any(study[key][-1] is None or study[key][-2] is None for key in ('hma', 'kama', 'atr', 'er')):
+                return
+            self.current_atr, self.current_er = study['atr'][-1], study['er'][-1]
+        if self.second_ma_type == "KAMA":
+            hma1, hma2 = study['hma'][-1], study['hma'][-2]
+            ma2_1, ma2_2 = study['kama'][-1], study['kama'][-2]
+        else:
+            hma1 = self.calc_hma(closes, self.hma_period, shift=1)
+            hma2 = self.calc_hma(closes, self.hma_period, shift=2)
+            ma2_1 = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=1)
+            ma2_2 = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=2)
+        self.current_hma, self.current_ma2 = hma1, ma2_1
         self.last_candle_time = latest_closed_candle_time
+        cross = 1 if hma2 <= ma2_2 and hma1 > ma2_1 else -1 if hma2 >= ma2_2 and hma1 < ma2_1 else 0
+        direction = cross
+        closed_on_cross = False
+        if self.use_atr_filter:
+            direction = 0
+            if cross:
+                self._candidate = {'side': cross, 'time': latest_closed_candle_time}
+                # A raw reverse closes owned positions even when entry confirmation fails.
+                if self.close_opposite:
+                    if not self.close_positions_by_type("SELL" if cross == 1 else "BUY"):
+                        self._candidate = None
+                        self.log("Ters pozisyon kapatılamadı; yeni emir gönderilmedi.", "ERROR")
+                        return
+                    closed_on_cross = True
+            if self._candidate:
+                side = self._candidate['side']
+                age = sum(r['time'] > self._candidate['time'] for r in rates[:-1])
+                valid = (self.current_atr > 0 and self.current_er >= self.er_min and
+                         side * (hma1 - ma2_1) > 0 and
+                         side * (hma1 - ma2_1) >= self.min_distance_atr * self.current_atr and
+                         side * (hma1 - hma2) > 0 and side * (ma2_1 - ma2_2) > 0)
+                if age > self.confirmation_bars:
+                    self.log("Onay süresi doldu; kesişim sinyali iptal edildi.")
+                    self._candidate = None
+                elif valid:
+                    direction = side
+                    self._candidate = None
+                elif age == self.confirmation_bars:
+                    self.log("ER/eğim/ATR mesafesi onayı gelmedi; sinyal iptal edildi.")
+                    self._candidate = None
+                else:
+                    self.log(f"Kesişim onayı bekleniyor: {age}/{self.confirmation_bars} mum.")
+        if not direction or self._stop_event.is_set():
+            return
+        side = "BUY" if direction == 1 else "SELL"
+        sl, tp = self.order_distances()
+        if sl is None:
+            return
+        self.last_signal = side
+        self.last_signal_time = time.strftime("%H:%M:%S")
+        self.last_signal_price = closes[1]
+        self.log(f"[{side} SİNYALİ] HMA({hma1:.5f}) / {self.second_ma_type}({ma2_1:.5f}) | ATR: {self.current_atr:.5f}", "SIGNAL")
+        if self.close_opposite and not closed_on_cross and not self.close_positions_by_type("SELL" if direction == 1 else "BUY"):
+            self.log("Ters pozisyon kapatılamadı; yeni emir gönderilmedi.", "ERROR")
+            return
+        if self._stop_event.is_set():
+            return
+        res = self.mt5.open_order(self.symbol, side, self.lot_size, sl_points=sl, tp_points=tp,
+            comment=f"HMA Bot {side}", magic=HMA_MAGIC, request_id=self.order_id(side), stop_event=self._stop_event)
+        if res.get("success"):
+            self.log(f"✅ {side} Emri Açıldı: #{res.get('ticket')} @ {res.get('price')}")
+        else:
+            self.log(f"❌ {side} Emri Başarısız: {res.get('error')}", "ERROR")
 
-        # Check crossover condition
-        is_buy_cross = (hma2 <= ma2_2) and (hma1 > ma2_1)
-        is_sell_cross = (hma2 >= ma2_2) and (hma1 < ma2_1)
-
-        current_price = closes[1]
-        now_str = time.strftime("%H:%M:%S")
-
-        if is_buy_cross:
-            self.last_signal = "BUY"
-            self.last_signal_time = now_str
-            self.last_signal_price = current_price
-            self.log(f"🟢 [AL SİNYALİ] HMA({round(hma1, 5)}) > {self.second_ma_type}({round(ma2_1, 5)}) @ {current_price}", "SIGNAL")
-
-            # Execute Trade
-            if self._stop_event.is_set():
-                return
-            if self.close_opposite and not self.close_positions_by_type("SELL"):
-                self.log("Ters pozisyon kapatılamadı; yeni emir gönderilmedi.", "ERROR")
-                return
-            if self._stop_event.is_set():
-                return
-
-            sl = self.sl_points if self.use_stop_loss else 0
-            tp = self.tp_points if self.use_take_profit else 0
-            res = self.mt5.open_order(self.symbol, "BUY", self.lot_size, sl_points=sl, tp_points=tp, comment="HMA Bot BUY", magic=HMA_MAGIC,
-                                      request_id=self.order_id("BUY"), stop_event=self._stop_event)
-            if res.get("success"):
-                self.log(f"✅ BUY Emri Açıldı: #{res.get('ticket')} @ {res.get('price')}")
-            else:
-                self.log(f"❌ BUY Emri Başarısız: {res.get('error')}", "ERROR")
-
-        elif is_sell_cross:
-            self.last_signal = "SELL"
-            self.last_signal_time = now_str
-            self.last_signal_price = current_price
-            self.log(f"🔴 [SAT SİNYALİ] HMA({round(hma1, 5)}) < {self.second_ma_type}({round(ma2_1, 5)}) @ {current_price}", "SIGNAL")
-
-            # Execute Trade
-            if self._stop_event.is_set():
-                return
-            if self.close_opposite and not self.close_positions_by_type("BUY"):
-                self.log("Ters pozisyon kapatılamadı; yeni emir gönderilmedi.", "ERROR")
-                return
-            if self._stop_event.is_set():
-                return
-
-            sl = self.sl_points if self.use_stop_loss else 0
-            tp = self.tp_points if self.use_take_profit else 0
-            res = self.mt5.open_order(self.symbol, "SELL", self.lot_size, sl_points=sl, tp_points=tp, comment="HMA Bot SELL", magic=HMA_MAGIC,
-                                      request_id=self.order_id("SELL"), stop_event=self._stop_event)
-            if res.get("success"):
-                self.log(f"✅ SELL Emri Açıldı: #{res.get('ticket')} @ {res.get('price')}")
-            else:
-                self.log(f"❌ SELL Emri Başarısız: {res.get('error')}", "ERROR")
+    def order_distances(self):
+        if self.risk_mode == "POINTS":
+            return (self.sl_points if self.use_stop_loss else 0,
+                    self.tp_points if self.use_take_profit else 0)
+        try:
+            point = float(self.mt5.get_symbol_spec(self.symbol)['point'])
+            if not math.isfinite(point) or point <= 0 or not math.isfinite(self.current_atr) or self.current_atr <= 0:
+                raise ValueError('Geçersiz point/ATR')
+            sl = math.ceil(self.current_atr * self.atr_stop_multiplier / point) if self.use_stop_loss else 0
+            tp = math.ceil(self.current_atr * self.atr_target_multiplier / point) if self.use_take_profit and self.atr_target_multiplier > 0 else 0
+            return sl, tp
+        except Exception:
+            self.log("ATR stop/hedef mesafesi doğrulanamadı; emir gönderilmedi.", "ERROR")
+            return None, None
 
     def close_positions_by_type(self, pos_type: str):
         try:
@@ -282,6 +322,7 @@ class StrategyBot:
 
     def stop(self):
         self._stop_event.set()
+        self._candidate = None
         if self.is_running:
             self.is_running = False
             # Do not cancel a to_thread worker: it cannot be interrupted, and a
