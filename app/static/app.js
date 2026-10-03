@@ -623,7 +623,7 @@ function renderPositionsData(positions) {
     if (countBadge) countBadge.innerText = positions.length;
 
     if (!positions || positions.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="9" class="py-6 text-center text-gray-500 font-sans">Henüz açık pozisyon bulunmuyor.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10" class="py-6 text-center text-gray-500 font-sans">Henüz açık pozisyon bulunmuyor.</td></tr>`;
       return;
     }
 
@@ -646,6 +646,7 @@ function renderPositionsData(positions) {
           <td class="py-2.5 px-3 text-gray-400">${p.price_open}</td>
           <td class="py-2.5 px-3 text-white font-semibold">${p.price_current}</td>
           <td class="py-2.5 px-3 text-gray-500">${p.sl || "-"} / ${p.tp || "-"}</td>
+          <td class="py-2.5 px-3 text-right text-amber-400 whitespace-nowrap">${p.commission == null ? "—" : `${p.commission > 0 ? "+" : ""}${accountCurrency} ${formatMoney(p.commission)}`}</td>
           <td class="py-2.5 px-3 text-right font-bold ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(p.profit)}</td>
           <td class="py-2.5 px-3 text-center">
             <button onclick="showPositionEditor(${p.ticket})" class="px-2 py-1 rounded bg-cyan-500/10 text-cyan-300 text-xs">Yönet</button>
@@ -694,13 +695,17 @@ async function fetchHistory() {
     const tbody = document.getElementById("history-table-body");
     const countBadge = document.getElementById("history-count-badge");
     const totalProfitEl = document.getElementById("history-total-profit");
+    const totalCommissionEl = document.getElementById("history-total-commission");
 
     if (countBadge) countBadge.innerText = history.length;
 
     let totalProfit = 0;
+    let totalCommission = 0;
     history.forEach(d => {
       totalProfit += (d.profit || 0) + (d.commission || 0) + (d.swap || 0) + (d.fee || 0);
+      totalCommission += (d.commission || 0);
     });
+    if (totalCommissionEl) totalCommissionEl.innerText = `${totalCommission > 0 ? "+" : ""}${accountCurrency} ${formatMoney(totalCommission)}`;
 
     if (totalProfitEl) {
       const pColor = totalProfit >= 0 ? "text-emerald-400" : "text-rose-400";
@@ -712,7 +717,7 @@ async function fetchHistory() {
     if (!tbody) return;
 
     if (!history || history.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="8" class="py-6 text-center text-gray-500 font-sans">Henüz kapalı işlem geçmişi bulunmuyor.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" class="py-6 text-center text-gray-500 font-sans">Henüz kapalı işlem geçmişi bulunmuyor.</td></tr>`;
       return;
     }
 
@@ -727,7 +732,9 @@ async function fetchHistory() {
       const profitColor = netProfit >= 0 ? "text-emerald-400" : "text-rose-400";
       const profitSign = netProfit >= 0 ? "+" : "";
 
-      const fee = (d.swap || 0) + (d.commission || 0) + (d.fee || 0);
+      const commission = d.commission || 0;
+      const commissionText = `${commission > 0 ? "+" : ""}${accountCurrency} ${formatMoney(commission)}`;
+      const fee = (d.swap || 0) + (d.fee || 0);
       const feeText = fee !== 0 ? `${fee >= 0 ? "+" : ""}${accountCurrency} ${formatMoney(fee)}` : "-";
 
       rowsHtml += `
@@ -737,7 +744,8 @@ async function fetchHistory() {
           <td class="py-2.5 px-3">${typeBadge}</td>
           <td class="py-2.5 px-3 text-gray-200 font-semibold">${d.volume}</td>
           <td class="py-2.5 px-3 text-gray-300 font-mono">${d.price}</td>
-          <td class="py-2.5 px-3 text-gray-500 text-[11px]">${feeText}</td>
+          <td class="py-2.5 px-3 text-right text-amber-400 whitespace-nowrap">${commissionText}</td>
+          <td class="py-2.5 px-3 text-right text-gray-500 text-[11px] whitespace-nowrap">${feeText}</td>
           <td class="py-2.5 px-3 text-gray-400 text-[11px]">${d.time}</td>
           <td class="py-2.5 px-3 text-right font-bold font-mono ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(netProfit)}</td>
         </tr>
@@ -819,12 +827,17 @@ async function fetchReports() {
     const repWorst = document.getElementById("rep-worst-trade");
     const repVol = document.getElementById("rep-total-volume");
     const repFee = document.getElementById("rep-total-fee");
+    const repCommission = document.getElementById("rep-total-commission");
 
     if (repBest) repBest.innerText = `+${currency} ${formatMoney(s.best_trade)}`;
     if (repWorst) repWorst.innerText = `-${currency} ${formatMoney(Math.abs(s.worst_trade))}`;
     if (repVol) repVol.innerText = `${s.total_volume} Lot`;
+    if (repCommission) {
+      const commission = s.total_commission || 0;
+      repCommission.innerText = `${commission > 0 ? "+" : ""}${currency} ${formatMoney(commission)}`;
+    }
     if (repFee) {
-      const fee = (s.total_swap || 0) + (s.total_commission || 0) + (s.total_fee || 0);
+      const fee = (s.total_swap || 0) + (s.total_fee || 0);
       repFee.innerText = `${fee >= 0 ? "+" : ""}${currency} ${formatMoney(fee)}`;
     }
 

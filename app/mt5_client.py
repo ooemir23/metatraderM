@@ -222,6 +222,7 @@ class MT5Client:
         self._account_cache_time = 0.0
         self._positions_cache = None
         self._positions_cache_time = 0.0
+        self._positions_cache_commission = False
         self._price_cache = {}
         self._price_cache_time = {}
 
@@ -574,17 +575,20 @@ class MT5Client:
             return {**status, 'daily_loss_limit': value,
                     'ratio': round(status['daily_loss'] / value, 4)}
 
-    def get_positions(self, fresh=False) -> List[Dict[str, Any]]:
+    def get_positions(self, fresh=False, include_commission=False) -> List[Dict[str, Any]]:
         with self._lock:
             now = time.monotonic()
-            if not fresh and self._positions_cache is not None and now - self._positions_cache_time < .5 and self.is_connected:
+            if (not fresh and self._positions_cache is not None
+                    and self._positions_cache_commission == include_commission
+                    and now - self._positions_cache_time < .5 and self.is_connected):
                 return self._positions_cache
             if not self.ensure_connected():
                 raise MT5DataError("MT5 bağlı değil; pozisyonlar doğrulanamadı.")
             try:
-                result = self._bridge("positions")
+                result = self._bridge("positions", bool(include_commission))
                 self._positions_cache = result
                 self._positions_cache_time = time.monotonic()
+                self._positions_cache_commission = include_commission
                 return result
             except Exception as exc:
                 self._positions_cache = None

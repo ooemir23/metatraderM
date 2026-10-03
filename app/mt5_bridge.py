@@ -9,16 +9,30 @@ HMA_MAGIC = 123461
 AI_MAGIC = 123462
 
 
-def positions(mt5):
+def positions(mt5, include_commission=False):
     rows = mt5.positions_get()
     if rows is None:
         raise RuntimeError('Pozisyonlar okunamadı: ' + str(mt5.last_error()))
-    return [dict(ticket=int(p.ticket), identifier=int(p.identifier), symbol=str(p.symbol),
+    result = []
+    for p in rows:
+        # MT5 positions have no commission field; use the stable position identifier
+        # to include commissions already charged on its opening/partial-close deals.
+        commission = None
+        if include_commission:
+            try:
+                deals = mt5.history_deals_get(position=int(p.identifier))
+                if deals:
+                    commission = round(sum(float(getattr(d, 'commission', 0)) for d in deals), 2)
+            except Exception:
+                pass  # Keep live positions available when only cost history is unavailable.
+        result.append(dict(ticket=int(p.ticket), identifier=int(p.identifier), symbol=str(p.symbol),
                  type='BUY' if p.type == 0 else 'SELL', type_raw=int(p.type),
                  magic=int(p.magic), volume=float(p.volume),
                  price_open=float(p.price_open), price_current=float(p.price_current),
                  sl=float(p.sl), tp=float(p.tp), profit=float(p.profit), swap=float(p.swap),
-                 time=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(p.time))) for p in rows]
+                 commission=commission,
+                 time=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(p.time))))
+    return result
 
 
 def rates(mt5, symbol, timeframe, count):
@@ -448,7 +462,7 @@ def live_snapshot(mt5, symbols, tick_offset=0):
         if tick is not None and info is not None:
             ticks[symbol] = dict(symbol=symbol, bid=float(tick.bid), ask=float(tick.ask), time=int(tick.time)-tick_offset,
                                  spread=round((tick.ask-tick.bid)/info.point) if info.point else 0)
-    return dict(account=account_data, positions=positions(mt5), orders=pending_orders(mt5),
+    return dict(account=account_data, positions=positions(mt5, include_commission=True), orders=pending_orders(mt5),
                 prices=ticks, sampled_at=time.time())
 
 
