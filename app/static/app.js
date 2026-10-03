@@ -908,6 +908,12 @@ async function fetchReports() {
 // Fetch Price for Active Symbol
 function renderPriceData(tick) {
     if (typeof displayedTickTime !== "undefined") displayedTickTime = tick.time || 0;
+    if (typeof displayedQuoteStatus !== "undefined") {
+      displayedQuoteStatus = tick.quote_status || null;
+      displayedQuoteReceivedAt = Date.now();
+      quoteDiagnosticFailed = false;
+    }
+    if (typeof updateQuoteStatus === "function") updateQuoteStatus();
     if (tick && tick.bid > 0) {
       document.getElementById("header-bid").innerText = tick.bid;
       document.getElementById("header-ask").innerText = tick.ask;
@@ -1074,6 +1080,8 @@ function orderErrorMessage(data) {
   const code = Number(data.retcode);
   if (data.uncertain) return ["Emir sonucu belirsiz", "Tekrar göndermeden önce açık pozisyonları kontrol edin."];
   if (data.reason_code === "trading_halted") return ["Yeni emirler durduruldu", raw];
+  if (raw.includes("MT5 broker bağlantısı kesik.")) return ["MT5 broker bağlantısı kesik", raw];
+  if (raw.includes("MT5 broker bağlantısı doğrulanamadı.")) return ["MT5 bağlantısı doğrulanamadı", raw];
   if (raw.startsWith("Son fiyat ")) return ["Güncel fiyat bekleniyor", raw];
   if (raw.startsWith("Fiyat zamanı sunucu")) return ["Fiyat saatini kontrol edin", raw];
   if (raw.startsWith("Broker geçerli fiyat")) return ["Geçerli fiyat bekleniyor", raw];

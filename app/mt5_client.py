@@ -456,7 +456,7 @@ class MT5Client:
                     }
 
                 res = {
-                    "connected": True,
+                    "connected": self._bridge("broker_connection") is True,
                     "login": acc.login,
                     "account_type": {0: "DEMO", 1: "CONTEST", 2: "REAL"}.get(int(acc.trade_mode), "UNKNOWN"),
                     "account_mismatch": self.login_id <= 0 or int(acc.login) != self.login_id or str(acc.server) != self.server
@@ -604,21 +604,7 @@ class MT5Client:
 
         with self._lock:
             try:
-                tick = self.mt5.symbol_info_tick(symbol)
-                if tick is None:
-                    return {"symbol": symbol, "bid": 0.0, "ask": 0.0, "spread": 0}
-
-                info = self.mt5.symbol_info(symbol)
-                digits = info.digits if info else 5
-                spread = info.spread if info else round((tick.ask - tick.bid) * (10 ** digits))
-
-                res = {
-                    "symbol": symbol,
-                    "bid": round(tick.bid, digits),
-                    "ask": round(tick.ask, digits),
-                    "spread": spread,
-                    "time": int(tick.time)-self.tick_clock_offset
-                }
+                res = self._bridge('price', symbol, self.tick_clock_offset)
                 self._price_cache[symbol] = res
                 self._price_cache_time[symbol] = time.time()
                 return res

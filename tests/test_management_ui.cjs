@@ -41,8 +41,17 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  vm.runInContext('displayedTickTime=Date.now()/1000-2;',ctx);
  ctx.updateQuoteStatus();assert.match(node('tick-age').textContent,/Fiyat 2 sn önce güncellendi/);
  vm.runInContext('displayedTickTime=0;',ctx);
- ctx.updateQuoteStatus();assert.equal(node('tick-age').textContent,'Fiyat bekleniyor');
+ ctx.updateQuoteStatus();assert.equal(node('tick-age').textContent,'MT5 bu sembol için fiyat bildirmedi');
  assert.equal(ctx.orderErrorMessage({error:'Son fiyat 60 saniye önce alındı; güncel fiyat bekleniyor.'})[0],'Güncel fiyat bekleniyor');
+ vm.runInContext('displayedTickTime=Date.now()/1000+10800; displayedQuoteReceivedAt=Date.now(); quoteDiagnosticFailed=false; displayedQuoteStatus={age_seconds:38507,broker_connected:true,state:"stale"};',ctx);
+ ctx.updateQuoteStatus();
+ assert.equal(node('mt5-feed-status').textContent,'MT5 broker bağlantısı açık');
+ assert.match(node('tick-age').textContent,/10:41:47/,'server age wins over local clock');
+ vm.runInContext('displayedQuoteStatus.broker_connected=false;',ctx);
+ ctx.updateQuoteStatus();assert.equal(node('mt5-feed-status').textContent,'MT5 broker bağlantısı kesik');
+ vm.runInContext('displayedQuoteReceivedAt=Date.now()-6000;',ctx);
+ ctx.updateQuoteStatus();assert.equal(node('mt5-feed-status').textContent,'MT5 broker bağlantısı doğrulanamadı');
+ vm.runInContext('displayedQuoteStatus=null;',ctx);
  storage.set('order-intent:EURUSD',JSON.stringify({request_id:'lost-open'}));
  reply={found:true,uncertain:true};await ctx.checkReconciledOrders();
  assert.ok(storage.has('order-intent:EURUSD'));

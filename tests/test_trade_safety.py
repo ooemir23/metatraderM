@@ -21,6 +21,7 @@ def client(monkeypatch):
     c.is_connected = True
     c.last_ping_time = time.time()
     c.mt5 = Mock()
+    c.mt5.terminal_info.return_value = NS(connected=True)
     c.mt5.account_info.return_value = NS(login=1, server='test', trade_mode=0, currency='EUR', margin_mode=2)
     c.mt5.positions_get.return_value = []
     c.mt5.orders_get.return_value = []
@@ -528,7 +529,7 @@ def test_remote_bridge_serializes_full_result_once(client, monkeypatch):
     from rpyc.utils.server import ThreadedServer
     from app.mt5_client import rpyc
     fake = ModuleType('MetaTrader5')
-    for name in ('account_info','positions_get','orders_get','history_deals_get','symbol_select','symbol_info','symbol_info_tick','order_send'):
+    for name in ('terminal_info','account_info','positions_get','orders_get','history_deals_get','symbol_select','symbol_info','symbol_info_tick','order_send'):
         setattr(fake, name, getattr(client.mt5, name))
     monkeypatch.setitem(sys.modules, 'MetaTrader5', fake)
     disconnected = threading.Event()

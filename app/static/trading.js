@@ -5,6 +5,9 @@ let editorPosition = null;
 let liveSource = null;
 let lastLiveMessage = 0;
 let displayedTickTime = 0;
+let displayedQuoteStatus = null;
+let displayedQuoteReceivedAt = 0;
+let quoteDiagnosticFailed = false;
 function safeText(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -114,10 +117,24 @@ function updateQuoteStatus() {
     ? (en ? 'Server connection active' : 'Sunucu bağlantısı açık')
     : (en ? 'Waiting for server connection' : 'Sunucu bağlantısı bekleniyor');
   const node = document.getElementById('tick-age');
+  const brokerNode = document.getElementById('mt5-feed-status');
+  const diagnosticCurrent = !quoteDiagnosticFailed && displayedQuoteStatus && Date.now()-displayedQuoteReceivedAt < 5000;
+  if (brokerNode) brokerNode.textContent = !diagnosticCurrent
+    ? (en ? 'MT5 broker connection not verified' : 'MT5 broker bağlantısı doğrulanamadı')
+    : displayedQuoteStatus.broker_connected === true
+      ? (en ? 'MT5 broker connected' : 'MT5 broker bağlantısı açık')
+      : displayedQuoteStatus.broker_connected === false
+        ? (en ? 'MT5 broker disconnected' : 'MT5 broker bağlantısı kesik')
+        : (en ? 'MT5 broker connection not verified' : 'MT5 broker bağlantısı doğrulanamadı');
   if (!node) return;
-  const age = Date.now()/1000 - displayedTickTime;
+  // Server-measured age avoids interpreting the user's computer clock as broker time.
+  const age = displayedQuoteStatus?.age_seconds != null
+    ? displayedQuoteStatus.age_seconds + (Date.now()-displayedQuoteReceivedAt)/1000
+    : Date.now()/1000 - displayedTickTime;
   if (!Number.isFinite(displayedTickTime) || displayedTickTime <= 0) {
-    node.textContent = en ? 'Waiting for price' : 'Fiyat bekleniyor';
+    node.textContent = displayedQuoteStatus?.state === 'invalid'
+      ? (en ? 'Broker quote invalid' : 'Broker fiyatı geçersiz')
+      : (en ? 'MT5 has not provided a quote for this symbol' : 'MT5 bu sembol için fiyat bildirmedi');
   } else if (age < 0) {
     node.textContent = en ? 'Price time is in the future; check clock settings' : 'Fiyat zamanı ileride; saat ayarını kontrol edin';
   } else if (age > 10) {
@@ -133,6 +150,8 @@ function startLiveFeed() {
   if (liveSource) liveSource.close();
   lastLiveMessage=0;
   displayedTickTime=0;
+  displayedQuoteStatus=null;
+  quoteDiagnosticFailed=false;
   updateQuoteStatus();
   if (typeof EventSource==='undefined') return;
   const symbol=currentSymbol;
@@ -148,7 +167,7 @@ function startLiveFeed() {
       renderPositionsData(data.positions);
       renderPendingOrders(data.orders);
       if (data.prices[symbol]) renderPriceData(data.prices[symbol]);
-      else displayedTickTime=0;
+      else {displayedTickTime=0; displayedQuoteStatus=null;}
       updateQuoteStatus();
     } catch (_) {markLiveStale();}
   };
@@ -156,6 +175,7 @@ function startLiveFeed() {
 }
 function markLiveStale() {
   lastLiveMessage=0;
+  quoteDiagnosticFailed=true;
   updateQuoteStatus();
   const badge=document.getElementById('pos-count-badge');
   if (badge) badge.textContent='Veri güncel değil';

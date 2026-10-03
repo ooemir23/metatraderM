@@ -249,9 +249,9 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
             return {'success': False, 'error': 'Sembol seçilemedi.'}
         info = mt5.symbol_info(symbol)
         tick = mt5.symbol_info_tick(symbol)
-        if info is None or tick is None:
-            return {'success': False, 'error': 'Güncel sembol/fiyat bilgisi alınamadı.'}
-        quote_error = _quote_error(tick, tick_offset, max_tick_age)
+        if info is None:
+            return {'success': False, 'error': 'Sembol bilgisi alınamadı.'}
+        quote_error = _quote_error(tick, tick_offset, max_tick_age, mt5)
         if quote_error:
             return {'success': False, 'error': quote_error}
         step = float(info.volume_step)
@@ -337,27 +337,68 @@ def _account(mt5, expected_login=0, expected_server=''):
     return account
 
 
-def _quote_error(tick, tick_offset=0, max_tick_age=10):
-    values = [float(v) for v in (tick.bid, tick.ask, tick.time)]
-    if not all(math.isfinite(v) for v in values) or tick.time <= 0 or tick.bid <= 0 or tick.ask < tick.bid:
-        return 'Broker geçerli fiyat bildirmedi. Güncel fiyat gelmeden işlem yapılamaz.'
-    age = time.time() - (float(tick.time) - tick_offset)
-    if age < 0:
-        return 'Fiyat zamanı sunucu saatinden ileride. Sunucu saati ve broker saat farkı ayarını kontrol edin.'
-    if age > max_tick_age:
-        hours, remainder = divmod(int(age), 3600)
-        minutes, seconds = divmod(remainder, 60)
-        return (f'Son fiyat {hours} saat {minutes} dakika {seconds} saniye önce alındı; güncel fiyat bekleniyor. '
-                'Piyasa kapalı olabilir veya MT5 fiyat akışı durmuş olabilir. '
-                'Güncel fiyat gelmeden işlem yapılamaz.')
+def broker_connection(mt5):
+    try:
+        terminal = mt5.terminal_info()
+        value = getattr(terminal, 'connected', None)
+        return value if isinstance(value, bool) else None
+    except Exception:
+        return None
+
+
+def quote_status(tick, tick_offset=0, max_tick_age=10, connected=None):
+    """Report observed connectivity and quote freshness, never infer trading sessions."""
+    now = time.time()
+    result = dict(broker_connected=connected, checked_at=now, age_seconds=None)
+    connection = ('MT5 broker bağlantısı açık.' if connected is True else
+                  'MT5 broker bağlantısı kesik.' if connected is False else
+                  'MT5 broker bağlantısı doğrulanamadı.')
+    state, message = 'missing', 'MT5 bu sembol için fiyat bildirmedi.'
+    if tick is not None:
+        values = [float(v) for v in (tick.bid, tick.ask, tick.time)]
+        if not all(math.isfinite(v) for v in values) or tick.time <= 0 or tick.bid <= 0 or tick.ask < tick.bid:
+            state, message = 'invalid', 'Broker geçerli fiyat bildirmedi.'
+        else:
+            age = now - (float(tick.time) - tick_offset)
+            result['age_seconds'] = age
+            if age < 0:
+                state = 'future'
+                message = 'Fiyat zamanı sunucu saatinden ileride. Sunucu saati ve broker saat farkı ayarını kontrol edin.'
+            elif age > max_tick_age:
+                state = 'stale'
+                hours, remainder = divmod(int(age), 3600)
+                minutes, seconds = divmod(remainder, 60)
+                message = (f'Son fiyat {hours} saat {minutes} dakika {seconds} saniye önce alındı. '
+                           'Bu sembolde güncel fiyat alınmıyor.')
+            else:
+                state, message = 'fresh', 'Bu sembolde fiyat güncel.'
+    result.update(state=state, message=f'{message} {connection}')
+    return result
+
+
+def _quote_error(tick, tick_offset=0, max_tick_age=10, mt5=None):
+    status = quote_status(tick, tick_offset, max_tick_age, broker_connection(mt5))
+    if status['state'] != 'fresh' or status['broker_connected'] is not True:
+        return status['message'] + ' Güncel fiyat ve broker bağlantısı doğrulanmadan işlem yapılamaz.'
     return None
+
+
+def price(mt5, symbol, tick_offset=0):
+    tick, info = mt5.symbol_info_tick(symbol), mt5.symbol_info(symbol)
+    status = quote_status(tick, tick_offset, connected=broker_connection(mt5))
+    valid = status['state'] not in ('missing', 'invalid')
+    return dict(symbol=symbol, bid=float(tick.bid) if valid else 0.,
+                ask=float(tick.ask) if valid else 0.,
+                time=int(tick.time)-tick_offset if valid else 0,
+                spread=round((tick.ask-tick.bid)/info.point) if valid and info is not None and info.point else 0,
+                quote_status=status)
 
 
 def _market(mt5, symbol, tick_offset=0):
     info, tick = mt5.symbol_info(symbol), mt5.symbol_info_tick(symbol)
-    if info is None or tick is None:
-        raise ValueError('Sembol veya fiyat bilgisi alınamadı.')
-    quote_error = _quote_error(tick, tick_offset)
+    if info is None:
+        raise ValueError('Sembol bilgisi alınamadı.')
+    quote_error = _quote_error(tick, tick_offset, mt5=mt5)
     if quote_error:
         raise ValueError(quote_error)
     return info, tick
@@ -470,14 +511,9 @@ def live_snapshot(mt5, symbols, tick_offset=0):
     account = _account(mt5)
     fields = ('login','trade_mode','balance','equity','profit','margin','margin_free','margin_level','currency','server','leverage')
     account_data = {k:getattr(account, k) for k in fields}
-    account_data['connected'] = True
+    account_data['connected'] = broker_connection(mt5) is True
     account_data['server_time'] = time.strftime('%H:%M:%S')
-    ticks = {}
-    for symbol in symbols:
-        tick, info = mt5.symbol_info_tick(symbol), mt5.symbol_info(symbol)
-        if tick is not None and info is not None:
-            ticks[symbol] = dict(symbol=symbol, bid=float(tick.bid), ask=float(tick.ask), time=int(tick.time)-tick_offset,
-                                 spread=round((tick.ask-tick.bid)/info.point) if info.point else 0)
+    ticks = {symbol: price(mt5, symbol, tick_offset) for symbol in symbols}
     return dict(account=account_data, positions=positions(mt5, include_commission=True), orders=pending_orders(mt5),
                 prices=ticks, sampled_at=time.time())
 
