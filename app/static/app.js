@@ -1461,6 +1461,7 @@ function showToast(message, type = "info") {
   let bg = "bg-[#181d2a] border-gray-700 text-white";
   if (type === "success") bg = "bg-emerald-950 border-emerald-600 text-emerald-200";
   if (type === "error") bg = "bg-rose-950 border-rose-600 text-rose-200";
+  if (type === "warning") bg = "bg-amber-950 border-amber-600 text-amber-200";
 
   toast.className = `toast px-4 py-3 rounded-xl border shadow-xl text-xs font-medium max-w-sm pointer-events-auto flex items-center gap-2 ${bg}`;
   toast.innerText = message;

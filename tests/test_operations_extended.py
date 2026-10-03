@@ -124,3 +124,18 @@ def test_order_events_are_durable_and_replays_do_not_duplicate(tmp_path):
     events = OrderJournal(path).events()
     assert len(sent) == 1 and len(events) == 1
     assert events[0]['message'] == 'filled'
+
+
+def test_rejected_order_event_preserves_reason_across_restart(tmp_path):
+    path = tmp_path / 'events.db'
+    journal = OrderJournal(path)
+    reason = 'Bu sembolde güncel fiyat alınmıyor. MT5 broker bağlantısı açık.'
+    journal.run('rejected-order', {'symbol':'EURUSD'},
+                lambda: {'success':False, 'error':reason},
+                metadata={'order':{'symbol':'EURUSD'}})
+    restarted = OrderJournal(path)
+    event = restarted.events()[0]
+    assert event['message'] == 'rejected' and event['level'] == 'error'
+    assert event['detail'] == reason and event['symbol'] == 'EURUSD'
+    restarted.event('warning', 'connection', 'MT5 connection lost')
+    assert restarted.events()[-1]['detail'] is None

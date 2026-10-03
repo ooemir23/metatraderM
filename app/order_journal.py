@@ -30,6 +30,7 @@ class OrderJournal:
         db.execute('CREATE TABLE IF NOT EXISTS order_checks (id TEXT PRIMARY KEY, checked REAL NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS trading_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, created REAL NOT NULL, level TEXT NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, request_id TEXT)')
+        db.execute('CREATE TABLE IF NOT EXISTS event_details (event_id INTEGER PRIMARY KEY, detail TEXT, symbol TEXT)')
         try:
             with db:
                 yield db
@@ -66,8 +67,13 @@ class OrderJournal:
             db.execute('UPDATE orders SET result=? WHERE id=?', (json.dumps(result, allow_nan=False), request_id))
             level = 'warning' if result.get('uncertain') or result.get('pending') or result.get('partial') else ('info' if result.get('success') else 'error')
             state = 'uncertain' if result.get('uncertain') else 'pending' if result.get('pending') else 'partial' if result.get('partial') else 'filled' if result.get('success') else 'rejected'
-            db.execute('INSERT INTO events (created,level,kind,message,request_id) VALUES (?,?,?,?,?)',
-                       (time.time(), level, 'order', state, request_id))
+            event = db.execute('INSERT INTO events (created,level,kind,message,request_id) VALUES (?,?,?,?,?)',
+                               (time.time(), level, 'order', state, request_id))
+            detail = result.get('error') or result.get('detail')
+            symbol = (metadata or {}).get('order', {}).get('symbol')
+            if detail or symbol:
+                db.execute('INSERT INTO event_details VALUES (?,?,?)',
+                           (event.lastrowid, str(detail)[:1000] if detail else None, symbol))
         return result
 
     def event(self, level, kind, message, request_id=None):
@@ -79,9 +85,12 @@ class OrderJournal:
 
     def events(self, after=0, limit=50):
         with self._connect() as db:
-            rows = db.execute('SELECT id,created,level,kind,message,request_id FROM events WHERE id>? ORDER BY id DESC LIMIT ?',
+            rows = db.execute('SELECT e.id,e.created,e.level,e.kind,e.message,e.request_id,d.detail,d.symbol '
+                              'FROM events e LEFT JOIN event_details d ON d.event_id=e.id '
+                              'WHERE e.id>? ORDER BY e.id DESC LIMIT ?',
                               (after, min(max(limit, 1), 100))).fetchall()
-        return [dict(id=r[0], created=r[1], level=r[2], kind=r[3], message=r[4], request_id=r[5]) for r in reversed(rows)]
+        return [dict(id=r[0], created=r[1], level=r[2], kind=r[3], message=r[4], request_id=r[5],
+                     detail=r[6], symbol=r[7]) for r in reversed(rows)]
 
     def set_trading_halted(self, halted):
         with self._connect() as db:

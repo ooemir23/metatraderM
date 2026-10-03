@@ -68,9 +68,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
 let lastOperationEventId = 0;
 let operationEventsInitialized = false;
+function operationEventText(event, en) {
+  const label = {filled:en?'Filled':'Gerçekleşti',rejected:en?'Rejected':'Reddedildi',pending:en?'Pending':'Beklemede',
+    partial:en?'Partial fill':'Kısmi gerçekleşme',uncertain:en?'Outcome uncertain':'Sonuç belirsiz',
+    resolved:en?'Reconciled':'Doğrulandı','still uncertain':en?'Still uncertain':'Hâlâ belirsiz',
+    'MT5 connection lost':en?'MT5 connection lost':'MT5 bağlantısı kesildi',
+    'MT5 connection restored':en?'MT5 connection restored':'MT5 bağlantısı yeniden kuruldu',
+    'Emergency close-all started':en?'Emergency close-all started':'Acil toplu kapatma başlatıldı',
+    'New orders resumed':en?'New orders resumed':'Yeni emirlere devam edildi',
+    'Broker account connected':en?'Broker account connected':'Broker hesabına bağlanıldı'}[event.message]
+    || (event.message.startsWith('Daily loss ') && !en ? event.message.replace('Daily loss ', 'Günlük zarar ') : event.message);
+  const detail = event.detail ? (window.MT5I18n?.translate?.(event.detail) || event.detail) : '';
+  return `${event.symbol ? event.symbol + ' · ' : ''}${label}${detail ? ': ' + detail : ''}`;
+}
+
+let fetchingOperationEvents = false;
+const operationNoticeTimes = new Map();
+function operationNoticeKey(event) {
+  return JSON.stringify([event.request_id,event.kind,event.level,event.message,event.detail,event.symbol]);
+}
+function operationEventNeedsNotice(event) {
+  // These request failures are already explained in the order/preview panels;
+  // keep the audit rows without duplicating their warning as a toast.
+  return event.level !== 'info' && !(event.kind === 'operator' &&
+    /POST \/api\/(?:trade\/preview|order\/(?:open|pending|close|cancel)|position\/(?:stops|partial-close)) HTTP 4\d\d$/.test(event.message));
+}
+
 async function refreshOperationEvents() {
   const root = document.getElementById('operations-events');
-  if (!root) return;
+  if (!root || fetchingOperationEvents) return;
+  fetchingOperationEvents = true;
   try {
     const response = await fetch('/api/operations/events');
     if (!response.ok) return;
@@ -80,29 +107,34 @@ async function refreshOperationEvents() {
     for (const event of events.slice().reverse()) {
       const row = document.createElement('p');
       row.className = 'border-b border-gray-800 py-1 ' + (event.level === 'error' ? 'text-rose-300' : event.level === 'warning' ? 'text-amber-300' : '');
-      const label = {filled:en?'Filled':'Gerçekleşti',rejected:en?'Rejected':'Reddedildi',pending:en?'Pending':'Beklemede',
-        partial:en?'Partial fill':'Kısmi gerçekleşme',uncertain:en?'Outcome uncertain':'Sonuç belirsiz',
-        resolved:en?'Reconciled':'Doğrulandı','still uncertain':en?'Still uncertain':'Hâlâ belirsiz',
-        'MT5 connection lost':en?'MT5 connection lost':'MT5 bağlantısı kesildi',
-        'MT5 connection restored':en?'MT5 connection restored':'MT5 bağlantısı yeniden kuruldu',
-        'Emergency close-all started':en?'Emergency close-all started':'Acil toplu kapatma başlatıldı',
-        'New orders resumed':en?'New orders resumed':'Yeni emirlere devam edildi',
-        'Broker account connected':en?'Broker account connected':'Broker hesabına bağlanıldı'}[event.message]
-        || (event.message.startsWith('Daily loss ') && !en ? event.message.replace('Daily loss ', 'Günlük zarar ') : event.message);
+      const label = operationEventText(event, en);
       row.textContent = `${new Date(event.created*1000).toLocaleTimeString(en?'en-US':'tr-TR')} · ${label}${event.request_id?' · '+event.request_id.slice(0,8):''}`;
       root.append(row);
     }
     if (!events.length) root.textContent = en ? 'No events yet.' : 'Henüz olay yok.';
     const newest = events.at(-1)?.id || 0;
     if (operationEventsInitialized && newest > lastOperationEventId) {
-      const important = events.filter(e => e.id > lastOperationEventId && e.level !== 'info');
-      if (important.length && typeof showToast === 'function') showToast(en ? 'Trading events need attention. Open the events panel.' : 'İşlem olaylarını kontrol edin.', 'error');
+      const important = events.filter(e => e.id > lastOperationEventId && operationEventNeedsNotice(e));
+      const now = Date.now();
+      for (const [key, shown] of operationNoticeTimes) if (now-shown >= 30000) operationNoticeTimes.delete(key);
+      const fresh = important.filter(e => {
+        const key = operationNoticeKey(e);
+        return !operationNoticeTimes.has(key);
+      });
+      const selected = fresh.filter(e => e.level === 'error').at(-1) || fresh.at(-1);
+      if (selected && typeof showToast === 'function') {
+        const more = fresh.length > 1 ? (en ? ` · ${fresh.length-1} more events in the events panel`
+          : ` · Olaylar panelinde ${fresh.length-1} ek kayıt`) : '';
+        showToast(operationEventText(selected, en) + more, selected.level === 'error' ? 'error' : 'warning');
+        for (const e of fresh) operationNoticeTimes.set(operationNoticeKey(e), now);
+      }
       const badge = document.getElementById('event-count');
       if (badge) badge.textContent = important.length ? `(${important.length})` : '';
     }
     lastOperationEventId = Math.max(newest, lastOperationEventId);
     operationEventsInitialized = true;
   } catch (_) { root.textContent = window.MT5I18n?.language() === 'en' ? 'Events unavailable.' : 'Olaylar alınamadı.'; }
+  finally { fetchingOperationEvents = false; }
 }
 
 async function runStrategyBacktest() {
