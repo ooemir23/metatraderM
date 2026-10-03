@@ -49,7 +49,7 @@ function renderResearchReport(data) {
   }
   if (data.assessment) addText(data.assessment.message);
   const currency = data.settings.currency;
-  const money = value => value == null ? '—' : `${Number(value).toLocaleString('tr-TR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${currency || ''}`;
+  const money = value => value == null ? '—' : `${Number(value).toLocaleString(globalThis.MT5I18n?.language() === 'en' ? 'en-US' : 'tr-TR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${currency || ''}`;
   const selectedStats = data.selected_holdout ? data.selected_holdout.stats : data.baseline_holdout.stats;
   if (data.selected) {
     const total = data.selected.train.count + data.selected.validation.count + selectedStats.count;
