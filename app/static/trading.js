@@ -107,10 +107,33 @@ async function fetchPendingOrders() {
   } finally {fetchingPending=false;}
 }
 function liveFeedHealthy() {return Date.now()-lastLiveMessage<2500;}
+function updateQuoteStatus() {
+  const en = window.MT5I18n?.language?.() === 'en';
+  const indicator = document.getElementById('live-feed-status');
+  if (indicator) indicator.textContent = liveFeedHealthy()
+    ? (en ? 'Server connection active' : 'Sunucu bağlantısı açık')
+    : (en ? 'Waiting for server connection' : 'Sunucu bağlantısı bekleniyor');
+  const node = document.getElementById('tick-age');
+  if (!node) return;
+  const age = Date.now()/1000 - displayedTickTime;
+  if (!Number.isFinite(displayedTickTime) || displayedTickTime <= 0) {
+    node.textContent = en ? 'Waiting for price' : 'Fiyat bekleniyor';
+  } else if (age < 0) {
+    node.textContent = en ? 'Price time is in the future; check clock settings' : 'Fiyat zamanı ileride; saat ayarını kontrol edin';
+  } else if (age > 10) {
+    const seconds = Math.floor(age);
+    const elapsed = `${Math.floor(seconds/3600)}:${String(Math.floor(seconds%3600/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;
+    node.textContent = en ? `Price outdated · Last quote ${elapsed} ago`
+      : `Fiyat güncel değil · Son fiyat ${elapsed} önce`;
+  } else {
+    node.textContent = en ? `Price updated ${Math.floor(age)} s ago` : `Fiyat ${Math.floor(age)} sn önce güncellendi`;
+  }
+}
 function startLiveFeed() {
   if (liveSource) liveSource.close();
   lastLiveMessage=0;
   displayedTickTime=0;
+  updateQuoteStatus();
   if (typeof EventSource==='undefined') return;
   const symbol=currentSymbol;
   const source=new EventSource('/api/live?symbol='+encodeURIComponent(symbol));
@@ -125,16 +148,15 @@ function startLiveFeed() {
       renderPositionsData(data.positions);
       renderPendingOrders(data.orders);
       if (data.prices[symbol]) renderPriceData(data.prices[symbol]);
-      const indicator=document.getElementById('live-feed-status');
-      if (indicator) indicator.textContent='Canlı akış';
+      else displayedTickTime=0;
+      updateQuoteStatus();
     } catch (_) {markLiveStale();}
   };
   source.onerror=()=>{if(source===liveSource)markLiveStale();};
 }
 function markLiveStale() {
   lastLiveMessage=0;
-  const indicator=document.getElementById('live-feed-status');
-  if (indicator) indicator.textContent='Canlı veri bekleniyor';
+  updateQuoteStatus();
   const badge=document.getElementById('pos-count-badge');
   if (badge) badge.textContent='Veri güncel değil';
   showAccountConnectionError('Canlı veri doğrulanamadı');
@@ -143,9 +165,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   startLiveFeed();fetchPendingOrders();
   setInterval(()=>{
     if (!liveFeedHealthy()) fetchPendingOrders();
-    const age=displayedTickTime ? Math.max(0,Math.floor(Date.now()/1000-displayedTickTime)) : null;
-    const node=document.getElementById('tick-age');
-    if (node) node.textContent=age===null?'Fiyat bekleniyor':`Fiyat yaşı: ${age} sn`;
+    updateQuoteStatus();
   },2000);
 });
 window.addEventListener('beforeunload',()=>{if(liveSource)liveSource.close();});

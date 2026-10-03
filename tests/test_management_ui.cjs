@@ -32,6 +32,17 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  old.onmessage({data:JSON.stringify({account:{},positions:[],orders:[],prices:{}})});assert.equal(renders,0);
  current.onmessage({data:JSON.stringify({account:{},positions:[],orders:[],prices:{}})});assert.equal(renders,1);assert.equal(ctx.liveFeedHealthy(),true);
  current.onerror();assert.equal(ctx.liveFeedHealthy(),false);
+ vm.runInContext('lastLiveMessage=Date.now(); displayedTickTime=Date.now()/1000-38507;',ctx);
+ ctx.updateQuoteStatus();
+ assert.equal(node('live-feed-status').textContent,'Sunucu bağlantısı açık');
+ assert.match(node('tick-age').textContent,/Fiyat güncel değil · Son fiyat 10:41:47 önce/);
+ vm.runInContext('displayedTickTime=Date.now()/1000+10800;',ctx);
+ ctx.updateQuoteStatus();assert.match(node('tick-age').textContent,/Fiyat zamanı ileride/);
+ vm.runInContext('displayedTickTime=Date.now()/1000-2;',ctx);
+ ctx.updateQuoteStatus();assert.match(node('tick-age').textContent,/Fiyat 2 sn önce güncellendi/);
+ vm.runInContext('displayedTickTime=0;',ctx);
+ ctx.updateQuoteStatus();assert.equal(node('tick-age').textContent,'Fiyat bekleniyor');
+ assert.equal(ctx.orderErrorMessage({error:'Son fiyat 60 saniye önce alındı; güncel fiyat bekleniyor.'})[0],'Güncel fiyat bekleniyor');
  storage.set('order-intent:EURUSD',JSON.stringify({request_id:'lost-open'}));
  reply={found:true,uncertain:true};await ctx.checkReconciledOrders();
  assert.ok(storage.has('order-intent:EURUSD'));

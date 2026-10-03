@@ -251,9 +251,9 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
         tick = mt5.symbol_info_tick(symbol)
         if info is None or tick is None:
             return {'success': False, 'error': 'Güncel sembol/fiyat bilgisi alınamadı.'}
-        age = time.time() - (float(tick.time) - tick_offset)
-        if not math.isfinite(age) or not 0 <= age <= max_tick_age or tick.bid <= 0 or tick.ask < tick.bid:
-            return {'success': False, 'error': 'Fiyat eski veya geçersiz; yeni emir engellendi.'}
+        quote_error = _quote_error(tick, tick_offset, max_tick_age)
+        if quote_error:
+            return {'success': False, 'error': quote_error}
         step = float(info.volume_step)
         if step <= 0 or volume < info.volume_min or volume > info.volume_max or not math.isclose(volume / step, round(volume / step), abs_tol=1e-7):
             return {'success': False, 'error': 'Lot miktarı broker minimum/maksimum veya lot adımına uymuyor.'}
@@ -337,13 +337,27 @@ def _account(mt5, expected_login=0, expected_server=''):
     return account
 
 
+def _quote_error(tick, tick_offset=0, max_tick_age=10):
+    values = [float(v) for v in (tick.bid, tick.ask, tick.time)]
+    if not all(math.isfinite(v) for v in values) or tick.time <= 0 or tick.bid <= 0 or tick.ask < tick.bid:
+        return 'Broker geçerli fiyat bildirmedi. Güncel fiyat gelmeden işlem yapılamaz.'
+    age = time.time() - (float(tick.time) - tick_offset)
+    if age < 0:
+        return 'Fiyat zamanı sunucu saatinden ileride. Sunucu saati ve broker saat farkı ayarını kontrol edin.'
+    if age > max_tick_age:
+        return (f'Son fiyat {int(age)} saniye önce alındı; güncel fiyat bekleniyor. '
+                'Piyasa kapalı olabilir veya MT5 fiyat akışı durmuş olabilir. '
+                'Güncel fiyat gelmeden işlem yapılamaz.')
+    return None
+
+
 def _market(mt5, symbol, tick_offset=0):
     info, tick = mt5.symbol_info(symbol), mt5.symbol_info_tick(symbol)
     if info is None or tick is None:
         raise ValueError('Sembol veya fiyat bilgisi alınamadı.')
-    age = time.time() - (float(tick.time) - tick_offset)
-    if not all(math.isfinite(float(v)) for v in (tick.bid, tick.ask, tick.time, age)) or not 0 <= age <= 10 or tick.bid <= 0 or tick.ask < tick.bid:
-        raise ValueError('Fiyat eski veya geçersiz; işlem gönderilmedi.')
+    quote_error = _quote_error(tick, tick_offset)
+    if quote_error:
+        raise ValueError(quote_error)
     return info, tick
 
 

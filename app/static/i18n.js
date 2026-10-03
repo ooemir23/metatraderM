@@ -407,9 +407,17 @@
     ["Toplam açık/bekleyen işlem sınırı aşılıyor.", "Total open and pending exposure would exceed the configured limit."],
     ["Aktif MT5 hesabı seçilen hesapla uyuşmuyor.", "The active MT5 account does not match the selected account."],
     ["İşlem seansı kapalı", "Trading session closed"],
+    ["Sunucu bağlantısı bekleniyor", "Waiting for server connection"],
+    ["Sunucu bağlantısı açık", "Server connection active"],
+    ["Güncel fiyat bekleniyor", "Waiting for a current price"],
+    ["Fiyat saatini kontrol edin", "Check the price timestamp"],
+    ["Geçerli fiyat bekleniyor", "Waiting for a valid price"],
+    ["Broker geçerli fiyat bildirmedi. Güncel fiyat gelmeden işlem yapılamaz.", "The broker did not provide a valid quote. Trading requires a current price."],
+    ["Fiyat zamanı sunucu saatinden ileride. Sunucu saati ve broker saat farkı ayarını kontrol edin.", "The quote timestamp is ahead of server time. Check the server clock and broker clock offset setting."],
   ]));
 
   const patterns = [
+    [/^Son fiyat (\d+) saniye önce alındı; güncel fiyat bekleniyor\. Piyasa kapalı olabilir veya MT5 fiyat akışı durmuş olabilir\. Güncel fiyat gelmeden işlem yapılamaz\.$/, (_, seconds) => `Last quote received ${seconds} seconds ago; waiting for a current price. The market may be closed or the MT5 price feed may have stopped. Trading requires a current price.`],
     [/^Son Veri: (.+)$/, (_, value) => `Last update: ${value}`],
     [/^Bağlı: (.+)$/, (_, value) => `Connected since: ${value}`],
     [/^Bağlantı: (.+)$/, (_, value) => `Connection: ${translate(value)}`],

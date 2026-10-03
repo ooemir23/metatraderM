@@ -1074,6 +1074,9 @@ function orderErrorMessage(data) {
   const code = Number(data.retcode);
   if (data.uncertain) return ["Emir sonucu belirsiz", "Tekrar göndermeden önce açık pozisyonları kontrol edin."];
   if (data.reason_code === "trading_halted") return ["Yeni emirler durduruldu", raw];
+  if (raw.startsWith("Son fiyat ")) return ["Güncel fiyat bekleniyor", raw];
+  if (raw.startsWith("Fiyat zamanı sunucu")) return ["Fiyat saatini kontrol edin", raw];
+  if (raw.startsWith("Broker geçerli fiyat")) return ["Geçerli fiyat bekleniyor", raw];
   if (code === 10018 || /market closed/i.test(raw))
     return ["Son emir: piyasa kapalı", "Bu sembolde işlem seansı kapalı. Piyasa açıldığında yeniden deneyin."];
   if (code === 10027 || /autotrading disabled/i.test(raw))
