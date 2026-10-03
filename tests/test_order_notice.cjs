@@ -28,5 +28,17 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  release({ok:false,json:async()=>({reason_code:'trading_halted',detail:'Safety lock'})});await halted;
  assert.equal(storage.has('order-intent:EURUSD'),false,'definitive safety rejection clears the pending intent');
  assert.equal(node('order-reset-btn').hidden,true,'safety rejection does not require MT5 recovery');
+ const callsBeforeRecovery=calls;
+ ctx.setOrderNotice('EURUSD','MT5 broker bağlantısı kesik','Old disconnected quote','error',false,true);
+ ctx.refreshQuoteOrderNotice({symbol:'EURUSD',quote_status:{broker_connected:true,state:'stale',message:'Son fiyat 12 saat önce alındı. MT5 broker bağlantısı açık.'}});
+ assert.match(node('order-notice-message').textContent,/bağlantısı açık/);
+ assert.equal(node('order-notice').dataset.tone,'warning');
+ ctx.refreshQuoteOrderNotice({symbol:'EURUSD',quote_status:{broker_connected:true,state:'fresh',message:'Fiyat güncel.'}});
+ assert.equal(node('order-notice-title').textContent,'EURUSD · Bağlantı ve fiyat doğrulandı');
+ assert.match(node('order-notice-message').textContent,/Önceki emir gönderilmedi/);
+ assert.equal(calls,callsBeforeRecovery,'connection recovery must not submit a trade');
+ ctx.setOrderNotice('EURUSD','Sonuç belirsiz','Check broker fills','error');
+ ctx.refreshQuoteOrderNotice({symbol:'EURUSD',quote_status:{broker_connected:true,state:'fresh'}});
+ assert.equal(node('order-notice-message').textContent,'Check broker fills');
  console.log('Order feedback: localization, animation, duplicate prevention and symbol isolation PASS');
 })().catch(e=>{console.error(e);process.exitCode=1;});

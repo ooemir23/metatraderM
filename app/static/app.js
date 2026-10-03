@@ -914,6 +914,7 @@ function renderPriceData(tick) {
       quoteDiagnosticFailed = false;
     }
     if (typeof updateQuoteStatus === "function") updateQuoteStatus();
+    refreshQuoteOrderNotice(tick);
     if (tick && tick.bid > 0) {
       document.getElementById("header-bid").innerText = tick.bid;
       document.getElementById("header-ask").innerText = tick.ask;
@@ -1070,9 +1071,26 @@ function renderOrderNotice(flash = false) {
   }
 }
 
-function setOrderNotice(symbol, title, message, tone, flash = false) {
-  orderNotices.set(symbol, {title: `${symbol} · ${title}`, message, tone});
+function setOrderNotice(symbol, title, message, tone, flash = false, quoteDiagnostic = false) {
+  orderNotices.set(symbol, {title: `${symbol} · ${title}`, message, tone, quoteDiagnostic});
   if (symbol === currentSymbol) renderOrderNotice(flash);
+}
+
+function refreshQuoteOrderNotice(tick) {
+  const symbol = tick.symbol || currentSymbol;
+  const notice = orderNotices.get(symbol), status = tick.quote_status;
+  // Only refresh a definitive quote rejection. Unknown fills and other order
+  // results must remain visible until broker reconciliation resolves them.
+  if (!notice?.quoteDiagnostic || !status) return;
+  if (status.broker_connected === true && status.state === 'fresh') {
+    setOrderNotice(symbol, 'Bağlantı ve fiyat doğrulandı',
+      'MT5 broker bağlantısı açık. Fiyat güncel. Önceki emir gönderilmedi; yeni işlem için emir vermeniz gerekir.',
+      'neutral');
+  } else {
+    const [title] = orderErrorMessage({error:status.message});
+    setOrderNotice(symbol, title, status.message + ' Önceki emir gönderilmedi.',
+      status.broker_connected === true && status.state === 'stale' ? 'warning' : 'error', false, true);
+  }
 }
 
 function orderErrorMessage(data) {
@@ -1149,7 +1167,9 @@ async function submitOrder(type) {
       fetchAccount();
     } else {
       const [title, message] = orderErrorMessage(data);
-      setOrderNotice(symbol, title, message, "error", true);
+      const quoteDiagnostic = !!data.request_id && !data.uncertain && !data.pending &&
+        message.includes('Güncel fiyat ve broker bağlantısı doğrulanmadan işlem yapılamaz.');
+      setOrderNotice(symbol, title, message, "error", true, quoteDiagnostic);
     }
   } catch (err) {
     setOrderNotice(symbol, "Yanıt alınamadı", "Emir sonucu belirsiz olabilir. Yeniden göndermeden önce açık pozisyonları kontrol edin.", "error", true);

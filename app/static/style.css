@@ -176,6 +176,7 @@ body.resizing-positions #tradingview-container iframe {
 }
 .order-notice-title { display: block; font-weight: 700; margin-bottom: 3px; }
 .order-notice[data-tone="error"] { color: #fda4af; border-color: #9f3448; background: #341b26; }
+.order-notice[data-tone="warning"] { color: #fcd34d; border-color: #92400e; background: #302317; }
 .order-notice[data-tone="pending"] { color: #7dd3fc; border-color: #24627d; background: #152734; }
 .order-notice[data-tone="success"] { color: #6ee7b7; border-color: #27664e; background: #152e28; }
 .order-notice-flash { animation: order-notice-pulse .85s ease-in-out 4; }
