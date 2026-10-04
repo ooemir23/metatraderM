@@ -57,3 +57,7 @@ Emir kimliği ile tekrar gönderimi engelleme; belirsiz emirlerin broker kanıt�
 Aynı tarih aralığı, 10 USD / 0,01 lot stres simülasyonu: raporlanan holdout seçeneğinde 4 işlem, 1 stop-out, 2 margin call, 236 teminat reddi; son bakiye 2,60 USD. Bu sayılar araştırma simülasyonudur; Demo hesapta emir açılmadı ve hesabın gerçek sermayesi değiştirilmedi.
 
 Otomatik doğrulama: 220 Python testi ve tüm JavaScript arayüz testleri geçti. Tarayıcıda İngilizce risk kartları, broker eşikleri ve işlem başına teminat/özkaynak açıklaması doğrulandı.
+
+## Araştırmadan canlı bota bağlantı — eklenenler
+
+Seçilen araştırma adayından yazma/başlatma yapmayan bot önizlemesi, H1 + kapanmış H4 filtresi, tek bot pozisyonu kontrolü, bekleyen/belirsiz bot açılışlarına hesap/sembol bazlı engel ve kalıcı/yedeklenen bot ayarları eklendi. Yeniden başlatmada bot otomatik başlamaz; ilk kontrol mevcut mumu referans alır. Kullanım ve gerçek işlem farkları `ARASTIRMADAN_BOTA.md` dosyasındadır. Önceki tabloda gerçek tick, tarihsel maliyet/teminat ve portföy motoru için belirtilen açık işler devam eder.

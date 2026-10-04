@@ -12,7 +12,7 @@ from pathlib import Path
 
 from app.order_journal import state_path
 
-STATE_FILES = ('orders.sqlite3', 'credentials.json', 'ai_memory.json', 'trading_totp_secret', 'trading_totp_secret_2')
+STATE_FILES = ('orders.sqlite3', 'credentials.json', 'ai_memory.json', 'bot_settings.json', 'trading_totp_secret', 'trading_totp_secret_2')
 
 
 def verify_backup(directory):

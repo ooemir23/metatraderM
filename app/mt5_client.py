@@ -548,6 +548,11 @@ class MT5Client:
             login, server = self._selected_account()
             return self._bridge('research_margin_rules', symbol.upper(), volume, low, high, login, server)
 
+    def has_unresolved_bot_order(self, symbol):
+        with self._lock:
+            account = self._selected_account()
+            return self.journal.has_unresolved_open(account, symbol, mt5_bridge.HMA_MAGIC)
+
     def get_risk_status(self):
         with self._lock:
             if not self.ensure_connected():

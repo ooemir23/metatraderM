@@ -611,6 +611,17 @@
     ["En düşük teminat seviyesi", "Minimum margin level"],
     ["Azami kullanılan teminat", "Maximum used margin"],
     ["KAMA hızlı/yavaş: 2/30. Tarihsel mum spreadi kullanılır. Sıfır maliyetler sıfır varsayımıdır; swap takvim günü başına yaklaşık maliyettir. Her dönem girilen sermayeyle ve sabit lotla başlar. Parasal sonuçlar broker sözleşmesine göre simülasyondur; broker teminatı, margin call, stop-out ve minimum stop mesafesi hesaplanır. Güncel broker kuralları geçmişe uygulanır; gerçek tick sırası bilinmez.", "KAMA fast/slow: 2/30. Uses historical candle spreads. Zero costs are assumed to be zero; swap is an approximate cost per calendar day. Each period starts with the entered capital and fixed lot size. Monetary results use the broker contract; broker margin, margin call, stop-out, and minimum stop distance are simulated. Current broker rules are applied to history; actual tick order is unknown."],
+    ["Bot ayarlarını incele", "Review bot settings"],
+    ["H1 girişte kapanmış H4 filtresi kullan", "Use a closed H4 filter for H1 entries"],
+    ["Aynı sembolde tek bot pozisyonu tut", "Keep one bot position per symbol"],
+    ["H4 filtresi H1, KAMA ve kesişim onayı gerektirir.", "The H4 filter requires H1, KAMA, and crossover confirmation."],
+    ["Aktarılabilecek araştırma adayı yok.", "No research candidate is available to transfer."],
+    ["Araştırma ayarlarını aktarmadan önce botu durdurun.", "Stop the bot before transferring research settings."],
+    ["Aktif broker hesabı doğrulanamadı.", "The active broker account could not be verified."],
+    ["Bot pozisyonu zaten açık; yeni giriş atlandı.", "A bot position is already open; the new entry was skipped."],
+    ["Emir sonucu kesinleşmedi; bot durduruldu. MT5 durumunu kontrol edin.", "The order outcome is not final; the bot stopped. Check the MT5 state."],
+    ["Önceki bot emri belirsiz; MT5 mutabakatı bekleniyor.", "The previous bot order is uncertain; awaiting MT5 reconciliation."],
+    ["Bot ayarları kaydedilemedi; mevcut ayarlar korundu.", "Could not save bot settings; existing settings were preserved."],
   ]));
 
   const patterns = [

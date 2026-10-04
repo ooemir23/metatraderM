@@ -1454,10 +1454,11 @@ const botSettingInputs = {
   'cfg-sl-points': 'sl_points', 'cfg-tp-points': 'tp_points'
 };
 const botSettingChecks = {'cfg-close-opp': 'close_opposite', 'cfg-atr-filter': 'use_atr_filter',
-  'cfg-use-sl': 'use_stop_loss', 'cfg-use-tp': 'use_take_profit'};
+  'cfg-use-sl': 'use_stop_loss', 'cfg-use-tp': 'use_take_profit', 'cfg-h4-filter':'use_h4_filter', 'cfg-single-position':'single_position'};
 async function toggleBotSettingsModal() {
   const modal = document.getElementById("bot-settings-modal");
   if (!modal.classList.contains('hidden')) { modal.classList.add('hidden'); return; }
+  document.getElementById('bot-research-transfer-note').textContent = '';
   latestBotSettings = null;
   await fetchBotStatus();
   if (!latestBotSettings) { showToast('Bot ayarları sunucudan okunamadı.', 'error'); return; }
@@ -1468,6 +1469,29 @@ async function toggleBotSettingsModal() {
   modal.classList.remove('hidden');
 }
 
+async function previewResearchBotSettings(plan, assessment) {
+  try {
+    const response = await fetch('/api/account');
+    if (!response.ok) throw new Error('Hesap riski doğrulanamadı.');
+    const account = await response.json();
+    if (!account.connected || account.account_mismatch || !['DEMO','REAL'].includes(account.account_type)) throw new Error('Aktif broker hesabı doğrulanamadı.');
+    const modal = document.getElementById('bot-settings-modal');
+    if (!modal.classList.contains('hidden')) modal.classList.add('hidden');
+    await toggleBotSettingsModal();
+    if (!latestBotSettings || modal.classList.contains('hidden')) return;
+    if (latestBotSettings.is_running) {
+      modal.classList.add('hidden'); throw new Error('Araştırma ayarlarını aktarmadan önce botu durdurun.');
+    }
+    for (const [id,key] of Object.entries(botSettingInputs)) if (plan[key] != null) document.getElementById(id).value = plan[key];
+    for (const [id,key] of Object.entries(botSettingChecks)) if (plan[key] != null) document.getElementById(id).checked = plan[key];
+    const en = window.MT5I18n?.language() === 'en';
+    const note = en
+      ? `${account.account_type} account · ${plan.symbol} · ${plan.lot_size} lots. Review and save to apply. Saving does not start the bot. Research capital/dates/cost assumptions do not change your account. Live fills may differ; stop-out is enforced by your broker. `
+      : `${account.account_type} hesap · ${plan.symbol} · ${plan.lot_size} lot. Uygulamak için inceleyip kaydedin. Kaydetmek botu başlatmaz. Araştırma sermayesi/tarihleri/maliyet varsayımları hesabınızı değiştirmez. Canlı gerçekleşmeler farklı olabilir; stop-out broker tarafından uygulanır. `;
+    document.getElementById('bot-research-transfer-note').textContent = note + (window.MT5I18n?.translate(assessment) || assessment);
+  } catch (error) { showToast(error.message, 'error'); }
+}
+
 async function saveBotSettings() {
   const cfg = {
     symbol: document.getElementById("cfg-symbol").value,
@@ -1476,6 +1500,8 @@ async function saveBotSettings() {
     kama_slow: Number(document.getElementById('cfg-kama-slow').value),
     atr_period: Number(document.getElementById('cfg-atr-period').value),
     use_atr_filter: document.getElementById('cfg-atr-filter').checked,
+    use_h4_filter: document.getElementById('cfg-h4-filter').checked,
+    single_position: document.getElementById('cfg-single-position').checked,
     er_min: Number(document.getElementById('cfg-er-min').value),
     confirmation_bars: Number(document.getElementById('cfg-confirmation-bars').value),
     min_distance_atr: Number(document.getElementById('cfg-distance-atr').value),

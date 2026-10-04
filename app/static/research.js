@@ -1,5 +1,25 @@
 let latestResearchReport = null;
 
+function researchBotPlan(report) {
+  if (!report?.selected) throw new Error('Aktarılabilecek araştırma adayı yok.');
+  const s = report.settings, c = report.selected.config;
+  return {symbol:report.symbol || 'XAUUSD',timeframe_minutes:c.mode === 'H4' ? 240 : 60,
+    hma_period:s.hma_period,second_ma_type:'KAMA',second_ma_period:s.kama_period,
+    kama_fast:s.kama_fast,kama_slow:s.kama_slow,atr_period:s.atr_period,
+    use_atr_filter:!!c.filtered,use_h4_filter:c.mode === 'H1_H4',
+    er_min:s.er_min,confirmation_bars:c.wait,min_distance_atr:c.distance_atr,
+    risk_mode:'ATR',atr_stop_multiplier:s.stop_atr,atr_target_multiplier:s.target_atr,
+    use_stop_loss:true,use_take_profit:s.target_atr>0,lot_size:s.lot_size,
+    close_opposite:true,single_position:true};
+}
+
+async function reviewResearchBotSettings() {
+  if (!latestResearchReport?.selected) return;
+  if (document.fullscreenElement === document.getElementById('research-panel')) await document.exitFullscreen();
+  exitResearchFallback();
+  await previewResearchBotSettings(researchBotPlan(latestResearchReport), latestResearchReport.assessment?.message || '');
+}
+
 function researchConfigLabel(c) {
   return `${c.mode.replace('_', ' + ')} · ${c.filtered ? 'filtreli' : 'ham kesişim'} · ${c.wait} mum · %${Math.round(c.distance_atr * 100)} ATR`;
 }
@@ -272,6 +292,7 @@ async function runResearchComparison() {
   document.getElementById('research-reset').disabled = true;
   latestResearchReport = null;
   document.getElementById('research-download').disabled = true;
+  document.getElementById('research-to-bot').disabled = true;
   document.getElementById('research-result').replaceChildren();
   status.textContent = 'Broker geçmişi alınıyor ve 51 seçenek karşılaştırılıyor…';
   try {
@@ -282,6 +303,7 @@ async function runResearchComparison() {
     latestResearchReport = data;
     renderResearchReport(data);
     document.getElementById('research-download').disabled = false;
+    document.getElementById('research-to-bot').disabled = !data.selected;
     status.textContent = data.assessment ? data.assessment.message : (data.selected ? 'Karşılaştırma tamamlandı. Seçilen değerler araştırma adayıdır.' : 'Karşılaştırma tamamlandı; uygun aday yok.');
   } catch (error) { status.textContent = error.message; }
   finally { button.disabled = false; document.getElementById('research-reset').disabled = false; }
@@ -343,6 +365,7 @@ function resetResearchSettings() {
   latestResearchReport = null;
   document.getElementById('research-result').replaceChildren();
   document.getElementById('research-download').disabled = true;
+  document.getElementById('research-to-bot').disabled = true;
   document.getElementById('research-status').textContent = 'Ayarlar varsayılanlara sıfırlandı. Yeni rapor için karşılaştırmayı çalıştırın.';
 }
 document.addEventListener('DOMContentLoaded', () => {

@@ -5,6 +5,10 @@ import time
 import threading
 from typing import Dict, Any, List, Optional
 import hashlib
+import json
+import os
+import tempfile
+from pathlib import Path
 from app.mt5_bridge import HMA_MAGIC
 from app.mt5_client import MT5DataError
 from app.strategy_research import Settings as IndicatorSettings, indicators
@@ -13,7 +17,7 @@ logger = logging.getLogger("StrategyBot")
 logger.setLevel(logging.INFO)
 
 class StrategyBot:
-    def __init__(self, mt5_client):
+    def __init__(self, mt5_client, config_path=None):
         self.mt5 = mt5_client
         self.is_running = False
         self.task = None
@@ -29,6 +33,8 @@ class StrategyBot:
         self.kama_slow = 30
         self.atr_period = 14
         self.use_atr_filter = False
+        self.use_h4_filter = False
+        self.single_position = True
         self.er_min = .30
         self.confirmation_bars = 0
         self.min_distance_atr = .05
@@ -53,6 +59,30 @@ class StrategyBot:
         self.current_hma = 0.0
         self.current_ma2 = 0.0
         self.logs: List[Dict[str, Any]] = []
+        self.config_path = Path(config_path) if config_path else None
+
+    def load_config(self, data):
+        self.update_config(data, persist=False)
+
+    def config_snapshot(self):
+        keys = ('symbol','timeframe_minutes','hma_period','second_ma_type','second_ma_period',
+                'kama_fast','kama_slow','atr_period','use_atr_filter','use_h4_filter','single_position',
+                'er_min','confirmation_bars','min_distance_atr','risk_mode','atr_stop_multiplier',
+                'atr_target_multiplier','lot_size','use_stop_loss','sl_points','use_take_profit','tp_points','close_opposite')
+        return {key:getattr(self,key) for key in keys}
+
+    def persist_config(self, data):
+        if not self.config_path:
+            return
+        self.config_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        fd, name = tempfile.mkstemp(prefix='.bot-settings-',dir=self.config_path.parent)
+        try:
+            with os.fdopen(fd, 'w') as stream:
+                json.dump(data, stream, allow_nan=False)
+                stream.flush(); os.fsync(stream.fileno())
+            os.replace(name, self.config_path)
+        finally:
+            if os.path.exists(name): os.unlink(name)
 
     def log(self, message: str, level: str = "INFO"):
         timestamp = time.strftime("%H:%M:%S")
@@ -62,20 +92,22 @@ class StrategyBot:
             self.logs.pop()
         logger.info(f"[{level}] {message}")
 
-    def update_config(self, data: Dict[str, Any]):
+    def update_config(self, data: Dict[str, Any], persist=True):
+        if persist:
+            self.persist_config({**self.config_snapshot(), **data})
         if "symbol" in data: self.symbol = data["symbol"].upper()
         if "timeframe_minutes" in data: self.timeframe_minutes = int(data["timeframe_minutes"])
         if "hma_period" in data: self.hma_period = max(2, int(data["hma_period"]))
         if "second_ma_type" in data: self.second_ma_type = data["second_ma_type"].upper()
         if "second_ma_period" in data: self.second_ma_period = max(2, int(data["second_ma_period"]))
-        if "lot_size" in data: self.lot_size = max(0.01, float(data["lot_size"]))
+        if "lot_size" in data: self.lot_size = float(data["lot_size"])
         if "use_stop_loss" in data: self.use_stop_loss = bool(data["use_stop_loss"])
         if "sl_points" in data: self.sl_points = int(data["sl_points"])
         if "use_take_profit" in data: self.use_take_profit = bool(data["use_take_profit"])
         if "tp_points" in data: self.tp_points = int(data["tp_points"])
         if "close_opposite" in data: self.close_opposite = bool(data["close_opposite"])
 
-        for key in ("kama_fast", "kama_slow", "atr_period", "use_atr_filter", "er_min",
+        for key in ("kama_fast", "kama_slow", "atr_period", "use_atr_filter", "use_h4_filter", "single_position", "er_min",
                     "confirmation_bars", "min_distance_atr", "risk_mode",
                     "atr_stop_multiplier", "atr_target_multiplier"):
             if key in data:
@@ -95,7 +127,7 @@ class StrategyBot:
             "second_ma_period": self.second_ma_period,
             "lot_size": self.lot_size,
             **{key: getattr(self, key) for key in ("kama_fast", "kama_slow", "atr_period",
-                "use_atr_filter", "er_min", "confirmation_bars", "min_distance_atr", "risk_mode",
+                "use_atr_filter", "use_h4_filter", "single_position", "er_min", "confirmation_bars", "min_distance_atr", "risk_mode",
                 "atr_stop_multiplier", "atr_target_multiplier", "current_atr", "current_er")},
             "pending_confirmation": self._candidate is not None,
             "use_stop_loss": self.use_stop_loss,
@@ -201,6 +233,10 @@ class StrategyBot:
         closes = [r["close"] for r in rev_rates]
 
         latest_closed_candle_time = rev_rates[1]["time"]
+        if self.is_running and not self.last_candle_time:
+            # Starting/restarting seeds the current bar; do not trade an old crossover.
+            self.last_candle_time = latest_closed_candle_time
+            return
         if latest_closed_candle_time == self.last_candle_time:
             return
 
@@ -244,6 +280,8 @@ class StrategyBot:
                          side * (hma1 - ma2_1) > 0 and
                          side * (hma1 - ma2_1) >= self.min_distance_atr * self.current_atr and
                          side * (hma1 - hma2) > 0 and side * (ma2_1 - ma2_2) > 0)
+                if valid and self.use_h4_filter:
+                    valid = self.h4_confirmation(side, latest_closed_candle_time + self.timeframe_minutes*60)
                 if age > self.confirmation_bars:
                     self.log("Onay süresi doldu; kesişim sinyali iptal edildi.")
                     self._candidate = None
@@ -270,12 +308,37 @@ class StrategyBot:
             return
         if self._stop_event.is_set():
             return
+        if self.mt5.has_unresolved_bot_order(self.symbol):
+            self.log('Önceki bot emri belirsiz; MT5 mutabakatı bekleniyor.', 'ERROR')
+            self.stop()
+            return
+        if self.single_position:
+            owned = self.mt5.get_positions(fresh=True)
+            pending = self.mt5.get_pending_orders()
+            if any(p['symbol'] == self.symbol and p.get('magic') == HMA_MAGIC for p in owned+pending):
+                self.log('Bot pozisyonu zaten açık; yeni giriş atlandı.')
+                return
         res = self.mt5.open_order(self.symbol, side, self.lot_size, sl_points=sl, tp_points=tp,
             comment=f"HMA Bot {side}", magic=HMA_MAGIC, request_id=self.order_id(side), stop_event=self._stop_event)
         if res.get("success"):
             self.log(f"✅ {side} Emri Açıldı: #{res.get('ticket')} @ {res.get('price')}")
         else:
             self.log(f"❌ {side} Emri Başarısız: {res.get('error')}", "ERROR")
+        if res.get('uncertain') or res.get('pending') or res.get('partial'):
+            self.log('Emir sonucu kesinleşmedi; bot durduruldu. MT5 durumunu kontrol edin.', 'ERROR')
+            self.stop()
+
+    def h4_confirmation(self, side, decision):
+        rows = self.mt5.get_rates(self.symbol, timeframe=240,
+            count=5*max(self.hma_period,self.second_ma_period,self.kama_slow,self.atr_period)+20)
+        closed = [r for r in rows if r['time']+14400 <= decision]
+        if len(closed) < 2 or decision-(closed[-1]['time']+14400) >= 14400:
+            return False
+        study = indicators(closed, IndicatorSettings(hma_period=self.hma_period,
+            kama_period=self.second_ma_period,kama_fast=self.kama_fast,kama_slow=self.kama_slow,atr_period=self.atr_period))
+        er, kama = study['er'], study['kama']
+        return (er[-1] is not None and kama[-1] is not None and kama[-2] is not None
+                and er[-1] >= self.er_min and side*(kama[-1]-kama[-2]) > 0)
 
     def order_distances(self):
         if self.risk_mode == "POINTS":
@@ -317,6 +380,7 @@ class StrategyBot:
         if not self.is_running and (self.task is None or self.task.done()):
             self.mt5.automation_stopped.clear()
             self._stop_event.clear()
+            self.last_candle_time = 0
             self.is_running = True
             self.task = asyncio.create_task(self.run_loop())
 

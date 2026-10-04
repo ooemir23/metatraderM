@@ -555,3 +555,15 @@ def test_remote_bridge_serializes_full_result_once(client, monkeypatch):
         assert disconnected.wait(2)
         server.close()
         worker.join(2)
+
+
+def test_unresolved_barrier_is_account_symbol_and_strategy_scoped(tmp_path):
+    journal=OrderJournal(tmp_path/'journal.sqlite3')
+    metadata={'account':[1,'demo'],'order':{'symbol':'XAUUSD','magic':HMA_MAGIC}}
+    journal.run('pending-hma',{'symbol':'XAUUSD'},lambda:{'success':False,'uncertain':True},metadata=metadata)
+    assert journal.has_unresolved_open([1,'demo'],'XAUUSD',HMA_MAGIC)
+    assert not journal.has_unresolved_open([2,'demo'],'XAUUSD',HMA_MAGIC)
+    assert not journal.has_unresolved_open([1,'demo'],'EURUSD',HMA_MAGIC)
+    assert not journal.has_unresolved_open([1,'demo'],'XAUUSD',MANUAL_MAGIC)
+    journal.resolve('pending-hma',{'success':False,'uncertain':False,'pending':False})
+    assert not journal.has_unresolved_open([1,'demo'],'XAUUSD',HMA_MAGIC)

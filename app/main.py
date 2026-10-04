@@ -16,6 +16,7 @@ from app.live_feed import LiveFeed
 from app.strategy_bot import StrategyBot
 from app.ai_advisor import DeepSeekAdvisor
 from app import security_sessions
+from app.order_journal import state_path
 from app.backtest import simulate
 from app.strategy_research import Settings as ResearchSettings, compare as compare_research
 
@@ -28,7 +29,7 @@ import threading
 
 mt5_client = MT5Client()
 live_feed = LiveFeed(mt5_client)
-bot = StrategyBot(mt5_client)
+bot = StrategyBot(mt5_client, config_path=state_path('bot_settings.json'))
 ai_advisor = DeepSeekAdvisor(mt5_client)
 flatten_active = threading.Event()
 flatten_guard = threading.Lock()
@@ -228,6 +229,8 @@ class BotConfigRequest(BaseModel):
     kama_slow: Optional[int] = Field(default=None, ge=2, le=200)
     atr_period: Optional[int] = Field(default=None, ge=2, le=200)
     use_atr_filter: Optional[bool] = None
+    use_h4_filter: Optional[bool] = None
+    single_position: Optional[bool] = None
     er_min: Optional[float] = Field(default=None, ge=0, le=1, allow_inf_nan=False)
     confirmation_bars: Optional[int] = Field(default=None, ge=0, le=3)
     min_distance_atr: Optional[float] = Field(default=None, ge=0, le=2, allow_inf_nan=False)
@@ -879,8 +882,33 @@ def update_bot_config(req: BotConfigRequest):
         raise HTTPException(status_code=422, detail="Desteklenmeyen zaman dilimi")
     if data.get("kama_fast", bot.kama_fast) >= data.get("kama_slow", bot.kama_slow):
         raise HTTPException(status_code=422, detail="KAMA hızlı periyodu yavaş periyottan küçük olmalı.")
-    bot.update_config(data)
+    if data.get('use_h4_filter', bot.use_h4_filter) and (
+        data.get('timeframe_minutes',bot.timeframe_minutes) != 60 or
+        data.get('second_ma_type',bot.second_ma_type) != 'KAMA' or
+        not data.get('use_atr_filter',bot.use_atr_filter)):
+        raise HTTPException(status_code=422, detail='H4 filtresi H1, KAMA ve kesişim onayı gerektirir.')
+    try:
+        bot.update_config(data)
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail='Bot ayarları kaydedilemedi; mevcut ayarlar korundu.') from exc
     return bot.get_status()
+
+
+def restore_bot_settings():
+    if not bot.config_path.exists():
+        return
+    try:
+        stored = BotConfigRequest(**json.loads(bot.config_path.read_text())).model_dump(exclude_none=True)
+        if stored.get('timeframe_minutes',15) not in TIMEFRAME_NAMES or stored.get('kama_fast',2) >= stored.get('kama_slow',30):
+            raise ValueError('Invalid saved settings')
+        if stored.get('use_h4_filter') and (stored.get('timeframe_minutes') != 60 or stored.get('second_ma_type') != 'KAMA' or not stored.get('use_atr_filter')):
+            raise ValueError('Invalid saved H4 filter')
+        bot.load_config(stored)
+    except Exception:
+        logger.error('Saved bot settings could not be loaded; bot remains stopped with defaults.')
+
+
+restore_bot_settings()
 
 # DeepSeek AI Advisor & Autopilot Endpoints
 @app.get("/api/ai/status")

@@ -12,7 +12,7 @@ Alan referansları: [MetaQuotes emir özellikleri](https://www.mql5.com/en/docs/
 
 ## Yedekleme
 
-Uygulama açılışında ve her 24 saatte bir `/config/backups` altında yedek oluşturur; son 14 yedek saklanır. `BACKUP_DIR` ile başka bir bağlı diske yönlendirilebilir. Kapsam: `orders.sqlite3`, `credentials.json`, `ai_memory.json` ve iki TOTP anahtarı. SQLite çevrimiçi backup API ile tutarlı kopyalanır; JSON ve SHA-256 özeti, SQLite bütünlüğü doğrulanır. Parolalı dosyalar 0600, yedek klasörü 0700 izinleriyle saklanır. Başarı/hata uygulama günlüğüne yazılır.
+Uygulama açılışında ve her 24 saatte bir `/config/backups` altında yedek oluşturur; son 14 yedek saklanır. `BACKUP_DIR` ile başka bir bağlı diske yönlendirilebilir. Kapsam: `orders.sqlite3`, `credentials.json`, `ai_memory.json`, `bot_settings.json` ve iki TOTP anahtarı. SQLite çevrimiçi backup API ile tutarlı kopyalanır; JSON ve SHA-256 özeti, SQLite bütünlüğü doğrulanır. Parolalı dosyalar 0600, yedek klasörü 0700 izinleriyle saklanır. Başarı/hata uygulama günlüğüne yazılır.
 
 Sunucudaki yalnızca yedek dışa aktarma komutuna izin veren SSH anahtarı, yerel bilgisayara günlük GPG şifreli kopya indirir. `scripts/offsite_backup.py` her kopyayı açıp SHA-256 ve SQLite bütünlüğünü doğrular, boş dizine geri yükleyip dosyaları karşılaştırır; son 30 arşivi saklar. Codex uygulamasında günlük 03:30 otomasyonu kuruludur. Yerel bilgisayar kapalıysa çalışma gecikir; son başarılı yedeğin tarihi düzenli kontrol edilmelidir. Arşivler `/home/ooemir/.config/metatraderm/offsite/archives` altındadır. SSH özel anahtarı ve GPG özel anahtarı aynı bilgisayardaki korumalı dizindedir; ikinci bir güvenli yerde ayrıca saklanmalıdır. Bu yedekler MT5/Wine kurulumunun tamamını veya Dokploy ortam sırlarını içermez.
 

@@ -155,6 +155,16 @@ class OrderJournal:
                 db.execute('INSERT OR REPLACE INTO order_checks VALUES (?, ?)', (row[0], time.time()))
         return [dict(id=r[0], created=r[1], result=json.loads(r[2]) if r[2] else None, metadata=json.loads(r[3])) for r in rows]
 
+    def has_unresolved_open(self, account, symbol, magic):
+        """Read-only barrier, including recent requests not yet eligible for reconciliation."""
+        with self._connect() as db:
+            row = db.execute("SELECT 1 FROM orders o JOIN order_metadata m ON m.id=o.id WHERE "
+                "json_extract(m.data,'$.account[0]')=? AND json_extract(m.data,'$.account[1]')=? "
+                "AND json_extract(m.data,'$.order.symbol')=? AND json_extract(m.data,'$.order.magic')=? "
+                "AND (o.result IS NULL OR json_extract(o.result,'$.uncertain')=1 OR json_extract(o.result,'$.pending')=1) LIMIT 1",
+                (account[0],account[1],symbol,magic)).fetchone()
+        return row is not None
+
     def resolve(self, request_id, result):
         with self._connect() as db:
             row = db.execute('SELECT result FROM orders WHERE id=?', (request_id,)).fetchone()

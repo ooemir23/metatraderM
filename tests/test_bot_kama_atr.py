@@ -15,6 +15,8 @@ def client(rows):
     c.ensure_connected.return_value = True
     c.get_rates.return_value = rows
     c.get_positions.return_value = []
+    c.get_pending_orders.return_value = []
+    c.has_unresolved_bot_order.return_value = False
     c.get_symbol_spec.return_value = {'point': .01}
     c.open_order.return_value = {'success': True, 'ticket': 12, 'price': 100}
     c.close_position.return_value = {'success': True}
@@ -120,3 +122,54 @@ def test_api_kama_settings_validate_without_starting_or_mutating_on_error(monkey
         assert b.get_status()==previous
     b.is_running=True
     assert web.post('/api/bot/config',auth=auth,json=config).status_code==409
+
+
+def test_h4_filter_uses_closed_bars_and_rejects_stale_alignment(monkeypatch):
+    rows=bars();t=rows[-2]['time'];decision=t+3600
+    higher=[dict(rows[0],time=decision-28800),dict(rows[0],time=decision-14400),dict(rows[0],time=decision,close=9999)]
+    def study(data, settings):
+        if len(data)==2:
+            assert all(r['time'] < decision for r in data)
+            return {'hma':[100,101],'kama':[99,100],'atr':[2.25,2.25],'er':[.5,.5]}
+        values=[(99,99.9) if r['time'] < t else (101,100) for r in data]
+        return {'hma':[v[0] for v in values],'kama':[v[1] for v in values],'atr':[2.25]*len(data),'er':[.5]*len(data)}
+    monkeypatch.setattr('app.strategy_bot.indicators',study)
+    c=client(rows);c.get_rates.side_effect=lambda symbol,timeframe,count: higher if timeframe==240 else rows
+    b=configured(c);b.timeframe_minutes=60;b.use_h4_filter=True;b.confirmation_bars=0
+    b._check_strategy();c.open_order.assert_called_once()
+    higher[:]=[dict(r,time=r['time']-14400) for r in higher[:-1]]
+    other=configured(c);other.timeframe_minutes=60;other.use_h4_filter=True;other.confirmation_bars=0;c.open_order.reset_mock()
+    other._check_strategy();c.open_order.assert_not_called()
+
+
+def test_single_position_and_unsettled_order_block_new_entries(monkeypatch):
+    rows=bars();t=rows[-2]['time'];install_study(monkeypatch,{t-3600:(99,99.9),t:(101,100)})
+    c=client(rows);b=configured(c)
+    c.get_positions.return_value=[{'symbol':'EURUSD','magic':HMA_MAGIC,'type':'BUY','ticket':1}]
+    b._check_strategy();c.open_order.assert_not_called()
+    c.get_positions.return_value=[];c.has_unresolved_bot_order.return_value=True
+    other=configured(c);other._check_strategy();c.open_order.assert_not_called();assert other._stop_event.is_set()
+    c.has_unresolved_bot_order.return_value=False;c.open_order.return_value={'success':False,'uncertain':True}
+    other=configured(c);other._check_strategy();assert other._stop_event.is_set()
+
+
+def test_startup_seeds_bar_instead_of_trading_old_signal(monkeypatch):
+    rows=bars();t=rows[-2]['time'];install_study(monkeypatch,{t-3600:(99,99.9),t:(101,100)})
+    c=client(rows);b=configured(c);b.is_running=True
+    b._check_strategy();assert b.last_candle_time==t;c.open_order.assert_not_called()
+
+
+def test_saved_settings_restore_stopped_and_failed_write_preserves_settings(monkeypatch,tmp_path):
+    import json
+    import app.main as main
+    path=tmp_path/'bot_settings.json';b=StrategyBot(client(bars()),config_path=path)
+    config={'symbol':'XAUUSD','timeframe_minutes':60,'second_ma_type':'KAMA','use_atr_filter':True,'use_h4_filter':True,'lot_size':.001}
+    b.update_config(config);assert json.loads(path.read_text())['lot_size']==.001
+    restarted=StrategyBot(client(bars()),config_path=path);monkeypatch.setattr(main,'bot',restarted)
+    main.restore_bot_settings();assert restarted.use_h4_filter and restarted.symbol=='XAUUSD' and not restarted.is_running
+    def fail(*args):raise OSError('disk full')
+    monkeypatch.setattr(restarted,'persist_config',fail)
+    previous=restarted.config_snapshot();web=TestClient(main.app)
+    assert web.post('/api/bot/config',auth=('test','test-panel-password'),json={'lot_size':.1}).status_code==503
+    assert restarted.config_snapshot()==previous
+    assert web.post('/api/bot/config',auth=('test','test-panel-password'),json={'timeframe_minutes':240}).status_code==422
