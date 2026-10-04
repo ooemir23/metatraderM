@@ -6,11 +6,14 @@ function researchConfigLabel(c) {
 
 function explainResearchTrade(trade) {
   const reasons = {stop:'Stop seviyesi görüldü', target:'Hedef seviyesi görüldü',
-    'opposite crossover':'HMA–KAMA ters kesişimi', 'segment end':'Test dönemi sonu'};
+    'opposite crossover':'HMA–KAMA ters kesişimi', 'segment end':'Test dönemi sonu', 'stop out':'Stop-out · zorunlu kapatma'};
   const d = trade.diagnostics;
   const costsTurnedLoss = trade.net_points < 0 && d && d.market_points >= 0;
   let cause, nextTest;
-  if (costsTurnedLoss) {
+  if (trade.reason === 'stop out') {
+    cause = 'Özkaynak broker stop-out eşiğine ulaştı; pozisyon teminat yetersizliği nedeniyle zorunlu kapatıldı. Bu, ana paranın sabit bir yüzdesinin kalması kuralı değildir.';
+    nextTest = 'Lotu ve teminat kullanımını azaltın; stop mesafesini parasal riskle birlikte test edin. Fiyat boşlukları ve yüksek spread senaryolarını karşılaştırın.';
+  } else if (costsTurnedLoss) {
     cause = 'Maliyet öncesi fiyat hareketi negatif değildi; spread, kayma, komisyon ve swapın toplam etkisi işlemi net zarara çevirdi.';
     nextTest = 'Toplam maliyete göre minimum beklenen hareket ve spread filtresini karşılaştırın. Daha sık işlem açmanın ve dar hedeflerin maliyet etkisini ölçün; maliyetleri sıfırlayarak iyileşme varsaymayın.';
   } else if (trade.reason === 'stop') {
@@ -50,6 +53,11 @@ function renderResearchReport(data) {
   if (data.assessment) addText(data.assessment.message);
   const currency = data.settings.currency;
   const money = value => value == null ? '—' : `${Number(value).toLocaleString(globalThis.MT5I18n?.language() === 'en' ? 'en-US' : 'tr-TR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${currency || ''}`;
+  const rules = data.settings.broker_rules;
+  if (rules) {
+    addText(`Broker modeli: ${rules.mode} · Margin call: ${rules.margin_call}${rules.mode === 'PERCENT' ? '%' : ' '+currency} · Stop-out: ${rules.stop_out}${rules.mode === 'PERCENT' ? '%' : ' '+currency} · Kaldıraç: 1:${rules.leverage}.`);
+    addText('Güncel broker kuralları geçmişe uygulanır. Tek izole pozisyon; teminat girişte sabitlenir, toplam komisyon önceden ayrılır. Tarihsel teminat değişiklikleri ve mum içi tick sırası bilinmez.');
+  }
   const selectedStats = data.selected_holdout ? data.selected_holdout.stats : data.baseline_holdout.stats;
   if (data.selected) {
     const total = data.selected.train.count + data.selected.validation.count + selectedStats.count;
@@ -108,6 +116,10 @@ function renderResearchReport(data) {
           const amount = points => Number.isFinite(factor) ? money(points * factor) : `${Number(points).toFixed(2)} puan`;
           add(`Maliyet öncesi fiyat hareketi: ${amount(diagnostic.market_points)}. Spread: ${amount(diagnostic.cost_points.spread)}; kayma: ${amount(diagnostic.cost_points.slippage)}; komisyon: ${amount(diagnostic.cost_points.commission)}; swap maliyeti/kredisi: ${amount(diagnostic.cost_points.swap)}. Net: ${money(trade.net_profit)}. Negatif swap maliyeti kredidir.`);
           add(`Girişte ATR: ${diagnostic.entry_atr.toFixed(4)} · ER: ${diagnostic.entry_er.toFixed(3)} · HMA–KAMA mesafesi: ${diagnostic.entry_distance_atr.toFixed(3)} ATR · Stop: ${diagnostic.stop_price.toFixed(2)} · Hedef: ${diagnostic.target_price == null ? 'Kapalı' : diagnostic.target_price.toFixed(2)}.`);
+          if (diagnostic.margin) {
+            const m = diagnostic.margin;
+            add(`Teminat: ${money(m.used_margin)} · Çıkış özkaynağı: ${money(m.equity_at_exit)} · Teminat seviyesi: ${m.margin_level_pct_at_exit.toFixed(2)}%.`);
+          }
         } else { add('Maliyet ve giriş göstergesi ayrıntıları için karşılaştırmayı bu sürümde yeniden çalıştırın.'); }
         if (trade.net_points < 0) add(`Ne denenebilir? ${analysis.nextTest}`);
         detail.open = trades.length <= 10; list.appendChild(detail);
@@ -141,6 +153,18 @@ function renderResearchReport(data) {
     cards.appendChild(card);
   }
   root.appendChild(cards);
+  if (selectedStats.margin_model_enabled) {
+    const riskCards = document.createElement('div'); riskCards.className = 'research-metrics';
+    for (const [label,value] of [['Stop-out',selectedStats.stop_outs], ['Margin call',selectedStats.margin_calls],
+      ['Teminat reddi',selectedStats.rejected_margin], ['Stop mesafesi reddi',selectedStats.rejected_stops],
+      ['En düşük özkaynak',money(selectedStats.min_equity)],
+      ['En düşük teminat seviyesi',selectedStats.min_margin_level_pct == null ? '—' : `${selectedStats.min_margin_level_pct.toFixed(2)}%`],
+      ['Azami kullanılan teminat',money(selectedStats.max_margin)]]) {
+      const card = document.createElement('div'), title = document.createElement('span'), valueNode = document.createElement('strong');
+      title.textContent = label; valueNode.textContent = String(value); card.append(title,valueNode); riskCards.appendChild(card);
+    }
+    root.appendChild(riskCards);
+  }
   root.appendChild(outcomePanel);
   addText('Doğru/yanlış, maliyet sonrası kârlı/zararlı işlem demektir. Eğitim, doğrulama ve ayrılmış test ayrı simülasyonlardır; her biri aynı başlangıç sermayesini kullanır.');
   const makeTable = titles => {
@@ -163,9 +187,11 @@ function renderResearchReport(data) {
     }
   };
   const statTitles = ['Seçenek / dönem', 'Lot', 'Ana para', 'İşlem', 'Doğru', 'Yanlış', 'Başa baş', 'Toplam kâr', 'Toplam zarar', 'Net kazanç/kayıp', 'Son bakiye', 'Kazanç %', 'Azami düşüş', 'Net puan'];
+  if (rules) statTitles.push('Stop-out','Margin call','Teminat reddi','Stop mesafesi reddi','En düşük özkaynak','En düşük teminat seviyesi');
   const statCells = (label, stats) => [label, data.settings.lot_size, money(stats.initial_capital), stats.count,
     stats.wins, stats.losses, stats.breakeven, money(stats.gross_profit), money(stats.gross_loss),
-    money(stats.net_profit), money(stats.final_capital), stats.win_rate_pct ?? '—', money(stats.max_drawdown_money), stats.net_points];
+    money(stats.net_profit), money(stats.final_capital), stats.win_rate_pct ?? '—', money(stats.max_drawdown_money), stats.net_points,
+    ...(rules ? [stats.stop_outs,stats.margin_calls,stats.rejected_margin,stats.rejected_stops,money(stats.min_equity),stats.min_margin_level_pct == null ? '—' : `${stats.min_margin_level_pct.toFixed(2)}%`] : [])];
   const summaryTable = makeTable(statTitles);
   if (data.selected) {
     addCells(summaryTable.body, statCells('Seçilen · eğitim', data.selected.train));
@@ -198,7 +224,7 @@ function renderResearchReport(data) {
   const tradeTable = makeTable(['#', 'Yön', 'Lot', 'Giriş (UTC)', 'Çıkış (UTC)', 'Giriş fiyatı', 'Çıkış fiyatı', 'Net kazanç/kayıp', 'İşlem sonrası bakiye', 'Sonuç', 'Çıkış nedeni']);
   root.appendChild(tradeTable.wrap);
   let page = 0;
-  const reasons = {'stop': 'Stop', 'target': 'Hedef', 'opposite crossover': 'Ters kesişim', 'segment end': 'Dönem sonu'};
+  const reasons = {'stop': 'Stop', 'target': 'Hedef', 'opposite crossover': 'Ters kesişim', 'segment end': 'Dönem sonu', 'stop out':'Stop-out'};
   const showTrades = () => {
     const trades = tradeGroups[Number(selector.value)][1];
     tradeTable.body.replaceChildren();

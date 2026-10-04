@@ -601,9 +601,21 @@
     ["Tarihsel spread seçildi fakat mum spread verisi eksik.", "Historical spread was selected, but candle spread data are missing."],
     ["Gösterge ısınması ve üç veri bölümü için yeterli uzun geçmiş yok.", "Not enough history for indicator warm-up and three data segments."],
     ["Ortak tarih aralığı yetersiz.", "The common date range is insufficient."],
+    ["Stop-out · zorunlu kapatma", "Stop-out · forced liquidation"],
+    ["Özkaynak broker stop-out eşiğine ulaştı; pozisyon teminat yetersizliği nedeniyle zorunlu kapatıldı. Bu, ana paranın sabit bir yüzdesinin kalması kuralı değildir.", "Equity reached the broker stop-out threshold; the position was forcibly closed due to insufficient margin. This is not a rule based on a fixed percentage of initial capital remaining."],
+    ["Lotu ve teminat kullanımını azaltın; stop mesafesini parasal riskle birlikte test edin. Fiyat boşlukları ve yüksek spread senaryolarını karşılaştırın.", "Reduce lot size and margin usage; test stop distance together with monetary risk. Compare price gap and high spread scenarios."],
+    ["Güncel broker kuralları geçmişe uygulanır. Tek izole pozisyon; teminat girişte sabitlenir, toplam komisyon önceden ayrılır. Tarihsel teminat değişiklikleri ve mum içi tick sırası bilinmez.", "Current broker rules are applied to historical prices. One isolated position; margin is fixed at entry and total commission is reserved in advance. Historical margin changes and intrabar tick order are unknown."],
+    ["Teminat reddi", "Margin rejection"],
+    ["Stop mesafesi reddi", "Stop distance rejection"],
+    ["En düşük özkaynak", "Minimum equity"],
+    ["En düşük teminat seviyesi", "Minimum margin level"],
+    ["Azami kullanılan teminat", "Maximum used margin"],
+    ["KAMA hızlı/yavaş: 2/30. Tarihsel mum spreadi kullanılır. Sıfır maliyetler sıfır varsayımıdır; swap takvim günü başına yaklaşık maliyettir. Her dönem girilen sermayeyle ve sabit lotla başlar. Parasal sonuçlar broker sözleşmesine göre simülasyondur; broker teminatı, margin call, stop-out ve minimum stop mesafesi hesaplanır. Güncel broker kuralları geçmişe uygulanır; gerçek tick sırası bilinmez.", "KAMA fast/slow: 2/30. Uses historical candle spreads. Zero costs are assumed to be zero; swap is an approximate cost per calendar day. Each period starts with the entered capital and fixed lot size. Monetary results use the broker contract; broker margin, margin call, stop-out, and minimum stop distance are simulated. Current broker rules are applied to history; actual tick order is unknown."],
   ]));
 
   const patterns = [
+    [/^Broker modeli: (.+) · Margin call: (.+) · Stop-out: (.+) · Kaldıraç: 1:(.+)\.$/, (_, mode, call, stop, leverage) => `Broker model: ${mode} · Margin call: ${call} · Stop-out: ${stop} · Leverage: 1:${leverage}.`],
+    [/^Teminat: (.+) · Çıkış özkaynağı: (.+) · Teminat seviyesi: (.+)%\.$/, (_, margin, equity, level) => `Used margin: ${margin} · Equity at exit: ${equity} · Margin level: ${level}%.`],
     [/^(H1|H4|H1 \+ H4) · (filtreli|ham kesişim) · (\d+) mum · %(\d+) ATR$/, (_, mode, filter, wait, distance) => `${mode} · ${translate(filter)} · ${wait} candles · ${distance}% ATR`],
     [/^Gerçek veri: H1 (\d+) mum · H4 (\d+) mum\. Ortak dönem: (.+)\.$/, (_, h1, h4, range) => `Actual data: H1 ${h1} candles · H4 ${h4} candles. Common period: ${range}.`],
     [/^Seans\/eksik veri olabilecek uzun aralıklar: H1 (\d+), H4 (\d+)\.$/, (_, h1, h4) => `Long intervals that may reflect sessions/missing data: H1 ${h1}, H4 ${h4}.`],

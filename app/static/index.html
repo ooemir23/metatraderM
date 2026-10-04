@@ -713,7 +713,7 @@
               <label>Alış swap maliyeti (puan/gün)<input id="research-swap-long" type="number" min="-100000" max="100000" step="0.1" value="0" required class="block w-full rounded bg-gray-800 p-2"></label>
               <label>Satış swap maliyeti (puan/gün)<input id="research-swap-short" type="number" min="-100000" max="100000" step="0.1" value="0" required class="block w-full rounded bg-gray-800 p-2"></label>
             </div>
-            <p class="mt-2 text-amber-300">KAMA hızlı/yavaş: 2/30. Tarihsel mum spreadi kullanılır. Sıfır maliyetler sıfır varsayımıdır; swap takvim günü başına yaklaşık maliyettir. Her dönem girilen sermayeyle ve sabit lotla başlar. Parasal sonuçlar broker sözleşmesine göre simülasyondur; teminat ve stop-out hesaplanmaz.</p>
+            <p class="mt-2 text-amber-300">KAMA hızlı/yavaş: 2/30. Tarihsel mum spreadi kullanılır. Sıfır maliyetler sıfır varsayımıdır; swap takvim günü başına yaklaşık maliyettir. Her dönem girilen sermayeyle ve sabit lotla başlar. Parasal sonuçlar broker sözleşmesine göre simülasyondur; broker teminatı, margin call, stop-out ve minimum stop mesafesi hesaplanır. Güncel broker kuralları geçmişe uygulanır; gerçek tick sırası bilinmez.</p>
             <div class="mt-3 flex flex-wrap gap-2">
               <button id="research-run" type="submit" class="rounded bg-cyan-700 px-3 py-2 font-semibold">Karşılaştırmayı Çalıştır</button>
               <button id="research-download" type="button" onclick="downloadResearchReport()" disabled class="rounded bg-gray-700 px-3 py-2 disabled:opacity-40">Raporu İndir (.xlsx)</button>

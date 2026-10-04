@@ -48,3 +48,21 @@ def test_export_api_auth_validation_and_viewer_access(monkeypatch):
     assert web.post('/api/research/export',json={},auth=auth).status_code==422
     monkeypatch.setenv('DASHBOARD_USER_2','reader');monkeypatch.setenv('DASHBOARD_PASSWORD_2','reader-pass');monkeypatch.setenv('DASHBOARD_ROLE_2','VIEWER')
     assert web.post('/api/research/export',json=data,auth=('reader','reader-pass')).status_code==200
+
+
+def test_margin_report_exports_rules_risk_counts_and_stopout_reason():
+    from dataclasses import replace
+    from tests.test_strategy_research import margin_scenario
+    from app.strategy_research import run_segment
+    rows, study, settings = margin_scenario()
+    rows[3]['low'] = 50
+    segment = run_segment(rows, study, 3600, 0, 36000, settings)
+    data = {'settings': __import__('dataclasses').asdict(settings),
+            'segments': {'holdout': {'start':0,'end_exclusive':36000}},
+            'baseline_holdout': segment, 'comparisons': []}
+    book = load_workbook(BytesIO(excel_report(data)))
+    headers = [cell.value for cell in book['Özet'][1]]
+    assert book['Özet'].cell(2,headers.index('Stop-out')+1).value == 1
+    assert book['İşlemler']['N2'].value == 'Stop-out'
+    rules = next(row[1].value for row in book['Ayarlar'].iter_rows() if row[0].value == 'broker_rules')
+    assert __import__('json').loads(rules)['stop_out'] == 20

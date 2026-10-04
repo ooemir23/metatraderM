@@ -162,6 +162,7 @@ def test_api_validates_and_never_places_orders(monkeypatch):
     monkeypatch.setattr(main.mt5_client, 'get_research_rates', fetch)
     monkeypatch.setattr(main.mt5_client, 'get_symbol_spec', lambda _: {'point': .01, 'contract_size': 100, 'linear_profit': True,
         'profit_currency': 'USD', 'account_currency': 'USD', 'volume_min': .01, 'volume_max': 100, 'volume_step': .01})
+    monkeypatch.setattr(main.mt5_client, 'get_research_margin_rules', lambda *args: margin_rules(volume=args[1]))
     def forbid(*args, **kwargs):
         raise AssertionError('Research cannot send orders')
     monkeypatch.setattr(main.mt5_client, 'open_order', forbid)
@@ -268,3 +269,76 @@ def test_trade_diagnostics_reconcile_bid_movement_and_signed_costs():
         assert d['cost_points']['spread'] == 25
         assert d['cost_points']['slippage'] == (3 if trade['reason'] == 'target' else 6)
         assert d['entry_atr'] > 0 and 0 <= d['entry_er'] <= 1
+
+
+def margin_rules(volume=.01, mode='PERCENT', stop=20):
+    return {'mode':mode, 'margin_call':100, 'stop_out':stop, 'volume':volume,
+            'models':{side:{'intercept':50, 'slope':0} for side in ('BUY','SELL')},
+            'tick_size':.01, 'stops_level_points':0, 'leverage':100}
+
+
+def margin_scenario(**changes):
+    rows, study, s = confirmation_data()
+    return rows, study, replace(s, contract_size=100, currency='USD', initial_capital=51,
+                               stop_atr=95, broker_rules=margin_rules(), **changes)
+
+
+@pytest.mark.parametrize('mode,expected', [('PERCENT',59),('MONEY',69)])
+def test_stopout_uses_margin_or_money_not_initial_capital(mode, expected):
+    rows, study, s = margin_scenario()
+    s = replace(s, broker_rules=margin_rules(mode=mode))
+    rows[3].update(low=50)
+    result = run_segment(rows, study, 3600, 0, 36000, s)
+    trade = result['trades'][0]
+    assert trade['reason'] == 'stop out'
+    assert trade['exit_price'] == pytest.approx(expected)
+    assert trade['balance_after'] == (10 if mode == 'PERCENT' else 20)
+    assert result['stats']['stop_outs'] == 1
+    assert result['stats']['margin_calls'] == 1
+    assert trade['diagnostics']['margin']['used_margin'] == 50
+
+
+def test_stop_before_stopout_and_short_stopout():
+    rows, study, s = margin_scenario()
+    rows[3].update(low=50)
+    r = run_segment(rows, study, 3600, 0, 36000, replace(s,stop_atr=1))
+    assert r['trades'][0]['reason'] == 'stop'
+    assert r['stats']['stop_outs'] == 0
+    study['hma'] = [2*k-h for k,h in zip(study['kama'],study['hma'])]
+    rows[3].update(low=99,high=150)
+    r = run_segment(rows, study, 3600, 0, 36000, s, filtered=False)
+    assert r['trades'][0]['side'] == 'SELL'
+    assert r['trades'][0]['reason'] == 'stop out'
+    assert r['trades'][0]['exit_price'] == pytest.approx(141)
+
+
+def test_gap_stopout_can_exceed_threshold_and_margin_rejects_entries():
+    rows, study, s = margin_scenario()
+    rows[4].update(open=40,low=39,high=100)
+    r = run_segment(rows, study, 3600, 0, 36000, s)
+    assert r['trades'][0]['reason'] == 'stop out'
+    assert r['trades'][0]['exit_time'] == rows[4]['time']
+    assert r['stats']['final_capital'] == -9  # No invented negative balance protection.
+    r = run_segment(rows, study, 3600, 0, 36000, replace(s, initial_capital=49))
+    assert not r['trades'] and r['stats']['rejected_margin'] == 1
+    r = run_segment(rows, study, 3600, 0, 36000, replace(s,broker_rules={**margin_rules(),'stops_level_points':10000}))
+    assert not r['trades'] and r['stats']['rejected_stops'] == 1
+
+
+def test_bridge_calibrates_asymmetric_margin_and_rejects_missing_nonlinear_rules():
+    account = SimpleNamespace(login=1,server='demo',margin_mode=2,margin_so_mode=0,
+                              margin_so_call=100,margin_so_so=30,leverage=100)
+    info = SimpleNamespace(volume_min=.01,volume_max=100,volume_step=.01,margin_initial=0,
+                           margin_maintenance=0,point=.01,trade_tick_size=.01,trade_stops_level=10)
+    mt5 = SimpleNamespace(account_info=lambda:account,symbol_info=lambda _:info,
+                          order_calc_margin=lambda side,sym,vol,price: vol*price*(1 if side==0 else 2))
+    rules = mt5_bridge.research_margin_rules(mt5,'XAUUSD',.01,1000,5000,1,'demo')
+    assert rules['stop_out'] == 30
+    assert rules['models']['BUY']['slope'] == pytest.approx(.01)
+    assert rules['models']['SELL']['slope'] == pytest.approx(.02)
+    mt5.order_calc_margin=lambda *args:None
+    with pytest.raises(ValueError,match='unavailable'):
+        mt5_bridge.research_margin_rules(mt5,'XAUUSD',.01,1000,5000,1,'demo')
+    mt5.order_calc_margin=lambda side,sym,vol,price: price**2
+    with pytest.raises(ValueError,match='Nonlinear'):
+        mt5_bridge.research_margin_rules(mt5,'XAUUSD',.01,1000,5000,1,'demo')

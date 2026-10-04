@@ -391,6 +391,16 @@ def research_compare(req: ResearchRequest):
         settings.validate()
         h1 = mt5_client.get_research_rates(req.symbol.upper(), 60, req.start, req.end)
         h4 = mt5_client.get_research_rates(req.symbol.upper(), 240, req.start, req.end)
+        prices = [float(r[k]) for rows in (h1, h4) for r in rows for k in ('low', 'high')]
+        if not prices:
+            raise ValueError('MT5 araştırma verisi alınamadı.')
+        # Include execution spread/slippage in the sampled range, without future account balances.
+        cushion = (max(float(r.get('spread', 0)) for r in h1+h4) + req.slippage_points + 1) * settings.point
+        rules = mt5_client.get_research_margin_rules(req.symbol.upper(), req.lot_size,
+                                                     max(settings.point, min(prices)-cushion), max(prices)+cushion)
+        settings = ResearchSettings(**fields, point=float(spec['point']),
+                                    contract_size=float(spec['contract_size']), currency=spec['account_currency'],
+                                    broker_rules=rules)
         result = compare_research(h1, h4, settings)
         result.update(symbol=req.symbol.upper(), requested_start=req.start, requested_end=req.end,
                       clock_offset_seconds=mt5_client.tick_clock_offset)

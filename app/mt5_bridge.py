@@ -216,6 +216,44 @@ def symbol_spec(mt5, symbol):
             'account_type':{0:'DEMO',1:'CONTEST',2:'REAL'}.get(int(account.trade_mode),'UNKNOWN')}
 
 
+def research_margin_rules(mt5, symbol, volume, low, high, expected_login, expected_server):
+    """Read-only calibration at historical price bounds. Never checks/sends an order."""
+    account = _account(mt5, expected_login, expected_server)
+    if int(account.margin_mode) not in (0, 2):
+        raise ValueError('Research margin supports retail accounts only; exchange margin is unsupported.')
+    info = mt5.symbol_info(symbol)
+    if info is None or not _volume_valid(info, volume) or not 0 < low < high:
+        raise ValueError('Invalid research margin inputs.')
+    initial = float(getattr(info, 'margin_initial', 0))
+    maintenance = float(getattr(info, 'margin_maintenance', 0))
+    if maintenance and (not initial or not math.isclose(initial, maintenance)):
+        raise ValueError('Different initial/maintenance margin requires a separate model.')
+    mode, call, stop = int(account.margin_so_mode), float(account.margin_so_call), float(account.margin_so_so)
+    if mode not in (0, 1) or not all(math.isfinite(v) and v >= 0 for v in (call, stop)) or call < stop:
+        raise ValueError('Broker stop-out settings could not be verified.')
+    models = {}
+    for side, order_type in (('BUY', 0), ('SELL', 1)):
+        prices = [low + (high-low)*fraction for fraction in (0, .25, .5, .75, 1)]
+        margins = [mt5.order_calc_margin(order_type, symbol, volume, price) for price in prices]
+        if any(v is None or not math.isfinite(float(v)) or v <= 0 for v in margins):
+            raise ValueError('Broker margin calculation unavailable.')
+        margins = [float(v) for v in margins]
+        slope = (margins[-1]-margins[0])/(high-low)
+        intercept = margins[0]-slope*low
+        if any(not math.isclose(value, intercept+slope*price, rel_tol=1e-5, abs_tol=.01)
+               for price, value in zip(prices, margins)):
+            raise ValueError('Nonlinear broker margin cannot be simulated with this model.')
+        models[side] = {'intercept': intercept, 'slope': slope}
+    _account(mt5, expected_login, expected_server)
+    return {'mode': 'PERCENT' if mode == 0 else 'MONEY', 'margin_call': call, 'stop_out': stop,
+            'leverage': int(account.leverage), 'models': models, 'volume': volume,
+            'price_min': low, 'price_max': high, 'captured_at': int(time.time()),
+            'tick_size': float(getattr(info, 'trade_tick_size', 0) or info.point),
+            'stops_level_points': int(info.trade_stops_level),
+            'source': 'MT5 order_calc_margin; current broker rules applied to historical prices',
+            'margin_policy': 'single isolated position; margin fixed at entry; full commission reserved'}
+
+
 def broker_compatibility(mt5, symbol, expected_login, expected_server, tick_offset=0):
     """OrderCheck matrix; this function never calls order_send."""
     account = mt5.account_info()

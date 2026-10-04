@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 from io import BytesIO
 import math
+import json
 
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
@@ -66,6 +67,11 @@ def excel_report(report):
                    ('initial_capital','Ana para'), ('gross_profit','Toplam kâr'), ('gross_loss','Toplam zarar'),
                    ('net_profit','Net kazanç/kayıp'), ('final_capital','Son bakiye'), ('return_pct','Getiri (%)'),
                    ('max_drawdown_money','Azami düşüş'), ('win_rate_pct','Kazanma (%)'), ('net_points','Net puan')]
+        if settings.get('broker_rules'):
+            columns += [('stop_outs','Stop-out'), ('margin_calls','Margin call'),
+                        ('rejected_margin','Teminat reddi'), ('rejected_stops','Stop mesafesi reddi'),
+                        ('min_equity','En düşük özkaynak'), ('min_margin_level_pct','En düşük teminat (%)'),
+                        ('max_margin','Azami kullanılan teminat')]
         summary = sheet('Özet', ['Dönem','Başlangıç (UTC)','Bitiş (UTC, hariç)','Lot','Para birimi'] + [v for _,v in columns], [30,22,22,12,14]+[18]*len(columns))
         groups = []
         selected = report.get('selected')
@@ -78,7 +84,7 @@ def excel_report(report):
         for label, period, stats, _ in groups:
             segment = report['segments'][period]
             row(summary, [label,date(segment['start']),date(segment['end_exclusive']),settings.get('lot_size'),currency] + [stats.get(key) for key,_ in columns])
-        summary.auto_filter.ref = f'A1:R{len(groups)+1}'
+        summary.auto_filter.ref = f'A1:{get_column_letter(5+len(columns))}{len(groups)+1}'
 
         inputs = sheet('Ayarlar', ['Ayar / bilgi','Değer'], [45,100])
         labels = {'hma_period':'HMA periyodu','kama_period':'KAMA ER periyodu','kama_fast':'KAMA hızlı periyodu',
@@ -92,7 +98,7 @@ def excel_report(report):
         if len(settings) > 100:
             raise ValueError('Çok fazla ayar.')
         for key, value in settings.items():
-            row(inputs, [labels.get(key,key),value])
+            row(inputs, [labels.get(key,key),json.dumps(value, ensure_ascii=False) if isinstance(value, dict) else value])
         row(inputs,['Sembol',report.get('symbol','XAUUSD')])
         row(inputs,['Seçilen aday',config_label(selected['config']) if selected else 'Uygun aday yok'])
         row(inputs,['Değerlendirme',report.get('assessment',{}).get('message')])
@@ -104,7 +110,7 @@ def excel_report(report):
         trades_sheet = sheet('İşlemler', ['Dönem','#','Yön','Lot','Giriş (UTC)','Çıkış (UTC)','Giriş fiyatı','Çıkış fiyatı',
             'Net puan','Net kazanç/kayıp','İşlem sonrası bakiye','Para birimi','Sonuç','Çıkış nedeni'], [30,10,12,12,22,22,18,18,18,20,24,14,14,24])
         total_rows = 0
-        reasons = {'stop':'Stop','target':'Hedef','opposite crossover':'Ters kesişim','segment end':'Dönem sonu'}
+        reasons = {'stop':'Stop','target':'Hedef','opposite crossover':'Ters kesişim','segment end':'Dönem sonu', 'stop out':'Stop-out'}
         for label, _, stats, trades in groups:
             if not isinstance(trades,list) or len(trades) != stats['count']:
                 raise ValueError('İşlem dökümü işlem sayısıyla eşleşmiyor; raporu yeniden çalıştırın.')
@@ -126,7 +132,7 @@ def excel_report(report):
                 signals = item.get(period+'_signals',{})
                 row(comparison,[config_label(item['config']),name]+[item[period].get(key) for key,_ in columns]+[
                     signals.get(k) for k in ('crossovers','confirmed','filtered_at_deadline','expired','reversed')])
-        comparison.auto_filter.ref = f'A1:T{2*len(comparisons)+1}'
+        comparison.auto_filter.ref = f'A1:{get_column_letter(2+len(columns)+5)}{2*len(comparisons)+1}'
     except Exception:
         book.save(BytesIO())
         raise

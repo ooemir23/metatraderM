@@ -66,8 +66,9 @@ const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:a
   document.readyState = 'loading';
   vm.runInContext(fs.readFileSync('app/static/i18n.js', 'utf8'), ctx);
   const config = {mode:'H1_H4',filtered:true,wait:2,distance_atr:.1};
-  const result = {stats, trades:[loss,trades[0]],signals:{crossovers:10,confirmed:2,filtered_at_deadline:3,expired:4,reversed:1}};
-  ctx.renderResearchReport({settings:{currency:'USD',lot_size:.01,point:.01,contract_size:100},data_quality:{H1:{count:1000,long_intervals:0},H4:{count:250,long_intervals:0}},segments:{train:{start:1700000000},holdout:{end_exclusive:1701000000}},selected:{config,train:stats,validation:stats},selected_holdout:result,baseline_holdout:result,comparisons:[{config,train:stats}]});
+  const brokerStats = {...stats,margin_model_enabled:true,stop_outs:1,margin_calls:1,rejected_margin:2,rejected_stops:3,min_equity:20,min_margin_level_pct:20,max_margin:100};
+  const result = {stats:brokerStats, trades:[{...loss,diagnostics:{...loss.diagnostics,margin:{used_margin:100,equity_at_exit:20,margin_level_pct_at_exit:20}}},trades[0]],signals:{crossovers:10,confirmed:2,filtered_at_deadline:3,expired:4,reversed:1}};
+  ctx.renderResearchReport({settings:{currency:'USD',lot_size:.01,point:.01,contract_size:100,broker_rules:{mode:'PERCENT',margin_call:100,stop_out:20,leverage:500}},data_quality:{H1:{count:1000,long_intervals:0},H4:{count:250,long_intervals:0}},segments:{train:{start:1700000000},holdout:{end_exclusive:1701000000}},selected:{config,train:brokerStats,validation:brokerStats},selected_holdout:result,baseline_holdout:result,comparisons:[{config,train:brokerStats}]});
   collect().find(e=>e.attrs['aria-label']?.startsWith('Yanlış (zararlı)')).events.click();
   const translate = ctx.MT5I18n.translate;
   const english = collect().flatMap(e=>[e.textContent,...Object.values(e.attrs)]).filter(v=>typeof v==='string').map(translate);
@@ -76,5 +77,8 @@ const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:a
   assert.ok(english.some(text=>text.includes('-1.20 USD')));
   assert.equal(translate('H1 + H4 · filtreli · 2 mum · %10 ATR'),'H1 + H4 · filtered · 2 candles · 10% ATR');
   assert.equal(translate('⛶ Tam ekrandan çık'),'⛶ Exit full screen');
+  assert.ok(english.includes('Minimum equity'));
+  assert.ok(english.some(text=>text.startsWith('Used margin: 100.00 USD')));
+  assert.match(translate(ctx.explainResearchTrade({...loss,reason:'stop out'}).cause), /forcibly closed/);
   console.log('Research UI: money summaries, full trade pagination, native/fallback fullscreen and Escape PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});

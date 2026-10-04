@@ -541,6 +541,13 @@ class MT5Client:
             except Exception as exc:
                 raise MT5DataError('Broker emir kontrolleri alınamadı.') from exc
 
+    def get_research_margin_rules(self, symbol, volume, low, high):
+        with self._lock:
+            if not self.ensure_connected():
+                raise MT5DataError('MT5 bağlı değil.')
+            login, server = self._selected_account()
+            return self._bridge('research_margin_rules', symbol.upper(), volume, low, high, login, server)
+
     def get_risk_status(self):
         with self._lock:
             if not self.ensure_connected():

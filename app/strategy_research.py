@@ -26,6 +26,7 @@ class Settings:
     initial_capital: float = 10000.0
     contract_size: float | None = None
     currency: str | None = None
+    broker_rules: dict | None = None
 
     def validate(self):
         for key in ('hma_period', 'kama_period', 'kama_fast', 'kama_slow', 'atr_period'):
@@ -49,6 +50,20 @@ class Settings:
         for value in (self.swap_long_points_per_day, self.swap_short_points_per_day):
             if not math.isfinite(value):
                 raise ValueError('Geçersiz swap varsayımı.')
+        if self.broker_rules is not None:
+            rules = self.broker_rules
+            if not self.contract_size or rules.get('mode') not in ('PERCENT', 'MONEY'):
+                raise ValueError('Invalid broker margin model.')
+            if not math.isclose(rules['volume'], self.lot_size):
+                raise ValueError('Margin model lot size mismatch.')
+            for key in ('margin_call', 'stop_out', 'tick_size', 'stops_level_points'):
+                if not math.isfinite(rules[key]) or rules[key] < 0:
+                    raise ValueError('Invalid broker margin settings.')
+            if rules['tick_size'] <= 0 or rules['margin_call'] < rules['stop_out']:
+                raise ValueError('Invalid broker margin thresholds.')
+            for model in rules['models'].values():
+                if not all(math.isfinite(model[key]) for key in ('slope', 'intercept')):
+                    raise ValueError('Invalid broker margin coefficients.')
 
 
 def validate_rates(rows, seconds):
@@ -148,8 +163,12 @@ def run_segment(rows, study, seconds, start, end, settings, wait=0, distance=0,
     """Start flat in each segment; warmup studies use only earlier price bars."""
     trades, candidate, position = [], None, None
     counts = {'crossovers': 0, 'confirmed': 0, 'expired': 0, 'reversed': 0,
-              'filtered_at_deadline': 0}
+              'filtered_at_deadline': 0, 'rejected_margin': 0, 'rejected_stops': 0}
     equity = peak = drawdown = 0.0
+    rules = settings.broker_rules
+    factor = settings.point * settings.contract_size * settings.lot_size if settings.contract_size else None
+    risk = {'stop_outs': 0, 'margin_calls': 0, 'min_equity': settings.initial_capital,
+            'min_margin_level_pct': None, 'max_margin': 0.0}
     hma, kama, er, atr = (study[k] for k in ('hma', 'kama', 'er', 'atr'))
 
     def spread(i):
@@ -162,6 +181,27 @@ def run_segment(rows, study, seconds, start, end, settings, wait=0, distance=0,
         days = max(0, (at // 86400) - (position['entry_time'] // 86400))
         return days * (settings.swap_long_points_per_day if position['side'] == 1 else settings.swap_short_points_per_day)
 
+    def account_mark(price, at):
+        value = settings.initial_capital + (equity + position['side'] * (price-position['entry']) / settings.point
+                    - settings.commission_points - swap(at)) * factor
+        margin = position['margin']
+        level = value / margin * 100
+        risk['min_equity'] = min(risk['min_equity'], value)
+        previous_level = risk['min_margin_level_pct']
+        risk['min_margin_level_pct'] = min(previous_level if previous_level is not None else float('inf'), level)
+        risk['max_margin'] = max(risk['max_margin'], margin)
+        call_metric = level if rules['mode'] == 'PERCENT' else value
+        if call_metric <= rules['margin_call'] and not position.get('margin_call_seen'):
+            risk['margin_calls'] += 1
+            position['margin_call_seen'] = True
+        return value, level
+
+    def stop_out_price(at):
+        floor = position['margin'] * rules['stop_out'] / 100 if rules['mode'] == 'PERCENT' else rules['stop_out']
+        balance = settings.initial_capital + equity * factor
+        return position['entry'] + position['side'] * ((floor-balance) / factor
+                         + settings.commission_points + swap(at)) * settings.point
+
     def finish(price, at, reason, index):
         nonlocal position, equity, peak, drawdown
         net = position['side'] * (price - position['entry']) / settings.point - settings.commission_points - swap(at)
@@ -172,6 +212,13 @@ def run_segment(rows, study, seconds, start, end, settings, wait=0, distance=0,
         costs = {'spread': position['entry_spread'] + exit_spread,
                  'slippage': settings.slippage_points + exit_slip,
                  'commission': settings.commission_points, 'swap': swap(at)}
+        margin_data = None
+        if rules:
+            value, level = account_mark(price, at)
+            margin_data = {'used_margin': position['margin'], 'equity_at_exit': value,
+                           'margin_level_pct_at_exit': level, 'stop_out_threshold': rules['stop_out'],
+                           'stop_out_mode': rules['mode'], 'intrabar_time_approximate': True}
+            risk['stop_outs'] += reason == 'stop out'
         trades.append({'side': 'BUY' if position['side'] == 1 else 'SELL',
                        'crossover_time': position['crossover_time'],
                        'signal_time': position['signal_time'], 'entry_time': position['entry_time'],
@@ -182,6 +229,8 @@ def run_segment(rows, study, seconds, start, end, settings, wait=0, distance=0,
                          'entry_distance_atr': position['entry_distance_atr'],
                          'stop_price': position['stop'], 'target_price': position['target'],
                          'stop_gap': reason == 'stop' and position['side'] * (position['stop'] - (price + position['side'] * exit_slip * settings.point)) > 1e-8}})
+        if margin_data:
+            trades[-1]['diagnostics']['margin'] = margin_data
         equity += net
         if settings.contract_size is not None:
             factor = settings.point * settings.contract_size * settings.lot_size
@@ -236,17 +285,45 @@ def run_segment(rows, study, seconds, start, end, settings, wait=0, distance=0,
 
         # Raw reverse closes the previous position, even if filters reject a new entry.
         nxt = rows[i + 1]
+        # A gap can liquidate an existing position before a new signal is executed.
+        if rules and position:
+            opening = float(nxt['open']) + (spread(i+1)*settings.point if position['side'] == -1 else 0)
+            if position['side'] * (opening-stop_out_price(execution)) <= 0:
+                finish(opening-position['side']*settings.slippage_points*settings.point,
+                       execution, 'stop out', i+1)
         if position and cross and cross != position['side']:
             finish(exit_price(float(nxt['open']), position['side'], i + 1), execution, 'opposite crossover', i + 1)
         if not position and confirmed:
             entry = float(nxt['open']) + ((spread(i + 1) if confirmed == 1 else 0) + confirmed * settings.slippage_points) * settings.point
+            stop = entry - confirmed * settings.stop_atr * atr[i]
+            target = entry + confirmed * settings.target_atr * atr[i] if settings.target_atr else None
+            margin = None
+            if rules:
+                tick = rules['tick_size']
+                stop = round(stop/tick)*tick
+                target = round(target/tick)*tick if target is not None else None
+                quote = float(nxt['open']) + (spread(i+1)*settings.point if confirmed == -1 else 0)
+                minimum = rules['stops_level_points']*settings.point
+                if stop <= 0 or confirmed*(quote-stop) <= 0 or confirmed*(quote-stop) < minimum-1e-8 or (target is not None and (target <= 0 or confirmed*(target-quote) <= 0 or confirmed*(target-quote) < minimum-1e-8)):
+                    counts['rejected_stops'] += 1
+                    continue
+                model = rules['models']['BUY' if confirmed == 1 else 'SELL']
+                margin = model['intercept'] + model['slope']*entry
+                if not math.isfinite(margin) or margin <= 0:
+                    raise ValueError('Invalid simulated margin.')
+                available = settings.initial_capital + equity*factor - settings.commission_points*factor
+                initial_mark = available + confirmed*(quote-entry)/settings.point*factor
+                threshold = margin*rules['stop_out']/100 if rules['mode'] == 'PERCENT' else rules['stop_out']
+                if initial_mark < margin or initial_mark <= threshold or available <= 0:
+                    counts['rejected_margin'] += 1
+                    continue
             position = {'side': confirmed, 'entry': entry, 'entry_time': execution,
+                        'margin': margin,
                         'entry_bid': float(nxt['open']), 'entry_spread': spread(i + 1) if confirmed == 1 else 0,
                         'entry_atr': atr[i], 'entry_er': er[i],
                         'entry_distance_atr': abs(hma[i] - kama[i]) / atr[i],
                         'crossover_time': crossover_time,
-                        'signal_time': decision, 'stop': entry - confirmed * settings.stop_atr * atr[i],
-                        'target': entry + confirmed * settings.target_atr * atr[i] if settings.target_atr else None}
+                        'signal_time': decision, 'stop': stop, 'target': target}
         if not position:
             continue
         side = position['side']
@@ -255,6 +332,17 @@ def run_segment(rows, study, seconds, start, end, settings, wait=0, distance=0,
         low, high, opening = (float(nxt[k]) + quote_offset for k in ('low', 'high', 'open'))
         stop_hit = low <= position['stop'] if side == 1 else high >= position['stop']
         target_hit = position['target'] is not None and (high >= position['target'] if side == 1 else low <= position['target'])
+        if rules:
+            liquidation = stop_out_price(execution + seconds)
+            liquidation_hit = low <= liquidation if side == 1 else high >= liquidation
+            if liquidation_hit and (not stop_hit or side*(liquidation-position['stop']) >= 0):
+                fill = min(opening, liquidation) if side == 1 else max(opening, liquidation)
+                finish(fill-side*settings.slippage_points*settings.point, execution+seconds, 'stop out', i+1)
+                continue
+            # Record risk only up to the first adverse exit, never after a closed stop.
+            adverse = position['stop'] if stop_hit else (low if side == 1 else high)
+            adverse = min(opening, adverse) if side == 1 else max(opening, adverse)
+            account_mark(adverse, execution+seconds)
         if stop_hit:
             fill = min(opening, position['stop']) if side == 1 else max(opening, position['stop'])
             fill -= side * settings.slippage_points * settings.point
@@ -272,7 +360,11 @@ def run_segment(rows, study, seconds, start, end, settings, wait=0, distance=0,
         # Liquidate at the last fully included bar; segments never share positions.
         if position and (i + 2 == len(rows) or rows[i + 2]['time'] >= end):
             finish(exit_price(float(nxt['close']), side, i + 1), execution + seconds, 'segment end', i + 1)
-    return {'stats': stats(trades, drawdown, settings), 'signals': counts, 'trades': trades}
+    summary = stats(trades, drawdown, settings)
+    if rules:
+        summary.update(risk, rejected_margin=counts['rejected_margin'], rejected_stops=counts['rejected_stops'],
+                       margin_model_enabled=True)
+    return {'stats': summary, 'signals': counts, 'trades': trades}
 
 
 def compare(h1, h4, settings=None):
@@ -356,5 +448,5 @@ def compare(h1, h4, settings=None):
                             'commission_points': settings.commission_points,
                             'slippage_points_per_fill': settings.slippage_points,
                             'zero_costs_note': 'Sıfır komisyon/swap/kayma bu maliyetlerin bilinmediği veya sıfır varsayıldığı anlamına gelir.',
-                            'risk_note': 'Her dönem aynı başlangıç sermayesiyle başlar. Sabit lot; teminat, stop-out ve broker SL/TP sınırları simüle edilmez. Parasal bakiye simülasyondur.',
+                            'risk_note': ('Broker teminatı, margin call, stop-out ve minimum stop mesafesi simüle edilir. Güncel broker kuralları geçmişe uygulanır; teminat girişte sabitlenir. Mum içi sıra ve tarihi kural değişiklikleri bilinmez.' if settings.broker_rules else 'Her dönem aynı başlangıç sermayesiyle başlar. Sabit lot; teminat, stop-out ve broker SL/TP sınırları simüle edilmez. Parasal bakiye simülasyondur.'),
                             'live_trading_enabled': False}}
