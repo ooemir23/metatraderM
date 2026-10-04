@@ -17,6 +17,7 @@ Kapsam: veri → gösterge → sinyal → giriş → açık pozisyon riski → �
 | Öncelik | Bulgu / kanıt | Gereken çalışma |
 | --- | --- | --- |
 | P1 | `strategy_research.py`: H1/H4 OHLC kullanılır. Aynı mumdaki stop, hedef ve stop-out olaylarının gerçek sırası bilinmez. Kapatma saatleri mum sonuna yaklaşık atanır; gap açılışında gerçek mum açılışı kullanılır. | Aynı stratejinin MT5 EA karşılığını gerçek tick modunda çalıştırmak; gerçek Bid/Ask, olay sırası ve yürütme gecikmesiyle kıyaslamak. Mevcut rapor bir tick doğrulaması değildir. |
+| P1 | `mt5_bridge.research_rates` kapanmış mum kontrolünde yapılandırılmış broker saat farkını kullanır; ham mum zamanları korunur. Araştırma ekranı bunları UTC etiketiyle gösterir. Brokerın ham timestamp anlamı ayrı doğrulanmamıştır. | Aynı mumun terminal ve API zamanını karşılaştırmak; ham broker zamanını saklayıp görüntüleme için doğrulanmış UTC dönüşümü uygulamak. Seans/rollover/ekonomik takvim bundan sonra bağlanmalı. |
 | P1 | Yeni teminat modeli güncel broker kurallarını geçmiş fiyatlara uygular. Tarihi kaldıraç, seans bazlı teminat artışı, kademeli teminat ve kur dönüşümü değişikliklerinin arşivi yoktur. | Tarihli sözleşme/teminat anlık görüntülerini arşivlemek ve tarihsel kuralları kullanmak. Exchange ve farklı maintenance margin modelleri şu anda açıkça reddedilir. |
 | P1 | `strategy_research.py:swap`: maliyet takvim günü sınırına göre yaklaşık hesaplanır; üçlü swap günü, tatil takvimi ve gerçek rollover saati yoktur. | Broker swap türü, long/short oranı, üçlü gün ve tatil takvimini eklemek; puan/para/yüzde türlerini ayırmak. Oranların zaman içinde değiştiğini kaydetmek. |
 | P1 | Araştırmada komisyon ve kayma kullanıcı girdisidir; varsayılan sıfır gerçek maliyetin sıfır olduğunun kanıtı değildir. | Broker gerçekleşmelerinden komisyon modeli ve yön/lot/seans bazlı kayma dağılımı çıkarmak. Normal ve stres maliyetleriyle sonuçları karşılaştırmak. |
@@ -46,3 +47,13 @@ Emir kimliği ile tekrar gönderimi engelleme; belirsiz emirlerin broker kanıt�
 - [Sembol özellikleri, tick ve teminat](https://www.mql5.com/en/docs/constants/environment_state/marketinfoconstants)
 - [MT5 gerçek tick testinin özellikleri](https://www.metatrader5.com/en/terminal/help/algotrading/testing_features)
 - [MT5 strateji testindeki hesap ve gecikme ayarları](https://www.metatrader5.com/en/terminal/help/algotrading/testing)
+
+## Yayın sonrası doğrulama
+
+4 Ekim'de bağlı Demo hesabından okunan değerler: USD, kaldıraç 1:500, yüzde türünde margin call %100, stop-out %30. Değerler sabit %20 varsayımından gelmez. BUY/SELL için 0,01 lot teminatı MT5 tarafından geçmiş fiyat sınırlarında başarıyla hesaplandı.
+
+2023-10-03–2026-10-03 araştırması, 10.000 USD / 0,01 lot: seçilen adayın holdout döneminde 9 işlem, 0 stop-out, 0 teminat reddi; minimum özkaynak 9.641,92 USD. Normal rapor ve XLSX HTTP 200 ile doğrulandı.
+
+Aynı tarih aralığı, 10 USD / 0,01 lot stres simülasyonu: raporlanan holdout seçeneğinde 4 işlem, 1 stop-out, 2 margin call, 236 teminat reddi; son bakiye 2,60 USD. Bu sayılar araştırma simülasyonudur; Demo hesapta emir açılmadı ve hesabın gerçek sermayesi değiştirilmedi.
+
+Otomatik doğrulama: 220 Python testi ve tüm JavaScript arayüz testleri geçti. Tarayıcıda İngilizce risk kartları, broker eşikleri ve işlem başına teminat/özkaynak açıklaması doğrulandı.
