@@ -8,6 +8,7 @@ from app.mt5_bridge import positions
 
 def broker():
     mt5 = Mock()
+    mt5.symbol_info.return_value = NS(digits=5)
     mt5.positions_get.return_value = [NS(
         ticket=22, identifier=11, symbol='EURUSD', type=0, magic=0,
         volume=.1, price_open=1.1, price_current=1.2, sl=0, tp=0,
@@ -50,3 +51,19 @@ def test_order_position_reads_do_not_request_commission_history():
     mt5 = broker()
     assert positions(mt5)[0]['ticket'] == 22
     mt5.history_deals_get.assert_not_called()
+
+
+@pytest.mark.parametrize('digits', [2, 3, 5])
+def test_positions_report_broker_price_precision(digits):
+    mt5 = broker()
+    mt5.symbol_info.return_value = NS(digits=digits)
+    assert positions(mt5)[0]['digits'] == digits
+    mt5.symbol_info.assert_called_once_with('EURUSD')
+
+
+def test_positions_keep_visible_when_symbol_info_is_unavailable():
+    mt5 = broker()
+    mt5.symbol_info.return_value = None
+    row = positions(mt5)[0]
+    assert row['ticket'] == 22
+    assert row['digits'] == 5
