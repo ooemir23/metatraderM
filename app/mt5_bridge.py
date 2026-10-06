@@ -15,6 +15,7 @@ def positions(mt5, include_commission=False):
         raise RuntimeError('Pozisyonlar okunamadı: ' + str(mt5.last_error()))
     result = []
     for p in rows:
+        symbol_info = mt5.symbol_info(p.symbol)
         # MT5 positions have no commission field; use the stable position identifier
         # to include commissions already charged on its opening/partial-close deals.
         commission = None
@@ -29,6 +30,7 @@ def positions(mt5, include_commission=False):
                  type='BUY' if p.type == 0 else 'SELL', type_raw=int(p.type),
                  magic=int(p.magic), volume=float(p.volume),
                  price_open=float(p.price_open), price_current=float(p.price_current),
+                 digits=int(symbol_info.digits) if symbol_info else 5,
                  sl=float(p.sl), tp=float(p.tp), profit=float(p.profit), swap=float(p.swap),
                  commission=commission,
                  time=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(p.time))))

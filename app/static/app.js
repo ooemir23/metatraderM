@@ -643,12 +643,12 @@ function renderPositionsData(positions) {
           <td class="py-2.5 px-3 font-bold text-white">${p.symbol}</td>
           <td class="py-2.5 px-3">${typeBadge}</td>
           <td class="py-2.5 px-3 text-gray-200 font-semibold">${p.volume}</td>
-          <td class="py-2.5 px-3 text-gray-400">${p.price_open}</td>
-          <td class="py-2.5 px-3 text-white font-semibold">${p.price_current}</td>
-          <td class="py-2.5 px-3 text-gray-500">${p.sl || "-"} / ${p.tp || "-"}</td>
+          <td class="py-2.5 px-3 text-gray-400 whitespace-nowrap tabular-nums">${Number(p.price_open).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
+          <td class="py-2.5 px-3 text-white font-semibold whitespace-nowrap tabular-nums">${Number(p.price_current).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
+          <td class="py-2.5 px-3 text-gray-500 whitespace-nowrap tabular-nums">${p.sl ? Number(p.sl).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "-"} / ${p.tp ? Number(p.tp).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "-"}</td>
           <td class="py-2.5 px-3 text-right text-amber-400 whitespace-nowrap">${p.commission == null ? "—" : `${p.commission > 0 ? "+" : ""}${accountCurrency} ${formatMoney(p.commission)}`}</td>
-          <td class="py-2.5 px-3 text-right font-bold ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(p.profit)}</td>
-          <td class="py-2.5 px-3 text-center">
+          <td class="py-2.5 px-3 text-right font-bold whitespace-nowrap ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(p.profit)}</td>
+          <td class="py-2.5 px-3 text-center whitespace-nowrap">
             <button onclick="showPositionEditor(${p.ticket})" class="px-2 py-1 rounded bg-cyan-500/10 text-cyan-300 text-xs">Yönet</button>
             <button onclick="closePosition(${p.ticket})" class="px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition active:scale-95" title="Kapat">
               Kapat
