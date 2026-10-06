@@ -851,8 +851,8 @@
 
   <!-- BOT SETTINGS MODAL -->
   <div id="bot-settings-modal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
-    <div class="bg-[#151a26] border border-gray-800 rounded-2xl max-w-xl w-full p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
-      <div class="flex items-center justify-between mb-4 pb-2 border-b border-gray-800">
+    <div class="bot-settings-panel bg-[#151a26] border border-gray-800 rounded-2xl w-full p-5 shadow-2xl">
+      <div class="bot-settings-header flex items-center justify-between pb-2 border-b border-gray-800">
         <h3 class="font-bold text-white text-base flex items-center gap-2">
           <i class="ph-bold ph-sliders text-cyan-400"></i>
           HMA / KAMA / ATR Bot Parametreleri
@@ -862,7 +862,10 @@
         </button>
       </div>
 
-      <div class="space-y-3 text-xs">
+      <div class="bot-settings-body text-xs">
+        <p id="bot-research-transfer-note" class="text-amber-300" role="status"></p>
+        <div class="bot-settings-columns">
+        <div class="bot-settings-basics space-y-3">
         <div>
           <label for="cfg-symbol" class="block text-gray-400 mb-1">Hedef Sembol</label>
           <input type="text" id="cfg-symbol" value="EURUSD" class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none">
@@ -899,9 +902,9 @@
             <option value="1">M1</option><option value="5">M5</option><option value="15">M15</option><option value="30">M30</option><option value="60">H1</option><option value="240">H4</option><option value="1440">D1</option>
           </select>
         </div>
+        </div>
         <fieldset class="border border-gray-700 rounded-xl p-3 space-y-2">
           <legend class="px-1 font-semibold text-cyan-300">KAMA ve ATR</legend>
-          <p id="bot-research-transfer-note" class="text-amber-300" role="status"></p>
           <label class="flex items-center gap-2"><input id="cfg-h4-filter" type="checkbox">H1 girişte kapanmış H4 filtresi kullan</label>
           <label class="flex items-center gap-2"><input id="cfg-single-position" type="checkbox" checked>Aynı sembolde tek bot pozisyonu tut</label>
           <div class="grid grid-cols-2 gap-2">
@@ -915,6 +918,7 @@
           <label class="flex items-center gap-2"><input id="cfg-atr-filter" type="checkbox">ER, eğim ve ATR mesafesiyle kesişim onayı kullan</label>
           <p class="text-gray-400">Filtre açıksa süre içinde onay gelmeyen sinyal iptal edilir. Ters kesişim, kapatma seçeneği açıksa mevcut bot pozisyonunu onay beklemeden kapatır. KAMA seçildiğinde ER periyodu yukarıdaki 2. MA periyodudur.</p>
         </fieldset>
+        <div class="bot-settings-exits space-y-3">
         <fieldset class="border border-gray-700 rounded-xl p-3 space-y-2">
           <legend class="px-1 font-semibold text-cyan-300">Stop ve hedef</legend>
           <label class="block">Mesafe hesabı<select id="cfg-risk-mode" class="block w-full rounded bg-gray-800 p-2"><option value="POINTS">Sabit puan</option><option value="ATR">ATR çarpanı</option></select></label>
@@ -932,9 +936,11 @@
           <input type="checkbox" id="cfg-close-opp" checked class="w-4 h-4 rounded bg-[#1c2233] text-cyan-500 focus:ring-0">
           <label for="cfg-close-opp" class="text-gray-300">Ters sinyalde açık pozisyonu otomatik kapat</label>
         </div>
+        </div>
+        </div>
       </div>
 
-      <div class="flex items-center justify-end gap-2 mt-5 pt-3 border-t border-gray-800">
+      <div class="bot-settings-footer flex items-center justify-end gap-2 pt-3 border-t border-gray-800">
         <button onclick="toggleBotSettingsModal()" class="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-semibold">İptal</button>
         <button onclick="saveBotSettings()" class="px-5 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-600 text-black font-bold text-xs shadow-lg shadow-cyan-500/20">Kaydet</button>
       </div>
