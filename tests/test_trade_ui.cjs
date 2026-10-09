@@ -57,5 +57,18 @@ const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:a
   context.confirmAction=async()=>{storage.set('close-intent:99','new');return true};
   await context.clearUncertainOrder();
   assert.equal(storage.get('close-intent:99'),'new','confirmation must not erase a newer request');
+  node('lot-input').value='0.01';
+  node('sl-input').value='1.5';
+  let count=sent.length;
+  await context.submitOrder('SELL');
+  assert.equal(sent.length,count,'fractional stop points rejected instead of silently truncated');
+  node('sl-input').value='200';
+  reply=()=>({ok:true,json:async()=>({success:true,pending:true,request_id:'accepted',retcode:10008,ticket:7})});
+  await context.submitOrder('SELL');
+  const pending=JSON.parse(storage.get('order-intent:EURUSD'));
+  await context.submitOrder('BUY');
+  assert.equal(sent.length,count+1,'accepted pending request must prevent a different order');
+  await context.submitOrder('SELL');
+  assert.equal(sent.at(-1).payload.request_id,pending.request_id,'pending request reuses original identity');
   console.log('Trade safety UI: uncertain intent reuse, invalid lot, partial close and double close PASS');
 })().catch(e=>{console.error(e);process.exitCode=1;});

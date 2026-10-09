@@ -3,6 +3,7 @@
 let currentSymbol = "EURUSD";
 let tvWidget = null;
 let chartSelectionBlocked = false;
+let orderSymbolSource = 'panel';
 let chartSymbolTimer = null;
 let chartSymbolRequest = 0;
 const chartSymbolChecks = new Map();
@@ -41,6 +42,7 @@ function initTradingView(symbol) {
     tvWidget = new TradingView.widget({
       "autosize": true,
       "symbol": tvSymbol,
+      "tvwidgetsymbol": tvSymbol,
       "interval": "15",
       "timezone": "Etc/UTC",
       "theme": "dark",
@@ -72,6 +74,7 @@ function initTradingView(symbol) {
 }
 
 function brokerSymbolForChart(name, exchange, type) {
+  name = name.split(':').pop();
   if (['CRYPTOCAP', 'ECONOMICS', 'INDEX'].includes(exchange)) return null;
   if (type && !['forex', 'crypto', 'cfd', 'index'].includes(type)) return null;
   const aliases = {BTCUSDT:'BTCUSD', BTCUSD:'BTCUSD', DJI:'US30'};
@@ -80,19 +83,28 @@ function brokerSymbolForChart(name, exchange, type) {
 }
 
 function applyChartSymbol(name, exchange, type) {
+  name = name.split(':').pop();
+  // Replace a market-cap measurement with the executable Bitcoin price chart.
+  if (exchange === 'CRYPTOCAP' && ['BITCOIN', 'BTC'].includes(name)) {
+    switchSymbol('BTCUSD');
+    setOrderNotice('BTCUSD', 'Bitcoin işlem grafiği seçildi',
+      'Piyasa değeri yerine BTC fiyat grafiğine geçildi. Emirler MT5 BTCUSD sembolüne gönderilir; henüz emir gönderilmedi.', 'neutral');
+    return;
+  }
   const brokerSymbol = brokerSymbolForChart(name, exchange, type);
   if (brokerSymbol) {
     if (brokerSymbol !== currentSymbol || chartSelectionBlocked) switchSymbol(brokerSymbol, false);
     return;
   }
   chartSelectionBlocked = true;
+  orderSymbolSource = 'chart';
+  updateOrderButtons();
   document.getElementById('current-symbol-title').textContent = `${exchange}:${name} · MT5 eşleşmesi yok`;
   document.getElementById('order-symbol-tag').textContent = `${name} · İşlem kapalı`;
   clearSymbolPrices();
   const preview = document.getElementById('trade-preview');
   if (preview) preview.textContent = 'Grafik ürünü MT5 sembolüyle eşleşmiyor; emir girişi kapalı.';
-  setOrderNotice(currentSymbol, 'Grafik ürünü eşleşmiyor',
-    'Seçilen TradingView ürünü panelin MT5 sembolleriyle eşleşmiyor. Emir göndermek için panelden bir sembol seçin.', 'error');
+  renderOrderNotice();
 }
 
 window.addEventListener('message', event => {
@@ -116,6 +128,10 @@ window.addEventListener('message', event => {
 });
 
 async function verifyChartOrderSymbol() {
+  if (chartSelectionBlocked) return false;
+  // Explicit MT5 selections remain usable if the third-party chart is offline.
+  // Broker identity, quote freshness and risk checks still run server-side.
+  if (orderSymbolSource === 'panel') return true;
   if (!tvWidget) return !chartSelectionBlocked;
   const symbol = currentSymbol, widget = tvWidget;
   const frame = document.getElementById(widget.id);
@@ -131,9 +147,22 @@ async function verifyChartOrderSymbol() {
 }
 
 function clearSymbolPrices() {
+  if (typeof displayedTickTime !== 'undefined') displayedTickTime = 0;
+  if (typeof displayedQuoteStatus !== 'undefined') displayedQuoteStatus = null;
+  if (typeof updateQuoteStatus === 'function') updateQuoteStatus();
   for (const id of ['header-bid', 'header-ask', 'header-spread', 'btn-bid-price', 'btn-ask-price']) {
     const node = document.getElementById(id);
     if (node) node.textContent = '—';
+  }
+}
+
+function updateOrderButtons() {
+  for (const id of ['order-buy-btn', 'order-sell-btn']) {
+    const button = document.getElementById(id);
+    if (button) {
+      button.disabled = chartSelectionBlocked || orderPending;
+      button.title = chartSelectionBlocked ? 'Önce bir MT5 işlem sembolü seçin.' : `${currentSymbol} · ${id === 'order-buy-btn' ? 'Alış' : 'Satış'}`;
+    }
   }
 }
 
@@ -482,7 +511,11 @@ function initPositionsTopResizer() {
 // Switch Active Symbol
 function switchSymbol(symbol, reloadChart = true) {
   chartSelectionBlocked = false;
+  orderSymbolSource = reloadChart ? 'panel' : 'chart';
   currentSymbol = symbol;
+  const selector = document.getElementById('order-symbol-select');
+  if (selector) selector.value = symbol;
+  updateOrderButtons();
   clearSymbolPrices();
   if (typeof startLiveFeed === "function") startLiveFeed();
   renderOrderNotice();
@@ -1305,7 +1338,9 @@ async function clearUncertainOrder() {
 function renderOrderNotice(flash = false) {
   const box = document.getElementById("order-notice");
   if (!box) return;
-  const notice = orderNotices.get(currentSymbol) || {
+  const notice = chartSelectionBlocked ? {
+    title: 'Grafikteki ürün için MT5 eşleşmesi yok', message: 'Al/Sat için hızlı emir bölümündeki MT5 sembolünü seçin. Grafik ürünü işlem hesabında eşlenemedi.', tone: 'error'
+  } : orderNotices.get(currentSymbol) || {
     title: "İşlem durumu", message: "Emir sonucu ve işlem uyarıları burada gösterilir.", tone: "neutral"
   };
   refreshOrderRecovery();
@@ -1369,10 +1404,12 @@ function orderErrorMessage(data) {
 // Submit Buy/Sell Order
 async function submitOrder(type) {
   if (orderPending) return;
-  if (!await verifyChartOrderSymbol()) {
+  const selectedSymbol = currentSymbol;
+  if (orderSymbolSource === 'chart' && !await verifyChartOrderSymbol()) {
     setOrderNotice(currentSymbol, 'Grafik sembolünü kontrol edin', 'Grafik ve emir sembolü doğrulanamadı veya değişti. Sembolü kontrol edip yeniden deneyin; emir gönderilmedi.', 'error');
     return;
   }
+  if (currentSymbol !== selectedSymbol) return;
   if (chartSelectionBlocked) {
     setOrderNotice(currentSymbol, 'Grafik ürünü eşleşmiyor', 'Emir göndermek için panelden bir MT5 sembolü seçin.', 'error');
     return;
@@ -1385,8 +1422,12 @@ async function submitOrder(type) {
     setOrderNotice(symbol, "Geçersiz lot", "Sıfırdan büyük bir lot miktarı girin.", "error");
     return;
   }
-  const sl = parseInt(document.getElementById("sl-input").value) || 0;
-  const tp = parseInt(document.getElementById("tp-input").value) || 0;
+  const sl = Number(document.getElementById('sl-input').value);
+  const tp = Number(document.getElementById('tp-input').value);
+  if (![sl, tp].every(value => Number.isInteger(value) && value >= 0)) {
+    setOrderNotice(symbol, 'Geçersiz SL / TP', 'Stop Loss ve Take Profit sıfır veya pozitif tam sayı olmalı.', 'error');
+    return;
+  }
   let intent;
   try {
     const stored = localStorage.getItem("order-intent:" + symbol);
@@ -1415,7 +1456,7 @@ async function submitOrder(type) {
       body: JSON.stringify(intent)
     });
     const data = await res.json();
-    if ((data.request_id && !data.uncertain) || data.reason_code === "trading_halted")
+    if ((data.request_id && !data.uncertain && !data.pending) || data.reason_code === "trading_halted")
       localStorage.removeItem("order-intent:" + symbol);
     if (res.ok && data.success) {
       const title = data.partial ? "Emir kısmen gerçekleşti" : (data.retcode === 10008 ? "Emir kabul edildi" : "Emir gerçekleşti");
@@ -1433,7 +1474,7 @@ async function submitOrder(type) {
   } finally {
     orderPending = false;
     refreshOrderRecovery();
-    buttons.forEach(btn => { if (btn) btn.disabled = false; });
+    updateOrderButtons();
   }
 }
 

@@ -621,6 +621,13 @@
             <span id="order-symbol-tag" class="text-xs px-2 py-0.5 rounded bg-gray-800 text-emerald-400 font-mono font-bold">EURUSD</span>
           </div>
 
+          <label for="order-symbol-select" class="block text-[11px] font-semibold text-gray-400 mb-1">MT5 işlem sembolü</label>
+          <select id="order-symbol-select" onchange="switchSymbol(this.value)" class="w-full mb-2 bg-[#181d2a] border border-gray-700 rounded-lg px-2.5 py-1.5 text-white text-sm">
+            <option value="EURUSD">EURUSD</option><option value="XAUUSD">XAUUSD · Altın</option>
+            <option value="GBPUSD">GBPUSD</option><option value="USDJPY">USDJPY</option>
+            <option value="BTCUSD">BTCUSD · Bitcoin</option><option value="US30">US30</option>
+          </select>
+
           <!-- Lot Size Selector -->
           <div class="mb-2">
             <label class="block text-[11px] font-semibold text-gray-400 mb-1">İşlem Hacmi (Lot)</label>
