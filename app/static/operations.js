@@ -2,12 +2,37 @@
 let previewTimer;
 let previewSide = 'BUY';
 let previewGeneration = 0;
+let latestStopGuidance = null;
 function tradePreviewIdentity() {
   const symbol = window.currentSymbol || currentSymbol;
   const volume = Number(document.getElementById('lot-input')?.value);
   const sl_points = Number(document.getElementById('sl-input')?.value);
-  return {symbol, volume, sl_points, side:previewSide,
-    key:JSON.stringify([symbol, previewSide, volume, sl_points])};
+  const tp_points = Number(document.getElementById('tp-input')?.value || 0);
+  return {symbol, volume, sl_points, tp_points, side:previewSide,
+    key:JSON.stringify([symbol, previewSide, volume, sl_points, tp_points])};
+}
+function renderStopGuidance(guidance, identity) {
+  const label = document.getElementById('stop-distance-guidance');
+  const button = document.getElementById('apply-stop-minimum');
+  const valid = guidance && ['min_sl_points','min_tp_points','point','spread_points'].every(k => Number.isFinite(guidance[k])) && guidance.point > 0;
+  latestStopGuidance = valid ? {guidance, key:identity.key, at:Date.now()} : null;
+  if (label) label.textContent = valid
+    ? `${identity.symbol}: 1 puan = ${guidance.point} fiyat birimi. Spread ${guidance.spread_points} puan. 1 puan payla SL en az ${guidance.min_sl_points}, TP en az ${guidance.min_tp_points} puan (0 = yok). SL genişlerse olası kayıp artar.`
+    : '';
+  if (button) button.hidden = !valid || !((identity.sl_points > 0 && identity.sl_points < guidance.min_sl_points) || (identity.tp_points > 0 && identity.tp_points < guidance.min_tp_points));
+}
+function applyStopMinimum() {
+  const identity = tradePreviewIdentity(), saved = latestStopGuidance;
+  if (!saved || saved.key !== identity.key || Date.now()-saved.at > 15000 || (typeof chartSelectionBlocked !== 'undefined' && chartSelectionBlocked)) {
+    scheduleTradePreview();
+    return;
+  }
+  for (const [id, minimum] of [['sl-input',saved.guidance.min_sl_points],['tp-input',saved.guidance.min_tp_points]]) {
+    const input = document.getElementById(id), value = Number(input.value);
+    if (value > 0 && value < minimum) input.value = String(minimum);
+  }
+  renderStopGuidance(null, identity);
+  scheduleTradePreview(); // Recalculate the changed risk. Never send an order.
 }
 function scheduleTradePreview(side) {
   if (side) previewSide = side;
@@ -25,7 +50,8 @@ async function refreshTradePreview(scheduledGeneration) {
   if (scheduledGeneration === undefined) clearTimeout(previewTimer);
   const generation = scheduledGeneration === undefined ? ++previewGeneration : scheduledGeneration;
   if (generation !== previewGeneration) return;
-  const {symbol, volume, sl_points, side, key} = tradePreviewIdentity();
+  const identity = tradePreviewIdentity();
+  const {symbol, volume, sl_points, tp_points, side, key} = identity;
   if (!Number.isFinite(volume) || volume <= 0 || !Number.isInteger(sl_points) || sl_points < 0) {
     label.textContent = 'Geçerli lot ve stop mesafesi girin.';
     return;
@@ -34,11 +60,14 @@ async function refreshTradePreview(scheduledGeneration) {
   // loading message makes the order card jump whenever the pointer moves.
   const isCurrent = () => generation === previewGeneration && tradePreviewIdentity().key === key
     && !(typeof chartSelectionBlocked !== 'undefined' && chartSelectionBlocked);
+  let receivedGuidance = false;
   try {
     const response = await fetch('/api/trade/preview', {method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({symbol,order_type:side,volume,sl_points})});
+      body:JSON.stringify({symbol,order_type:side,volume,sl_points,tp_points})});
     const result = await response.json();
     if (!isCurrent()) return;
+    renderStopGuidance(result.stop_guidance, identity);
+    receivedGuidance = !!result.stop_guidance;
     if (!response.ok || !result.success) throw new Error(result.detail || result.error || 'Risk verisi alınamadı.');
     const money = n => `${Number(n).toLocaleString(window.MT5I18n?.language() === 'en' ? 'en-US' : 'tr-TR', {maximumFractionDigits:2})} ${result.currency}`;
     const en = window.MT5I18n?.language() === 'en';
@@ -58,11 +87,14 @@ async function refreshTradePreview(scheduledGeneration) {
       : ' · Tahmin: komisyon, swap ve kayma hariç. Gerçek zarar bu tutarı aşabilir.';
     label.textContent = message;
   } catch (error) {
-    if (isCurrent()) label.textContent = error.message || 'Risk verisi doğrulanamadı.';
+    if (isCurrent()) {
+      if (!receivedGuidance) renderStopGuidance(null, identity);
+      label.textContent = error.message || 'Risk verisi doğrulanamadı.';
+    }
   }
 }
 document.addEventListener('DOMContentLoaded', () => {
-  for (const id of ['lot-input','sl-input']) document.getElementById(id)?.addEventListener('input', () => scheduleTradePreview());
+  for (const id of ['lot-input','sl-input','tp-input']) document.getElementById(id)?.addEventListener('input', () => scheduleTradePreview());
   document.getElementById('order-buy-btn')?.addEventListener('mouseenter', () => { if (previewSide !== 'BUY') scheduleTradePreview('BUY'); });
   document.getElementById('order-sell-btn')?.addEventListener('mouseenter', () => { if (previewSide !== 'SELL') scheduleTradePreview('SELL'); });
   scheduleTradePreview('BUY');

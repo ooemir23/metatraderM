@@ -158,6 +158,7 @@ async function verifyChartOrderSymbol() {
 }
 
 function clearSymbolPrices() {
+  if (typeof renderStopGuidance === 'function') renderStopGuidance(null, tradePreviewIdentity());
   if (typeof displayedTickTime !== 'undefined') displayedTickTime = 0;
   if (typeof displayedQuoteStatus !== 'undefined') displayedQuoteStatus = null;
   if (typeof updateQuoteStatus === 'function') updateQuoteStatus();

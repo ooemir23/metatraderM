@@ -510,7 +510,7 @@ class MT5Client:
             raise MT5DataError("Aktif MT5 hesabı, sunucusu veya türü kayıtlı seçimle uyuşmuyor; işlem engellendi.")
         return active[:2]
 
-    def trade_preview(self, symbol, order_type, volume, sl_points=0, pending_type=None, entry_price=None):
+    def trade_preview(self, symbol, order_type, volume, sl_points=0, pending_type=None, entry_price=None, tp_points=0):
         with self._lock:
             if self.journal.trading_halted():
                 return {'success': False, 'error': 'Yeni emirler güvenlik kilidi nedeniyle durduruldu.'}
@@ -522,7 +522,7 @@ class MT5Client:
                                     pending_type, entry_price, login, server, self.tick_clock_offset,
                                     self.effective_daily_loss_limit(login, server),
                                     self.journal.daily_limit_enabled(login, server), self.max_order_lots,
-                                    self.max_total_lots, self.max_open_orders)
+                                    self.max_total_lots, self.max_open_orders, tp_points)
             except (MT5DataError, Exception) as exc:
                 return {'success': False, 'error': str(exc)}
 

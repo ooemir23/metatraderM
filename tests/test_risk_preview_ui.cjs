@@ -7,6 +7,9 @@ const assert = require('node:assert/strict');
     ['trade-preview', {textContent:'Previous broker estimate'}],
     ['lot-input', {value:'0.01'}],
     ['sl-input', {value:'200'}],
+    ['tp-input', {value:'400'}],
+    ['stop-distance-guidance', {textContent:''}],
+    ['apply-stop-minimum', {hidden:true}],
   ]);
   const requests = [];
   let nextTimer = 0;
@@ -46,5 +49,16 @@ const assert = require('node:assert/strict');
     margin_required:8,spread_points:3,existing_stop_risk:0,daily_loss:0,positions_without_stop:0})});
   await third;
   assert.match(label.textContent,/Stop risk 6 USD/);
+  const invalid=context.refreshTradePreview();
+  requests[3].resolve({ok:false,json:async()=>({success:false,error:'SL mesafesi uygun değil',stop_guidance:{point:.01,spread_points:1400,min_sl_points:1401,min_tp_points:1}})});
+  await invalid;
+  assert.equal(nodes.get('apply-stop-minimum').hidden,false);
+  assert.match(nodes.get('stop-distance-guidance').textContent,/1401/);
+  assert.equal(nodes.get('sl-input').value,'200','no automatic stop change');
+  const sentBefore=requests.length;
+  context.applyStopMinimum();
+  assert.equal(nodes.get('sl-input').value,'1401');
+  assert.equal(nodes.get('tp-input').value,'400','already valid TP stays unchanged');
+  assert.equal(requests.length,sentBefore,'applying distances must not send an order');
   console.log('Risk preview UI: stable refresh and stale response protection PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});

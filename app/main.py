@@ -273,6 +273,7 @@ class PreviewRequest(BaseModel):
     order_type: Literal["BUY", "SELL"]
     volume: float = Field(gt=0, allow_inf_nan=False)
     sl_points: int = Field(ge=0)
+    tp_points: int = Field(default=0, ge=0)
     pending_type: Optional[Literal["BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP"]] = None
     entry_price: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
 
@@ -547,7 +548,7 @@ def pending_orders():
 @app.post("/api/trade/preview")
 def trade_preview(req: PreviewRequest):
     result = mt5_client.trade_preview(req.symbol, req.order_type, req.volume,
-                                      req.sl_points, req.pending_type, req.entry_price)
+                                      req.sl_points, req.pending_type, req.entry_price, tp_points=req.tp_points)
     return trade_response(result)
 
 

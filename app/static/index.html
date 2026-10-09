@@ -663,6 +663,8 @@
             <div class="flex items-center justify-between gap-2"><strong class="text-cyan-200">İşlem öncesi risk</strong><button type="button" onclick="refreshTradePreview()" class="text-cyan-300 underline">Hesapla</button></div>
             <p id="trade-preview" role="status" class="mt-1 text-gray-300">Yön ve lot seçildiğinde broker verileriyle hesaplanır.</p>
           </div>
+          <p id="stop-distance-guidance" class="text-[11px] text-amber-200 mb-2" role="status"></p>
+          <button id="apply-stop-minimum" type="button" hidden onclick="applyStopMinimum()" class="mb-2 rounded-lg border border-amber-700/50 px-2 py-1 text-[11px] text-amber-200" title="Yalnızca yetersiz mesafeleri yükseltir; SL'yi genişletmek olası kaybı artırır. Emir göndermez.">Yetersiz SL/TP’yi minimuma yükselt · Emir göndermez</button>
           <button id="trading-halt-message" type="button" onclick="openTradingRiskDialog()" class="hidden mb-2 w-full rounded-lg border border-amber-700/50 bg-amber-950/30 px-2 py-1.5 text-left text-[11px] text-amber-200 hover:bg-amber-900/40" aria-haspopup="dialog">İşlem riski yükleniyor…</button>
           <!-- BIG BUY & SELL BUTTONS -->
           <div class="grid grid-cols-2 gap-2.5">

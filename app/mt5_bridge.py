@@ -130,16 +130,31 @@ def risk_status(mt5, expected_login, expected_server, daily_loss_limit, tick_off
             'open_positions':len(current), 'pending_orders':len(pending)}
 
 
+def stop_guidance(info, tick, pending_type=None):
+    spread = 0 if pending_type else (float(tick.ask) - float(tick.bid)) / info.point
+    stops = float(info.trade_stops_level)
+    return {'point': float(info.point), 'spread_points': round(spread, 3),
+            'stops_level_points': stops,
+            'min_sl_points': max(1, math.ceil(spread + stops - 1e-7) + 1),
+            'min_tp_points': max(1, math.ceil(stops - spread - 1e-7) + 1)}
+
+
+def stop_distance_error(symbol, guidance):
+    return (f"SL/TP broker stop mesafesine veya spread mesafesine uymuyor. {symbol}: "
+            f"spread {guidance['spread_points']:g} puan; SL için en az {guidance['min_sl_points']} puan, "
+            f"TP için en az {guidance['min_tp_points']} puan girin. 0 korumayı kaldırır.")
+
+
 def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entry_price,
                   expected_login, expected_server, tick_offset=0, daily_loss_limit=None,
                   enforce_daily_limit=True, max_order_lots=None, max_total_lots=None,
-                  max_open_orders=None):
+                  max_open_orders=None, tp_points=0):
     """Broker-calculated figures only; unknown values remain unknown."""
     try:
         account, current, pending, realized, floating = risk(mt5, tick_offset)
         if int(account.login) != expected_login or str(account.server) != expected_server:
             raise ValueError('Aktif hesap değişti; risk önizlemesi geçersiz.')
-        if order_type not in ('BUY', 'SELL') or not math.isfinite(volume) or volume <= 0 or sl_points < 0:
+        if order_type not in ('BUY', 'SELL') or not math.isfinite(volume) or volume <= 0 or sl_points < 0 or tp_points < 0:
             raise ValueError('Geçersiz emir parametresi.')
         loss = max(0.0, -(realized + min(0.0, floating)))
         if enforce_daily_limit and daily_loss_limit is not None and (
@@ -172,11 +187,16 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
             if gap <= 0 or gap + info.point*1e-5 < info.trade_stops_level*info.point:
                 raise ValueError('Bekleyen emir fiyatı broker mesafesine uymuyor.')
         sl = round(price + (-1 if order_type == 'BUY' else 1) * sl_points * info.point, info.digits) if sl_points else 0
+        guidance = stop_guidance(info, tick, pending_type)
+        tp = round(price + (1 if order_type == 'BUY' else -1) * tp_points * info.point, info.digits) if tp_points else 0
+        exit_price = price if pending_type else float(tick.bid if order_type == 'BUY' else tick.ask)
+        if tp and (tp-exit_price if order_type == 'BUY' else exit_price-tp) < float(info.trade_stops_level)*info.point:
+            return {'success': False, 'error': stop_distance_error(symbol, guidance), 'stop_guidance': guidance}
         if sl:
             exit_price = price if pending_type else float(tick.bid if order_type == 'BUY' else tick.ask)
             stop_distance = exit_price - sl if order_type == 'BUY' else sl - exit_price
             if stop_distance < float(info.trade_stops_level) * info.point:
-                raise ValueError('SL broker stop mesafesine veya spread mesafesine uymuyor.')
+                return {'success': False, 'error': 'SL broker mesafesi uygun değil. ' + stop_distance_error(symbol, guidance), 'stop_guidance': guidance}
         broker_type = 0 if order_type == 'BUY' else 1
         calc_profit = getattr(mt5, 'order_calc_profit', None)
         calc_margin = getattr(mt5, 'order_calc_margin', None)
@@ -208,7 +228,7 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
                 'free_margin': float(account.margin_free), 'spread_points': round((tick.ask-tick.bid)/info.point, 1),
                 'existing_stop_risk': round(existing_risk, 2), 'positions_without_stop': unprotected,
                 'daily_loss': round(loss, 2), 'pending_orders': len(pending),
-                'commission_included': False, 'quote_time': int(tick.time)-tick_offset}
+                'commission_included': False, 'quote_time': int(tick.time)-tick_offset, 'stop_guidance': guidance}
     except Exception as exc:
         return {'success': False, 'error': str(exc)}
 
@@ -389,7 +409,8 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
         minimum = float(info.trade_stops_level) * info.point
         if ((sl and ((exit_price-sl if buy else sl-exit_price) < minimum)) or
                 (tp and ((tp-exit_price if buy else exit_price-tp) < minimum))):
-            return {'success': False, 'error': 'SL/TP broker stop mesafesine veya spread mesafesine uymuyor.'}
+            guidance = stop_guidance(info, tick, pending_type)
+            return {'success': False, 'error': stop_distance_error(symbol, guidance), 'stop_guidance': guidance}
         request = dict(action=1, symbol=symbol, volume=volume, type=0 if buy else 1,
                        price=price, sl=sl, tp=tp, deviation=20, magic=magic,
                        comment=comment[:31], type_time=0)

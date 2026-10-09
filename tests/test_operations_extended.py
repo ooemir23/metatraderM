@@ -8,6 +8,7 @@ from types import SimpleNamespace as NS
 from app import security_sessions
 from app.backtest import simulate
 from app.mt5_bridge import trade_preview, symbol_spec, broker_compatibility, risk_status
+import pytest
 from app.order_journal import OrderJournal
 from test_trade_safety import client
 
@@ -139,3 +140,30 @@ def test_rejected_order_event_preserves_reason_across_restart(tmp_path):
     assert event['detail'] == reason and event['symbol'] == 'EURUSD'
     restarted.event('warning', 'connection', 'MT5 connection lost')
     assert restarted.events()[-1]['detail'] is None
+
+
+@pytest.mark.parametrize('side', ['BUY', 'SELL'])
+def test_bitcoin_spread_returns_actionable_stop_guidance_without_sending(client, side):
+    client.mt5.account_info.return_value.equity = 1000
+    client.mt5.account_info.return_value.margin_free = 800
+    info = client.mt5.symbol_info.return_value
+    info.point = .01
+    info.digits = 2
+    info.trade_stops_level = 0
+    tick = client.mt5.symbol_info_tick.return_value
+    tick.bid, tick.ask = 82462.5, 82476.5
+    client.mt5.order_calc_profit.return_value = -14.01
+    client.mt5.order_calc_margin.return_value = 100
+    invalid = trade_preview(client.mt5, 'BTCUSD', side, .01, 200, None, None, 1, 'test', tp_points=400)
+    assert not invalid['success']
+    guidance = invalid['stop_guidance']
+    assert guidance['min_sl_points'] == 1401
+    assert guidance['min_tp_points'] == 1  # TP uses the opposite side; not SL's spread + stops rule.
+    valid = trade_preview(client.mt5, 'BTCUSD', side, .01, 1401, None, None, 1, 'test', tp_points=400)
+    assert valid['success'], valid
+    assert valid['stop_risk'] == 14.01
+    info.trade_stops_level = 5000
+    rejected_tp = trade_preview(client.mt5, 'BTCUSD', side, .01, 6401, None, None, 1, 'test', tp_points=400)
+    assert not rejected_tp['success']
+    assert rejected_tp['stop_guidance']['min_tp_points'] == 3601
+    client.mt5.order_send.assert_not_called()
