@@ -18,6 +18,10 @@ function scheduleTradePreview(side) {
 async function refreshTradePreview(scheduledGeneration) {
   const label = document.getElementById('trade-preview');
   if (!label) return;
+  if (typeof chartSelectionBlocked !== 'undefined' && chartSelectionBlocked) {
+    label.textContent = 'Grafik ürünü MT5 sembolüyle eşleşmiyor; emir girişi kapalı.';
+    return;
+  }
   if (scheduledGeneration === undefined) clearTimeout(previewTimer);
   const generation = scheduledGeneration === undefined ? ++previewGeneration : scheduledGeneration;
   if (generation !== previewGeneration) return;
@@ -28,7 +32,8 @@ async function refreshTradePreview(scheduledGeneration) {
   }
   // Leave the last result visible while refreshing; replacing it with a short
   // loading message makes the order card jump whenever the pointer moves.
-  const isCurrent = () => generation === previewGeneration && tradePreviewIdentity().key === key;
+  const isCurrent = () => generation === previewGeneration && tradePreviewIdentity().key === key
+    && !(typeof chartSelectionBlocked !== 'undefined' && chartSelectionBlocked);
   try {
     const response = await fetch('/api/trade/preview', {method:'POST', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({symbol,order_type:side,volume,sl_points})});

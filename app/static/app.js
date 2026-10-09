@@ -89,6 +89,8 @@ function applyChartSymbol(name, exchange, type) {
   document.getElementById('current-symbol-title').textContent = `${exchange}:${name} · MT5 eşleşmesi yok`;
   document.getElementById('order-symbol-tag').textContent = `${name} · İşlem kapalı`;
   clearSymbolPrices();
+  const preview = document.getElementById('trade-preview');
+  if (preview) preview.textContent = 'Grafik ürünü MT5 sembolüyle eşleşmiyor; emir girişi kapalı.';
   setOrderNotice(currentSymbol, 'Grafik ürünü eşleşmiyor',
     'Seçilen TradingView ürünü panelin MT5 sembolleriyle eşleşmiyor. Emir göndermek için panelden bir sembol seçin.', 'error');
 }
@@ -498,6 +500,7 @@ function switchSymbol(symbol, reloadChart = true) {
 
   if (reloadChart) initTradingView(symbol);
   fetchPrice();
+  if (typeof scheduleTradePreview === 'function') scheduleTradePreview();
 }
 
 let currentPositionTab = "open";
