@@ -38,6 +38,14 @@ const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:a
   assert.match(html,/USD 3\.855,00/,'whole lifetime includes opening commission');
   assert.match(html,/&lt;script&gt;/);
   assert.doesNotMatch(html,/<script>/);
+  assert.match(html,/Açılış spreadi ve slippage/);
+  assert.match(html,/Ölçülemiyor/);
+  const measured=context.renderHistoryDetails({...details,execution_quality:{state:'recorded',opening_spread_points:20,
+    requested_price:4178.40,fill_price:4178.37,opening_bid:4178.40,opening_ask:4178.60,slippage_points:3}},2);
+  assert.match(measured,/20 puan/);
+  assert.match(measured,/Aleyhe/);
+  assert.match(measured,/4\.178,40/);
+  assert.match(measured,/Kapanış spreadi ve slippage için kayıtlı gönderim kotasyonu bulunmuyor/);
   const reversed=context.renderHistoryDetails({...details,deals:[...details.deals,{...details.deals[2],entry:2}]},2);
   assert.match(reversed,/Tersine dönüş var/);
   assert.match(reversed,/Tersine dönüş<span/);

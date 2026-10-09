@@ -802,6 +802,17 @@ function renderHistoryDetails(data, selectedTicket) {
     return `<div class="bg-[#1c2230] rounded-xl p-4"><div class="text-gray-400 text-xs mb-2">${label}${rows.length > 1 ? ' · Lot ağırlıklı ortalama' : ''}</div><div class="font-bold ${rows[0].type === 0 ? 'text-emerald-400' : 'text-rose-400'}">${side(rows[0].type)}</div><div class="text-xl font-mono text-white mt-1">${average === null ? '—' : price(average)}</div><div class="text-xs text-gray-400 mt-2">${times}<br>${volume} lot · ${rows.length} hareket</div></div>`;
   };
   const entryLabel = entry => ({0:'Açılış / artırma', 1:'Kapanış / azaltma', 2:'Tersine dönüş', 3:'Karşı pozisyonla kapanış'}[entry] || 'Diğer');
+  const quality = data.execution_quality || {};
+  const recorded = quality.state === 'recorded';
+  const observedPrice = value => typeof value === 'number' && Number.isFinite(value) ? price(value) : 'Ölçülemiyor';
+  const executionCard = (label, value) => `<div class="bg-[#1c2230] rounded-xl p-3"><div class="text-gray-400 mb-1">${label}</div><div class="font-mono text-gray-100">${value}</div></div>`;
+  const executionDetails = `<div class="border border-gray-700 rounded-xl p-4 mb-4"><div class="text-sm font-bold mb-3">Açılış spreadi ve slippage</div>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mb-3">
+      ${executionCard('Spread (emir gönderimi)', recorded ? executionPoints(quality.opening_spread_points) : 'Ölçülemiyor')}
+      ${executionCard('İstenen açılış fiyatı', observedPrice(quality.requested_price))}
+      ${executionCard('Gerçekleşen açılış fiyatı', observedPrice(quality.fill_price))}
+      ${executionCard('Açılış slippage', recorded ? slippageText(quality.slippage_points) : 'Ölçülemiyor')}
+    </div><p class="text-xs text-gray-400">${recorded ? `Gönderim Bid / Ask: ${observedPrice(quality.opening_bid)} / ${observedPrice(quality.opening_ask)}. Birden fazla açılışta lot ağırlıklı ortalamalar gösterilir.` : 'Bu pozisyonun açılış kotasyonu güvenle eşlenemedi; eksik spread ve slippage sıfır varsayılmaz.'} Kapanış spreadi ve slippage için kayıtlı gönderim kotasyonu bulunmuyor. Pozisyonun broker gerçekleşme fiyatları aşağıdadır.</p></div>`;
   const rows = deals.map(d => `<tr class="border-b border-gray-700/50 ${Number(d.ticket) === selectedTicket ? 'bg-cyan-500/10' : ''}">
     <td class="p-3 whitespace-nowrap">#${d.ticket}${Number(d.ticket) === selectedTicket ? '<span class="block text-cyan-400 text-[10px]">Seçilen kapanış</span>' : ''}</td>
     <td class="p-3 whitespace-nowrap">${escapeHtml(d.time_text)}</td>
@@ -818,6 +829,7 @@ function renderHistoryDetails(data, selectedTicket) {
       <div>Toplam swap / diğer ücret<div class="text-gray-300 mt-1">${money(sum('swap') + sum('fee'))}</div></div>
     </div>
     <p class="text-xs text-gray-400 mb-4">Tüm pozisyon hareketleri aşağıda gösterilir. Net tutarlar açılış ve kapanış maliyetlerini içerir; kısmi kapanışlarda pozisyonun tamamı kapanmış olmayabilir. Saatler broker geçmişindeki saatlerdir.</p>
+    ${executionDetails}
     <div class="overflow-x-auto"><table class="w-full text-xs text-left"><thead class="text-gray-400 bg-[#1c2230]"><tr><th class="p-3">Bilet</th><th class="p-3">Zaman</th><th class="p-3">Hareket / yön</th><th class="p-3 text-right">Lot</th><th class="p-3 text-right">Fiyat</th><th class="p-3 text-right">Net</th><th class="p-3">Açıklama</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 

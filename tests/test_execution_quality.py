@@ -160,3 +160,31 @@ def test_account_change_during_positions_read_rejects_mixed_data(client):
     from app.mt5_client import MT5DataError
     with pytest.raises(MT5DataError):
         client.get_positions(include_commission=True)
+
+
+def test_closed_position_details_reuse_persisted_submission_quote(client, monkeypatch):
+    from test_history_direction import detail_deal
+    opening = detail_deal(1, 0, 1, 5, 1780000000)
+    opening.magic = MANUAL_MAGIC
+    client.mt5.history_deals_get.return_value = [opening, detail_deal(2, 1, 0, 5, 1791550590)]
+    from unittest.mock import Mock
+    records = Mock(return_value={101: dict(order=dict(symbol='XAUUSD', magic=MANUAL_MAGIC, type=1),
+        execution=dict(kind='market', bid=4178.40, ask=4178.60, point=.01, requested_price=4178.40))})
+    monkeypatch.setattr(client.journal, 'opening_executions', records)
+    quality = client.get_position_details(11)['execution_quality']
+    records.assert_called_once_with([1, 'test'], [101])
+    assert quality['state'] == 'recorded'
+    assert quality['opening_spread_points'] == 20
+    assert quality['slippage_points'] == 3
+    assert quality['fill_price'] == 4178.37
+    assert quality['current_spread_points'] is None
+    client.mt5.order_send.assert_not_called()
+
+
+def test_closed_position_details_keep_missing_quotes_unknown(client):
+    from test_history_direction import detail_deal
+    client.mt5.history_deals_get.return_value = [detail_deal(1, 0, 1, 5, 1780000000)]
+    quality = client.get_position_details(11)['execution_quality']
+    assert quality['state'] == 'unrecorded'
+    assert quality['opening_spread_points'] is None
+    assert quality['slippage_points'] is None

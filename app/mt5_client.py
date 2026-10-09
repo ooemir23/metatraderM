@@ -992,7 +992,12 @@ class MT5Client:
                 raise MT5DataError("MT5 bağlı değil; pozisyon detayları okunamadı.")
             try:
                 account_scope = self._selected_account()
-                return self._bridge('position_details', int(position_id), account_scope)
+                details = self._bridge('position_details', int(position_id), account_scope)
+                fills = [d for d in details['deals'] if d['type'] in (0, 1) and d['entry'] in (0, 2)]
+                observed = {'type_raw': fills[0]['type'] if fills else None, 'opening_fills': fills}
+                self._add_execution_quality([observed], account_scope)
+                details['execution_quality'] = observed['execution_quality']
+                return details
             except Exception as exc:
                 raise MT5DataError("Pozisyon detayları okunamadı; hesap ve bağlantıyı kontrol edin.") from exc
 

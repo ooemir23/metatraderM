@@ -672,7 +672,7 @@ def position_details(mt5, position_id, account_scope):
         if int(d.position_id) != int(position_id):
             raise RuntimeError('Pozisyon geçmişi eşleşmiyor.')
         row = _deal_row(d)
-        row.update(order=int(d.order), price=float(d.price),
+        row.update(order=int(d.order), price=float(d.price), magic=int(getattr(d, 'magic', 0)),
                    comment=str(getattr(d, 'comment', '')),
                    time_text=time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(d.time)))
         deals.append(row)
