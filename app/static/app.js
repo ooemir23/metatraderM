@@ -44,6 +44,7 @@ function initTradingView(symbol) {
       "enable_publishing": false,
       "hide_side_toolbar": false,
       "allow_symbol_change": true,
+      "enabled_features": ["context_menus", "pane_context_menu", "scales_context_menu", "legend_context_menu"],
       "container_id": "tradingview-container"
     });
   }
