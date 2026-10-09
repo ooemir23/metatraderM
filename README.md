@@ -114,3 +114,19 @@ Robotun geçmiş performansını görmek için:
 1. MT5'te klavyeden **Ctrl + R** tuşlarına basarak **Strateji Test Cihazı'nı (Strategy Tester)** açın.
 2. Uzman danışman olarak `HMA_Crossover_EA` seçin.
 3. İstediğiniz sembolü (Örn: `EURUSD` veya `XAUUSD`) ve zaman dilimini (Örn: `M15`, `H1`) seçip **Başlat (Start)** düğmesine tıklayın.
+
+## Panel içi MT5 grafiği
+
+Grafik kaynağı varsayılan olarak **MT5 · Sağ tuş** kullanır. Grafik üzerindeki sağ tuş veya
+**Grafik ayarları** düğmesi; zaman dilimi, mum/çubuk/çizgi/alan türü, tema, renkler,
+ızgara, tick hacmi, logaritmik ölçek ve SMA ayarlarını açar. Sağ tıklanan fiyat seviyesine
+yatay çizgi eklenebilir. Ayarlar tarayıcının yerel depolamasına, yatay çizgiler sembol
+bazında kaydedilir. Başka cihazlara veya TradingView hesabına eşitlenmez.
+
+Mumlar `/api/chart/candles` üzerinden gerçek MT5 geçmişinden gelir; ilk yüklemede 600 mum,
+ardından beş saniyede bir son üç mum alınır. Grafik saatleri broker saatidir.
+Grafik ayarları emir veya bot ayarlarını değiştirmez. Kaynak seçiminden eski
+**TradingView · Gömülü** grafiğine dönülebilir; bu sürümün sağ tuş kısıtlaması devam eder.
+Orijinal TradingView menüsüne geçiş için ileride resmi Advanced Charts entegrasyonu gerekir.
+Grafik kütüphanesi: TradingView Lightweight Charts 5.2.1 (Apache-2.0); lisans ve bildirim
+`app/static/vendor` klasöründedir.

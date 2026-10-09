@@ -36,6 +36,18 @@ function initTradingView(symbol) {
   clearInterval(chartSymbolTimer);
   tvWidget = null;
 
+  if (window.MT5Chart) {
+    window.MT5Chart.dispose();
+    const engine = document.getElementById('chart-engine');
+    if (engine) engine.value = window.MT5Chart.mode();
+    const link = document.getElementById('chart-tradingview-link');
+    if (link) link.hidden = window.MT5Chart.mode() !== 'tradingview';
+    if (window.MT5Chart.mode() === 'mt5') {
+      window.MT5Chart.mount(symbol);
+      return;
+    }
+  }
+
   const tvSymbol = TV_SYMBOLS[symbol] || `FX:${symbol}`;
   updateTradingViewLink(tvSymbol);
 

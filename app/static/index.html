@@ -10,7 +10,8 @@
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
   <!-- TradingView Widget -->
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=mt5-chart-1">
+  <script src="/static/vendor/lightweight-charts.js"></script>
 </head>
 <body class="bg-[#0b0e14] text-gray-200 min-h-screen flex flex-col font-sans antialiased selection:bg-emerald-500 selection:text-white">
 
@@ -116,7 +117,12 @@
             <span class="text-[11px] px-2 py-0.5 rounded bg-gray-800 text-gray-300 font-mono">Spr: <span id="header-spread">--</span></span>
             
             <!-- FULLSCREEN TOGGLE BUTTON -->
-            <a id="chart-tradingview-link" href="https://www.tradingview.com/chart/?symbol=FX%3AEURUSD&amp;interval=15" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-cyan-300 text-xs font-semibold border border-gray-700" title="Orijinal sağ tuş menüsü için seçili grafiği TradingView sitesinde aç">TradingView’de aç ↗</a>
+            <label class="text-gray-400">Grafik
+              <select id="chart-engine" aria-label="Grafik kaynağı" onchange="MT5Chart.setMode(this.value)" class="bg-gray-800 text-gray-200 rounded border border-gray-700 px-2 py-1">
+                <option value="mt5">MT5 · Sağ tuş</option><option value="tradingview">TradingView · Gömülü</option>
+              </select>
+            </label>
+            <a id="chart-tradingview-link" hidden href="https://www.tradingview.com/chart/?symbol=FX%3AEURUSD&amp;interval=15" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-cyan-300 text-xs font-semibold border border-gray-700">TradingView’de aç ↗</a>
             <button id="chart-fs-btn" onclick="toggleChartFullscreen()" class="px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold flex items-center gap-1.5 transition border border-gray-700 active:scale-95 shadow-sm" title="Grafiği Tam Ekran Yap (ESC ile Çıkış)">
               <i id="chart-fs-icon" class="ph-bold ph-arrows-out-simple text-cyan-400"></i>
               <span id="chart-fs-text">Tam Ekran</span>
@@ -1084,7 +1090,8 @@
 
   <script src="/static/i18n.js"></script>
   <script src="/static/notifications.js"></script>
-  <script src="/static/app.js"></script>
+  <script src="/static/mt5-chart.js"></script>
+  <script src="/static/app.js?v=mt5-chart-1"></script>
   <script src="/static/trading.js"></script>
   <script src="/static/operations.js"></script>
   <script src="/static/permissions.js"></script>

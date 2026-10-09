@@ -279,3 +279,23 @@ body.resizing-positions #tradingview-container iframe {
   .bot-settings-panel { padding: 16px; gap: 12px; }
   .bot-settings-columns { gap: 12px; }
 }
+
+/* Native MT5 chart and context settings stay inside the fullscreen card. */
+.mt5-chart-shell { position:absolute; inset:0; display:flex; flex-direction:column; min-height:0; }
+.mt5-chart-toolbar { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 12px; border-bottom:1px solid #263244; font-size:11px; background:#151a26; color:#94a3b8; }
+.mt5-chart-status { min-width:0; }
+.mt5-settings-button { flex-shrink:0; padding:5px 9px; border:1px solid #334155; border-radius:6px; color:#67e8f9; }
+.mt5-chart-canvas { flex:1; min-height:0; width:100%; }
+.mt5-chart-attribution { padding:3px 10px; font-size:10px; color:#94a3b8; background:#151a26; }
+.mt5-chart-attribution a { color:#67e8f9; }
+.mt5-chart-menu { position:absolute; z-index:30; width:290px; max-width:calc(100% - 8px); max-height:calc(100% - 8px); overflow:auto; padding:12px; border:1px solid #475569; border-radius:10px; background:#182131; color:#e2e8f0; font-size:12px; box-shadow:0 12px 35px #0009; }
+.mt5-chart-menu[hidden], #chart-tradingview-link[hidden] { display:none; }
+.mt5-menu-title { display:flex; justify-content:space-between; font-weight:700; margin-bottom:8px; }
+.mt5-chart-menu label { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:5px 0; }
+.mt5-chart-menu select, .mt5-chart-menu input[type=number] { padding:4px; width:110px; border:1px solid #475569; border-radius:5px; background:#0f172a; color:#e2e8f0; }
+.mt5-chart-menu input[type=color] { width:42px; height:26px; background:transparent; }
+.mt5-chart-menu input[type=checkbox] { accent-color:#06b6d4; }
+.mt5-chart-menu > button { display:block; width:100%; text-align:left; padding:7px 6px; border-radius:5px; }
+.mt5-chart-menu > button:hover { background:#334155; }
+.mt5-chart-menu > button:disabled { opacity:.4; }
+.mt5-chart-menu p { margin-top:8px; font-size:10px; color:#94a3b8; }

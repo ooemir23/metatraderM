@@ -345,6 +345,20 @@ class ResearchRequest(BaseModel):
 research_guard = threading.Lock()
 
 
+@app.get('/api/chart/candles')
+async def chart_candles(symbol: str = Query(default='EURUSD', pattern=r'^[A-Za-z0-9_.#-]+$', max_length=32),
+                        timeframe_minutes: int = Query(default=15),
+                        count: int = Query(default=600, ge=2, le=1000)):
+    if timeframe_minutes not in TIMEFRAME_NAMES:
+        raise HTTPException(status_code=422, detail='Desteklenmeyen grafik zaman dilimi.')
+    rows = await asyncio.to_thread(mt5_client.get_rates, symbol.upper(), timeframe_minutes, count)
+    if not rows:
+        raise HTTPException(status_code=503, detail='MT5 mum verisi alınamadı; broker bağlantısını kontrol edin.')
+    return {'symbol': symbol.upper(), 'timeframe_minutes': timeframe_minutes,
+            'rates': rows, 'source': 'MT5', 'time_basis': 'broker',
+            'clock_offset_seconds': mt5_client.tick_clock_offset}
+
+
 @app.get('/api/research/history')
 def research_history(symbol: str = Query(default='XAUUSD', pattern=r'^[A-Za-z0-9_.#-]+$', max_length=32),
                      timeframe_minutes: int = Query(default=60),
