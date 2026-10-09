@@ -186,6 +186,28 @@ class OrderJournal:
             return {'found': False}
         return {'found': True, **(json.loads(row[0]) if row[0] else {'uncertain': True})}
 
+    def opening_executions(self, account, order_ids):
+        """Match immutable submission quotes to broker order IDs within one account."""
+        order_ids = sorted(set(int(ticket) for ticket in order_ids if int(ticket) > 0))
+        if not order_ids:
+            return {}
+        placeholders = ','.join('?' for _ in order_ids)
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT o.result,m.data FROM orders o JOIN order_metadata m ON m.id=o.id "
+                "WHERE json_extract(m.data,'$.account[0]')=? AND json_extract(m.data,'$.account[1]')=? "
+                f"AND json_extract(o.result,'$.ticket') IN ({placeholders})",
+                (account[0], account[1], *order_ids)).fetchall()
+        matches = {}
+        for result_json, metadata_json in rows:
+            result, metadata = json.loads(result_json), json.loads(metadata_json)
+            ticket = int(result['ticket'])
+            if ticket in matches:
+                matches[ticket] = None  # Ambiguous evidence must not manufacture a measurement.
+            else:
+                matches[ticket] = dict(execution=result.get('execution'), order=metadata['order'])
+        return matches
+
     def latency(self):
         with self._connect() as db:
             rows = db.execute('SELECT result FROM orders WHERE result IS NOT NULL ORDER BY created DESC LIMIT 500').fetchall()

@@ -227,24 +227,25 @@
 
         <!-- OPEN POSITIONS TABLE -->
         <div id="open-positions-container" class="overflow-x-auto overflow-y-auto flex-1">
-          <table class="w-full table-fixed text-left text-xs text-gray-300">
+          <table class="w-full min-w-[1200px] table-fixed text-left text-xs text-gray-300">
             <thead class="text-[11px] text-gray-400 uppercase bg-[#151a26] border-b border-gray-800 sticky top-0 z-10">
               <tr>
-                <th class="py-2.5 px-3 w-[10%]">Bilet</th>
-                <th class="py-2.5 px-3 w-[8%]">Sembol</th>
-                <th class="py-2.5 px-3 w-[7%]">Yön</th>
-                <th class="py-2.5 px-3 w-[6%]">Hacim</th>
-                <th class="py-2.5 px-3 w-[14%]">Açılış</th>
-                <th class="py-2.5 px-3 w-[12%]">Güncel</th>
-                <th class="py-2.5 px-3 w-[10%]">SL / TP</th>
-                <th class="py-2.5 px-3 w-[12%] text-right" title="Pozisyona ait açılış ve kısmi kapanışlarda şimdiye kadar tahsil edilen komisyon">Komisyon</th>
-                <th class="py-2.5 px-3 w-[11%] text-right">Kâr / Zarar</th>
-                <th class="py-2.5 px-3 w-[10%] text-center">İşlem</th>
+                <th class="py-2.5 px-3 w-[7%]">Bilet</th>
+                <th class="py-2.5 px-3 w-[7%]">Sembol</th>
+                <th class="py-2.5 px-3 w-[5%]">Yön</th>
+                <th class="py-2.5 px-3 w-[5%]">Hacim</th>
+                <th class="py-2.5 px-3 w-[11%]">Açılış</th>
+                <th class="py-2.5 px-3 w-[11%]">Güncel</th>
+                <th class="py-2.5 px-3 w-[15%]">Spread / Slippage</th>
+                <th class="py-2.5 px-3 w-[8%]">SL / TP</th>
+                <th class="py-2.5 px-3 w-[10%] text-right" title="Pozisyona ait açılış ve kısmi kapanışlarda şimdiye kadar tahsil edilen komisyon">Komisyon</th>
+                <th class="py-2.5 px-3 w-[9%] text-right">Kâr / Zarar</th>
+                <th class="py-2.5 px-3 w-[12%] text-center">İşlem</th>
               </tr>
             </thead>
             <tbody id="positions-table-body" class="divide-y divide-gray-800/50 font-mono">
               <tr>
-                <td colspan="10" class="py-6 text-center text-gray-500 font-sans">Henüz açık pozisyon bulunmuyor.</td>
+                <td colspan="11" class="py-6 text-center text-gray-500 font-sans">Henüz açık pozisyon bulunmuyor.</td>
               </tr>
             </tbody>
           </table>
@@ -799,6 +800,16 @@
     </div>
 
   </main>
+
+  <dialog id="position-execution-modal" aria-labelledby="position-execution-title"
+    onkeydown="if (event.key === 'Escape') { event.preventDefault(); this.close(); }"
+    class="bg-[#151a26] text-gray-200 border border-gray-700 rounded-2xl shadow-2xl w-[calc(100%_-_2rem)] max-w-4xl max-h-[90vh] p-0 backdrop:bg-black/70 backdrop:backdrop-blur-sm">
+    <div class="flex items-center justify-between p-5 border-b border-gray-700 sticky top-0 bg-[#151a26] z-10">
+      <h3 id="position-execution-title" class="font-bold text-white text-base">Spread ve slippage</h3>
+      <button type="button" onclick="document.getElementById('position-execution-modal').close()" aria-label="Fiyat detaylarını kapat" class="text-gray-400 hover:text-white rounded p-2 focus:outline focus:outline-2 focus:outline-cyan-400"><i class="ph-bold ph-x" aria-hidden="true"></i></button>
+    </div>
+    <div id="position-execution-content" class="p-5"></div>
+  </dialog>
 
   <dialog id="history-details-modal" aria-labelledby="history-details-title"
     onkeydown="if (event.key === 'Escape') { event.preventDefault(); closeHistoryDetails(); }"

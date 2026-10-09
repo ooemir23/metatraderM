@@ -13,6 +13,7 @@ from app import mt5_bridge
 from app.order_journal import OrderJournal
 from app.trading_lock import TradingLock
 from app.reports import build_report
+from app.execution_quality import summarize_position
 from typing import Dict, Any, List, Optional
 
 TIMEFRAME_NAMES = {
@@ -601,7 +602,12 @@ class MT5Client:
             if not self.ensure_connected():
                 raise MT5DataError("MT5 bağlı değil; pozisyonlar doğrulanamadı.")
             try:
-                result = self._bridge("positions", bool(include_commission))
+                if include_commission:
+                    snapshot = self._bridge('positions_snapshot', self.tick_clock_offset)
+                    result = snapshot['positions']
+                    self._add_execution_quality(result, snapshot['account'])
+                else:
+                    result = self._bridge("positions", False)
                 self._positions_cache = result
                 self._positions_cache_time = time.monotonic()
                 self._positions_cache_commission = include_commission
@@ -609,6 +615,15 @@ class MT5Client:
             except Exception as exc:
                 self._positions_cache = None
                 raise MT5DataError("Pozisyonlar okunamadı; yeni işlem engellendi.") from exc
+
+    def _add_execution_quality(self, positions, account):
+        order_ids = [d['order'] for p in positions for d in p.get('opening_fills', [])]
+        try:
+            records = self.journal.opening_executions(account, order_ids)
+        except Exception:
+            records = {}  # Telemetry availability must not hide an otherwise readable position.
+        for position in positions:
+            position['execution_quality'] = summarize_position(position, records)
 
     def get_symbol_price(self, symbol: str) -> Dict[str, Any]:
         now = time.time()
@@ -1033,6 +1048,7 @@ class MT5Client:
                 account["account_mismatch"] = (self.login_id <= 0 or int(account["login"]) != self.login_id
                                                or str(account["server"]) != self.server
                                                or actual_mode != {"DEMO": 0, "REAL": 2}.get(self.account_type))
+                self._add_execution_quality(snapshot['positions'], [int(account['login']), str(account['server'])])
                 return snapshot
             except Exception as exc:
                 raise MT5DataError("Canlı veriler doğrulanamadı.") from exc

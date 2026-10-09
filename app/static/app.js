@@ -616,14 +616,79 @@ async function fetchAccount(force = false) {
 }
 
 // Fetch Open Positions
+const executionPositions = new Map();
+let executionPositionTicket = null;
+
+function executionPoints(value, signed = false) {
+  if (value == null || !Number.isFinite(Number(value))) return '—';
+  const text = Number(value).toLocaleString('tr-TR', {maximumFractionDigits:3});
+  return `${signed && value > 0 ? '+' : ''}${text} puan`;
+}
+
+function slippageText(value) {
+  if (value == null) return 'Ölçülemiyor';
+  return `${executionPoints(value, true)} · ${value > 0 ? 'Aleyhe' : value < 0 ? 'Lehe' : 'Kayma yok'}`;
+}
+
+function showPositionExecution(ticket) {
+  executionPositionTicket = ticket;
+  const modal = document.getElementById('position-execution-modal');
+  if (!modal.open) modal.showModal();
+  updatePositionExecution();
+}
+
+function updatePositionExecution() {
+  const modal = document.getElementById('position-execution-modal');
+  if (!modal?.open) return;
+  const position = executionPositions.get(executionPositionTicket);
+  const content = document.getElementById('position-execution-content');
+  if (!position) {
+    content.textContent = 'Pozisyon artık açık listede bulunmuyor. Kapanış detaylarını geçmiş sekmesinden görebilirsiniz.';
+    return;
+  }
+  document.getElementById('position-execution-title').textContent = `${position.symbol} ${position.type} · #${position.ticket} · Spread / Slippage`;
+  content.innerHTML = renderPositionExecution(position);
+}
+
+function renderPositionExecution(position) {
+  const quality = position.execution_quality || {};
+  const quote = position.quote || {};
+  const digits = Number.isInteger(position.digits) ? position.digits : 5;
+  const price = value => value == null ? '—' : Number(value).toFixed(digits);
+  const card = (label, value) => `<div class="bg-[#1c2230] rounded-xl p-4"><div class="text-xs text-gray-400 mb-2">${label}</div><div class="font-bold text-white tabular-nums">${value}</div></div>`;
+  const change = quality.spread_change_points;
+  const changeText = change == null ? 'Karşılaştırılamıyor' : `${executionPoints(change, true)} · ${change > 0 ? 'Genişledi' : change < 0 ? 'Daraldı' : 'Değişmedi'}`;
+  const note = quality.state === 'recorded'
+    ? 'Açılış bilgileri emir gönderim kotasyonu ile brokerın gerçekleşen açılış hareketlerinden hesaplanır. Birden fazla gerçekleşmede lot ağırlıklı ortalama gösterilir.'
+    : quality.state === 'pending_quote_missing'
+      ? 'Bekleyen emrin tetiklendiği andaki kotasyon kaydedilmedi. Emir oluşturma spreadi açılış spreadi olarak kullanılmaz.'
+      : quality.state === 'changed_direction'
+        ? 'Pozisyon yön değiştirmiş; açılış spreadi ve kayma tek bir başlangıç fiyatıyla güvenilir biçimde karşılaştırılamıyor.'
+        : 'Bu pozisyon için emir gönderim kotasyonu kaydedilmemiş. Açılış spreadi ve slippage sıfır varsayılmaz. Yeni panel emirlerinde kotasyon kalıcı olarak kaydedilir.';
+  const status = quote.quote_status || {};
+  const currentLabel = status.state === 'fresh' ? 'Güncel spread' : 'Son kotasyon spreadi';
+  const fills = (quality.fills || []).map(d => `<tr class="border-b border-gray-700/50"><td class="p-3">#${d.order}</td><td class="p-3">${d.volume}</td><td class="p-3">${price(d.bid)} / ${price(d.ask)}</td><td class="p-3">${price(d.requested_price)}</td><td class="p-3">${price(d.fill_price)}</td><td class="p-3">${executionPoints(d.spread_points)}</td><td class="p-3 whitespace-nowrap">${slippageText(d.slippage_points)}</td></tr>`).join('');
+  return `<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+    ${card('Açılış spreadi (gönderim)', executionPoints(quality.opening_spread_points))}${card(currentLabel, executionPoints(quality.current_spread_points))}${card('Spread farkı', changeText)}
+    ${card('İstenen açılış fiyatı', price(quality.requested_price))}${card('Gerçekleşen açılış fiyatı', price(quality.fill_price ?? position.price_open))}${card('Açılış slippage', slippageText(quality.slippage_points))}
+    </div><div class="text-xs text-gray-400 mb-4">Gönderim Bid / Ask: <span class="text-gray-200">${price(quality.opening_bid)} / ${price(quality.opening_ask)}</span><br>Son Bid / Ask: <span class="text-gray-200">${price(quote.bid > 0 ? quote.bid : null)} / ${price(quote.ask > 0 ? quote.ask : null)}</span><br>1 puan: ${price(quote.point)} fiyat birimi</div>
+    <p class="text-xs ${status.state === 'fresh' ? 'text-emerald-400' : 'text-amber-300'} mb-3">${escapeHtml(status.message || 'Güncel kotasyon doğrulanamadı.')}</p>
+    <p class="text-xs text-gray-400 mb-3">${note}</p>
+    <p class="text-xs text-gray-400 mb-4">BUY işlemleri Ask ile açılır, Bid ile kapanır; SELL işlemleri Bid ile açılır, Ask ile kapanır. Spread değişebilir. Kaymada pozitif değer aleyhe, negatif değer lehe farktır. Spread ve slippage fiyata yansır; komisyon gibi ayrıca düşülmez. Açık pozisyonun gelecekteki kapanış slippage'i henüz bilinmez.</p>
+    ${fills ? `<div class="overflow-x-auto"><table class="w-full text-xs text-left whitespace-nowrap"><thead class="bg-[#1c2230] text-gray-400"><tr><th class="p-3">Açılış emri</th><th class="p-3">Lot</th><th class="p-3">Gönderim Bid / Ask</th><th class="p-3">İstenen</th><th class="p-3">Gerçekleşen</th><th class="p-3">Spread</th><th class="p-3">Slippage</th></tr></thead><tbody>${fills}</tbody></table></div>` : ''}`;
+}
+
 function renderPositionsData(positions) {
+    executionPositions.clear();
+    (positions || []).forEach(p => executionPositions.set(p.ticket, p));
+    updatePositionExecution();
     if (typeof rememberPositions === "function") rememberPositions(positions);
     const tbody = document.getElementById("positions-table-body");
     const countBadge = document.getElementById("pos-count-badge");
     if (countBadge) countBadge.innerText = positions.length;
 
     if (!positions || positions.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="10" class="py-6 text-center text-gray-500 font-sans">Henüz açık pozisyon bulunmuyor.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="11" class="py-6 text-center text-gray-500 font-sans">Henüz açık pozisyon bulunmuyor.</td></tr>`;
       return;
     }
 
@@ -636,6 +701,8 @@ function renderPositionsData(positions) {
 
       const profitColor = p.profit >= 0 ? "text-emerald-400" : "text-rose-400";
       const profitSign = p.profit >= 0 ? "+" : "";
+      const quality = p.execution_quality || {};
+      const quoteFresh = p.quote?.quote_status?.state === 'fresh';
 
       rowsHtml += `
         <tr class="hover:bg-[#151a26]/60 transition border-b border-gray-800/40">
@@ -645,6 +712,7 @@ function renderPositionsData(positions) {
           <td class="py-2.5 px-3 text-gray-200 font-semibold">${p.volume}</td>
           <td class="py-2.5 px-3 text-gray-400 whitespace-nowrap tabular-nums">${Number(p.price_open).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
           <td class="py-2.5 px-3 text-white font-semibold whitespace-nowrap tabular-nums">${Number(p.price_current).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
+          <td class="py-2.5 px-3"><button type="button" data-testid="position-execution-${p.ticket}" onclick="showPositionExecution(${p.ticket})" class="text-left text-[10px] leading-5 hover:text-cyan-300 focus:outline focus:outline-2 focus:outline-cyan-400 rounded" aria-label="Pozisyon #${p.ticket} spread ve slippage detayları"><span class="block text-gray-300">Açılış: ${executionPoints(quality.opening_spread_points)}</span><span class="block ${quoteFresh ? 'text-cyan-400' : 'text-amber-300'}">${quoteFresh ? 'Güncel' : 'Son'}: ${executionPoints(quality.current_spread_points)}</span><span class="block ${quality.slippage_points > 0 ? 'text-rose-400' : quality.slippage_points < 0 ? 'text-emerald-400' : 'text-gray-400'}">Kayma: ${slippageText(quality.slippage_points)}</span><span class="block text-cyan-400">Fiyat detayı ›</span></button></td>
           <td class="py-2.5 px-3 text-gray-500 whitespace-nowrap tabular-nums">${p.sl ? Number(p.sl).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "-"} / ${p.tp ? Number(p.tp).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "-"}</td>
           <td class="py-2.5 px-3 text-right text-amber-400 whitespace-nowrap">${p.commission == null ? "—" : `${p.commission > 0 ? "+" : ""}${accountCurrency} ${formatMoney(p.commission)}`}</td>
           <td class="py-2.5 px-3 text-right font-bold whitespace-nowrap ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(p.profit)}</td>

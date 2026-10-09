@@ -9,32 +9,54 @@ HMA_MAGIC = 123461
 AI_MAGIC = 123462
 
 
-def positions(mt5, include_commission=False):
+def positions(mt5, include_commission=False, tick_offset=0, quotes=None):
     rows = mt5.positions_get()
     if rows is None:
         raise RuntimeError('Pozisyonlar okunamadı: ' + str(mt5.last_error()))
     result = []
+    quotes = {} if quotes is None else quotes
     for p in rows:
         symbol_info = mt5.symbol_info(p.symbol)
         # MT5 positions have no commission field; use the stable position identifier
         # to include commissions already charged on its opening/partial-close deals.
         commission = None
+        opening_fills = []
         if include_commission:
             try:
                 deals = mt5.history_deals_get(position=int(p.identifier))
                 if deals:
                     commission = round(sum(float(getattr(d, 'commission', 0)) for d in deals), 2)
+                    opening_fills = [dict(ticket=int(d.ticket), order=int(d.order),
+                        symbol=str(d.symbol), magic=int(d.magic), type=int(d.type), entry=int(d.entry),
+                        volume=float(d.volume), price=float(d.price)) for d in deals
+                        if int(getattr(d, 'entry', -1)) in (0, 2) and int(getattr(d, 'type', -1)) in (0, 1)]
             except Exception:
                 pass  # Keep live positions available when only cost history is unavailable.
-        result.append(dict(ticket=int(p.ticket), identifier=int(p.identifier), symbol=str(p.symbol),
+        row = dict(ticket=int(p.ticket), identifier=int(p.identifier), symbol=str(p.symbol),
                  type='BUY' if p.type == 0 else 'SELL', type_raw=int(p.type),
                  magic=int(p.magic), volume=float(p.volume),
                  price_open=float(p.price_open), price_current=float(p.price_current),
                  digits=int(symbol_info.digits) if symbol_info else 5,
                  sl=float(p.sl), tp=float(p.tp), profit=float(p.profit), swap=float(p.swap),
                  commission=commission,
-                 time=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(p.time))))
+                 time=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(p.time)))
+        if include_commission:
+            if str(p.symbol) not in quotes:
+                try:
+                    quotes[str(p.symbol)] = price(mt5, str(p.symbol), tick_offset)
+                except Exception:
+                    quotes[str(p.symbol)] = None
+            row.update(opening_fills=opening_fills, quote=quotes[str(p.symbol)])
+        result.append(row)
     return result
+
+
+def positions_snapshot(mt5, tick_offset=0):
+    account = account_identity(mt5)
+    rows = positions(mt5, include_commission=True, tick_offset=tick_offset)
+    if account_identity(mt5) != account:
+        raise RuntimeError('Pozisyonlar okunurken aktif hesap değişti.')
+    return dict(account=account, positions=rows)
 
 
 def rates(mt5, symbol, timeframe, count):
@@ -371,9 +393,12 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
         request = dict(action=1, symbol=symbol, volume=volume, type=0 if buy else 1,
                        price=price, sl=sl, tp=tp, deviation=20, magic=magic,
                        comment=comment[:31], type_time=0)
+        execution = dict(kind='pending' if pending_type else 'market', requested_price=price,
+                         bid=float(tick.bid), ask=float(tick.ask), point=float(info.point),
+                         quote_time=int(tick.time) - int(tick_offset), deviation_points=20)
         if pending_type:
             request.update(action=5, type=types[pending_type], type_filling=2)
-            return {**_send_once(mt5, request), 'pending_order': True}
+            return {**_send_once(mt5, request), 'pending_order': True, 'execution': execution}
         fillings = [f for bit, f in ((2, 1), (1, 0)) if int(info.filling_mode) & bit]
         if int(info.trade_exemode) != 2:
             fillings.append(2)  # RETURN is not allowed for Market Execution.
@@ -391,7 +416,7 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
             response = dict(success=code in (10008, 10009, 10010), retcode=code,
                             partial=code == 10010, pending=code == 10008,
                             ticket=int(result.order), price=float(result.price), volume=float(result.volume),
-                            comment=str(result.comment))
+                            comment=str(result.comment), execution=execution)
             if code in (10012, 10031):
                 response['uncertain'] = True
             if not response['success']:
@@ -400,7 +425,7 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
                 return response
         except Exception:
             return {'success': False, 'uncertain': True,
-                    'error': 'Emir sonucu belirsiz; broker durumunu kontrol edin.'}
+                    'error': 'Emir sonucu belirsiz; broker durumunu kontrol edin.', 'execution': execution}
     return response
 
 
@@ -474,6 +499,7 @@ def price(mt5, symbol, tick_offset=0):
     valid = status['state'] not in ('missing', 'invalid')
     return dict(symbol=symbol, bid=float(tick.bid) if valid else 0.,
                 ask=float(tick.ask) if valid else 0.,
+                point=float(info.point) if info is not None and info.point else None,
                 time=int(tick.time)-tick_offset if valid else 0,
                 spread=round((tick.ask-tick.bid)/info.point) if valid and info is not None and info.point else 0,
                 quote_status=status)
@@ -599,7 +625,10 @@ def live_snapshot(mt5, symbols, tick_offset=0):
     account_data['connected'] = broker_connection(mt5) is True
     account_data['server_time'] = time.strftime('%H:%M:%S')
     ticks = {symbol: price(mt5, symbol, tick_offset) for symbol in symbols}
-    return dict(account=account_data, positions=positions(mt5, include_commission=True), orders=pending_orders(mt5),
+    open_positions = positions(mt5, include_commission=True, tick_offset=tick_offset, quotes=ticks)
+    if account_identity(mt5) != [int(account.login), str(account.server)]:
+        raise RuntimeError('Canlı pozisyonlar okunurken aktif hesap değişti.')
+    return dict(account=account_data, positions=open_positions, orders=pending_orders(mt5),
                 prices=ticks, sampled_at=time.time())
 
 
