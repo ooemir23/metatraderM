@@ -631,6 +631,29 @@ def position_history(mt5, position_id, account_scope):
     return [_deal_row(d) for d in rows]
 
 
+def position_details(mt5, position_id, account_scope):
+    account = _account(mt5, *account_scope)
+    rows = mt5.history_deals_get(position=int(position_id))
+    if rows is None:
+        raise RuntimeError('Pozisyon detayları okunamadı.')
+    # Recheck identity after the broker read, before exposing account-specific data.
+    _account(mt5, *account_scope)
+    deals = []
+    for d in sorted(rows, key=lambda d: (int(getattr(d, 'time_msc', d.time * 1000)), int(d.ticket))):
+        if int(d.position_id) != int(position_id):
+            raise RuntimeError('Pozisyon geçmişi eşleşmiyor.')
+        row = _deal_row(d)
+        row.update(order=int(d.order), price=float(d.price),
+                   comment=str(getattr(d, 'comment', '')),
+                   time_text=time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(d.time)))
+        deals.append(row)
+    symbol = next((d['symbol'] for d in deals if d['symbol']), '')
+    info = mt5.symbol_info(symbol) if symbol else None
+    return dict(position_id=int(position_id), symbol=symbol,
+                digits=int(info.digits) if info else 5,
+                currency=str(account.currency), deals=deals)
+
+
 def account_identity(mt5):
     account = _account(mt5)
     return [int(account.login), str(account.server)]

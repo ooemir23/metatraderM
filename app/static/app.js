@@ -684,6 +684,75 @@ async function fetchPositions(force = false) {
 }
 
 // Fetch Closed Positions / Trade History
+let historyDetailsRequest = 0;
+
+function closeHistoryDetails() {
+  historyDetailsRequest++;
+  document.getElementById('history-details-modal').close();
+}
+
+async function showHistoryDetails(positionId, ticket) {
+  if (!Number.isSafeInteger(positionId) || positionId <= 0) return;
+  const modal = document.getElementById('history-details-modal');
+  const content = document.getElementById('history-details-content');
+  const request = ++historyDetailsRequest;
+  document.getElementById('history-details-title').textContent = `İşlem #${ticket} · Pozisyon #${positionId}`;
+  content.textContent = 'Broker işlem detayları yükleniyor…';
+  if (!modal.open) modal.showModal();
+  try {
+    const response = await fetch(`/api/history/position/${positionId}`);
+    const data = await response.json();
+    if (request !== historyDetailsRequest || !modal.open) return;
+    if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'İşlem detayları alınamadı.');
+    if (Number(data.position_id) !== positionId || !data.deals?.some(d => Number(d.ticket) === ticket)) {
+      throw new Error('Seçilen işlem broker geçmişinde bulunamadı. Kapanış listesini yenileyin.');
+    }
+    content.innerHTML = renderHistoryDetails(data, ticket);
+  } catch (error) {
+    if (request === historyDetailsRequest && modal.open) content.textContent = error.message || 'İşlem detayları alınamadı.';
+  }
+}
+
+function renderHistoryDetails(data, selectedTicket) {
+  const deals = data.deals;
+  const trading = deals.filter(d => d.type === 0 || d.type === 1);
+  const opens = trading.filter(d => d.entry === 0);
+  const exits = trading.filter(d => d.entry === 1 || d.entry === 3);
+  const reversed = trading.some(d => d.entry === 2);
+  const digits = Number.isInteger(data.digits) ? Math.max(0, Math.min(10, data.digits)) : 5;
+  const price = value => Number(value).toLocaleString('tr-TR', {minimumFractionDigits:digits, maximumFractionDigits:digits});
+  const money = value => `${escapeHtml(data.currency || accountCurrency)} ${formatMoney(value)}`;
+  const sum = key => deals.reduce((total, d) => total + Number(d[key] || 0), 0);
+  const net = d => ['profit', 'commission', 'swap', 'fee'].reduce((total, key) => total + Number(d[key] || 0), 0);
+  const selected = deals.find(d => Number(d.ticket) === selectedTicket);
+  const side = type => type === 0 ? 'BUY · Alış' : type === 1 ? 'SELL · Satış' : 'Maliyet / diğer';
+  const summary = (label, rows) => {
+    if (!rows.length || reversed) return `<div class="bg-[#1c2230] rounded-xl p-4"><div class="text-gray-400 text-xs mb-2">${label}</div><div class="text-sm">${reversed ? 'Tersine dönüş var; hareket listesine bakın.' : 'Broker geçmişinde kayıt bulunamadı.'}</div></div>`;
+    const volume = rows.reduce((total, d) => total + d.volume, 0);
+    const average = volume > 0 ? rows.reduce((total, d) => total + d.price * d.volume, 0) / volume : null;
+    const times = rows.length === 1 ? escapeHtml(rows[0].time_text) : `${escapeHtml(rows[0].time_text)} → ${escapeHtml(rows[rows.length - 1].time_text)}`;
+    return `<div class="bg-[#1c2230] rounded-xl p-4"><div class="text-gray-400 text-xs mb-2">${label}${rows.length > 1 ? ' · Lot ağırlıklı ortalama' : ''}</div><div class="font-bold ${rows[0].type === 0 ? 'text-emerald-400' : 'text-rose-400'}">${side(rows[0].type)}</div><div class="text-xl font-mono text-white mt-1">${average === null ? '—' : price(average)}</div><div class="text-xs text-gray-400 mt-2">${times}<br>${volume} lot · ${rows.length} hareket</div></div>`;
+  };
+  const entryLabel = entry => ({0:'Açılış / artırma', 1:'Kapanış / azaltma', 2:'Tersine dönüş', 3:'Karşı pozisyonla kapanış'}[entry] || 'Diğer');
+  const rows = deals.map(d => `<tr class="border-b border-gray-700/50 ${Number(d.ticket) === selectedTicket ? 'bg-cyan-500/10' : ''}">
+    <td class="p-3 whitespace-nowrap">#${d.ticket}${Number(d.ticket) === selectedTicket ? '<span class="block text-cyan-400 text-[10px]">Seçilen kapanış</span>' : ''}</td>
+    <td class="p-3 whitespace-nowrap">${escapeHtml(d.time_text)}</td>
+    <td class="p-3 whitespace-nowrap">${entryLabel(d.entry)}<span class="block text-xs ${d.type === 0 ? 'text-emerald-400' : d.type === 1 ? 'text-rose-400' : 'text-gray-400'}">${side(d.type)}</span></td>
+    <td class="p-3 text-right">${d.volume}</td><td class="p-3 font-mono text-right">${d.type === 0 || d.type === 1 ? price(d.price) : '—'}</td>
+    <td class="p-3 text-right whitespace-nowrap ${net(d) >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${money(net(d))}</td>
+    <td class="p-3 text-xs text-gray-400">${escapeHtml(d.comment)}</td></tr>`).join('');
+  return `<div class="text-sm text-gray-400 mb-4">${escapeHtml(data.symbol)} · Pozisyon #${data.position_id}</div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">${summary('Açılış', opens)}${summary('Kapanış', exits)}</div>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mb-4">
+      <div>Seçilen kapanış neti<div class="font-bold text-white mt-1">${money(net(selected))}</div></div>
+      <div>Pozisyon gerçekleşen neti<div class="font-bold text-white mt-1">${money(sum('profit') + sum('commission') + sum('swap') + sum('fee'))}</div></div>
+      <div>Toplam komisyon<div class="text-amber-400 mt-1">${money(sum('commission'))}</div></div>
+      <div>Toplam swap / diğer ücret<div class="text-gray-300 mt-1">${money(sum('swap') + sum('fee'))}</div></div>
+    </div>
+    <p class="text-xs text-gray-400 mb-4">Tüm pozisyon hareketleri aşağıda gösterilir. Net tutarlar açılış ve kapanış maliyetlerini içerir; kısmi kapanışlarda pozisyonun tamamı kapanmış olmayabilir. Saatler broker geçmişindeki saatlerdir.</p>
+    <div class="overflow-x-auto"><table class="w-full text-xs text-left"><thead class="text-gray-400 bg-[#1c2230]"><tr><th class="p-3">Bilet</th><th class="p-3">Zaman</th><th class="p-3">Hareket / yön</th><th class="p-3 text-right">Lot</th><th class="p-3 text-right">Fiyat</th><th class="p-3 text-right">Net</th><th class="p-3">Açıklama</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
 async function fetchHistory() {
   if (isFetchingHistory) return;
   isFetchingHistory = true;
@@ -723,7 +792,7 @@ async function fetchHistory() {
 
     let rowsHtml = "";
     history.forEach(d => {
-      const isBuy = d.type === "BUY";
+      const isBuy = (d.position_type || d.type) === "BUY";
       const typeBadge = isBuy
         ? `<span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold text-[10px]">BUY</span>`
         : `<span class="px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold text-[10px]">SELL</span>`;
@@ -736,10 +805,12 @@ async function fetchHistory() {
       const commissionText = `${commission > 0 ? "+" : ""}${accountCurrency} ${formatMoney(commission)}`;
       const fee = (d.swap || 0) + (d.fee || 0);
       const feeText = fee !== 0 ? `${fee >= 0 ? "+" : ""}${accountCurrency} ${formatMoney(fee)}` : "-";
+      const positionId = Number(d.position_id || d.order);
+      const ticket = Number(d.ticket);
 
       rowsHtml += `
-        <tr class="hover:bg-[#151a26]/60 transition border-b border-gray-800/40">
-          <td class="py-2.5 px-3 text-gray-400">#${d.ticket} <span class="text-[10px] text-gray-600 block">Pos: #${d.position_id || d.order}</span></td>
+        <tr data-testid="history-deal-${ticket}" onclick="showHistoryDetails(${positionId}, ${ticket}, this)" class="cursor-pointer hover:bg-[#151a26]/60 transition border-b border-gray-800/40" title="Açılış ve kapanış detaylarını göster">
+          <td class="py-2.5 px-3 text-gray-400"><button type="button" onclick="event.stopPropagation(); showHistoryDetails(${positionId}, ${ticket}, this)" class="text-left hover:text-cyan-400 focus:outline focus:outline-2 focus:outline-cyan-400 rounded" aria-label="İşlem #${ticket} detayları">#${ticket} <span class="text-[10px] text-gray-500 block">Pos: #${positionId} · Detay</span></button></td>
           <td class="py-2.5 px-3 font-bold text-white">${d.symbol}</td>
           <td class="py-2.5 px-3">${typeBadge}</td>
           <td class="py-2.5 px-3 text-gray-200 font-semibold">${d.volume}</td>

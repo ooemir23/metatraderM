@@ -687,6 +687,15 @@ def get_history(days: int = Query(default=30, ge=1, le=365)):
 def get_reports(days: int = Query(default=30, ge=1, le=365)):
     return mt5_client.get_reports(days=days)
 
+@app.get("/api/history/position/{position_id}")
+def get_position_details(position_id: int):
+    if position_id <= 0:
+        raise HTTPException(status_code=422, detail="Geçersiz pozisyon numarası.")
+    details = mt5_client.get_position_details(position_id)
+    if not details['deals']:
+        raise HTTPException(status_code=404, detail="Bu pozisyonun broker geçmişi bulunamadı.")
+    return details
+
 @app.get("/api/price/{symbol}")
 def get_price(symbol: str):
     return mt5_client.get_symbol_price(symbol.upper())

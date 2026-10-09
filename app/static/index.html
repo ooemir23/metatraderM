@@ -800,6 +800,18 @@
 
   </main>
 
+  <dialog id="history-details-modal" aria-labelledby="history-details-title"
+    onkeydown="if (event.key === 'Escape') { event.preventDefault(); closeHistoryDetails(); }"
+    class="bg-[#151a26] text-gray-200 border border-gray-700 rounded-2xl shadow-2xl w-[calc(100%_-_2rem)] max-w-4xl max-h-[90vh] p-0 backdrop:bg-black/70 backdrop:backdrop-blur-sm">
+    <div class="flex items-center justify-between p-5 border-b border-gray-700 sticky top-0 bg-[#151a26] z-10">
+      <h3 id="history-details-title" class="font-bold text-white text-base">İşlem detayları</h3>
+      <button type="button" onclick="closeHistoryDetails()" aria-label="Detayları kapat" class="text-gray-400 hover:text-white rounded p-2 focus:outline focus:outline-2 focus:outline-cyan-400">
+        <i class="ph-bold ph-x" aria-hidden="true"></i>
+      </button>
+    </div>
+    <div id="history-details-content" class="p-5" aria-live="polite"></div>
+  </dialog>
+
   <!-- LOGIN MODAL -->
   <div id="login-modal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
     <div class="bg-[#151a26] border border-gray-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl">

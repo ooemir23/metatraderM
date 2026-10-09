@@ -162,6 +162,9 @@ def hma_native_get_history(days=30, clock_offset=0, include_ai_entries=False):
                     date_str = "-"
                     
                 type_name = "BUY" if deal_type == 0 else ("SELL" if deal_type == 1 else str(deal_type))
+                # Exit/reversal deals close a position in the opposite direction.
+                position_type = 1 - deal_type if deal_type in (0, 1) and deal_entry in (1, 2, 3) else deal_type
+                position_type_name = "BUY" if position_type == 0 else ("SELL" if position_type == 1 else str(position_type))
                 
                 res.append({
                     "ticket": int(d.ticket),
@@ -170,6 +173,7 @@ def hma_native_get_history(days=30, clock_offset=0, include_ai_entries=False):
                     "position_id": int(getattr(d, "position_id", d.order)),
                     "symbol": deal_symbol,
                     "type": type_name,
+                    "position_type": position_type_name,
                     "entry": deal_entry,
                     "volume": float(getattr(d, "volume", 0.0)),
                     "price": round(float(getattr(d, "price", 0.0)), 5),
@@ -938,6 +942,9 @@ class MT5Client:
                                 time_str = "-"
                                 date_str = "-"
                             type_name = "BUY" if deal_type == 0 else ("SELL" if deal_type == 1 else str(deal_type))
+                            # Exit/reversal deals close a position in the opposite direction.
+                            position_type = 1 - deal_type if deal_type in (0, 1) and deal_entry in (1, 2, 3) else deal_type
+                            position_type_name = "BUY" if position_type == 0 else ("SELL" if position_type == 1 else str(position_type))
                             res.append({
                                 "ticket": int(d.ticket),
                                 "magic": int(getattr(d, "magic", 0)),
@@ -945,6 +952,7 @@ class MT5Client:
                                 "position_id": int(getattr(d, "position_id", d.order)),
                                 "symbol": deal_symbol,
                                 "type": type_name,
+                                "position_type": position_type_name,
                                 "entry": deal_entry,
                                 "volume": float(getattr(d, "volume", 0.0)),
                                 "price": round(float(getattr(d, "price", 0.0)), 5),
@@ -962,6 +970,16 @@ class MT5Client:
                 return []
             except Exception as e:
                 raise MT5DataError("İşlem geçmişi okunamadı.") from e
+
+    def get_position_details(self, position_id: int) -> Dict[str, Any]:
+        with self._lock:
+            if not self.ensure_connected():
+                raise MT5DataError("MT5 bağlı değil; pozisyon detayları okunamadı.")
+            try:
+                account_scope = self._selected_account()
+                return self._bridge('position_details', int(position_id), account_scope)
+            except Exception as exc:
+                raise MT5DataError("Pozisyon detayları okunamadı; hesap ve bağlantıyı kontrol edin.") from exc
 
     def get_reports(self, days: int = 30) -> Dict[str, Any]:
         with self._lock:
