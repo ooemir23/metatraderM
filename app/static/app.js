@@ -37,6 +37,7 @@ function initTradingView(symbol) {
   tvWidget = null;
 
   const tvSymbol = TV_SYMBOLS[symbol] || `FX:${symbol}`;
+  updateTradingViewLink(tvSymbol);
 
   if (window.TradingView) {
     tvWidget = new TradingView.widget({
@@ -52,7 +53,6 @@ function initTradingView(symbol) {
       "enable_publishing": false,
       "hide_side_toolbar": false,
       "allow_symbol_change": true,
-      "enabled_features": ["context_menus", "pane_context_menu", "scales_context_menu", "legend_context_menu"],
       "container_id": "tradingview-container"
     });
     const widget = tvWidget;
@@ -84,6 +84,7 @@ function brokerSymbolForChart(name, exchange, type) {
 
 function applyChartSymbol(name, exchange, type) {
   name = name.split(':').pop();
+  updateTradingViewLink(`${exchange}:${name}`);
   // Replace a market-cap measurement with the executable Bitcoin price chart.
   if (exchange === 'CRYPTOCAP' && ['BITCOIN', 'BTC'].includes(name)) {
     switchSymbol('BTCUSD');
@@ -105,6 +106,11 @@ function applyChartSymbol(name, exchange, type) {
   const preview = document.getElementById('trade-preview');
   if (preview) preview.textContent = 'Grafik ürünü MT5 sembolüyle eşleşmiyor; emir girişi kapalı.';
   renderOrderNotice();
+}
+
+function updateTradingViewLink(symbol) {
+  const link = document.getElementById('chart-tradingview-link');
+  if (link) link.href = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}&interval=15`;
 }
 
 window.addEventListener('message', event => {
