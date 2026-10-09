@@ -80,6 +80,7 @@ async function partialClosePosition() {
   if (result?.success && !result.pending) document.getElementById('position-editor').close();
 }
 async function submitPendingOrder() {
+  if (!await verifyChartOrderSymbol()) return showToast('Grafik ve emir sembolü doğrulanamadı veya değişti. Emir gönderilmedi.', 'error');
   const pending_type=document.getElementById('pending-type').value;
   const volume=Number(document.getElementById('pending-volume').value);
   const entry_price=Number(document.getElementById('pending-price').value);

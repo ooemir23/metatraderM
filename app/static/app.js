@@ -2,6 +2,10 @@
 
 let currentSymbol = "EURUSD";
 let tvWidget = null;
+let chartSelectionBlocked = false;
+let chartSymbolTimer = null;
+let chartSymbolRequest = 0;
+const chartSymbolChecks = new Map();
 let isBotRunning = false;
 
 // TradingView TV symbol map
@@ -28,11 +32,13 @@ function initTradingView(symbol) {
   const container = document.getElementById("tradingview-container");
   if (!container) return;
   container.innerHTML = ""; // Clear old container
+  clearInterval(chartSymbolTimer);
+  tvWidget = null;
 
   const tvSymbol = TV_SYMBOLS[symbol] || `FX:${symbol}`;
 
   if (window.TradingView) {
-    new TradingView.widget({
+    tvWidget = new TradingView.widget({
       "autosize": true,
       "symbol": tvSymbol,
       "interval": "15",
@@ -47,6 +53,85 @@ function initTradingView(symbol) {
       "enabled_features": ["context_menus", "pane_context_menu", "scales_context_menu", "legend_context_menu"],
       "container_id": "tradingview-container"
     });
+    const widget = tvWidget;
+    widget.ready(() => {
+      if (widget !== tvWidget) return;
+      const frame = document.getElementById(widget.id);
+      if (!frame) return;
+      const origin = new URL(frame.src).origin;
+      frame.contentWindow.postMessage(JSON.stringify({provider:'TradingView', type:'post', name:'quoteSubscribe'}), origin);
+      const inspectSymbol = () => {
+        chartSymbolRequest++;
+        frame.contentWindow.postMessage(JSON.stringify({provider:'TradingView', type:'get', name:'symbolInfo',
+          id:chartSymbolRequest, client_id:tvWidget.id, data:{}}), origin);
+      };
+      inspectSymbol();
+      chartSymbolTimer = setInterval(inspectSymbol, 1000);
+    });
+  }
+}
+
+function brokerSymbolForChart(name, exchange, type) {
+  if (['CRYPTOCAP', 'ECONOMICS', 'INDEX'].includes(exchange)) return null;
+  if (type && !['forex', 'crypto', 'cfd', 'index'].includes(type)) return null;
+  const aliases = {BTCUSDT:'BTCUSD', BTCUSD:'BTCUSD', DJI:'US30'};
+  const candidate = aliases[name] || name;
+  return Object.hasOwn(TV_SYMBOLS, candidate) ? candidate : null;
+}
+
+function applyChartSymbol(name, exchange, type) {
+  const brokerSymbol = brokerSymbolForChart(name, exchange, type);
+  if (brokerSymbol) {
+    if (brokerSymbol !== currentSymbol || chartSelectionBlocked) switchSymbol(brokerSymbol, false);
+    return;
+  }
+  chartSelectionBlocked = true;
+  document.getElementById('current-symbol-title').textContent = `${exchange}:${name} · MT5 eşleşmesi yok`;
+  document.getElementById('order-symbol-tag').textContent = `${name} · İşlem kapalı`;
+  clearSymbolPrices();
+  setOrderNotice(currentSymbol, 'Grafik ürünü eşleşmiyor',
+    'Seçilen TradingView ürünü panelin MT5 sembolleriyle eşleşmiyor. Emir göndermek için panelden bir sembol seçin.', 'error');
+}
+
+window.addEventListener('message', event => {
+  const frame = tvWidget && document.getElementById(tvWidget.id);
+  if (!frame || event.source !== frame.contentWindow || event.origin !== new URL(frame.src).origin) return;
+  let message;
+  try { message = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; } catch (_) { return; }
+  if (message?.provider !== 'TradingView') return;
+  if (message.type === 'on' && message.name === 'symbolInfo' && (message.id === chartSymbolRequest || chartSymbolChecks.has(message.id))) {
+    const data = message.data;
+    const valid = typeof data?.name === 'string' && typeof data.exchange === 'string';
+    if (valid) applyChartSymbol(data.name, data.exchange, data.type);
+    const check = chartSymbolChecks.get(message.id);
+    if (check) { chartSymbolChecks.delete(message.id); check(valid && !chartSelectionBlocked); }
+  } else if (message.type === 'post' && message.name === 'quoteUpdate') {
+    const original = message.data?.original_name;
+    if (typeof original !== 'string' || !original.includes(':')) return;
+    const [exchange, name] = original.split(':');
+    applyChartSymbol(name, exchange);
+  }
+});
+
+async function verifyChartOrderSymbol() {
+  if (!tvWidget) return !chartSelectionBlocked;
+  const symbol = currentSymbol, widget = tvWidget;
+  const frame = document.getElementById(widget.id);
+  if (!frame) return false;
+  const id = ++chartSymbolRequest;
+  const verified = await new Promise(resolve => {
+    const timer = setTimeout(() => { chartSymbolChecks.delete(id); resolve(false); }, 2500);
+    chartSymbolChecks.set(id, ok => { clearTimeout(timer); resolve(ok); });
+    frame.contentWindow.postMessage(JSON.stringify({provider:'TradingView', type:'get', name:'symbolInfo',
+      id, client_id:widget.id, data:{}}), new URL(frame.src).origin);
+  });
+  return verified && tvWidget === widget && currentSymbol === symbol && !chartSelectionBlocked;
+}
+
+function clearSymbolPrices() {
+  for (const id of ['header-bid', 'header-ask', 'header-spread', 'btn-bid-price', 'btn-ask-price']) {
+    const node = document.getElementById(id);
+    if (node) node.textContent = '—';
   }
 }
 
@@ -393,8 +478,10 @@ function initPositionsTopResizer() {
 
 
 // Switch Active Symbol
-function switchSymbol(symbol) {
+function switchSymbol(symbol, reloadChart = true) {
+  chartSelectionBlocked = false;
   currentSymbol = symbol;
+  clearSymbolPrices();
   if (typeof startLiveFeed === "function") startLiveFeed();
   renderOrderNotice();
   document.getElementById("current-symbol-title").innerText = `${symbol} • M15`;
@@ -409,7 +496,7 @@ function switchSymbol(symbol) {
     }
   });
 
-  initTradingView(symbol);
+  if (reloadChart) initTradingView(symbol);
   fetchPrice();
 }
 
@@ -1059,6 +1146,7 @@ async function fetchReports() {
 
 // Fetch Price for Active Symbol
 function renderPriceData(tick) {
+    if (chartSelectionBlocked || (tick.symbol && tick.symbol !== currentSymbol)) return;
     if (typeof displayedTickTime !== "undefined") displayedTickTime = tick.time || 0;
     if (typeof displayedQuoteStatus !== "undefined") {
       displayedQuoteStatus = tick.quote_status || null;
@@ -1080,12 +1168,13 @@ async function fetchPrice(force = false) {
   if (!force && typeof liveFeedHealthy === "function" && liveFeedHealthy()) return;
   if (isFetchingPrice) return;
   isFetchingPrice = true;
+  const symbol = currentSymbol;
   try {
-    const res = await fetch(`/api/price/${currentSymbol}`);
+    const res = await fetch(`/api/price/${symbol}`);
     if (!res.ok) return;
     const tick = await res.json();
 
-    renderPriceData(tick);
+    if (symbol === currentSymbol) renderPriceData(tick);
   } catch (err) {
     console.error("fetchPrice error:", err);
   } finally {
@@ -1276,6 +1365,15 @@ function orderErrorMessage(data) {
 
 // Submit Buy/Sell Order
 async function submitOrder(type) {
+  if (orderPending) return;
+  if (!await verifyChartOrderSymbol()) {
+    setOrderNotice(currentSymbol, 'Grafik sembolünü kontrol edin', 'Grafik ve emir sembolü doğrulanamadı veya değişti. Sembolü kontrol edip yeniden deneyin; emir gönderilmedi.', 'error');
+    return;
+  }
+  if (chartSelectionBlocked) {
+    setOrderNotice(currentSymbol, 'Grafik ürünü eşleşmiyor', 'Emir göndermek için panelden bir MT5 sembolü seçin.', 'error');
+    return;
+  }
   if (orderPending) return;
   if (typeof scheduleTradePreview === "function") scheduleTradePreview(type);
   const symbol = currentSymbol;
