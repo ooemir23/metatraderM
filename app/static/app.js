@@ -74,16 +74,21 @@ function initTradingView(symbol) {
 }
 
 function brokerSymbolForChart(name, exchange, type) {
-  name = name.split(':').pop();
+  name = name.trim().split(':').pop().toUpperCase();
+  exchange = exchange.trim().toUpperCase();
+  type = typeof type === 'string' ? type.trim().toLowerCase() : '';
   if (['CRYPTOCAP', 'ECONOMICS', 'INDEX'].includes(exchange)) return null;
-  if (type && !['forex', 'crypto', 'cfd', 'index'].includes(type)) return null;
+  // TradingView's symbolInfo calls crypto instruments "bitcoin" as well as
+  // "crypto". Quote updates omit type; both messages must resolve identically.
+  if (type && !['forex', 'crypto', 'bitcoin', 'cfd', 'index', 'commodity', 'spot'].includes(type)) return null;
   const aliases = {BTCUSDT:'BTCUSD', BTCUSD:'BTCUSD', DJI:'US30'};
   const candidate = aliases[name] || name;
   return Object.hasOwn(TV_SYMBOLS, candidate) ? candidate : null;
 }
 
 function applyChartSymbol(name, exchange, type) {
-  name = name.split(':').pop();
+  name = name.trim().split(':').pop().toUpperCase();
+  exchange = exchange.trim().toUpperCase();
   updateTradingViewLink(`${exchange}:${name}`);
   // Replace a market-cap measurement with the executable Bitcoin price chart.
   if (exchange === 'CRYPTOCAP' && ['BITCOIN', 'BTC'].includes(name)) {

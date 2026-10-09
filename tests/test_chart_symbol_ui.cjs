@@ -10,6 +10,8 @@ const fs=require('node:fs'), vm=require('node:vm'), assert=require('node:assert/
  vm.runInContext(fs.readFileSync('app/static/app.js','utf8'),context);
  vm.runInContext('startLiveFeed=()=>{}; renderOrderNotice=()=>{}; setOrderNotice=()=>{}; tvWidget={id:"chart-frame"};',context);
  assert.equal(context.brokerSymbolForChart('BTCUSDT','BINANCE','crypto'),'BTCUSD');
+ assert.equal(context.brokerSymbolForChart('BTCUSDT','Binance','bitcoin'),'BTCUSD');
+ assert.equal(context.brokerSymbolForChart(' binance:btcusdt ','Binance','Bitcoin'),'BTCUSD');
  assert.equal(context.brokerSymbolForChart('EURUSD','OANDA','forex'),'EURUSD');
  assert.equal(context.brokerSymbolForChart('BITCOIN','CRYPTOCAP','index'),null);
  assert.equal(context.brokerSymbolForChart('BTCUSD','INDEX','index'),null);
@@ -18,6 +20,18 @@ const fs=require('node:fs'), vm=require('node:vm'), assert=require('node:assert/
  send('BTCUSDT','BINANCE',{});assert.equal(vm.runInContext('currentSymbol',context),'EURUSD');
  send('BTCUSDT','BINANCE',frameWindow,'https://evil.example');assert.equal(vm.runInContext('currentSymbol',context),'EURUSD');
  send('BTCUSDT','BINANCE');assert.equal(vm.runInContext('currentSymbol',context),'BTCUSD');assert.equal(node('order-symbol-tag').innerText,'BTCUSD');
+ let restarts=0;
+ context.startLiveFeed=()=>{restarts++;};
+ context.renderPriceData({symbol:'BTCUSD',bid:82391.5,ask:82405.5,spread:1400});
+ for(let cycle=0;cycle<20;cycle++) {
+   send('BTCUSDT','BINANCE');
+   listeners.message({source:frameWindow,origin:'https://s.tradingview.com',data:JSON.stringify({provider:'TradingView',type:'on',name:'symbolInfo',id:0,
+     data:{name:'BTCUSDT',exchange:'Binance',type:'bitcoin'}})});
+   assert.equal(vm.runInContext('chartSelectionBlocked',context),false,'quote and symbolInfo must agree');
+   assert.equal(node('order-symbol-tag').innerText,'BTCUSD');
+   assert.equal(node('header-bid').innerText,82391.5,'broker quote must remain visible');
+ }
+ assert.equal(restarts,0,'repeated same-symbol updates must not restart live prices');
  context.renderPriceData({symbol:'EURUSD',bid:1.2,ask:1.3});assert.equal(node('header-bid').textContent,'—');
  send('TOTAL','CRYPTOCAP');assert.equal(vm.runInContext('chartSelectionBlocked',context),true);
  assert.match(node('order-symbol-tag').textContent,/İşlem kapalı/);
