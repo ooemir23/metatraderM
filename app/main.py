@@ -187,6 +187,9 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        # Cancelling asyncio.to_thread does not stop its queued worker.
+        mt5_client.automation_stopped.set()
+        ai_advisor.update_autopilot({"enabled": False})
         bot.stop()
         task.cancel()
         feed_task.cancel()
