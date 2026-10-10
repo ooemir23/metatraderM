@@ -292,7 +292,7 @@ body.resizing-positions #tradingview-container iframe {
 .mt5-chart-menu[hidden], #chart-tradingview-link[hidden] { display:none; }
 .mt5-menu-title { display:flex; justify-content:space-between; font-weight:700; margin-bottom:8px; }
 .mt5-chart-menu label { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:5px 0; }
-.mt5-chart-menu select, .mt5-chart-menu input[type=number] { padding:4px; width:110px; border:1px solid #475569; border-radius:5px; background:#0f172a; color:#e2e8f0; }
+.mt5-chart-menu select, .mt5-chart-menu input[type=number], .mt5-chart-menu input[readonly] { padding:4px; width:110px; border:1px solid #475569; border-radius:5px; background:#0f172a; color:#e2e8f0; }
 .mt5-chart-menu input[type=color] { width:42px; height:26px; background:transparent; }
 .mt5-chart-menu input[type=checkbox] { accent-color:#06b6d4; }
 .mt5-chart-menu > button { display:block; width:100%; text-align:left; padding:7px 6px; border-radius:5px; }

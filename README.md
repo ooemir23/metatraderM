@@ -130,3 +130,11 @@ Grafik ayarları emir veya bot ayarlarını değiştirmez. Kaynak seçiminden es
 Orijinal TradingView menüsüne geçiş için ileride resmi Advanced Charts entegrasyonu gerekir.
 Grafik kütüphanesi: TradingView Lightweight Charts 5.2.1 (Apache-2.0); lisans ve bildirim
 `app/static/vendor` klasöründedir.
+
+Sağ tuş menüsü ayrıca seçilen fiyatı kopyalama, normal/logaritmik/yüzde/100 bazlı
+ölçek, ters ölçek, artı imleç ve son fiyat çizgisi kontrolleri, EMA (SMA ile başlatılır),
+göstergeleri kaldırma, son muma dönme, PNG görüntüsü ve CSV mum verisi indirme,
+görünüm şablonu kaydetme/uygulama seçeneklerini içerir. CSV saatleri `time_broker`
+alanında broker zaman damgası olarak korunur. Şablon grafik ayarlarını kapsar;
+sembol bazındaki yatay çizgiler ayrı saklanır. TradingView hesabına bağlı alarmlar,
+Pine Script ve TradingView'in tüm çizim araçları bu sürümün parçası değildir.

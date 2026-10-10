@@ -1,7 +1,8 @@
 // Independent MT5 chart. TradingView embed remains available as a separate mode.
 (() => {
   const defaults = {timeframe:15, type:'candles', theme:'dark', grid:true, volume:true,
-    log:false, sma:false, period:20, up:'#10b981', down:'#ef4444'};
+    log:false, scale:0, invert:false, crosshair:true, priceLine:true,
+    sma:false, ema:false, period:20, emaPeriod:50, up:'#10b981', down:'#ef4444'};
   const frames = {1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'};
   const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch (_) { return fallback; } };
   const write = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (_) { return false; } };
@@ -10,8 +11,10 @@
     if (Object.hasOwn(frames, raw.timeframe)) result.timeframe = Number(raw.timeframe);
     if (['candles','bars','line','area'].includes(raw.type)) result.type = raw.type;
     if (['dark','light'].includes(raw.theme)) result.theme = raw.theme;
-    for (const key of ['grid','volume','log','sma']) if (typeof raw[key] === 'boolean') result[key] = raw[key];
+    for (const key of ['grid','volume','log','sma','ema','invert','crosshair','priceLine']) if (typeof raw[key] === 'boolean') result[key] = raw[key];
+    result.scale = [0,1,2,3].includes(raw.scale) ? raw.scale : (raw.log ? 1 : 0);
     if (Number.isInteger(raw.period) && raw.period >= 2 && raw.period <= 200) result.period = raw.period;
+    if (Number.isInteger(raw.emaPeriod) && raw.emaPeriod >= 2 && raw.emaPeriod <= 200) result.emaPeriod = raw.emaPeriod;
     for (const key of ['up','down']) if (/^#[0-9a-f]{6}$/i.test(raw[key])) result[key] = raw[key];
     return result;
   }
@@ -49,11 +52,14 @@
     const light = prefs.theme === 'light';
     state.chart.applyOptions({layout:{background:{type:'solid',color:light?'#f8fafc':'#0b0e14'},textColor:light?'#334155':'#94a3b8',attributionLogo:true},
       grid:{vertLines:{visible:prefs.grid,color:light?'#e2e8f0':'#1e293b'},horzLines:{visible:prefs.grid,color:light?'#e2e8f0':'#1e293b'}},
-      rightPriceScale:{mode:prefs.log?1:0,autoScale:true,scaleMargins:{top:.1,bottom:prefs.volume?.25:.1}},
+      rightPriceScale:{mode:prefs.scale,invertScale:prefs.invert,autoScale:true,scaleMargins:{top:.1,bottom:prefs.volume?.25:.1}},
+      crosshair:{mode:prefs.crosshair?1:2},
       timeScale:{timeVisible:true,secondsVisible:false},localization:{locale:'tr-TR'}});
     state.price.applyOptions(seriesOptions());
+    state.price.applyOptions({priceLineVisible:prefs.priceLine,lastValueVisible:prefs.priceLine});
     state.volume.applyOptions({visible:prefs.volume});
     state.average.applyOptions({visible:prefs.sma});
+    state.exponential.applyOptions({visible:prefs.ema});
   }
   function renderData(state, fit = false) {
     if (!state.rows.length) return;
@@ -66,7 +72,25 @@
     let sum = 0; const avg=[];
     rows.forEach((r,i)=>{sum+=r.close;if(i>=prefs.period) sum-=rows[i-prefs.period].close;if(i>=prefs.period-1) avg.push({time:r.time,value:sum/prefs.period});});
     state.average.setData(avg);
+    state.exponential.setData(emaValues(rows,prefs.emaPeriod));
     if (fit) { state.chart.timeScale().fitContent(); state.chart.timeScale().setVisibleLogicalRange({from:Math.max(0,rows.length-120),to:rows.length+4}); }
+  }
+  function emaValues(rows, period) {
+    if (rows.length < period) return [];
+    let value=rows.slice(0,period).reduce((sum,r)=>sum+r.close,0)/period;
+    const result=[{time:rows[period-1].time,value}], alpha=2/(period+1);
+    for(let i=period;i<rows.length;i++) {value=alpha*rows[i].close+(1-alpha)*value;result.push({time:rows[i].time,value});}
+    return result;
+  }
+  function csvData(state) {
+    // Broker candle timestamps are preserved, not mislabeled as UTC dates.
+    return 'symbol,timeframe_minutes,time_broker,open,high,low,close,tick_volume\r\n'+state.rows.map(r=>
+      [state.symbol,state.timeframe,r.time,r.open,r.high,r.low,r.close,r.tick_volume].join(',')).join('\r\n');
+  }
+  function download(blob, filename) {
+    const url=URL.createObjectURL(blob), link=document.createElement('a');
+    link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),30000);
   }
   function rebuildPrice(state) {
     if (state.price) state.chart.removeSeries(state.price);
@@ -123,6 +147,10 @@
       const value=prefs[node.dataset.setting];
       if (node.type === 'checkbox') node.checked=value; else node.value=String(value);
     }
+    const price=state.selectedPrice;
+    menu.querySelector('[data-context-price]').value=price>0?String(Number(price.toFixed(8))):'Fiyat seçilmedi';
+    menu.querySelector('[data-action="copy-price"]').disabled=!(price>0);
+    for(const action of ['export-csv','export-png']) menu.querySelector(`[data-action="${action}"]`).disabled=!state.loaded;
     const bounds=state.host.getBoundingClientRect();
     menu.style.left=`${Math.max(4,Math.min((event?.clientX ?? bounds.left+12)-bounds.left,bounds.width-menu.offsetWidth-4))}px`;
     menu.style.top=`${Math.max(4,Math.min((event?.clientY ?? bounds.top+12)-bounds.top,bounds.height-menu.offsetHeight-4))}px`;
@@ -136,6 +164,8 @@
       <div class="mt5-chart-canvas" tabindex="0" aria-label="MT5 fiyat grafiği"></div>
       <div class="mt5-chart-menu" hidden role="dialog" aria-label="Grafik ayarları">
         <div class="mt5-menu-title">Grafik ayarları <button type="button" data-action="close" aria-label="Grafik ayarlarını kapat">✕</button></div>
+        <label>Seçilen fiyat<input data-context-price readonly aria-label="Sağ tıklanan fiyat"></label>
+        <button type="button" data-action="copy-price">Fiyatı kopyala</button>
         <label>Zaman dilimi<select data-setting="timeframe" aria-label="Grafik zaman dilimi">${Object.entries(frames).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label>
         <label>Grafik türü<select data-setting="type" aria-label="Grafik türü"><option value="candles">Mum</option><option value="bars">Çubuk</option><option value="line">Çizgi</option><option value="area">Alan</option></select></label>
         <label>Tema<select data-setting="theme" aria-label="Grafik teması"><option value="dark">Koyu</option><option value="light">Açık</option></select></label>
@@ -143,12 +173,23 @@
         <label>Düşüş rengi<input type="color" data-setting="down" aria-label="Düşüş rengi"></label>
         <label>Izgara<input type="checkbox" data-setting="grid" aria-label="Grafik ızgarası"></label>
         <label>Tick hacmi<input type="checkbox" data-setting="volume" aria-label="Tick hacmi"></label>
-        <label>Logaritmik ölçek<input type="checkbox" data-setting="log" aria-label="Logaritmik ölçek"></label>
+        <label>Fiyat ölçeği<select data-setting="scale" aria-label="Fiyat ölçeği"><option value="0">Normal</option><option value="1">Logaritmik</option><option value="2">Yüzde</option><option value="3">100 bazlı</option></select></label>
+        <label>Ölçeği ters çevir<input type="checkbox" data-setting="invert" aria-label="Ölçeği ters çevir"></label>
+        <label>Artı imleç<input type="checkbox" data-setting="crosshair" aria-label="Artı imleç"></label>
+        <label>Son fiyat çizgisi<input type="checkbox" data-setting="priceLine" aria-label="Son fiyat çizgisi"></label>
         <label>Hareketli ortalama (SMA)<input type="checkbox" data-setting="sma" aria-label="Hareketli ortalama"></label>
         <label>SMA periyodu<input type="number" min="2" max="200" data-setting="period" aria-label="SMA periyodu"></label>
+        <label>Üssel ortalama (EMA)<input type="checkbox" data-setting="ema" aria-label="Üssel ortalama"></label>
+        <label>EMA periyodu<input type="number" min="2" max="200" data-setting="emaPeriod" aria-label="EMA periyodu"></label>
         <button type="button" data-action="level">Bu fiyata yatay çizgi ekle</button>
         <button type="button" data-action="clear-levels">Yatay çizgileri temizle</button>
         <button type="button" data-action="fit">Grafiği ekrana sığdır</button>
+        <button type="button" data-action="latest">Son muma dön</button>
+        <button type="button" data-action="clear-indicators">Göstergeleri kaldır · SMA / EMA / Hacim</button>
+        <button type="button" data-action="export-png">Grafik görüntüsünü indir · PNG</button>
+        <button type="button" data-action="export-csv">Mum verilerini indir · CSV</button>
+        <button type="button" data-action="save-template">Görünüm şablonunu kaydet</button>
+        <button type="button" data-action="load-template">Kayıtlı görünüm şablonunu uygula</button>
         <button type="button" data-action="reset">Grafik ayarlarını sıfırla</button>
         <p>Ayarlar bu tarayıcıda saklanır. Grafik ayarları emir veya bot ayarlarını değiştirmez.</p>
       </div>
@@ -167,6 +208,7 @@
     state.volume=state.chart.addSeries(LightweightCharts.HistogramSeries,{priceFormat:{type:'volume'},priceScaleId:'volume',lastValueVisible:false,priceLineVisible:false});
     state.volume.priceScale().applyOptions({scaleMargins:{top:.8,bottom:0}});
     state.average=state.chart.addSeries(LightweightCharts.LineSeries,{color:'#fbbf24',lineWidth:2,priceLineVisible:false,lastValueVisible:false,title:'SMA'});
+    state.exponential=state.chart.addSeries(LightweightCharts.LineSeries,{color:'#a78bfa',lineWidth:2,priceLineVisible:false,lastValueVisible:false,title:'EMA'});
     applyStyle(state);
     document.getElementById('current-symbol-title').textContent=`${symbol} · ${frames[prefs.timeframe]} · MT5`;
     const on=(target,name,fn)=>{target.addEventListener(name,fn);state.cleanup.push(()=>target.removeEventListener(name,fn));};
@@ -179,13 +221,29 @@
     on(host.querySelector('.mt5-settings-button'),'click',()=>{state.selectedPrice=null;showMenu(state);state.menu.querySelector('[data-action="level"]').disabled=true;});
     on(state.menu,'change',event=>{
       const key=event.target.dataset.setting;if(!key) return;
-      const value=event.target.type==='checkbox'?event.target.checked:['timeframe','period'].includes(key)?Number(event.target.value):event.target.value;
-      if (key==='period' && (!Number.isInteger(value)||value<2||value>200)) {event.target.value=prefs.period;return;}
+      const value=event.target.type==='checkbox'?event.target.checked:['timeframe','period','emaPeriod','scale'].includes(key)?Number(event.target.value):event.target.value;
+      if (['period','emaPeriod'].includes(key) && (!Number.isInteger(value)||value<2||value>200)) {event.target.value=prefs[key];return;}
       change(key,value);
     });
     on(state.menu,'click',event=>{
       const action=event.target.closest('[data-action]')?.dataset.action;if(!action)return;
       if(action==='fit') {state.chart.priceScale('right').applyOptions({autoScale:true});state.chart.timeScale().fitContent();}
+      if(action==='latest') state.chart.timeScale().scrollToRealTime();
+      if(action==='copy-price' && state.selectedPrice>0) {
+        const value=String(Number(state.selectedPrice.toFixed(8)));
+        if(navigator.clipboard?.writeText) navigator.clipboard.writeText(value).then(()=>status(state,'Fiyat panoya kopyalandı')).catch(()=>{showMenu(state);const input=state.menu.querySelector('[data-context-price]');input.focus();input.select();status(state,'Panoya erişilemedi; seçili fiyatı Ctrl+C ile kopyalayın.');});
+        else {showMenu(state);const input=state.menu.querySelector('[data-context-price]');input.focus();input.select();status(state,'Seçili fiyatı Ctrl+C ile kopyalayın.');return;}
+      }
+      if(action==='export-csv' && state.loaded) download(new Blob(['\ufeff'+csvData(state)],{type:'text/csv;charset=utf-8'}),`${symbol}-${frames[state.timeframe]}-MT5.csv`);
+      if(action==='export-png' && state.loaded) state.chart.takeScreenshot().toBlob(blob=>{if(blob)download(blob,`${symbol}-${frames[state.timeframe]}-MT5.png`);},'image/png');
+      if(action==='clear-indicators') {prefs.sma=false;prefs.ema=false;prefs.volume=false;saveSettings(state);applyStyle(state);}
+      if(action==='save-template') status(state,write('mt5.chart.template.v1',prefs)?'Görünüm şablonu bu tarayıcıda kaydedildi.':'Şablon kaydedilemedi; tarayıcı depolama iznini kontrol edin.');
+      if(action==='load-template') {
+        const template=read('mt5.chart.template.v1',null);
+        if(!template) {status(state,'Henüz kayıtlı görünüm şablonu yok.');state.menu.hidden=true;return;}
+        if(write('mt5.chart.settings.v1',template)) {prefs=settings();mount(symbol);return;}
+        status(state,'Şablon uygulanamadı; tarayıcı depolama iznini kontrol edin.');
+      }
       if(action==='reset') {prefs={...defaults};saveSettings(state);mount(symbol);return;}
       if(action==='level' && state.selectedPrice>0 && state.savedLines.length<50) {
         const price=state.selectedPrice;state.savedLines.push(price);state.lines.push(state.price.createPriceLine({price,color:'#38bdf8',lineWidth:1,lineStyle:2,axisLabelVisible:true,title:'Seviye'}));write(`mt5.chart.levels.${symbol}`,state.savedLines);
@@ -206,5 +264,5 @@
       const link=document.getElementById('chart-tradingview-link');if(link)link.hidden=false;
     }
   }
-  window.MT5Chart={mode,setMode,mount,dispose,normalize};
+  window.MT5Chart={mode,setMode,mount,dispose,normalize,emaValues,csvData};
 })();
