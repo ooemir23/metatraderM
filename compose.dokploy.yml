@@ -5,6 +5,8 @@ services:
       traefik.enable: "false"
     networks: [default]
   web-dashboard:
+    environment:
+      DASHBOARD_PUBLIC_ORIGIN: https://trade.46.225.94.54.sslip.io
     labels:
       traefik.enable: "true"
       traefik.docker.network: dokploy-network

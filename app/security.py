@@ -16,6 +16,21 @@ TRADER_ACTIONS = {
 VIEWER_ACTIONS = {'/api/trade/preview', '/api/backtest', '/api/research/compare', '/api/research/export'}
 
 
+def normalized_origin(value):
+    """Parse an HTTP origin without accepting credentials, paths or opaque origins."""
+    try:
+        if not isinstance(value, str) or not value or any(char.isspace() for char in value):
+            return None
+        parts = urlsplit(value)
+        if (parts.scheme not in ('http', 'https') or not parts.hostname
+                or parts.username is not None or parts.password is not None
+                or parts.path not in ('', '/') or parts.query or parts.fragment):
+            return None
+        return (parts.scheme, parts.hostname.lower(), parts.port if parts.port is not None else (443 if parts.scheme == 'https' else 80))
+    except (ValueError, TypeError):
+        return None
+
+
 async def protect_dashboard(request, call_next):
     accounts = [(os.getenv('DASHBOARD_USER', 'admin'), os.getenv('DASHBOARD_PASSWORD', ''), 'ADMIN')]
     second_user = os.getenv('DASHBOARD_USER_2', '').strip()
@@ -58,12 +73,22 @@ async def protect_dashboard(request, call_next):
         return JSONResponse({'detail': 'Debug API kapalı.'}, status_code=404)
     if request.method not in ('GET', 'HEAD', 'OPTIONS'):
         origin = request.headers.get('origin')
-        source = urlsplit(origin) if origin else None
-        cross_origin = source and (source.netloc != request.headers.get('host') or source.scheme != request.url.scheme)
+        public_origin = os.getenv('DASHBOARD_PUBLIC_ORIGIN', '').strip()
+        public = normalized_origin(public_origin) if public_origin else None
+        if public_origin and public is None:
+            return JSONResponse({'detail': 'Panel yayın adresi geçersiz yapılandırıldı.'}, status_code=503)
+        # TLS terminates at the reverse proxy. Use the explicitly configured
+        # public origin, never trust client-supplied X-Forwarded-* headers.
+        scheme = public[0] if public else request.url.scheme
+        target = normalized_origin(f"{scheme}://{request.headers.get('host', '')}")
+        source = normalized_origin(origin) if origin is not None else None
+        cross_origin = origin is not None and (source is None or target is None
+            or source != target or (public is not None and target != public))
         form = request.headers.get('content-type', '').split(';')[0] in (
             'application/x-www-form-urlencoded', 'multipart/form-data', 'text/plain')
         if cross_origin or request.headers.get('sec-fetch-site') == 'cross-site' or form:
-            return JSONResponse({'detail': 'Farklı kaynaktan işlem isteği reddedildi.'}, status_code=403)
+            return JSONResponse({'detail': 'Farklı kaynaktan işlem isteği reddedildi.',
+                                 'reason_code': 'untrusted_origin', 'not_submitted': True}, status_code=403)
     response = await call_next(request)
     response.headers['Cache-Control'] = 'no-store'
     response.headers['X-Content-Type-Options'] = 'nosniff'

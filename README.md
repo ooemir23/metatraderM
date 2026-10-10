@@ -33,6 +33,9 @@ Terminalin üstündeki **Ürün ara / Ekle** veya emir panelindeki ürün düğm
 
 ## Web paneli için güncel güvenlik davranışı
 
+- HTTPS ters proxy arkasında `.env` içinde `DASHBOARD_PUBLIC_ORIGIN=https://panel-adresi` ayarlayın; şema, alan adı ve varsa port tarayıcının panel adresiyle aynı olmalı. Dokploy ek Compose dosyası mevcut yayın adresini açıkça tanımlar. Kaynak kontrolü kapatılmaz ve istemcinin `X-Forwarded-*` başlıklarına güvenilmez.
+- Manuel al/sat, brokerın güncel fiyatı ve seçili yönün risk önizlemesi doğrulanmadan açılmaz. Tıklamada risk tekrar kontrol edilir; hesap, ürün veya lot/SL/TP değişirse emir gönderilmez. Fiyat/risk düzeldiğinde otomatik emir gönderilmez.
+
 - Broker girişinde **Demo Hesap** veya **Gerçek Hesap** açıkça seçilir. MT5'in bildirdiği gerçek hesap türü, numara ve sunucu eşleşmeden giriş kabul edilmez. Sunucu adı brokerın verdiği tam adla girilir; uygulama adı otomatik değiştirmez. Eski kayıtlarda hesap türü yoksa panelden yeniden giriş gerekir.
 - Panelde broker hesabına giriş yapılmadan veya MT5'teki aktif hesap kayıtlı hesapla uyuşmadan yeni emir ve kapatma gönderilmez. Hesap değiştirildiğinde panel uyarı gösterir.
 - **Tümünü Kapat / İptal** yeni emirleri kalıcı olarak durdurur. Brokerda kalan pozisyon ve bekleyen emirler son kez doğrulanır. MT5 durumunu kontrol ettikten sonra panelde **Yeni Emirlere Devam Et** düğmesini kullanın. Durdurma durumu yeniden başlatmada da korunur.

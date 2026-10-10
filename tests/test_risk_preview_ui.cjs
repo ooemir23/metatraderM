@@ -17,8 +17,8 @@ const assert = require('node:assert/strict');
   const context = vm.createContext({
     window:{currentSymbol:'XAUUSD',MT5I18n:{language:()=> 'en'}},
     document:{getElementById:id=>nodes.get(id),addEventListener(){}},
-    currentSymbol:'XAUUSD',
-    setTimeout:callback=>{const id=++nextTimer;timers.set(id,callback);return id;},
+    currentSymbol:'XAUUSD',AbortController,
+    setTimeout:(callback,delay)=>{const id=++nextTimer;timers.set(id,{callback,delay});return id;},
     clearTimeout:id=>timers.delete(id),
     setInterval(){},
     fetch:(url,options)=>new Promise((resolve,reject)=>requests.push({url,payload:JSON.parse(options.body),resolve,reject})),
@@ -29,28 +29,31 @@ const assert = require('node:assert/strict');
   const first = context.refreshTradePreview();
   assert.equal(label.textContent,'Previous broker estimate','pending request must not collapse the panel');
   context.scheduleTradePreview('SELL');
-  assert.equal(timers.size,1);
-  const scheduled = [...timers.values()][0];
-  timers.clear();
+  assert.equal([...timers.values()].filter(t=>t.delay===350).length,1);
+  const scheduled = [...timers.values()].find(t=>t.delay===350).callback;
   const second = scheduled();
-  assert.equal(requests[1].payload.order_type,'SELL');
-  requests[1].resolve({ok:true,json:async()=>({success:true,currency:'USD',stop_risk:5,risk_pct_equity:0.1,
+  assert.equal(requests[3].payload.order_type,'SELL');
+  requests[2].resolve({ok:true,json:async()=>({success:true})});
+  requests[3].resolve({ok:true,json:async()=>({success:true,currency:'USD',stop_risk:5,risk_pct_equity:0.1,
     margin_required:8,spread_points:2,existing_stop_risk:0,daily_loss:0,positions_without_stop:0})});
   await second;
   assert.match(label.textContent,/Stop risk 5 USD/);
   const currentText = label.textContent;
   requests[0].reject(new Error('Old request failed'));
+  requests[1].resolve({ok:true,json:async()=>({success:true})});
   await first;
   assert.equal(label.textContent,currentText,'stale error must not erase the current estimate');
 
   const third = context.refreshTradePreview();
   assert.equal(label.textContent,currentText,'manual refresh must preserve the displayed estimate');
-  requests[2].resolve({ok:true,json:async()=>({success:true,currency:'USD',stop_risk:6,risk_pct_equity:0.2,
+  requests[4].resolve({ok:true,json:async()=>({success:true})});
+  requests[5].resolve({ok:true,json:async()=>({success:true,currency:'USD',stop_risk:6,risk_pct_equity:0.2,
     margin_required:8,spread_points:3,existing_stop_risk:0,daily_loss:0,positions_without_stop:0})});
   await third;
   assert.match(label.textContent,/Stop risk 6 USD/);
   const invalid=context.refreshTradePreview();
-  requests[3].resolve({ok:false,json:async()=>({success:false,error:'SL mesafesi uygun değil',stop_guidance:{point:.01,spread_points:1400,min_sl_points:1401,min_tp_points:1}})});
+  requests[6].resolve({ok:true,json:async()=>({success:true})});
+  requests[7].resolve({ok:false,json:async()=>({success:false,error:'SL mesafesi uygun değil',stop_guidance:{point:.01,spread_points:1400,min_sl_points:1401,min_tp_points:1}})});
   await invalid;
   assert.equal(nodes.get('apply-stop-minimum').hidden,false);
   assert.match(nodes.get('stop-distance-guidance').textContent,/1401/);

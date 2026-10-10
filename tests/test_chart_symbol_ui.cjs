@@ -45,7 +45,7 @@ const fs=require('node:fs'), vm=require('node:vm'), assert=require('node:assert/
  send('BITCOIN','CRYPTOCAP');
  assert.equal(chartReload,'BTCUSD','market-cap selection reloads the price chart as well as the ticket');
  assert.equal(vm.runInContext('currentSymbol',context),'BTCUSD');
- assert.equal(node('order-buy-btn').disabled,false);
+ assert.equal(node('order-buy-btn').disabled,true,'new symbol requires verified quote and risk');
  assert.equal(context.brokerSymbolForChart('BINANCE:BTCUSDT','BINANCE','crypto'),'BTCUSD');
  frameWindow.postMessage=()=>{throw new Error('Third-party unavailable');};
  assert.equal(await context.verifyChartOrderSymbol(),true,'manual MT5 selection does not depend on TradingView uptime');

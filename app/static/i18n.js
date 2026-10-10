@@ -2,6 +2,7 @@
 (function () {
   const STORAGE_KEY = "hma_ui_language";
   const en = Object.fromEntries([
+    ["Güncel fiyat ve işlem öncesi risk doğrulanıyor.", "Verifying current prices and pre-trade risk."],
     ["Emirler sunucuda doğrulanır", "Orders are verified on the server"],
     ["AI emirleri sunucuda doğrulanır; geçerli Stop Loss (SL), Kâr Al (TP) ve işlem başına risk sınırı olmadan emir gönderilmez.", "AI orders are verified on the server; valid Stop Loss (SL), Take Profit (TP), and a per-order risk limit are required."],
     ["Hesap doğrulanamadı; risk tahmini kullanılamaz.", "Account not verified; risk estimate unavailable."],

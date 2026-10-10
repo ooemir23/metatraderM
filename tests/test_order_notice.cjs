@@ -8,11 +8,13 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  const ctx=vm.createContext({console,Date,AbortController,crypto:require("node:crypto").webcrypto,localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},document:{addEventListener(){},getElementById:node,querySelectorAll:()=>[]},window:{addEventListener(){}},setInterval(){},setTimeout(){},clearTimeout(){},
  fetch:async()=>{calls++;return new Promise(resolve=>{release=resolve;});}});
  vm.runInContext(fs.readFileSync('app/static/app.js','utf8'),ctx);
+ // Isolate durable intent/feedback behavior; real quote and preview gates have separate integration tests.
+ ctx.quoteOrderIssue=()=>'';ctx.window.MT5TradePreview={issue:()=>'',verify:async()=>true};
  node('sl-input').value='200';node('tp-input').value='400';
  assert.deepEqual(Array.from(ctx.orderErrorMessage({reason_code:'trading_halted',detail:'Safety lock'})),
    ['Yeni emirler durduruldu','Safety lock']);
  ctx.initTradingView=()=>{};ctx.fetchPrice=()=>{};ctx.fetchPositions=()=>{};ctx.fetchAccount=()=>{};
- const request=ctx.submitOrder('BUY');
+ const request=ctx.submitOrder('BUY');await new Promise(setImmediate);
  assert.equal(node('order-buy-btn').disabled,true);
  await ctx.submitOrder('BUY');assert.equal(calls,1);
  release({ok:false,json:async()=>({request_id:'test-id',detail:'Market closed',retcode:10018})});await request;
@@ -21,11 +23,11 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  assert.equal(node('order-buy-btn').disabled,false);
  ctx.switchSymbol('XAUUSD');assert.equal(node('order-notice-title').textContent,'İşlem durumu');
  ctx.switchSymbol('EURUSD');assert.match(node('order-notice-title').textContent,/piyasa kapalı/);
- const pending=ctx.submitOrder('SELL');ctx.switchSymbol('GBPUSD');
+ const pending=ctx.submitOrder('SELL');await new Promise(setImmediate);ctx.switchSymbol('GBPUSD');
  release({ok:false,json:async()=>({request_id:'test-id',detail:'Not enough money',retcode:10019})});await pending;
  assert.equal(node('order-notice-title').textContent,'İşlem durumu');
  ctx.switchSymbol('EURUSD');assert.match(node('order-notice-title').textContent,/Yetersiz teminat/);
- const halted=ctx.submitOrder('BUY');
+ const halted=ctx.submitOrder('BUY');await new Promise(setImmediate);
  release({ok:false,json:async()=>({reason_code:'trading_halted',detail:'Safety lock'})});await halted;
  assert.equal(storage.has('order-intent:EURUSD'),false,'definitive safety rejection clears the pending intent');
  assert.equal(node('order-reset-btn').hidden,true,'safety rejection does not require MT5 recovery');

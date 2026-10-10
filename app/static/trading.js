@@ -94,6 +94,8 @@ async function submitPendingOrder() {
   const sl_points=slValue===''?NaN:Number(slValue), tp_points=tpValue===''?NaN:Number(tpValue);
   if (![volume,entry_price].every(v=>Number.isFinite(v)&&v>0)||![sl_points,tp_points].every(v=>Number.isInteger(v)&&v>=0)) return showToast('Fiyat, lot ve puan alanlarını kontrol edin.', 'error');
   if (currentAccountType==='REAL' && sl_points<=0) return showToast('Gerçek hesapta yeni bekleyen emir için Stop Loss zorunlu.', 'error');
+  const quoteIssue = quoteOrderIssue();
+  if (quoteIssue) return showToast(quoteIssue + ' Bekleyen emir gönderilmedi.', 'warning');
   const symbol=currentSymbol;
   await guardedAction('pending:'+symbol,'/api/order/pending', {symbol,pending_type,order_type:pending_type.startsWith('BUY')?'BUY':'SELL',volume,entry_price,sl_points,tp_points});
 }
@@ -127,6 +129,7 @@ async function fetchPendingOrders() {
 }
 function liveFeedHealthy() {return lastLiveMessage>0 && Date.now()-lastLiveMessage<2500;}
 function updateQuoteStatus() {
+  updateOrderButtons();
   const en = window.MT5I18n?.language?.() === 'en';
   const indicator = document.getElementById('live-feed-status');
   if (indicator) indicator.textContent = liveFeedHealthy()

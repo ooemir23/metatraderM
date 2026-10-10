@@ -3,23 +3,56 @@ let previewTimer;
 let previewSide = 'BUY';
 let previewGeneration = 0;
 let latestStopGuidance = null;
-function tradePreviewIdentity() {
+const tradePreviewResults = new Map();
+function tradePreviewIdentity(side = previewSide) {
   const symbol = typeof currentSymbol !== 'undefined' ? currentSymbol : window.currentSymbol;
   const volume = Number(document.getElementById('lot-input')?.value);
   const slValue = String(document.getElementById('sl-input')?.value ?? '').trim(), tpValue = String(document.getElementById('tp-input')?.value ?? '').trim();
   const sl_points = slValue ? Number(slValue) : NaN;
   const tp_points = tpValue ? Number(tpValue) : NaN;
-  return {symbol, volume, sl_points, tp_points, side:previewSide,
-    key:JSON.stringify([symbol, previewSide, volume, sl_points, tp_points,
+  return {symbol, volume, sl_points, tp_points, side,
+    key:JSON.stringify([symbol, side, volume, sl_points, tp_points,
       typeof accountSessionGeneration === 'undefined' ? null : accountSessionGeneration,
       window.MT5Markets?.version?.() ?? null])};
 }
+function tradePreviewIssue(side) {
+  const saved = tradePreviewResults.get(tradePreviewIdentity(side).key);
+  const en = window.MT5I18n?.language?.() === 'en';
+  if (!saved || Date.now() - saved.at < 0 || Date.now() - saved.at > 15000)
+    return en ? 'Verifying pre-trade risk.' : 'İşlem öncesi risk doğrulanıyor.';
+  return saved.result.success === true ? '' : saved.result.detail || saved.result.error
+    || (en ? 'Pre-trade risk could not be verified.' : 'İşlem öncesi risk doğrulanamadı.');
+}
+async function requestTradePreview(identity, account) {
+  if (window.MT5Markets?.isSelectionVerified(identity.symbol, identity.side) === false)
+    return {success:false,error:window.MT5Markets.selectionIssue(identity.symbol, identity.side)};
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch('/api/trade/preview', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({symbol:identity.symbol,order_type:identity.side,volume:identity.volume,
+        sl_points:identity.sl_points,tp_points:identity.tp_points,...account}),signal:controller.signal});
+    const result = await response.json();
+    return response.ok && result?.success === true ? result
+      : {...result,success:false,error:result?.detail || result?.error || 'Risk verisi alınamadı.'};
+  } catch (error) {
+    return {success:false,error:error.name === 'AbortError' ? 'Risk kontrolü zamanında yanıt vermedi. Emir gönderilmedi.' : 'Risk kontrolü bağlantısı doğrulanamadı.'};
+  } finally { clearTimeout(timer); }
+}
+window.MT5TradePreview = {
+  issue:tradePreviewIssue,
+  verify:async side => {
+    previewSide = side;
+    return await refreshTradePreview() === true && !tradePreviewIssue(side);
+  }
+};
 function markTradePreview(state, text) {
   const label = document.getElementById('trade-preview');
   if (label?.dataset) label.dataset.state = state;
   if (label?.setAttribute) label.setAttribute('aria-busy', String(state === 'refreshing'));
   const status = document.getElementById('trade-preview-status');
   if (status) status.textContent = text;
+  if (typeof updateOrderButtons === 'function') updateOrderButtons();
 }
 function renderTradePolicy(result) {
   const label = document.getElementById('trade-risk-policy');
@@ -83,6 +116,9 @@ async function refreshTradePreview(scheduledGeneration) {
     renderStopGuidance(null, tradePreviewIdentity());
     return;
   }
+  const otherSide = previewSide === 'BUY' ? 'SELL' : 'BUY';
+  if (window.MT5Markets?.isSelectionVerified(tradePreviewIdentity().symbol, previewSide) === false
+      && window.MT5Markets?.isSelectionVerified(tradePreviewIdentity().symbol, otherSide) === true) previewSide = otherSide;
   if (window.MT5Markets?.isSelectionVerified(tradePreviewIdentity().symbol, previewSide) === false) {
     label.textContent = window.MT5Markets.selectionIssue(tradePreviewIdentity().symbol, previewSide);
     markTradePreview('unavailable', '');
@@ -110,15 +146,17 @@ async function refreshTradePreview(scheduledGeneration) {
   const en = window.MT5I18n?.language?.() === 'en';
   markTradePreview('refreshing', en ? 'Recalculating the selected order…' : 'Seçili emir yeniden hesaplanıyor…');
   try {
-    const response = await fetch('/api/trade/preview', {method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({symbol,order_type:side,volume,sl_points,tp_points,
-        ...(typeof tradingAccountPayload === 'function' ? tradingAccountPayload() : {})})});
-    const result = await response.json();
+    const identities = ['BUY','SELL'].map(value => tradePreviewIdentity(value));
+    const account = typeof tradingAccountPayload === 'function' ? tradingAccountPayload() : {};
+    const results = await Promise.all(identities.map(value => requestTradePreview(value, account)));
     if (!isCurrent()) return;
+    tradePreviewResults.clear();
+    identities.forEach((value, index) => tradePreviewResults.set(value.key, {at:Date.now(), result:results[index]}));
+    const result = results[side === 'BUY' ? 0 : 1];
     renderStopGuidance(result.stop_guidance, identity);
     renderTradePolicy(result);
     receivedGuidance = !!result.stop_guidance;
-    if (!response.ok || !result.success) throw new Error(result.detail || result.error || 'Risk verisi alınamadı.');
+    if (!result.success) throw new Error(result.detail || result.error || 'Risk verisi alınamadı.');
     const money = n => `${Number(n).toLocaleString(window.MT5I18n?.language() === 'en' ? 'en-US' : 'tr-TR', {maximumFractionDigits:2})} ${result.currency}`;
     const en = window.MT5I18n?.language() === 'en';
     let message = result.stop_risk == null
@@ -138,6 +176,7 @@ async function refreshTradePreview(scheduledGeneration) {
     label.textContent = message;
     markTradePreview('verified', en ? `${symbol} · ${side} · ${volume} lot · Estimate updated`
       : `${symbol} · ${side} · ${volume} lot · Tahmin güncellendi`);
+    return true;
   } catch (error) {
     if (isCurrent()) {
       if (!receivedGuidance) renderStopGuidance(null, identity);

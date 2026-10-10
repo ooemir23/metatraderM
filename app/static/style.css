@@ -359,3 +359,10 @@ body.resizing-positions #tradingview-container iframe {
   .market-dialog-heading, .market-filters { padding-left:14px; padding-right:14px; }
   .market-catalog-status { padding-left:14px; padding-right:14px; flex-wrap:wrap; }
 }
+/* A blocked order must look unavailable, even while its last quote is visible. */
+#order-buy-btn:disabled, #order-sell-btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}

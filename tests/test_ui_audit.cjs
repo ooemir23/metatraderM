@@ -31,6 +31,8 @@ function harness(files = ['app.js', 'trading.js', 'operations.js']) {
     fetch:async(url,options={})=>{const request={url,payload:options.body?JSON.parse(options.body):null,signal:options.signal};requests.push(request);return reply(request)}
   });
   for (const file of files) vm.runInContext(fs.readFileSync('app/static/'+file,'utf8'),context);
+  // Isolate the existing account/intent regressions; readiness integration is tested independently.
+  context.quoteOrderIssue=()=>'';context.window.MT5TradePreview={issue:()=>'',verify:async()=>true};
   context.showToast=(text,tone)=>notices.push({text,tone});
   return {context,node,nodes,storage,requests,notices,timers,feeds,setReply:fn=>{reply=fn},read:s=>vm.runInContext(s,context)};
 }
@@ -101,7 +103,7 @@ function stopRefreshes(h) { for(const fn of ['fetchAccount','fetchPositions','fe
   {
     const h=harness(),c=h.context;stopRefreshes(h);
     h.setReply(request=>new Promise((resolve,reject)=>request.signal.addEventListener('abort',()=>reject(new Error('timeout')))));
-    const order=c.submitOrder('BUY');
+    const order=c.submitOrder('BUY');await new Promise(setImmediate);
     [...h.timers.values()].at(-1)();await order;
     assert.ok(h.storage.has('order-intent:EURUSD'));
     assert.equal(h.read('orderPending'),false);

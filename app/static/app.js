@@ -8,6 +8,8 @@ let chartSymbolTimer = null;
 let chartSymbolRequest = 0;
 const chartSymbolChecks = new Map();
 let isBotRunning = false;
+let executableQuote = null;
+let orderPreflightPending = false;
 
 // TradingView TV symbol map
 const TV_SYMBOLS = {
@@ -193,6 +195,7 @@ async function verifyChartOrderSymbol(side) {
 }
 
 function clearSymbolPrices() {
+  executableQuote = null;
   if (typeof priceRenderRevision !== 'undefined') priceRenderRevision++;
   if (typeof renderStopGuidance === 'function') renderStopGuidance(null, tradePreviewIdentity());
   if (typeof displayedTickTime !== 'undefined') displayedTickTime = 0;
@@ -202,20 +205,47 @@ function clearSymbolPrices() {
     const node = document.getElementById(id);
     if (node) node.textContent = '—';
   }
+  updateOrderButtons();
+}
+
+function quoteOrderIssue() {
+  const en = window.MT5I18n?.language?.() === 'en';
+  const quote = executableQuote, status = quote?.status;
+  const elapsed = quote ? (Date.now() - quote.receivedAt) / 1000 : NaN;
+  if (!quote || quote.symbol !== currentSymbol || !status || !Number.isFinite(elapsed) || elapsed < 0 || elapsed >= 5
+      || (typeof quoteDiagnosticFailed !== 'undefined' && quoteDiagnosticFailed))
+    return en ? 'Waiting for a verified broker quote.' : 'Doğrulanmış broker fiyatı bekleniyor.';
+  if (status.broker_connected !== true)
+    return en ? 'Waiting for the MT5 broker connection.' : 'MT5 broker bağlantısı bekleniyor.';
+  if (status.state !== 'fresh') return status.message || (en ? 'Waiting for a current price.' : 'Güncel fiyat bekleniyor.');
+  const age = status.age_seconds + elapsed;
+  if (!Number.isFinite(status.age_seconds) || !Number.isFinite(age) || age < 0 || age > 10)
+    return en ? 'Waiting for a current price.' : 'Güncel fiyat bekleniyor; yeni emir girişi kapalı.';
+  if (!Number.isFinite(quote.bid) || quote.bid <= 0 || !Number.isFinite(quote.ask) || quote.ask < quote.bid)
+    return en ? 'Waiting for a valid broker price.' : 'Geçerli broker fiyatı bekleniyor.';
+  return '';
 }
 
 function updateOrderButtons() {
+  const quoteIssue = quoteOrderIssue();
+  const messages = [];
   for (const id of ['order-buy-btn', 'order-sell-btn']) {
     const button = document.getElementById(id);
     if (button) {
       const side = id === 'order-buy-btn' ? 'BUY' : 'SELL';
       const catalogueBlocked = window.MT5Markets?.isSelectionVerified(currentSymbol, side) === false;
-      button.disabled = chartSelectionBlocked || catalogueBlocked || orderPending || accountSwitching || (accountVerificationKnown && !currentAccountIdentity)
+      const riskIssue = window.MT5TradePreview?.issue(side) ?? 'İşlem öncesi risk doğrulanıyor.';
+      const issue = quoteIssue || riskIssue;
+      button.disabled = chartSelectionBlocked || catalogueBlocked || orderPending || orderPreflightPending || accountSwitching || (accountVerificationKnown && !currentAccountIdentity)
+        || !!issue
         || window.MT5Permissions?.can?.('submitOrder') === false;
       button.title = chartSelectionBlocked ? 'Önce bir MT5 işlem sembolü seçin.'
-        : catalogueBlocked ? window.MT5Markets.selectionIssue(currentSymbol, side) : `${currentSymbol} · ${side === 'BUY' ? 'Alış' : 'Satış'}`;
+        : catalogueBlocked ? window.MT5Markets.selectionIssue(currentSymbol, side) : issue || `${currentSymbol} · ${side === 'BUY' ? 'Alış' : 'Satış'}`;
+      if (issue && !messages.includes(issue)) messages.push(issue);
     }
   }
+  const status = document.getElementById('order-readiness-status');
+  if (status) { status.textContent = messages.join(' · '); status.hidden = messages.length === 0; }
 }
 
 function marketCatalogueChanged() {
@@ -1306,6 +1336,8 @@ function renderPriceData(tick) {
     if (chartSelectionBlocked || (tick.symbol && tick.symbol !== currentSymbol)) return;
     if (window.MT5Markets && !window.MT5Markets.getSymbol(currentSymbol)) return;
     priceRenderRevision++;
+    executableQuote = {symbol:currentSymbol, bid:tick.bid, ask:tick.ask,
+      status:tick.quote_status ? {...tick.quote_status} : null, receivedAt:Date.now()};
     if (typeof displayedTickTime !== "undefined") displayedTickTime = tick.time || 0;
     if (typeof displayedQuoteStatus !== "undefined") {
       displayedQuoteStatus = tick.quote_status || null;
@@ -1331,6 +1363,7 @@ function renderPriceData(tick) {
         if (node) node.innerText = '—';
       }
     }
+    updateOrderButtons();
 }
 
 async function fetchPrice(force = false) {
@@ -1463,7 +1496,7 @@ function unresolvedIntents(symbol = currentSymbol, allOrders = false) {
   return entries;
 }
 function tradeActionBusy() {
-  return orderPending || closePending.size || (typeof actionLocks !== "undefined" && actionLocks.size) || aiExecutionBusy || aiSettingsBusy || tradingRiskSettingsBusy;
+  return orderPending || orderPreflightPending || closePending.size || (typeof actionLocks !== "undefined" && actionLocks.size) || aiExecutionBusy || aiSettingsBusy || tradingRiskSettingsBusy;
 }
 function refreshOrderRecovery() {
   const button = document.getElementById("order-reset-btn");
@@ -1555,7 +1588,7 @@ function orderErrorMessage(data) {
 
 // Submit Buy/Sell Order
 async function submitOrder(type) {
-  if (orderPending || accountSwitching) return;
+  if (orderPending || orderPreflightPending || accountSwitching) return;
   if (!['BUY','SELL'].includes(type)) return;
   if (accountVerificationKnown && !currentAccountIdentity) {
     setOrderNotice(currentSymbol, 'Hesap doğrulanamadı', 'Broker hesap bağlantısını doğrulayın. Emir gönderilmedi.', 'error');
@@ -1576,7 +1609,6 @@ async function submitOrder(type) {
     return;
   }
   if (orderPending) return;
-  if (typeof scheduleTradePreview === "function") scheduleTradePreview(type);
   const symbol = currentSymbol;
   const volume = Number(document.getElementById("lot-input").value);
   if (!Number.isFinite(volume) || volume <= 0) {
@@ -1592,6 +1624,28 @@ async function submitOrder(type) {
   }
   if (currentAccountType === 'REAL' && sl <= 0) {
     setOrderNotice(symbol, 'Stop Loss zorunlu', 'Gerçek hesapta yeni emir için geçerli Stop Loss belirleyin.', 'error');
+    return;
+  }
+  const quoteIssue = quoteOrderIssue();
+  if (quoteIssue) {
+    setOrderNotice(symbol, 'Emir girişi bekliyor', quoteIssue + ' Emir gönderilmedi.', 'warning');
+    updateOrderButtons();
+    return;
+  }
+  const selection = JSON.stringify([symbol,volume,sl,tp,tradingAccountPayload(),accountSessionGeneration,window.MT5Markets?.version?.()]);
+  orderPreflightPending = true;
+  updateOrderButtons();
+  let verified = false;
+  try { verified = await window.MT5TradePreview?.verify(type); }
+  catch (_) { verified = false; }
+  finally { orderPreflightPending = false; updateOrderButtons(); }
+  const currentSelection = JSON.stringify([currentSymbol,Number(document.getElementById('lot-input').value),
+    Number(document.getElementById('sl-input').value),Number(document.getElementById('tp-input').value),
+    tradingAccountPayload(),accountSessionGeneration,window.MT5Markets?.version?.()]);
+  if (!verified || selection !== currentSelection || quoteOrderIssue() || accountSwitching || chartSelectionBlocked
+      || window.MT5Markets?.isSelectionVerified(symbol, type) === false) {
+    setOrderNotice(symbol, 'İşlem öncesi kontrol', quoteOrderIssue() || window.MT5TradePreview?.issue(type)
+      || 'Emir bilgileri değişti veya risk doğrulanamadı. Emir gönderilmedi.', 'warning');
     return;
   }
   let intent;
@@ -1621,7 +1675,8 @@ async function submitOrder(type) {
   setOrderNotice(symbol, "Emir gönderiliyor", `${type === "BUY" ? "Alış" : "Satış"} · ${volume} lot · Broker yanıtı bekleniyor.`, "pending");
   try {
     const {response:res,data} = await tradeRequest('/api/order/open', intent);
-    if ((data.request_id && !data.uncertain && !data.pending) || data.reason_code === "trading_halted")
+    if ((data.request_id && !data.uncertain && !data.pending) || data.reason_code === "trading_halted"
+        || (data.reason_code === 'untrusted_origin' && data.not_submitted === true))
       localStorage.removeItem("order-intent:" + symbol);
     if (res.ok && data.success) {
       const title = data.partial ? "Emir kısmen gerçekleşti" : (data.pending || data.retcode === 10008 ? "Emir kabul edildi; gerçekleşme bekleniyor" : "Emir gerçekleşti");

@@ -13,6 +13,8 @@ const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:a
     setTimeout(){},clearTimeout(){},setInterval(){},confirmAction:async()=>true,
     fetch:async(url,opts)=>{sent.push({url,payload:JSON.parse(opts.body)});return reply();}});
   vm.runInContext(fs.readFileSync('app/static/app.js','utf8'),context);
+ // Isolate durable intent/feedback behavior; real quote and preview gates have separate integration tests.
+ context.quoteOrderIssue=()=>'';context.window.MT5TradePreview={issue:()=>'',verify:async()=>true};
   context.fetchPositions=()=>{};context.fetchAccount=()=>{};context.fetchHistory=()=>{};
   context.showToast=(text,tone)=>notices.push({text,tone});
   await context.submitOrder('BUY');

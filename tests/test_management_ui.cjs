@@ -21,6 +21,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  node('partial-volume').value='.01';await ctx.partialClosePosition();
  assert.equal(sent[1].volume,.01);assert.equal(node('position-editor').open,false);
  node('pending-type').value='SELL_STOP';node('pending-volume').value='.01';node('pending-price').value='1.07';node('pending-sl').value='200';node('pending-tp').value='400';
+ ctx.renderPriceData({symbol:'EURUSD',bid:1.1,ask:1.1001,time:Date.now()/1000,quote_status:{state:'fresh',broker_connected:true,age_seconds:0}});
  reply={success:false,uncertain:true,request_id:'unknown'};
  await ctx.submitPendingOrder();const first=sent.at(-1);
  await ctx.submitPendingOrder();assert.equal(sent.at(-1).request_id,first.request_id);
