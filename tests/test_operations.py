@@ -132,7 +132,15 @@ def test_actual_rpc_disconnect_then_new_connection(tmp_path):
             self._conn.close()
         def exposed_history(self):
             return len(accepted)
-    server=ThreadedServer(BrokerService,hostname='127.0.0.1',port=0,auto_register=False)
+    class ResponseLossServer(ThreadedServer):
+        def _handle_connection(self, conn):
+            try:
+                super()._handle_connection(conn)
+            except OSError:
+                if not conn.closed:
+                    raise
+    server=ResponseLossServer(BrokerService,hostname='127.0.0.1',port=0,auto_register=False)
+    server.listener.listen(5)
     thread=threading.Thread(target=server.start,daemon=True);thread.start()
     c=None
     try:

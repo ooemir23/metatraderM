@@ -18,8 +18,8 @@
     for (const key of ['up','down']) if (/^#[0-9a-f]{6}$/i.test(raw[key])) result[key] = raw[key];
     return result;
   }
-  let prefs = settings(), active = null, generation = 0;
-  const mode = () => read('mt5.chart.mode.v1', 'mt5') === 'tradingview' ? 'tradingview' : 'mt5';
+  let prefs = settings(), active = null, generation = 0, selectedMode = null;
+  const mode = () => selectedMode ?? (read('mt5.chart.mode.v1', 'mt5') === 'tradingview' ? 'tradingview' : 'mt5');
   function dispose() {
     generation++;
     if (!active) return;
@@ -65,9 +65,12 @@
     if (!state.rows.length) return;
     const rows = state.rows;
     state.price.setData(['line','area'].includes(prefs.type) ? rows.map(r=>({time:r.time,value:r.close})) : rows);
-    // Match precision to the actual broker prices, with a minimum of two decimals.
-    const precision = Math.min(8, Math.max(2, ...rows.slice(-50).flatMap(r=>['open','high','low','close'].map(k=>(String(r[k]).split('.')[1]||'').length))));
-    state.price.applyOptions({priceFormat:{type:'price',precision,minMove:10**-precision}});
+    // Broker precision takes precedence over floating point string artifacts.
+    const digits = window.MT5Markets?.getSymbol?.(state.symbol)?.digits;
+    const precision = Number.isInteger(digits) && digits >= 0 && digits <= 8 ? digits
+      : Math.min(8, Math.max(2, ...rows.slice(-50).flatMap(r=>['open','high','low','close'].map(k=>(String(r[k]).split('.')[1]||'').length))));
+    const priceFormat = {type:'price',precision,minMove:10**-precision};
+    for (const series of [state.price,state.average,state.exponential]) series.applyOptions({priceFormat});
     state.volume.setData(rows.map(r=>({time:r.time,value:r.tick_volume,color:(r.close>=r.open?prefs.up:prefs.down)+'70'})));
     let sum = 0; const avg=[];
     rows.forEach((r,i)=>{sum+=r.close;if(i>=prefs.period) sum-=rows[i-prefs.period].close;if(i>=prefs.period-1) avg.push({time:r.time,value:sum/prefs.period});});
@@ -256,13 +259,11 @@
     load(state,true);
   }
   function setMode(value) {
-    write('mt5.chart.mode.v1',value==='tradingview'?'tradingview':'mt5');
+    // A denied storage write must still apply the choice for this session.
+    selectedMode = value === 'tradingview' ? 'tradingview' : 'mt5';
+    write('mt5.chart.mode.v1', selectedMode);
     // Manual broker selection remains the source of order identity.
     switchSymbol(currentSymbol);
-    if(value==='tradingview') {
-      const engine=document.getElementById('chart-engine');if(engine)engine.value='tradingview';
-      const link=document.getElementById('chart-tradingview-link');if(link)link.hidden=false;
-    }
   }
   window.MT5Chart={mode,setMode,mount,dispose,normalize,emaValues,csvData};
 })();

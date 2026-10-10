@@ -27,7 +27,9 @@ function showPositionEditor(ticket) {
   document.getElementById('position-editor').showModal();
 }
 async function guardedAction(key, endpoint, payload) {
-  if (actionLocks.has(key)) return null;
+  if (actionLocks.has(key) || accountSwitching) return null;
+  if (accountVerificationKnown && !currentAccountIdentity) return showToast('İşlemden önce broker hesap bağlantısını doğrulayın.', 'error');
+  payload = {...payload,...tradingAccountPayload()};
   actionLocks.add(key);
   try {
     const storeKey = 'managed-intent:' + key;
@@ -40,20 +42,18 @@ async function guardedAction(key, endpoint, payload) {
       intent = {request_id:newOrderId(),payload};
       localStorage.setItem(storeKey, JSON.stringify(intent));
     }
-    const res = await fetch(endpoint, {method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({...payload,request_id:intent.request_id})});
-    const data = await res.json();
+    const {data} = await tradeRequest(endpoint, {...payload,request_id:intent.request_id});
     if (data.request_id && !data.uncertain && !data.pending) localStorage.removeItem(storeKey);
     const message = data.uncertain ? 'Sonuç belirsiz; MT5 durumunu kontrol edin.' : data.pending ? 'Talep kabul edildi; broker sonucu bekleniyor.' : data.partial ? 'Talep kısmen gerçekleşti.' : data.success ? 'İşlem tamamlandı.' : (data.detail || data.error || 'İşlem tamamlanamadı.');
-    showToast(message, data.success && !data.partial ? 'success' : 'error');
-    const status = document.getElementById('position-editor-status');
+    showToast(message, data.uncertain ? 'error' : data.pending || data.partial ? 'warning' : data.success ? 'success' : 'error');
+    const status = payload.ticket && editorPosition?.ticket === payload.ticket ? document.getElementById('position-editor-status') : null;
     if (status) status.textContent = message;
     fetchPositions(true);fetchPendingOrders();fetchAccount(true);
     return data;
   } catch (err) {
     const message = err.message || 'Sonuç belirsiz; MT5 üzerinden kontrol edin.';
     showToast(message, 'error');
-    const status = document.getElementById('position-editor-status');
+    const status = payload.ticket && editorPosition?.ticket === payload.ticket ? document.getElementById('position-editor-status') : null;
     if (status) status.textContent = message;
     return null;
   } finally {
@@ -64,10 +64,11 @@ async function guardedAction(key, endpoint, payload) {
 async function savePositionStops() {
   const p = editorPosition;
   if (!p) return;
-  const sl = Number(document.getElementById('edit-sl').value), tp = Number(document.getElementById('edit-tp').value);
+  const slValue = String(document.getElementById('edit-sl').value ?? '').trim(), tpValue = String(document.getElementById('edit-tp').value ?? '').trim();
+  const sl = slValue === '' ? NaN : Number(slValue), tp = tpValue === '' ? NaN : Number(tpValue);
   if (![sl,tp].every(v=>Number.isFinite(v)&&v>=0)) return showToast('Geçerli SL/TP fiyatları girin.', 'error');
   const result = await guardedAction('stops:'+p.ticket, '/api/position/stops', {ticket:p.ticket,sl,tp,expected_sl:p.sl,expected_tp:p.tp});
-  if (result?.success && !result.pending && !result.partial) {
+  if (result?.success && !result.pending && !result.partial && !result.uncertain && editorPosition?.ticket === p.ticket) {
     editorPosition = {...p,sl,tp};
   }
 }
@@ -77,16 +78,22 @@ async function partialClosePosition() {
   const volume=Number(document.getElementById('partial-volume').value);
   if (!Number.isFinite(volume)||volume<=0||volume>=p.volume) return showToast('Açık lottan küçük, pozitif bir miktar girin.', 'error');
   const result=await guardedAction('partial:'+p.ticket,'/api/position/partial-close',{ticket:p.ticket,volume});
-  if (result?.success && !result.pending) document.getElementById('position-editor').close();
+  if (result?.success && !result.pending && !result.partial && !result.uncertain && editorPosition?.ticket === p.ticket) document.getElementById('position-editor').close();
 }
 async function submitPendingOrder() {
+  if (accountSwitching) return;
   const selectedSymbol = currentSymbol;
-  if (!await verifyChartOrderSymbol() || currentSymbol !== selectedSymbol) return showToast('Grafik ve emir sembolü doğrulanamadı veya değişti. Emir gönderilmedi.', 'error');
   const pending_type=document.getElementById('pending-type').value;
+  const side = pending_type.startsWith('BUY') ? 'BUY' : 'SELL';
+  if (!await verifyChartOrderSymbol(side) || currentSymbol !== selectedSymbol
+      || window.MT5Markets?.isSelectionVerified(currentSymbol, side) === false)
+    return showToast(window.MT5Markets?.selectionIssue(currentSymbol, side) || 'Grafik ve emir sembolü doğrulanamadı veya değişti. Emir gönderilmedi.', 'error');
   const volume=Number(document.getElementById('pending-volume').value);
   const entry_price=Number(document.getElementById('pending-price').value);
-  const sl_points=Number(document.getElementById('pending-sl').value), tp_points=Number(document.getElementById('pending-tp').value);
+  const slValue=String(document.getElementById('pending-sl').value ?? '').trim(), tpValue=String(document.getElementById('pending-tp').value ?? '').trim();
+  const sl_points=slValue===''?NaN:Number(slValue), tp_points=tpValue===''?NaN:Number(tpValue);
   if (![volume,entry_price].every(v=>Number.isFinite(v)&&v>0)||![sl_points,tp_points].every(v=>Number.isInteger(v)&&v>=0)) return showToast('Fiyat, lot ve puan alanlarını kontrol edin.', 'error');
+  if (currentAccountType==='REAL' && sl_points<=0) return showToast('Gerçek hesapta yeni bekleyen emir için Stop Loss zorunlu.', 'error');
   const symbol=currentSymbol;
   await guardedAction('pending:'+symbol,'/api/order/pending', {symbol,pending_type,order_type:pending_type.startsWith('BUY')?'BUY':'SELL',volume,entry_price,sl_points,tp_points});
 }
@@ -96,22 +103,29 @@ async function cancelPendingOrder(ticket) {
 function renderPendingOrders(orders) {
   const root=document.getElementById('pending-orders-list');
   if (!root) return;
+  if (accountSwitching) return;
+  if (!Array.isArray(orders)) throw new Error('Bekleyen emir listesi doğrulanamadı.');
+  pendingRenderRevision++;
   root.innerHTML=orders.length ? orders.map(o=>`<div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 py-2"><span><strong>${safeText(o.symbol)}</strong> ${safeText(o.type)}<br><span class="text-gray-400">#${Number(o.ticket)} · ${Number(o.volume)} lot @ ${Number(o.price)}</span></span><button onclick="cancelPendingOrder(${Number(o.ticket)})" class="px-2 py-1 rounded bg-rose-500/10 text-rose-300">İptal et</button></div>`).join('') : '<p class="text-gray-500 py-2">Bekleyen emir yok.</p>';
 }
 let fetchingPending=false;
+let pendingRenderRevision=0;
 async function fetchPendingOrders() {
   if (fetchingPending) return;
   fetchingPending=true;
+  const generation=accountSessionGeneration, revision=pendingRenderRevision;
   try {
     const response=await fetch('/api/orders');
     if (!response.ok) throw new Error('Veri alınamadı');
-    renderPendingOrders(await response.json());
+    const orders=await response.json();
+    if (generation===accountSessionGeneration && revision===pendingRenderRevision) renderPendingOrders(orders);
   } catch (_) {
+    if (generation!==accountSessionGeneration || revision!==pendingRenderRevision) return;
     const root=document.getElementById('pending-orders-list');
     if (root) root.textContent='Bekleyen emir bilgisi doğrulanamadı.';
   } finally {fetchingPending=false;}
 }
-function liveFeedHealthy() {return Date.now()-lastLiveMessage<2500;}
+function liveFeedHealthy() {return lastLiveMessage>0 && Date.now()-lastLiveMessage<2500;}
 function updateQuoteStatus() {
   const en = window.MT5I18n?.language?.() === 'en';
   const indicator = document.getElementById('live-feed-status');
@@ -157,19 +171,23 @@ function startLiveFeed() {
   updateQuoteStatus();
   if (typeof EventSource==='undefined') return;
   const symbol=currentSymbol;
+  const generation=accountSessionGeneration;
   const source=new EventSource('/api/live?symbol='+encodeURIComponent(symbol));
   liveSource=source;
   source.onmessage=event=>{
-    if (source!==liveSource) return;
+    if (source!==liveSource || generation!==accountSessionGeneration || accountSwitching) return;
     try {
       const data=JSON.parse(event.data);
       if (data.error) throw new Error(data.error);
       lastLiveMessage=Date.now();
       renderAccountData(data.account);
+      // Account identity may change after a terminal reconnect. Reject this
+      // snapshot and open a feed for the newly observed account generation.
+      if (generation!==accountSessionGeneration) { startLiveFeed(); return; }
       renderPositionsData(data.positions);
       renderPendingOrders(data.orders);
       if (data.prices[symbol]) renderPriceData(data.prices[symbol]);
-      else {displayedTickTime=0; displayedQuoteStatus=null;}
+      else clearSymbolPrices();
       updateQuoteStatus();
     } catch (_) {markLiveStale();}
   };
@@ -215,7 +233,7 @@ async function checkReconciledOrders() {
     const response = await fetch('/api/operations/status?request_id=' + encodeURIComponent(intent.request_id));
     if (!response.ok) continue;
     const result = await response.json();
-    if (!result.reconciled || result.uncertain || result.pending || tradeActionBusy() || localStorage.getItem(key) !== stored) continue;
+    if (!(result.found || result.reconciled) || result.uncertain || result.pending || tradeActionBusy() || localStorage.getItem(key) !== stored) continue;
     localStorage.removeItem(key);
     setOrderNotice(symbol, result.success ? 'Emir brokerdan doğrulandı' : 'Emir tamamlanmadı',
       result.success ? `Bilet #${result.ticket}${result.partial ? ' · Kısmi gerçekleşme' : ''}. Yeni emir gönderilmedi.` : result.error,

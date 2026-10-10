@@ -11,7 +11,7 @@ const assert = require('node:assert/strict');
     };
     const rec = {action:'BUY', symbol:'EURUSD', confidence:80, sl_price:1.05, tp_price:1.2,
       sl_points:200, tp_points:400, suggested_lot:.02, expires_at:Date.now()/1000+900, reasoning:'test'};
-    let sent;
+    let sent, settings;
     const ctx = vm.createContext({console, Date, AbortController,
       document:{addEventListener(){}, getElementById:node, querySelectorAll:()=>[]},
       window:{addEventListener(){}}, setTimeout:()=>0,clearTimeout(){},setInterval:()=>0,
@@ -23,6 +23,7 @@ const assert = require('node:assert/strict');
           usage:{calls:2,total_tokens:130,unknown_usage_calls:0},limits:{daily_calls:100}})};
         if (url.endsWith('/advice')) return {ok:true,json:async()=>({success:true,recommendation:rec,cached:true})};
         if (url.endsWith('/execute')) {sent=JSON.parse(opts.body);return {ok:true,json:async()=>({success:true,ticket:123})};}
+        if (url.endsWith('/autopilot')) {settings=JSON.parse(opts.body);return {ok:true,json:async()=>({success:true})};}
         return {ok:true,json:async()=>({})};
       }
     });
@@ -40,6 +41,10 @@ const assert = require('node:assert/strict');
     assert.equal(sent.recommendation.action,'BUY');
     assert.equal(sent.recommendation.symbol,'EURUSD');
     assert.equal(sent.recommendation.suggested_lot,.01);
+    node('ai-cfg-mode').value='ADVISORY';
+    node('ai-cfg-symbols').value=' EURUSD.a, BTCUSD#, usdjpY.x ';
+    await ctx.saveAIAutopilot();
+    assert.deepEqual(settings.allowed_symbols,['EURUSD.a','BTCUSD#','usdjpY.x'], 'an explicit settings save preserves broker symbol casing and suffixes');
     console.log(file+': status, usage, advice and execution payload PASS');
   }
 })().catch(err=>{console.error(err);process.exitCode=1;});

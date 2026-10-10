@@ -96,7 +96,7 @@ def test_limit_change_is_admin_only_and_validated(monkeypatch):
     from app import main
     monkeypatch.setenv('DASHBOARD_USER_2', 'trader')
     monkeypatch.setenv('DASHBOARD_PASSWORD_2', 'trader-password')
-    monkeypatch.setattr(main.mt5_client, 'set_daily_loss_limit', lambda amount, acknowledge_risk=False: {
+    monkeypatch.setattr(main.mt5_client, 'set_daily_loss_limit', lambda amount, acknowledge_risk=False, **kwargs: {
         'daily_loss_limit':amount, 'daily_loss':0, 'currency':'USD'})
     admin = base64.b64encode(b'test:test-panel-password').decode()
     trader = base64.b64encode(b'trader:trader-password').decode()

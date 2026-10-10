@@ -4,12 +4,32 @@ let previewSide = 'BUY';
 let previewGeneration = 0;
 let latestStopGuidance = null;
 function tradePreviewIdentity() {
-  const symbol = window.currentSymbol || currentSymbol;
+  const symbol = typeof currentSymbol !== 'undefined' ? currentSymbol : window.currentSymbol;
   const volume = Number(document.getElementById('lot-input')?.value);
-  const sl_points = Number(document.getElementById('sl-input')?.value);
-  const tp_points = Number(document.getElementById('tp-input')?.value || 0);
+  const slValue = String(document.getElementById('sl-input')?.value ?? '').trim(), tpValue = String(document.getElementById('tp-input')?.value ?? '').trim();
+  const sl_points = slValue ? Number(slValue) : NaN;
+  const tp_points = tpValue ? Number(tpValue) : NaN;
   return {symbol, volume, sl_points, tp_points, side:previewSide,
-    key:JSON.stringify([symbol, previewSide, volume, sl_points, tp_points])};
+    key:JSON.stringify([symbol, previewSide, volume, sl_points, tp_points,
+      typeof accountSessionGeneration === 'undefined' ? null : accountSessionGeneration,
+      window.MT5Markets?.version?.() ?? null])};
+}
+function markTradePreview(state, text) {
+  const label = document.getElementById('trade-preview');
+  if (label?.dataset) label.dataset.state = state;
+  if (label?.setAttribute) label.setAttribute('aria-busy', String(state === 'refreshing'));
+  const status = document.getElementById('trade-preview-status');
+  if (status) status.textContent = text;
+}
+function renderTradePolicy(result) {
+  const label = document.getElementById('trade-risk-policy');
+  if (!label) return;
+  const en = window.MT5I18n?.language?.() === 'en';
+  const cap = result?.effective_trade_risk_pct ?? result?.max_trade_risk_pct;
+  const parts = [];
+  if (result?.stop_required) parts.push(en ? 'A stop loss is required on this real account.' : 'Bu gerçek hesapta Stop Loss zorunlu.');
+  if (Number.isFinite(cap) && cap > 0) parts.push(en ? `Maximum risk per order: ${cap}% of equity.` : `Emir başına azami risk: varlığın %${cap}'i.`);
+  label.textContent = parts.join(' ');
 }
 function renderStopGuidance(guidance, identity) {
   const label = document.getElementById('stop-distance-guidance');
@@ -23,7 +43,8 @@ function renderStopGuidance(guidance, identity) {
 }
 function applyStopMinimum() {
   const identity = tradePreviewIdentity(), saved = latestStopGuidance;
-  if (!saved || saved.key !== identity.key || Date.now()-saved.at > 15000 || (typeof chartSelectionBlocked !== 'undefined' && chartSelectionBlocked)) {
+  if (!saved || saved.key !== identity.key || Date.now()-saved.at > 15000 || (typeof chartSelectionBlocked !== 'undefined' && chartSelectionBlocked)
+      || window.MT5Markets?.isSelectionVerified(identity.symbol, identity.side) === false) {
     scheduleTradePreview();
     return;
   }
@@ -38,13 +59,35 @@ function scheduleTradePreview(side) {
   if (side) previewSide = side;
   clearTimeout(previewTimer);
   const generation = ++previewGeneration;
+  const en = window.MT5I18n?.language?.() === 'en';
+  markTradePreview('refreshing', en ? 'Recalculating the selected order…' : 'Seçili emir yeniden hesaplanıyor…');
+  renderStopGuidance(null, tradePreviewIdentity());
+  renderTradePolicy(null);
   previewTimer = setTimeout(() => refreshTradePreview(generation), 350);
 }
 async function refreshTradePreview(scheduledGeneration) {
   const label = document.getElementById('trade-preview');
   if (!label) return;
+  const accountUnavailable = () => (typeof accountSwitching !== 'undefined' && accountSwitching)
+    || (typeof accountVerificationKnown !== 'undefined' && accountVerificationKnown && !currentAccountIdentity);
+  if (accountUnavailable()) {
+    label.textContent = 'Hesap doğrulanamadı; risk tahmini kullanılamaz.';
+    markTradePreview('unavailable', '');
+    renderStopGuidance(null, tradePreviewIdentity());
+    renderTradePolicy(null);
+    return;
+  }
   if (typeof chartSelectionBlocked !== 'undefined' && chartSelectionBlocked) {
     label.textContent = 'Grafik ürünü MT5 sembolüyle eşleşmiyor; emir girişi kapalı.';
+    markTradePreview('unavailable', '');
+    renderStopGuidance(null, tradePreviewIdentity());
+    return;
+  }
+  if (window.MT5Markets?.isSelectionVerified(tradePreviewIdentity().symbol, previewSide) === false) {
+    label.textContent = window.MT5Markets.selectionIssue(tradePreviewIdentity().symbol, previewSide);
+    markTradePreview('unavailable', '');
+    renderStopGuidance(null, tradePreviewIdentity());
+    renderTradePolicy(null);
     return;
   }
   if (scheduledGeneration === undefined) clearTimeout(previewTimer);
@@ -52,21 +95,28 @@ async function refreshTradePreview(scheduledGeneration) {
   if (generation !== previewGeneration) return;
   const identity = tradePreviewIdentity();
   const {symbol, volume, sl_points, tp_points, side, key} = identity;
-  if (!Number.isFinite(volume) || volume <= 0 || !Number.isInteger(sl_points) || sl_points < 0) {
-    label.textContent = 'Geçerli lot ve stop mesafesi girin.';
+  if (!Number.isFinite(volume) || volume <= 0 || ![sl_points,tp_points].every(value=>Number.isInteger(value)&&value>=0)) {
+    label.textContent = 'Geçerli lot ve SL/TP mesafesi girin.';
+    markTradePreview('unavailable', '');
+    renderStopGuidance(null, identity);
     return;
   }
   // Leave the last result visible while refreshing; replacing it with a short
   // loading message makes the order card jump whenever the pointer moves.
   const isCurrent = () => generation === previewGeneration && tradePreviewIdentity().key === key
-    && !(typeof chartSelectionBlocked !== 'undefined' && chartSelectionBlocked);
+    && !(typeof chartSelectionBlocked !== 'undefined' && chartSelectionBlocked) && !accountUnavailable()
+    && window.MT5Markets?.isSelectionVerified(symbol, side) !== false;
   let receivedGuidance = false;
+  const en = window.MT5I18n?.language?.() === 'en';
+  markTradePreview('refreshing', en ? 'Recalculating the selected order…' : 'Seçili emir yeniden hesaplanıyor…');
   try {
     const response = await fetch('/api/trade/preview', {method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({symbol,order_type:side,volume,sl_points,tp_points})});
+      body:JSON.stringify({symbol,order_type:side,volume,sl_points,tp_points,
+        ...(typeof tradingAccountPayload === 'function' ? tradingAccountPayload() : {})})});
     const result = await response.json();
     if (!isCurrent()) return;
     renderStopGuidance(result.stop_guidance, identity);
+    renderTradePolicy(result);
     receivedGuidance = !!result.stop_guidance;
     if (!response.ok || !result.success) throw new Error(result.detail || result.error || 'Risk verisi alınamadı.');
     const money = n => `${Number(n).toLocaleString(window.MT5I18n?.language() === 'en' ? 'en-US' : 'tr-TR', {maximumFractionDigits:2})} ${result.currency}`;
@@ -86,10 +136,13 @@ async function refreshTradePreview(scheduledGeneration) {
     message += en ? ' · Estimate only: commissions, swaps and slippage excluded. Actual loss can exceed this figure.'
       : ' · Tahmin: komisyon, swap ve kayma hariç. Gerçek zarar bu tutarı aşabilir.';
     label.textContent = message;
+    markTradePreview('verified', en ? `${symbol} · ${side} · ${volume} lot · Estimate updated`
+      : `${symbol} · ${side} · ${volume} lot · Tahmin güncellendi`);
   } catch (error) {
     if (isCurrent()) {
       if (!receivedGuidance) renderStopGuidance(null, identity);
       label.textContent = error.message || 'Risk verisi doğrulanamadı.';
+      markTradePreview('unavailable', en ? 'Risk estimate could not be verified' : 'Risk tahmini doğrulanamadı');
     }
   }
 }
@@ -97,7 +150,10 @@ document.addEventListener('DOMContentLoaded', () => {
   for (const id of ['lot-input','sl-input','tp-input']) document.getElementById(id)?.addEventListener('input', () => scheduleTradePreview());
   document.getElementById('order-buy-btn')?.addEventListener('mouseenter', () => { if (previewSide !== 'BUY') scheduleTradePreview('BUY'); });
   document.getElementById('order-sell-btn')?.addEventListener('mouseenter', () => { if (previewSide !== 'SELL') scheduleTradePreview('SELL'); });
+  document.getElementById('order-buy-btn')?.addEventListener('focus', () => { if (previewSide !== 'BUY') scheduleTradePreview('BUY'); });
+  document.getElementById('order-sell-btn')?.addEventListener('focus', () => { if (previewSide !== 'SELL') scheduleTradePreview('SELL'); });
   scheduleTradePreview('BUY');
+  setInterval(() => { if (document.getElementById('trade-preview')) refreshTradePreview(); }, 10000);
   initializeSecurityControl();
   refreshOperationEvents();
   setInterval(refreshOperationEvents, 5000);

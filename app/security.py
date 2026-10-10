@@ -58,7 +58,8 @@ async def protect_dashboard(request, call_next):
         return JSONResponse({'detail': 'Debug API kapalı.'}, status_code=404)
     if request.method not in ('GET', 'HEAD', 'OPTIONS'):
         origin = request.headers.get('origin')
-        cross_origin = origin and (urlsplit(origin).netloc != request.headers.get('host'))
+        source = urlsplit(origin) if origin else None
+        cross_origin = source and (source.netloc != request.headers.get('host') or source.scheme != request.url.scheme)
         form = request.headers.get('content-type', '').split(';')[0] in (
             'application/x-www-form-urlencoded', 'multipart/form-data', 'text/plain')
         if cross_origin or request.headers.get('sec-fetch-site') == 'cross-site' or form:

@@ -1,4 +1,6 @@
 import base64
+import json
+import pytest
 from fastapi.testclient import TestClient
 
 from app import ai_advisor, security_sessions
@@ -6,6 +8,28 @@ from app.mt5_bridge import AI_MAGIC
 from app.ai_performance import summarize
 from test_trade_safety import client
 from test_ai_costs import setup
+
+
+@pytest.mark.parametrize('symbol', ['EURUSD.a', 'BTCUSDm', '#AAPL'])
+def test_advice_and_execution_preserve_the_selected_broker_symbol(setup, client, symbol):
+    advisor, provider, response, _ = setup
+    advisor.mt5 = client
+    advisor.sync_account_scope()
+    response.json.return_value['choices'][0]['message']['content'] = json.dumps({
+        'action': 'BUY', 'confidence': 90, 'sl_points': 200, 'tp_points': 400,
+        'suggested_lot': .01})
+    assert advisor.update_autopilot({'enabled': True, 'mode': 'FULL_AUTO',
+        'allowed_symbols': [symbol]})['success']
+    result = advisor.get_market_advice(symbol, rates=[{'time': 100, 'close': 1.1},
+        {'time': 1000, 'close': 1.1}], tick={'bid': 1.0999, 'ask': 1.1, 'spread': 10})
+    assert result['success'] and result['recommendation']['symbol'] == symbol
+    prompt = provider.call_args.kwargs['json']['messages'][1]['content']
+    assert json.loads(prompt.split('\n', 1)[1])['symbol'] == symbol
+    execution = advisor.execute_recommendation(result['recommendation'], automatic=True,
+        generation=advisor.autopilot_generation)
+    assert execution['success'], execution
+    assert client.mt5.order_send.call_args.args[0]['symbol'] == symbol
+    assert advisor.autopilot['allowed_symbols'] == [symbol]
 
 
 def test_ai_order_requires_broker_verified_stop_and_risk(client):

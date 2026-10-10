@@ -22,10 +22,14 @@ def client(monkeypatch):
     c.mt5.terminal_info.return_value = NS(connected=True)
     c.mt5.symbol_info.return_value = NS(point=.00001, digits=5, volume_step=.01, volume_min=.01, volume_max=100, trade_stops_level=0, filling_mode=3, trade_exemode=2)
     c.mt5.symbol_info_tick.return_value = NS(ask=1.1, bid=1.0999, time=time.time())
-    c.mt5.account_info.return_value = NS(login=1, server="test", trade_mode=0, currency="USD", margin_mode=2)
+    c.mt5.account_info.return_value = NS(login=1, server="test", trade_mode=0, currency="USD", margin_mode=2,
+        equity=10000., margin_free=8000.)
     c.mt5.positions_get.return_value = []
     c.mt5.orders_get.return_value = []
     c.mt5.history_deals_get.return_value = []
+    c.mt5.order_check.return_value = NS(retcode=0, comment='checked')
+    c.mt5.order_calc_profit.return_value = -2.
+    c.mt5.order_calc_margin.return_value = 25.
     c.is_connected = True
     c.last_ping_time = time.time()
     return c

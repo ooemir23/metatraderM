@@ -1,0 +1,16 @@
+# The web image needs only its Dockerfile and application source.
+**
+!Dockerfile
+!.dockerignore
+!app/
+!app/**
+
+# Keep local state and secrets out even if placed inside app/.
+app/**/__pycache__/
+app/**/*.pyc
+app/**/.env*
+app/**/*credentials*.json
+app/**/orders.sqlite3*
+app/**/ai_memory.json
+app/**/bot_settings.json
+app/**/trading_totp_secret*

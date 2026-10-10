@@ -4,7 +4,51 @@
 
 let currentSymbol = "EURUSD";
 let currentAIAdvice = null;
+let aiAdviceGeneration = 0;
+let aiAdviceRequestSymbol = null;
+let aiAdviceRequestGeneration = 0;
+let aiAdviceButtonHtml = null;
+let aiExecutionBusy = false;
+let aiSettingsBusy = false;
+const handledAIAdvice = new Set();
+function aiAdviceKey(advice) {
+  return advice?.id || JSON.stringify([advice?.symbol,advice?.action,advice?.generated_at,advice?.expires_at]);
+}
+function aiAdviceExecutable(advice) {
+  return window.MT5Permissions?.can?.('executeCurrentAdvice') !== false && (!aiAccountVerificationKnown || !!currentAIAccountIdentity) && !!advice && ['BUY','SELL'].includes(String(advice.action).toUpperCase())
+    && advice.symbol === currentSymbol && Number.isFinite(Number(advice.expires_at))
+    && Number(advice.expires_at)*1000 > Date.now() && !handledAIAdvice.has(aiAdviceKey(advice));
+}
+function invalidateAIAdvice(symbol) {
+  aiAdviceGeneration++;
+  currentAIAdvice = null;
+  const button = document.getElementById('ai-execute-btn');
+  if (button) { button.disabled = true; button.innerText = 'Yeni tavsiye bekleniyor'; }
+  for (const id of ['ai-advice-entry','ai-advice-sl','ai-advice-tp','ai-advice-confidence']) {
+    const node = document.getElementById(id);
+    if (node) node.innerText = '—';
+  }
+  const label = document.getElementById('ai-advice-symbol');
+  if (label) label.innerText = symbol;
+}
 let currentAIAccountType = null;
+let currentAIAccountIdentity = null;
+let lastObservedAIAccountIdentity = null;
+let aiAccountVerificationKnown = false;
+let aiAccountRequestGeneration = 0;
+async function tradeRequest(endpoint, payload, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload), signal:controller.signal});
+    const data = await response.json();
+    return {response,data};
+  } finally { clearTimeout(timer); }
+}
+function tradingAccountPayload() {
+  return currentAIAccountIdentity ? {expected_account:[...currentAIAccountIdentity]} : {};
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   fetchAccount();
@@ -34,11 +78,19 @@ async function fetchAIPerformance() {
 }
 
 async function fetchAccount() {
+  const generation = ++aiAccountRequestGeneration;
   try {
     const res = await fetch("/api/account");
-    if (!res.ok) return;
+    if (!res.ok) throw new Error('Hesap doğrulanamadı.');
     const data = await res.json();
-    currentAIAccountType = data.connected && !data.account_mismatch ? data.account_type : null;
+    if (generation !== aiAccountRequestGeneration) return;
+    aiAccountVerificationKnown = true;
+    currentAIAccountType = data.connected && !data.account_mismatch && ['DEMO','REAL'].includes(data.account_type) ? data.account_type : null;
+    const identity = currentAIAccountType && Number.isSafeInteger(data.login) && typeof data.server === 'string'
+      ? [data.login,data.server,currentAIAccountType] : null;
+    if (identity && lastObservedAIAccountIdentity && JSON.stringify(identity) !== JSON.stringify(lastObservedAIAccountIdentity)) invalidateAIAdvice(currentSymbol);
+    currentAIAccountIdentity = identity;
+    if (identity) lastObservedAIAccountIdentity = identity;
 
     const balEl = document.getElementById("ai-acc-balance");
     const profEl = document.getElementById("ai-acc-profit");
@@ -47,16 +99,27 @@ async function fetchAccount() {
 
     if (typeEl) {
       const real = data.connected && data.account_type === "REAL" && !data.account_mismatch;
-      typeEl.innerText = data.account_mismatch ? "HESAP UYUŞMUYOR" : real ? `GERÇEK #${data.login}` : data.connected ? `DEMO #${data.login}` : "HESAP BEKLENİYOR";
+      typeEl.innerText = data.account_mismatch ? "HESAP UYUŞMUYOR" : real ? `GERÇEK #${data.login}` : currentAIAccountType === 'DEMO' ? `DEMO #${data.login}` : "HESAP DOĞRULANAMADI";
       typeEl.className = `px-2 py-1 rounded-lg border font-bold ${real ? "border-rose-500/40 bg-rose-500/10 text-rose-300" : data.account_mismatch ? "border-rose-500/40 bg-rose-500/10 text-rose-300" : data.connected ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300"}`;
     }
-    if (balEl) balEl.innerText = `${currency} ${formatMoney(data.balance)}`;
+    if (balEl) balEl.innerText = currentAIAccountType && Number.isFinite(data.balance) ? `${currency} ${formatMoney(data.balance)}` : '—';
     if (profEl) {
       const p = parseFloat(data.profit || 0);
-      profEl.innerText = `${p >= 0 ? '+' : ''}${currency} ${formatMoney(p)}`;
+      profEl.innerText = currentAIAccountType && Number.isFinite(data.profit) ? `${p >= 0 ? '+' : ''}${currency} ${formatMoney(p)}` : '—';
       profEl.className = p >= 0 ? "font-bold text-emerald-400 text-xs sm:text-sm" : "font-bold text-rose-400 text-xs sm:text-sm";
     }
   } catch (err) {
+    if (generation !== aiAccountRequestGeneration) return;
+    aiAccountVerificationKnown = true;
+    currentAIAccountType = null;
+    currentAIAccountIdentity = null;
+    invalidateAIAdvice(currentSymbol);
+    const typeEl = document.getElementById('ai-account-type');
+    if (typeEl) { typeEl.innerText = 'HESAP DOĞRULANAMADI'; typeEl.className = 'text-amber-300'; }
+    for (const id of ['ai-acc-balance','ai-acc-profit']) {
+      const node = document.getElementById(id);
+      if (node) node.innerText = '—';
+    }
     console.debug("fetchAccount error:", err);
   }
 }
@@ -190,7 +253,7 @@ function renderAIMemory(memory, config) {
         </li>
       `).join("");
     } else {
-      ideasList.innerHTML = `<li class="text-gray-500 text-xs py-2">Geçmiş işlemleriniz analiz edildiğinde gelir artırıcı özel öneriler burada listelenecektir.</li>`;
+      ideasList.innerHTML = `<li class="text-gray-500 text-xs py-2">İşlem geçmişiniz analiz edildiğinde strateji önerileri burada gösterilecektir.</li>`;
     }
   }
 
@@ -232,11 +295,13 @@ function renderAIMemory(memory, config) {
     const cfgLoss = document.getElementById("ai-cfg-max-loss");
     const cfgSyms = document.getElementById("ai-cfg-symbols");
 
-    if (cfgMode) cfgMode.value = config.mode || "DISABLED";
-    if (cfgLot) cfgLot.value = config.max_lot || 0.01;
-    if (cfgConf) cfgConf.value = config.min_confidence || 75;
-    if (cfgLoss) cfgLoss.value = config.daily_loss_limit || 50.0;
-    if (cfgSyms) cfgSyms.value = (config.allowed_symbols || []).join(",");
+    const settingsModal = document.getElementById('ai-autopilot-modal');
+    const editing = typeof settingsModal?.classList?.contains === 'function' && !settingsModal.classList.contains('hidden');
+    if (!editing && cfgMode) cfgMode.value = config.mode || "DISABLED";
+    if (!editing && cfgLot) cfgLot.value = config.max_lot ?? 0.01;
+    if (!editing && cfgConf) cfgConf.value = config.min_confidence ?? 75;
+    if (!editing && cfgLoss) cfgLoss.value = config.daily_loss_limit ?? 50.0;
+    if (!editing && cfgSyms) cfgSyms.value = (config.allowed_symbols || []).join(",");
   }
 
   if (memory.latest_recommendation && !currentAIAdvice) {
@@ -245,7 +310,7 @@ function renderAIMemory(memory, config) {
 }
 
 function renderAIAdvice(advice) {
-  if (!advice) return;
+  if (!advice || advice.symbol !== currentSymbol) return;
   currentAIAdvice = advice;
 
   const signalEl = document.getElementById("ai-advice-signal");
@@ -289,7 +354,7 @@ function renderAIAdvice(advice) {
   }
 
   if (execBtn) {
-    if ((sig === "BUY" || sig === "SELL") && Number(advice.expires_at || 0) * 1000 > Date.now()) {
+    if (!aiExecutionBusy && aiAdviceExecutable(advice)) {
       execBtn.disabled = false;
       execBtn.innerHTML = `<i class="ph-bold ph-paper-plane-tilt text-lg"></i> <span>Bu Tavsiyeyi MT5'te Uygula (${sig} - ${advice.symbol || currentSymbol})</span>`;
     } else {
@@ -300,6 +365,7 @@ function renderAIAdvice(advice) {
 }
 
 function changeAdviceSymbol(sym) {
+  invalidateAIAdvice(sym);
   currentSymbol = sym;
   document.querySelectorAll(".ai-sym-btn").forEach(btn => {
     if (btn.innerText === sym) {
@@ -339,7 +405,6 @@ async function triggerAILearn() {
       renderAIMemory(data.memory, null);
       if (data.cached) showToast("İşlem geçmişi değişmedi; kayıtlı analiz kullanıldı. Yeni token harcanmadı.", "info");
       fetchAIStatus();
-      fetchAIStatus();
     } else {
       showToast(`❌ Analiz Hatası: ${data.detail || data.error}`, "error");
     }
@@ -355,10 +420,16 @@ async function triggerAILearn() {
 
 async function triggerAIAdvice() {
   const btn = document.getElementById("ai-advice-btn");
-  if (btn?.disabled) return;
+  const symbol = currentSymbol;
+  if (btn?.disabled && aiAdviceRequestSymbol === symbol) return;
+  aiAdviceRequestSymbol = symbol;
+  invalidateAIAdvice(symbol);
+  const activeGeneration = aiAdviceGeneration;
+  aiAdviceRequestGeneration = activeGeneration;
   let originalHtml = "";
   if (btn) {
-    originalHtml = btn.innerHTML;
+    if (aiAdviceButtonHtml === null) aiAdviceButtonHtml = btn.innerHTML;
+    originalHtml = aiAdviceButtonHtml;
     btn.disabled = true;
     btn.innerHTML = `<i class="ph-bold ph-spinner animate-spin text-cyan-400"></i> <span>Piyasa Analiz Ediliyor...</span>`;
   }
@@ -368,10 +439,11 @@ async function triggerAIAdvice() {
     const res = await fetch("/api/ai/advice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbol: currentSymbol, timeframe: "M15", language: window.MT5I18n?.language?.() || "tr" })
+      body: JSON.stringify({ symbol, timeframe: "M15", language: window.MT5I18n?.language?.() || "tr" })
     });
 
     const data = await res.json();
+    if (activeGeneration !== aiAdviceGeneration || symbol !== currentSymbol) return;
     if (res.ok && data.success && data.recommendation) {
       renderAIAdvice(data.recommendation);
       if (data.cached) {
@@ -383,9 +455,11 @@ async function triggerAIAdvice() {
       showToast(`❌ Tavsiye Üretilemedi: ${data.detail || data.error}`, "error");
     }
   } catch (err) {
+    if (activeGeneration !== aiAdviceGeneration || symbol !== currentSymbol) return;
     showToast(`❌ Tavsiye Hatası: ${err.message}`, "error");
   } finally {
-    if (btn) {
+    if (btn && activeGeneration === aiAdviceRequestGeneration) {
+      aiAdviceRequestSymbol = null;
       btn.disabled = false;
       btn.innerHTML = originalHtml;
     }
@@ -393,68 +467,54 @@ async function triggerAIAdvice() {
 }
 
 async function executeCurrentAdvice() {
-  if (document.getElementById("ai-execute-btn")?.disabled) return;
-  if (!currentAIAdvice) {
-    showToast("Uygulanacak aktif bir AI tavsiyesi bulunmuyor.", "error");
+  if (aiExecutionBusy || document.getElementById('ai-execute-btn')?.disabled) return;
+  const advice = currentAIAdvice;
+  if (!aiAdviceExecutable(advice)) {
+    showToast('Tavsiye bu sembol için geçerli değil, süresi doldu veya daha önce gönderildi. Güncel analiz alın.', 'error');
     return;
   }
-
-  const sig = (currentAIAdvice.action || "").toUpperCase();
-  if (sig !== "BUY" && sig !== "SELL") {
-    showToast("Bekleme sinyalinde işlem açılamaz.", "error");
-    return;
-  }
-
-  if (Number(currentAIAdvice.expires_at || 0) * 1000 <= Date.now()) {
-    showToast("Tavsiyenin süresi doldu; yeni mum sonrası analiz alın.", "error");
-    return;
-  }
-  const symbol = currentAIAdvice.symbol || currentSymbol;
-  const sl = currentAIAdvice.sl_price ? Number(currentAIAdvice.sl_price) : null;
-  const tp = currentAIAdvice.tp_price ? Number(currentAIAdvice.tp_price) : null;
-
-  const advice = {...currentAIAdvice};
-  const conf = await confirmAction({
-    title: "AI emrini onayla",
-    message: "Bu emir MT5 hesabınıza gönderilecek.",
-    details: [["Sembol", symbol], ["Yön", sig === "BUY" ? "Alış" : "Satış"], ["Lot", "0.01"], ["Stop loss", sl || "Belirtilmedi"], ["Take profit", tp || "Belirtilmedi"]],
-    confirmLabel: "Emri gönder"
-  });
-  if (!conf || document.getElementById("ai-execute-btn")?.disabled) return;
-  if (Number(advice.expires_at || 0) * 1000 <= Date.now()) {
-    showToast("Tavsiyenin süresi doldu; yeniden analiz alın.", "error");
-    return;
-  }
-
-  const btn = document.getElementById("ai-execute-btn");
-  let originalHtml = "";
-  if (btn) {
-    originalHtml = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = `<i class="ph-bold ph-spinner animate-spin"></i> <span>MT5'e Gönderiliyor...</span>`;
-  }
-
+  const symbol = currentSymbol, generation = aiAdviceGeneration;
+  const snapshot = {...advice};
+  const expectedAccount = typeof tradingAccountPayload === 'function' ? tradingAccountPayload() : {};
+  aiExecutionBusy = true;
+  const btn = document.getElementById('ai-execute-btn');
+  if (btn) btn.disabled = true;
   try {
-    const res = await fetch("/api/ai/execute", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({recommendation: {...advice, suggested_lot: 0.01}})
+    const confirmed = await confirmAction({
+      title:'AI emrini onayla', message:'Bu emir MT5 hesabınıza gönderilecek.',
+      details:[['Sembol',symbol],['Yön',snapshot.action],['Lot','0.01'],['SL mesafesi (puan)',snapshot.sl_points],['TP mesafesi (puan)',snapshot.tp_points]],
+      confirmLabel:'Emri gönder'
     });
-
-    const data = await res.json();
+    if (!confirmed) return;
+    if (currentAIAdvice !== advice || currentSymbol !== symbol || aiAdviceGeneration !== generation || !aiAdviceExecutable(advice)
+        || (typeof tradingAccountPayload === 'function' && JSON.stringify(expectedAccount) !== JSON.stringify(tradingAccountPayload()))) {
+      showToast('Onay sırasında tavsiye, sembol veya hesap değişti. Emir gönderilmedi.', 'error');
+      return;
+    }
+    if (btn) btn.innerText = "MT5'e gönderiliyor…";
+    let data, res;
+    try {
+      ({response:res,data} = await tradeRequest('/api/ai/execute',
+        {recommendation:{...snapshot,suggested_lot:0.01},...expectedAccount}));
+    } catch (error) {
+      handledAIAdvice.add(aiAdviceKey(snapshot));
+      showToast('Emir sonucu belirsiz; MT5 açık pozisyonlarını ve geçmişi kontrol edin.', 'error');
+      return;
+    }
+    if (data.success || data.uncertain || data.pending) handledAIAdvice.add(aiAdviceKey(snapshot));
     if (res.ok && data.success) {
-      showToast(`${data.partial ? "Emir kısmen gerçekleşti" : data.pending ? "Emir kabul edildi; gerçekleşme bekleniyor" : "Emir gerçekleşti"} · #${data.ticket}`, "success");
-      fetchAccount();
+      showToast(`${data.partial ? 'Emir kısmen gerçekleşti' : data.pending ? 'Emir kabul edildi; gerçekleşme bekleniyor' : 'Emir gerçekleşti'} · #${data.ticket}`,
+        data.partial || data.pending ? 'warning' : 'success');
     } else {
-      showToast(`${data.uncertain ? "Emir sonucu belirsiz; MT5 durumunu kontrol edin" : "Emir tamamlanamadı"}: ${data.detail || data.error}`, "error");
+      showToast(`${data.uncertain ? 'Emir sonucu belirsiz; MT5 durumunu kontrol edin' : 'Emir tamamlanamadı'}: ${data.detail || data.error || ''}`, 'error');
     }
-  } catch (err) {
-    showToast(`❌ İstek Hatası: ${err.message}`, "error");
+    if (typeof fetchPositions === 'function') fetchPositions(true);
+    fetchAccount(true);
   } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = originalHtml;
-    }
+    aiExecutionBusy = false;
+    if (currentAIAdvice) renderAIAdvice(currentAIAdvice);
+    else if (btn) { btn.disabled = true; btn.innerText = 'Yeni tavsiye bekleniyor'; }
+    if (typeof refreshOrderRecovery === 'function') refreshOrderRecovery();
   }
 }
 
@@ -464,39 +524,44 @@ function toggleAIAutopilotModal() {
 }
 
 async function saveAIAutopilot() {
+  if (aiSettingsBusy) return;
+  const expectedAccount = tradingAccountPayload();
+  const isCurrentAccount = () => JSON.stringify(expectedAccount) === JSON.stringify(tradingAccountPayload())
+    && !(typeof accountSwitching !== 'undefined' && accountSwitching);
   const mode = document.getElementById("ai-cfg-mode")?.value || "DISABLED";
   const maxLot = parseFloat(document.getElementById("ai-cfg-max-lot")?.value || "0.01");
   const minConf = parseInt(document.getElementById("ai-cfg-min-conf")?.value || "75");
   const maxLoss = parseFloat(document.getElementById("ai-cfg-max-loss")?.value || "50.0");
   const symsRaw = document.getElementById("ai-cfg-symbols")?.value || "EURUSD,GBPUSD";
-  const symbols = symsRaw.split(",").map(s => s.trim().toUpperCase()).filter(s => s.length > 0);
-  let confirmRealFullAuto = false;
-  if (mode === "FULL_AUTO" && currentAIAccountType === "REAL") {
-    confirmRealFullAuto = await confirmAction({
-      title: "Gerçek hesapta otomatik işlem",
-      message: "Otopilot bu gerçek hesapta sizden ayrıca emir onayı almadan işlem açabilir.",
-      details: [["Mod", "Tam otomatik"], ["Azami lot", String(maxLot)], ["Semboller", symbols.join(", ")]],
-      confirmLabel: "Gerçek hesapta etkinleştir"
-    });
-    if (!confirmRealFullAuto) return;
-  }
-
+  const symbols = symsRaw.split(",").map(s => s.trim()).filter(s => s.length > 0);
+  aiSettingsBusy = true;
   try {
-    const res = await fetch("/api/ai/autopilot", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    let confirmRealFullAuto = false;
+    if (mode === "FULL_AUTO" && currentAIAccountType === "REAL") {
+      confirmRealFullAuto = await confirmAction({
+        title: "Gerçek hesapta otomatik işlem",
+        message: "Otopilot bu gerçek hesapta sizden ayrıca emir onayı almadan işlem açabilir.",
+        details: [["Mod", "Tam otomatik"], ["Azami lot", String(maxLot)], ["Semboller", symbols.join(", ")]],
+        confirmLabel: "Gerçek hesapta etkinleştir"
+      });
+      if (!confirmRealFullAuto) return;
+    }
+
+    if (!isCurrentAccount()) {
+      showToast('Onay sırasında hesap değişti; otopilot ayarları kaydedilmedi.', 'error');
+      return;
+    }
+    const {response:res,data} = await tradeRequest('/api/ai/autopilot', {
         enabled: mode !== "DISABLED",
         mode: mode === "DISABLED" ? "ADVISORY" : mode,
         max_lot: maxLot,
         min_confidence: minConf,
         daily_loss_limit: maxLoss,
         allowed_symbols: symbols,
-        confirm_real_full_auto: confirmRealFullAuto
-      })
+        confirm_real_full_auto: confirmRealFullAuto,
+        ...expectedAccount
     });
-
-    const data = await res.json();
+    if (!isCurrentAccount()) return;
     if (res.ok && data.success) {
       showToast(`✅ Otopilot Ayarları Kaydedildi! (${mode})`, "success");
       toggleAIAutopilotModal();
@@ -506,7 +571,7 @@ async function saveAIAutopilot() {
     }
   } catch (err) {
     showToast(`❌ İstek Hatası: ${err.message}`, "error");
-  }
+  } finally { aiSettingsBusy = false; }
 }
 
 function showToast(message, type = "info") {

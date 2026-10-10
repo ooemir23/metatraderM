@@ -15,9 +15,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     const adminActions = ['toggleAIAutopilotModal', 'saveAIAutopilot', 'toggleBot',
       'toggleBotSettingsModal', 'saveBotSettings', 'resumeTrading', 'submitLogin'];
-    const tradeActions = ['submitOrder', 'executeCurrentAdvice', 'placePendingOrder',
-      'savePositionStops', 'partialClosePosition', 'closePosition'];
-    document.querySelectorAll('button[onclick]').forEach(button => {
+    const tradeActions = ['submitOrder', 'executeCurrentAdvice', 'submitPendingOrder', 'cancelPendingOrder',
+      'savePositionStops', 'partialClosePosition', 'closePosition', 'closeFilteredPositions', 'closeAllPositions'];
+    const can = action => !((role !== 'ADMIN' && adminActions.includes(action)) ||
+      (role === 'VIEWER' && tradeActions.includes(action)));
+    const apply = () => document.querySelectorAll('button[onclick]').forEach(button => {
       const handler = button.getAttribute('onclick') || '';
       const blocked = (role !== 'ADMIN' && adminActions.some(name => handler.startsWith(name + '('))) ||
         (role === 'VIEWER' && tradeActions.some(name => handler.startsWith(name + '(')));
@@ -27,5 +29,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         button.classList.add('opacity-50', 'cursor-not-allowed');
       }
     });
+    window.MT5Permissions = {can, apply};
+    apply();
+    // Position and pending-order rows are replaced by the live feed. Apply the
+    // same role hint to those new buttons as to the initial page controls.
+    if (typeof MutationObserver !== 'undefined') new MutationObserver(apply).observe(document.body, {childList:true,subtree:true});
+    if (typeof updateOrderButtons === 'function') updateOrderButtons();
   } catch (error) { console.debug('Operator role unavailable', error); }
 });

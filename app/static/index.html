@@ -84,12 +84,13 @@
         <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
       </a>
 
-      <!-- Quick Symbol Switcher Tabs -->
-      <div class="flex items-center gap-1 bg-[#181d2a] p-1 rounded-lg border border-gray-800 overflow-x-auto max-w-full">
-        <button onclick="switchSymbol('EURUSD')" class="sym-btn px-2 py-0.5 rounded text-xs font-semibold bg-emerald-500/20 text-emerald-400">EURUSD</button>
-        <button onclick="switchSymbol('XAUUSD')" class="sym-btn px-2 py-0.5 rounded text-xs font-semibold text-gray-400 hover:text-white">XAUUSD</button>
-        <button onclick="switchSymbol('GBPUSD')" class="sym-btn px-2 py-0.5 rounded text-xs font-semibold text-gray-400 hover:text-white">GBPUSD</button>
-        <button onclick="switchSymbol('BTCUSD')" class="sym-btn px-2 py-0.5 rounded text-xs font-semibold text-gray-400 hover:text-white">BTCUSD</button>
+      <div class="market-watch" aria-label="Broker ürünleri ve favoriler">
+        <button id="market-open" type="button" class="market-open" aria-haspopup="dialog" aria-controls="market-dialog">
+          <i class="ph-bold ph-magnifying-glass" aria-hidden="true"></i><span>Ürün ara / Ekle</span>
+        </button>
+        <div id="market-favorites" class="market-favorites" aria-label="Favori ürünler">
+          <span class="market-empty">Hesap doğrulandığında ürünler gösterilir.</span>
+        </div>
       </div>
 
     </div>
@@ -129,6 +130,7 @@
             </button>
           </div>
         </div>
+        <p id="chart-source-notice" hidden class="chart-source-notice" role="status"></p>
         <div id="tradingview-container" class="flex-1 w-full bg-[#0b0e14] relative">
           <!-- TradingView Widget iframe will be mounted here -->
         </div>
@@ -526,12 +528,12 @@
               <div class="bg-[#151a26] p-3.5 rounded-xl border border-gray-800/80 flex flex-col gap-2">
                 <div class="flex items-center justify-between border-b border-gray-800 pb-2">
                   <span class="font-bold text-gray-200 text-xs flex items-center gap-1.5">
-                    <i class="ph-bold ph-trend-up text-emerald-400"></i> Gelir Kazanmak & Kâr Artırmak İçin Stratejik Öneriler
+                    <i class="ph-bold ph-trend-up text-emerald-400"></i> İşlem Disiplini ve Strateji Önerileri
                   </span>
                   <span class="text-[10px] text-gray-500">DeepSeek Tavsiyeleri</span>
                 </div>
                 <ul id="ai-ideas-list" class="text-xs text-gray-300 space-y-1.5">
-                  <li class="text-gray-500 text-[11px] py-1">Geçmiş işlemleriniz analiz edildiğinde gelir artırıcı öneriler burada listelenecektir.</li>
+                  <li class="text-gray-500 text-[11px] py-1">İşlem geçmişiniz analiz edildiğinde strateji önerileri burada gösterilecektir.</li>
                 </ul>
               </div>
             </div>
@@ -596,7 +598,7 @@
 
                   <div class="flex items-center justify-between text-[11px] text-gray-400 px-1">
                     <span class="flex items-center gap-1">
-                      <i class="ph-bold ph-shield-check text-cyan-400"></i> Güvenli Magic No: 777888
+                      <i class="ph-bold ph-shield-check text-cyan-400"></i> Emirler sunucuda doğrulanır
                     </span>
                     <button onclick="toggleAIAutopilotModal()" class="text-purple-400 hover:text-purple-300 underline font-medium">
                       Otopilot Modunu Değiştir
@@ -629,11 +631,10 @@
           </div>
 
           <label for="order-symbol-select" class="block text-[11px] font-semibold text-gray-400 mb-1">MT5 işlem sembolü</label>
-          <select id="order-symbol-select" onchange="switchSymbol(this.value)" class="w-full mb-2 bg-[#181d2a] border border-gray-700 rounded-lg px-2.5 py-1.5 text-white text-sm">
-            <option value="EURUSD">EURUSD</option><option value="XAUUSD">XAUUSD · Altın</option>
-            <option value="GBPUSD">GBPUSD</option><option value="USDJPY">USDJPY</option>
-            <option value="BTCUSD">BTCUSD · Bitcoin</option><option value="US30">US30</option>
-          </select>
+          <button id="order-symbol-select" type="button" class="market-order-picker" aria-haspopup="dialog" aria-controls="market-dialog" aria-label="MT5 işlem ürününü seç" disabled>
+            <span id="order-symbol-name" data-no-translate>EURUSD</span><span class="text-gray-400">Ürün seç <i class="ph-bold ph-caret-down" aria-hidden="true"></i></span>
+          </button>
+          <p id="market-selection-note" class="market-selection-note" role="status"></p>
 
           <!-- Lot Size Selector -->
           <div class="mb-2">
@@ -668,17 +669,19 @@
           <div class="mb-2 rounded-xl border border-cyan-800/50 bg-cyan-950/20 p-2 text-[11px]">
             <div class="flex items-center justify-between gap-2"><strong class="text-cyan-200">İşlem öncesi risk</strong><button type="button" onclick="refreshTradePreview()" class="text-cyan-300 underline">Hesapla</button></div>
             <p id="trade-preview" role="status" class="mt-1 text-gray-300">Yön ve lot seçildiğinde broker verileriyle hesaplanır.</p>
+            <p id="trade-preview-status" aria-live="polite" class="mt-1 text-cyan-300"></p>
+            <p id="trade-risk-policy" class="mt-1 text-amber-300"></p>
           </div>
           <p id="stop-distance-guidance" class="text-[11px] text-amber-200 mb-2" role="status"></p>
           <button id="apply-stop-minimum" type="button" hidden onclick="applyStopMinimum()" class="mb-2 rounded-lg border border-amber-700/50 px-2 py-1 text-[11px] text-amber-200" title="Yalnızca yetersiz mesafeleri yükseltir; SL'yi genişletmek olası kaybı artırır. Emir göndermez.">Yetersiz SL/TP’yi minimuma yükselt · Emir göndermez</button>
           <button id="trading-halt-message" type="button" onclick="openTradingRiskDialog()" class="hidden mb-2 w-full rounded-lg border border-amber-700/50 bg-amber-950/30 px-2 py-1.5 text-left text-[11px] text-amber-200 hover:bg-amber-900/40" aria-haspopup="dialog">İşlem riski yükleniyor…</button>
           <!-- BIG BUY & SELL BUTTONS -->
           <div class="grid grid-cols-2 gap-2.5">
-            <button id="order-sell-btn" onclick="submitOrder('SELL')" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-gradient-to-b from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-extrabold shadow-lg shadow-red-600/20 active:scale-[0.98] transition">
+            <button id="order-sell-btn" disabled onclick="submitOrder('SELL')" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-gradient-to-b from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-extrabold shadow-lg shadow-red-600/20 active:scale-[0.98] transition">
               <span class="text-xs sm:text-sm tracking-wide">SAT (SELL)</span>
               <span id="btn-bid-price" class="text-[11px] font-mono font-medium text-red-100 opacity-90">--</span>
             </button>
-            <button id="order-buy-btn" onclick="submitOrder('BUY')" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-gradient-to-b from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-extrabold shadow-lg shadow-emerald-600/20 active:scale-[0.98] transition">
+            <button id="order-buy-btn" disabled onclick="submitOrder('BUY')" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-gradient-to-b from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-extrabold shadow-lg shadow-emerald-600/20 active:scale-[0.98] transition">
               <span class="text-xs sm:text-sm tracking-wide">AL (BUY)</span>
               <span id="btn-ask-price" class="text-[11px] font-mono font-medium text-emerald-100 opacity-90">--</span>
             </button>
@@ -780,6 +783,7 @@
               </div>
             </div>
 
+            <p id="bot-runtime-status" role="status" class="mb-2 text-[11px] text-gray-300">Bot durumu doğrulanıyor…</p>
             <p id="bot-atr-status" class="mb-2 text-[10px] text-gray-400">ATR: — · ER: —</p>
             <div class="flex items-center justify-between text-xs text-gray-400 mb-2 px-0.5">
               <span>Son Sinyal: <strong id="bot-last-signal" class="text-gray-200">YOK</strong></span>
@@ -945,7 +949,7 @@
         <fieldset class="border border-gray-700 rounded-xl p-3 space-y-2">
           <legend class="px-1 font-semibold text-cyan-300">KAMA ve ATR</legend>
           <label class="flex items-center gap-2"><input id="cfg-h4-filter" type="checkbox">H1 girişte kapanmış H4 filtresi kullan</label>
-          <label class="flex items-center gap-2"><input id="cfg-single-position" type="checkbox" checked>Aynı sembolde tek bot pozisyonu tut</label>
+          <label class="flex items-center gap-2"><input id="cfg-single-position" type="checkbox" checked disabled>Aynı sembolde tek bot pozisyonu (zorunlu)</label>
           <div class="grid grid-cols-2 gap-2">
             <label>KAMA hızlı periyodu<input id="cfg-kama-fast" type="number" min="2" max="200" value="2" class="block w-full rounded bg-gray-800 p-2"></label>
             <label>KAMA yavaş periyodu<input id="cfg-kama-slow" type="number" min="2" max="200" value="30" class="block w-full rounded bg-gray-800 p-2"></label>
@@ -1023,7 +1027,7 @@
 
         <div>
           <label class="block text-gray-300 font-semibold mb-1">Günlük Zarar Limiti (hesap para birimi, UTC)</label>
-          <p class="text-xs text-gray-400">Yalnızca AI otopilot bütçesi. Manuel ve HMA emirlerinin günlük limiti İşlem Riskini Yönet penceresindedir.</p>
+          <p class="text-xs text-gray-400">AI yeni emirlerini sınırlar. Hesabın gerçekleşen net sonucu ve açık zararı birlikte değerlendirilir; ortak günlük limit daha düşükse o kullanılır.</p>
           <input type="number" id="ai-cfg-max-loss" value="50.0" step="5" min="0" class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-purple-500 focus:outline-none">
           <p class="text-[11px] text-gray-500 mt-0.5">Günün toplam zararı bu tutarı aşarsa AI otopilot otomatik durur.</p>
         </div>
@@ -1037,7 +1041,7 @@
           <span class="font-bold flex items-center gap-1 text-purple-300 mb-0.5">
             <i class="ph-bold ph-shield-check"></i> Güvenlik Koruması
           </span>
-          AI tarafından açılan pozisyonlar <code>123462</code> Magic Number ile etiketlenir; geçerli Stop Loss (SL), Kâr Al (TP) ve işlem başına risk sınırı olmadan emir gönderilmez.
+          AI emirleri sunucuda doğrulanır; geçerli Stop Loss (SL), Kâr Al (TP) ve işlem başına risk sınırı olmadan emir gönderilmez.
         </div>
       </div>
 
@@ -1088,9 +1092,32 @@
   <!-- TOAST NOTIFICATION CONTAINER -->
   <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
+  <dialog id="market-dialog" class="market-dialog" aria-labelledby="market-dialog-title" aria-describedby="market-dialog-description">
+    <div class="market-dialog-heading">
+      <div><h2 id="market-dialog-title">Broker ürünleri</h2><p id="market-dialog-description">Ürün seçin veya yıldızla favorilerinize ekleyin. Seçim emir göndermez.</p></div>
+      <button id="market-close" type="button" class="market-close" aria-label="Ürün seçiciyi kapat">×</button>
+    </div>
+    <div class="market-filters">
+      <label class="market-search-label" for="market-search">Ürün ara
+        <input id="market-search" type="search" placeholder="Sembol veya açıklama ara" autocomplete="off" spellcheck="false">
+      </label>
+      <label for="market-category">Kategori
+        <select id="market-category">
+          <option value="all">Tüm ürünler</option><option value="favorites">Favoriler</option><option value="forex">Döviz</option><option value="metals">Metaller</option>
+          <option value="crypto">Kripto</option><option value="indices">Endeksler</option><option value="stocks">Hisseler</option>
+          <option value="commodities">Emtialar</option><option value="other">Diğer</option>
+        </select>
+      </label>
+    </div>
+    <div class="market-catalog-status"><p id="market-status" role="status" aria-live="polite"></p><span id="market-result-count"></span><button id="market-retry" type="button" hidden>Yenile</button></div>
+    <div id="market-results" class="market-results" role="list" aria-label="Broker ürün sonuçları"></div>
+    <div class="market-dialog-footnote"><span>Favoriler bu hesap ve broker sunucusu için saklanır.</span><button id="market-manage-favorites" type="button">Favorileri yönet</button></div>
+  </dialog>
+
   <script src="/static/i18n.js"></script>
   <script src="/static/notifications.js"></script>
   <script src="/static/mt5-chart.js?v=2"></script>
+  <script src="/static/market-watch.js"></script>
   <script src="/static/app.js?v=mt5-chart-1"></script>
   <script src="/static/trading.js"></script>
   <script src="/static/operations.js"></script>

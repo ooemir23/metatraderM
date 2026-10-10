@@ -1,5 +1,7 @@
 > Web panelindeki emir güvenliği, hız düzeltmeleri ve zorunlu panel parolası kurulumu: [Emir güvenliği düzeltmeleri](docs/EMIR_GUVENLIGI_DUZELTMELERI.md). Telegram entegrasyonu kaldırılmıştır.
 
+> 10 Ekim güvenilirlik incelemesi ve yeni davranışlar: [Mantık hataları ve emir güvenliği](docs/EMIR_MANTIK_INCELEMESI_2026-10-10.md). Web panelinde gerçek hesapta yeni emir için Stop Loss zorunludur. Stoplu manuel/HMA/AI emirlerinde brokerın hesapladığı zarar varsayılan olarak özsermayenin %2'sini (`MAX_TRADE_RISK_PCT`) aşamaz; AI için mevcut %1 sınırı da uygulanır. Komisyon, swap ve kayma bu hesapta yoktur. Web köprüsünde gerçekleştirme öncesinde her işlem için broker `order_check` kontrolü yapılır. Ayrı EA'nın dar kaynak düzeltmeleri için MetaEditor derlemesi ve Demo doğrulaması ayrıca gereklidir.
+
 ## XAUUSD HMA–KAMA–ATR araştırması
 
 Yeni araştırma paneli H1, H4 ve H1 giriş/H4 filtre için kesişim onay süresi ve ATR mesafesini 51 seçenekle karşılaştırır. Parametre seçimi ilk %60 eğitim verisinde yapılır; sonraki %20 doğrulama ve son %20 ayrılmış test seçimde kullanılmaz. Tarih aralığıyla uzun broker geçmişi, mum spreadi, kullanıcı maliyet varsayımları ve JSON rapor indirme desteklenir. Araştırma motoru emir göndermez; mevcut HMA botundan ayrıdır. Kaynak kurulum, API, dosyadan çalışma ve simülasyon sınırları: [XAUUSD araştırma kurulumu](docs/XAUUSD_ARASTIRMA_KURULUM.md). Canlı panelde görünmesi için yeni web kaynağı sunucuya kurulup web imajı yeniden oluşturulmalıdır.
@@ -7,6 +9,12 @@ Yeni araştırma paneli H1, H4 ve H1 giriş/H4 filtre için kesişim onay süres
 ## Panel dili / Interface language
 
 Terminal ve AI Danışmanı sayfalarının üst kısmındaki **Türkçe / English** menüsünden dili seçin. Seçim aynı tarayıcıda saklanır ve iki sayfada da uygulanır; ilk açılışta tarayıcı dili kullanılır. Grafik arayüzü, sayı biçimi ve yeni AI analizleri seçilen dili izler. Daha önce farklı dilde oluşturulmuş bir AI işlem profili varsa, seçtiğiniz dilde yeni bir profil oluşturmak için **İşlemlerimi Analiz Et & Öğren / Analyze My Trading History** düğmesini kullanın. Bu işlem AI sağlayıcısına ücretli istek gönderebilir ve mevcut istek sınırlarına tabidir.
+
+## Ürün seçimi ve favoriler
+
+Terminalin üstündeki **Ürün ara / Ekle** veya emir panelindeki ürün düğmesi, bağlı brokerın gerçek ürün kataloğunu açar. Sembol/açıklama araması ve Döviz, Kripto, Metaller, Endeksler, Hisseler ve Emtialar filtreleriyle ürünü bulun. Ürün adını seçmek grafik, fiyat ve emir hedefini birlikte değiştirir; seçim emir göndermez veya bot/AI ayarlarını değiştirmez.
+
+**☆** ile eklenen favoriler üst çubukta tek tıkla erişilir. Favoriler bu tarayıcıda hesap, sunucu ve hesap türüne göre saklanır; **Favorileri yönet** bölümünden kaldırılır. **Yenile** broker kataloğunu yeniden okur. Brokerda bulunmayan ürün uydurulmaz; kapalı veya yalnız kapatmaya açık üründe yeni emir girişi engellenir. Brokerın `EURUSD.a` / `BTCUSDm` gibi ekli ve büyük/küçük harf içeren adları aynen korunur. TradingView eşlemesi olmayan ürünler broker verili MT5 grafiğinde gösterilir.
 
 ## Risk, gerçek hesap güvenliği ve strateji testi
 
@@ -50,8 +58,8 @@ Bu robot (Expert Advisor), **Hull Moving Average (HMA)** ile seçeceğiniz **2. 
      * SMA (Basit Ortalama)
      * LWMA (Ağırlıklı Ortalama)
 2. **Açılıp Kapanabilen Stop Loss (SL) & Take Profit (TP):**
-   * Stop Loss tamamen tercihe bağlıdır (`InpUseStopLoss = true/false`).
-   * İster manuel olarak kapatıp sadece ters sinyalde pozisyonu kapatabilirsiniz, isterseniz istediğiniz puan mesafesinde koruyucu stop koyabilirsiniz.
+   * Demo hesapta Stop Loss tercihe bağlıdır (`InpUseStopLoss = true/false`). Gerçek hesapta otomatik işlem için SL açık ve mesafe pozitif olmalıdır; aksi durumda EA başlatılmaz.
+   * Aktif SL/TP için sıfır veya negatif mesafe kabul edilmez; hesaplanan seviye sıfır, girişe eşit veya yanlış yöndeyse emir gönderilmez.
 3. **Esnek Çalışma Modu:**
    * **Tam Otomatik:** Şartlar sağlandığında hem sinyal verir hem de emri doğrudan açar (`InpAllowTrading = true`). Hesap genelindeki EA risk sınırları ayrıca uygulanır.
    * **Sadece Sinyal:** Varsayılandır; işlem açmaz, sadece ekrana ve telefona sinyal gönderir (`InpAllowTrading = false`).
@@ -65,6 +73,8 @@ Bu robot (Expert Advisor), **Hull Moving Average (HMA)** ile seçeceğiniz **2. 
    * Grafik üzerinde anlık indikatör değerlerini ve son sinyal durumunu gösteren bilgi paneli içerir.
 
 EA kendi broker verisini kontrol eder; web panelinin kalıcı durdurma kilidini veya emir günlüğünü okuyamaz. Aynı broker hesabında web HMA/AI otomasyonu ile EA otomatik işlemini birlikte açmayın. Panelde günlük limit değiştirirseniz EA girdisini de güncelleyin; iki ayar otomatik eşitlenmez.
+
+EA ilk yüklendiğinde geçmiş kesişimden emir açmaz; sonraki mum kapanışını bekler. Pozisyon okunamazsa yeni/ters emir engellenir. EA kaynak düzeltmeleri bu ortamda MetaEditor ile derlenmedi veya MT5'te çalıştırılmadı.
 
 ---
 

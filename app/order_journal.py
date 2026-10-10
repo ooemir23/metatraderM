@@ -45,6 +45,12 @@ class OrderJournal:
             if row:
                 if row[0] != fingerprint:
                     return {'success': False, 'error': 'Aynı emir kimliği farklı işlem için kullanılamaz.', 'conflict': True}
+                if metadata and metadata.get('account') is not None:
+                    stored = db.execute('SELECT data FROM order_metadata WHERE id=?', (request_id,)).fetchone()
+                    account = json.loads(stored[0]).get('account') if stored else None
+                    if account != metadata['account']:
+                        return {'success': False, 'conflict': True,
+                                'error': 'Aynı emir kimliği başka bir hesapta kullanılamaz.'}
                 result = json.loads(row[1]) if row[1] else {
                     'success': False, 'uncertain': True,
                     'error': 'Emir işleniyor veya sonucu belirsiz; broker durumunu kontrol edin.'}
@@ -64,6 +70,13 @@ class OrderJournal:
             result['queue_ms'] = queue_ms
         # If saving fails, the committed pending record still prevents a second send.
         with self._connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            stored = db.execute('SELECT result FROM orders WHERE id=?', (request_id,)).fetchone()
+            prior = json.loads(stored[0]) if stored and stored[0] else {}
+            # A long submission may be reconciled before its response arrives.
+            # Keep broker-confirmed terminal evidence over a late ambiguous reply.
+            if prior.get('reconciled') and not (prior.get('uncertain') or prior.get('pending')):
+                return prior
             db.execute('UPDATE orders SET result=? WHERE id=?', (json.dumps(result, allow_nan=False), request_id))
             level = 'warning' if result.get('uncertain') or result.get('pending') or result.get('partial') else ('info' if result.get('success') else 'error')
             state = 'uncertain' if result.get('uncertain') else 'pending' if result.get('pending') else 'partial' if result.get('partial') else 'filled' if result.get('success') else 'rejected'
@@ -167,6 +180,7 @@ class OrderJournal:
 
     def resolve(self, request_id, result):
         with self._connect() as db:
+            db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT result FROM orders WHERE id=?', (request_id,)).fetchone()
             if not row:
                 return

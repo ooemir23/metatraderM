@@ -21,6 +21,8 @@ const TV_SYMBOLS = {
 
 // Initialize on DOM load
 document.addEventListener("DOMContentLoaded", () => {
+  window.MT5Markets?.init({onSelect:switchSymbol, onChange:marketCatalogueChanged});
+  window.MT5Markets?.setActive(currentSymbol);
   initTradingView(currentSymbol);
   initChartResizer();
   initPositionsResizer();
@@ -35,6 +37,8 @@ function initTradingView(symbol) {
   container.innerHTML = ""; // Clear old container
   clearInterval(chartSymbolTimer);
   tvWidget = null;
+  const sourceNotice = document.getElementById('chart-source-notice');
+  if (sourceNotice && TV_SYMBOLS[symbol]) { sourceNotice.hidden = true; sourceNotice.textContent = ''; }
 
   if (window.MT5Chart) {
     window.MT5Chart.dispose();
@@ -48,7 +52,23 @@ function initTradingView(symbol) {
     }
   }
 
-  const tvSymbol = TV_SYMBOLS[symbol] || `FX:${symbol}`;
+  const tvSymbol = TV_SYMBOLS[symbol];
+  if (!tvSymbol) {
+    if (window.MT5Chart) {
+      if (window.MT5Chart.mode() !== 'mt5') window.MT5Chart.setMode('mt5');
+      else window.MT5Chart.mount(symbol);
+    }
+    const notice = document.getElementById('chart-source-notice');
+    if (notice) {
+      notice.hidden = false;
+      notice.textContent = window.MT5I18n?.language?.() === 'en'
+        ? 'No verified TradingView mapping for this broker instrument. Showing the MT5 broker chart.'
+        : 'Bu broker ürünü için doğrulanmış TradingView eşlemesi yok. MT5 broker grafiği gösteriliyor.';
+    }
+    return;
+  }
+  const notice = document.getElementById('chart-source-notice');
+  if (notice) { notice.hidden = true; notice.textContent = ''; }
   updateTradingViewLink(tvSymbol);
 
   if (window.TradingView) {
@@ -95,7 +115,7 @@ function brokerSymbolForChart(name, exchange, type) {
   if (type && !['forex', 'crypto', 'bitcoin', 'cfd', 'index', 'commodity', 'spot'].includes(type)) return null;
   const aliases = {BTCUSDT:'BTCUSD', BTCUSD:'BTCUSD', DJI:'US30'};
   const candidate = aliases[name] || name;
-  return Object.hasOwn(TV_SYMBOLS, candidate) ? candidate : null;
+  return Object.hasOwn(TV_SYMBOLS, candidate) && (!window.MT5Markets || !!window.MT5Markets.getSymbol(candidate)) ? candidate : null;
 }
 
 function applyChartSymbol(name, exchange, type) {
@@ -103,7 +123,8 @@ function applyChartSymbol(name, exchange, type) {
   exchange = exchange.trim().toUpperCase();
   updateTradingViewLink(`${exchange}:${name}`);
   // Replace a market-cap measurement with the executable Bitcoin price chart.
-  if (exchange === 'CRYPTOCAP' && ['BITCOIN', 'BTC'].includes(name)) {
+  if (exchange === 'CRYPTOCAP' && ['BITCOIN', 'BTC'].includes(name)
+      && (!window.MT5Markets || !!window.MT5Markets.getSymbol('BTCUSD'))) {
     switchSymbol('BTCUSD');
     setOrderNotice('BTCUSD', 'Bitcoin işlem grafiği seçildi',
       'Piyasa değeri yerine BTC fiyat grafiğine geçildi. Emirler MT5 BTCUSD sembolüne gönderilir; henüz emir gönderilmedi.', 'neutral');
@@ -150,7 +171,8 @@ window.addEventListener('message', event => {
   }
 });
 
-async function verifyChartOrderSymbol() {
+async function verifyChartOrderSymbol(side) {
+  if (window.MT5Markets?.isSelectionVerified(currentSymbol, side) === false) return false;
   if (chartSelectionBlocked) return false;
   // Explicit MT5 selections remain usable if the third-party chart is offline.
   // Broker identity, quote freshness and risk checks still run server-side.
@@ -166,10 +188,12 @@ async function verifyChartOrderSymbol() {
     frame.contentWindow.postMessage(JSON.stringify({provider:'TradingView', type:'get', name:'symbolInfo',
       id, client_id:widget.id, data:{}}), new URL(frame.src).origin);
   });
-  return verified && tvWidget === widget && currentSymbol === symbol && !chartSelectionBlocked;
+  return verified && tvWidget === widget && currentSymbol === symbol && !chartSelectionBlocked
+    && window.MT5Markets?.isSelectionVerified(currentSymbol, side) !== false;
 }
 
 function clearSymbolPrices() {
+  if (typeof priceRenderRevision !== 'undefined') priceRenderRevision++;
   if (typeof renderStopGuidance === 'function') renderStopGuidance(null, tradePreviewIdentity());
   if (typeof displayedTickTime !== 'undefined') displayedTickTime = 0;
   if (typeof displayedQuoteStatus !== 'undefined') displayedQuoteStatus = null;
@@ -184,10 +208,22 @@ function updateOrderButtons() {
   for (const id of ['order-buy-btn', 'order-sell-btn']) {
     const button = document.getElementById(id);
     if (button) {
-      button.disabled = chartSelectionBlocked || orderPending;
-      button.title = chartSelectionBlocked ? 'Önce bir MT5 işlem sembolü seçin.' : `${currentSymbol} · ${id === 'order-buy-btn' ? 'Alış' : 'Satış'}`;
+      const side = id === 'order-buy-btn' ? 'BUY' : 'SELL';
+      const catalogueBlocked = window.MT5Markets?.isSelectionVerified(currentSymbol, side) === false;
+      button.disabled = chartSelectionBlocked || catalogueBlocked || orderPending || accountSwitching || (accountVerificationKnown && !currentAccountIdentity)
+        || window.MT5Permissions?.can?.('submitOrder') === false;
+      button.title = chartSelectionBlocked ? 'Önce bir MT5 işlem sembolü seçin.'
+        : catalogueBlocked ? window.MT5Markets.selectionIssue(currentSymbol, side) : `${currentSymbol} · ${side === 'BUY' ? 'Alış' : 'Satış'}`;
     }
   }
+}
+
+function marketCatalogueChanged() {
+  updateOrderButtons();
+  clearSymbolPrices();
+  if (typeof invalidateAIAdvice === 'function') invalidateAIAdvice(currentSymbol);
+  if (typeof scheduleTradePreview === 'function') scheduleTradePreview();
+  if (window.MT5Markets?.getSymbol(currentSymbol)) fetchPrice(true);
 }
 
 // Check if currently in fullscreen
@@ -534,26 +570,17 @@ function initPositionsTopResizer() {
 
 // Switch Active Symbol
 function switchSymbol(symbol, reloadChart = true) {
+  if (symbol !== currentSymbol && typeof invalidateAIAdvice === 'function') invalidateAIAdvice(symbol);
   chartSelectionBlocked = false;
   orderSymbolSource = reloadChart ? 'panel' : 'chart';
   currentSymbol = symbol;
-  const selector = document.getElementById('order-symbol-select');
-  if (selector) selector.value = symbol;
+  window.MT5Markets?.setActive(symbol);
   updateOrderButtons();
   clearSymbolPrices();
   if (typeof startLiveFeed === "function") startLiveFeed();
   renderOrderNotice();
   document.getElementById("current-symbol-title").innerText = `${symbol} • M15`;
   document.getElementById("order-symbol-tag").innerText = symbol;
-
-  // Highlight active tab
-  document.querySelectorAll(".sym-btn").forEach(btn => {
-    if (btn.innerText.trim() === symbol) {
-      btn.className = "sym-btn px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500/20 text-emerald-400";
-    } else {
-      btn.className = "sym-btn px-2.5 py-1 rounded text-xs font-semibold text-gray-400 hover:text-white";
-    }
-  });
 
   if (reloadChart) initTradingView(symbol);
   fetchPrice();
@@ -566,6 +593,12 @@ let isFetchingAccount = false;
 let isFetchingPositions = false;
 let isFetchingHistory = false;
 let isFetchingPrice = false;
+// Ignore responses captured before an account switch or a newer live snapshot.
+let accountSessionGeneration = 0;
+let accountRenderRevision = 0;
+let positionsRenderRevision = 0;
+let priceRenderRevision = 0;
+let accountSwitching = false;
 
 // Polling loop for real-time updates
 function startPolling() {
@@ -669,6 +702,11 @@ function switchPositionTab(tab) {
 }
 
 function showAccountConnectionError(message) {
+  currentAccountType = null;
+  currentAccountIdentity = null;
+  accountVerificationKnown = true;
+  window.MT5Markets?.setAccount(null, accountSessionGeneration);
+  updateOrderButtons();
   const indicator = document.getElementById("status-indicator");
   const statusText = document.getElementById("status-text");
   if (indicator) indicator.className = "w-2 h-2 rounded-full bg-amber-400";
@@ -676,14 +714,53 @@ function showAccountConnectionError(message) {
     statusText.innerText = message;
     statusText.className = "text-amber-400";
   }
+  for (const id of ['acc-balance','acc-equity','acc-margin-free','acc-profit']) {
+    const node = document.getElementById(id);
+    if (node) node.innerText = '—';
+  }
+  const preview = document.getElementById('trade-preview');
+  if (preview) preview.textContent = 'Hesap doğrulanamadı; risk tahmini kullanılamaz.';
+  if (typeof markTradePreview === 'function') markTradePreview('unavailable', '');
+  if (typeof renderTradePolicy === 'function') renderTradePolicy(null);
 }
 
 // Fetch Account Info
 let accountCurrency = "USD";
 let currentAccountType = null;
+let currentAccountIdentity = null;
+let lastObservedAccountIdentity = null;
+let accountVerificationKnown = false;
+async function tradeRequest(endpoint, payload, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload), signal:controller.signal});
+    const data = await response.json();
+    return {response,data};
+  } finally { clearTimeout(timer); }
+}
+function tradingAccountPayload() {
+  return currentAccountIdentity ? {expected_account:[...currentAccountIdentity]} : {};
+}
 function renderAccountData(data) {
+    if (accountSwitching || !data || typeof data !== 'object') return;
+    accountRenderRevision++;
     accountCurrency = data.currency || accountCurrency;
-    currentAccountType = data.connected ? data.account_type : null;
+    currentAccountType = data.connected && !data.account_mismatch && ['DEMO','REAL'].includes(data.account_type) ? data.account_type : null;
+    const identity = currentAccountType && Number.isSafeInteger(data.login) && typeof data.server === 'string'
+      ? [data.login, data.server, currentAccountType] : null;
+    const identityChanged = JSON.stringify(identity) !== JSON.stringify(currentAccountIdentity);
+    if (identity && lastObservedAccountIdentity && JSON.stringify(identity) !== JSON.stringify(lastObservedAccountIdentity)) {
+      accountSessionGeneration++;
+      if (typeof invalidateAIAdvice === 'function') invalidateAIAdvice(currentSymbol);
+    }
+    currentAccountIdentity = identity;
+    if (identity) lastObservedAccountIdentity = identity;
+    accountVerificationKnown = true;
+    window.MT5Markets?.setAccount(identity, accountSessionGeneration);
+    updateOrderButtons();
+    if (identityChanged && typeof scheduleTradePreview === 'function') scheduleTradePreview();
     const indicator = document.getElementById("status-indicator");
     const statusText = document.getElementById("status-text");
     const lastSyncText = document.getElementById("last-sync-text");
@@ -701,6 +778,8 @@ function renderAccountData(data) {
         uptimeText.innerText = "Hesap doğrulanmadı";
         uptimeBadge.className = "text-[11px] font-mono px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center gap-1";
       }
+    } else if (data.connected && !currentAccountType) {
+      showAccountConnectionError('Hesap türü doğrulanamadı; işlem engellendi');
     } else if (data.connected) {
       const real = data.account_type === "REAL";
       indicator.className = `w-2 h-2 rounded-full ${real ? "bg-rose-400" : "bg-emerald-400"} animate-pulse`;
@@ -722,13 +801,16 @@ function renderAccountData(data) {
       }
     }
 
-    document.getElementById("acc-balance").innerText = `${accountCurrency} ${formatMoney(data.balance)}`;
-    document.getElementById("acc-equity").innerText = `${accountCurrency} ${formatMoney(data.equity)}`;
-    document.getElementById("acc-margin-free").innerText = `${accountCurrency} ${formatMoney(data.margin_free)}`;
+    const verifiedMoney = value => !!currentAccountType && Number.isFinite(value)
+      ? `${accountCurrency} ${formatMoney(value)}` : '—';
+    document.getElementById("acc-balance").innerText = verifiedMoney(data.balance);
+    document.getElementById("acc-equity").innerText = verifiedMoney(data.equity);
+    document.getElementById("acc-margin-free").innerText = verifiedMoney(data.margin_free);
 
     const profitEl = document.getElementById("acc-profit");
     const profitVal = data.profit || 0;
-    profitEl.innerText = `${profitVal >= 0 ? "+" : ""}${accountCurrency} ${formatMoney(profitVal)}`;
+    profitEl.innerText = currentAccountType && Number.isFinite(data.profit)
+      ? `${profitVal >= 0 ? "+" : ""}${accountCurrency} ${formatMoney(profitVal)}` : '—';
     if (profitVal > 0) {
       profitEl.className = "font-bold text-emerald-400 tracking-wide";
     } else if (profitVal < 0) {
@@ -742,6 +824,7 @@ async function fetchAccount(force = false) {
   if (!force && typeof liveFeedHealthy === "function" && liveFeedHealthy()) return;
   if (isFetchingAccount) return;
   isFetchingAccount = true;
+  const generation = accountSessionGeneration, revision = accountRenderRevision;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4000);
   try {
@@ -749,8 +832,9 @@ async function fetchAccount(force = false) {
     if (!res.ok) throw new Error(`Hesap bilgisi alınamadı (HTTP ${res.status})`);
     const data = await res.json();
 
-    renderAccountData(data);
+    if (generation === accountSessionGeneration && revision === accountRenderRevision) renderAccountData(data);
   } catch (err) {
+    if (generation !== accountSessionGeneration || revision !== accountRenderRevision) return;
     showAccountConnectionError(
       err.name === "AbortError" ? "Sunucu yanıtı gecikti" : "Sunucuya ulaşılamıyor"
     );
@@ -827,6 +911,9 @@ function renderPositionExecution(position) {
 }
 
 function renderPositionsData(positions) {
+    if (accountSwitching) return;
+    if (!Array.isArray(positions)) throw new Error('Pozisyon listesi doğrulanamadı.');
+    positionsRenderRevision++;
     executionPositions.clear();
     (positions || []).forEach(p => executionPositions.set(p.ticket, p));
     updatePositionExecution();
@@ -855,7 +942,7 @@ function renderPositionsData(positions) {
       rowsHtml += `
         <tr class="hover:bg-[#151a26]/60 transition border-b border-gray-800/40">
           <td class="py-2.5 px-3 text-gray-400">#${p.ticket}</td>
-          <td class="py-2.5 px-3 font-bold text-white">${p.symbol}</td>
+          <td class="py-2.5 px-3 font-bold text-white">${escapeHtml(p.symbol)}</td>
           <td class="py-2.5 px-3">${typeBadge}</td>
           <td class="py-2.5 px-3 text-gray-200 font-semibold">${p.volume}</td>
           <td class="py-2.5 px-3 text-gray-400 whitespace-nowrap tabular-nums">${Number(p.price_open).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
@@ -881,6 +968,7 @@ async function fetchPositions(force = false) {
   if (!force && typeof liveFeedHealthy === "function" && liveFeedHealthy()) return;
   if (isFetchingPositions) return;
   isFetchingPositions = true;
+  const generation = accountSessionGeneration, revision = positionsRenderRevision;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4000);
   try {
@@ -889,8 +977,9 @@ async function fetchPositions(force = false) {
     if (!res.ok) throw new Error("Pozisyonlar doğrulanamadı");
     const positions = await res.json();
 
-    renderPositionsData(positions);
+    if (generation === accountSessionGeneration && revision === positionsRenderRevision) renderPositionsData(positions);
   } catch (err) {
+    if (generation !== accountSessionGeneration || revision !== positionsRenderRevision) return;
     const badge = document.getElementById("pos-count-badge");
     if (badge) badge.innerText = "Veri güncel değil";
   } finally {
@@ -912,20 +1001,21 @@ async function showHistoryDetails(positionId, ticket) {
   const modal = document.getElementById('history-details-modal');
   const content = document.getElementById('history-details-content');
   const request = ++historyDetailsRequest;
+  const generation = accountSessionGeneration;
   document.getElementById('history-details-title').textContent = `İşlem #${ticket} · Pozisyon #${positionId}`;
   content.textContent = 'Broker işlem detayları yükleniyor…';
   if (!modal.open) modal.showModal();
   try {
     const response = await fetch(`/api/history/position/${positionId}`);
     const data = await response.json();
-    if (request !== historyDetailsRequest || !modal.open) return;
+    if (generation !== accountSessionGeneration || request !== historyDetailsRequest || !modal.open) return;
     if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'İşlem detayları alınamadı.');
     if (Number(data.position_id) !== positionId || !data.deals?.some(d => Number(d.ticket) === ticket)) {
       throw new Error('Seçilen işlem broker geçmişinde bulunamadı. Kapanış listesini yenileyin.');
     }
     content.innerHTML = renderHistoryDetails(data, ticket);
   } catch (error) {
-    if (request === historyDetailsRequest && modal.open) content.textContent = error.message || 'İşlem detayları alınamadı.';
+    if (generation === accountSessionGeneration && request === historyDetailsRequest && modal.open) content.textContent = error.message || 'İşlem detayları alınamadı.';
   }
 }
 
@@ -984,10 +1074,12 @@ function renderHistoryDetails(data, selectedTicket) {
 async function fetchHistory() {
   if (isFetchingHistory) return;
   isFetchingHistory = true;
+  const generation = accountSessionGeneration;
   try {
     const res = await fetch("/api/history?days=30");
     if (!res.ok) return;
     const history = await res.json();
+    if (generation !== accountSessionGeneration || accountSwitching) return;
 
     const tbody = document.getElementById("history-table-body");
     const countBadge = document.getElementById("history-count-badge");
@@ -1039,7 +1131,7 @@ async function fetchHistory() {
       rowsHtml += `
         <tr data-testid="history-deal-${ticket}" onclick="showHistoryDetails(${positionId}, ${ticket}, this)" class="cursor-pointer hover:bg-[#151a26]/60 transition border-b border-gray-800/40" title="Açılış ve kapanış detaylarını göster">
           <td class="py-2.5 px-3 text-gray-400"><button type="button" onclick="event.stopPropagation(); showHistoryDetails(${positionId}, ${ticket}, this)" class="text-left hover:text-cyan-400 focus:outline focus:outline-2 focus:outline-cyan-400 rounded" aria-label="İşlem #${ticket} detayları">#${ticket} <span class="text-[10px] text-gray-500 block">Pos: #${positionId} · Detay</span></button></td>
-          <td class="py-2.5 px-3 font-bold text-white">${d.symbol}</td>
+          <td class="py-2.5 px-3 font-bold text-white">${escapeHtml(d.symbol)}</td>
           <td class="py-2.5 px-3">${typeBadge}</td>
           <td class="py-2.5 px-3 text-gray-200 font-semibold">${d.volume}</td>
           <td class="py-2.5 px-3 text-gray-300 font-mono">${d.price}</td>
@@ -1060,13 +1152,16 @@ async function fetchHistory() {
 }
 
 // Fetch Performance & Daily Reports
+let reportsRequestGeneration = 0;
 async function fetchReports() {
+  const generation = accountSessionGeneration, request = ++reportsRequestGeneration;
   try {
     const daysSelect = document.getElementById("reports-days-select");
     const days = daysSelect ? daysSelect.value : 30;
     const res = await fetch(`/api/reports?days=${days}`);
     if (!res.ok) throw new Error("Rapor doğrulanamadı");
     const data = await res.json();
+    if (generation !== accountSessionGeneration || request !== reportsRequestGeneration || accountSwitching) return;
     if (!data || !data.summary) return;
 
     const s = data.summary;
@@ -1186,7 +1281,7 @@ async function fetchReports() {
 
           sHtml += `
             <tr class="hover:bg-[#151a26]/60 transition border-b border-gray-800/40">
-              <td class="py-2 px-2.5 font-bold text-white whitespace-nowrap">${sym.symbol}</td>
+              <td class="py-2 px-2.5 font-bold text-white whitespace-nowrap">${escapeHtml(sym.symbol)}</td>
               <td class="py-2 px-2.5 text-center text-gray-300 whitespace-nowrap">${sym.trades_count}</td>
               <td class="py-2 px-2.5 text-center text-gray-400 whitespace-nowrap">${sym.volume} L</td>
               <td class="py-2 px-2.5 text-right font-bold font-mono ${pColor} whitespace-nowrap">${pSign}${currency} ${formatMoney(sym.profit)}</td>
@@ -1198,6 +1293,7 @@ async function fetchReports() {
     }
 
   } catch (err) {
+    if (generation !== accountSessionGeneration || request !== reportsRequestGeneration || accountSwitching) return;
     const note=document.getElementById("reports-basis");
     if (note) note.textContent="Rapor güncellenemedi; gösterilen veriler eski olabilir.";
   }
@@ -1206,7 +1302,10 @@ async function fetchReports() {
 
 // Fetch Price for Active Symbol
 function renderPriceData(tick) {
+    if (!tick || typeof tick !== 'object' || accountSwitching) return;
     if (chartSelectionBlocked || (tick.symbol && tick.symbol !== currentSymbol)) return;
+    if (window.MT5Markets && !window.MT5Markets.getSymbol(currentSymbol)) return;
+    priceRenderRevision++;
     if (typeof displayedTickTime !== "undefined") displayedTickTime = tick.time || 0;
     if (typeof displayedQuoteStatus !== "undefined") {
       displayedQuoteStatus = tick.quote_status || null;
@@ -1215,12 +1314,22 @@ function renderPriceData(tick) {
     }
     if (typeof updateQuoteStatus === "function") updateQuoteStatus();
     refreshQuoteOrderNotice(tick);
-    if (tick && tick.bid > 0) {
-      document.getElementById("header-bid").innerText = tick.bid;
-      document.getElementById("header-ask").innerText = tick.ask;
+    if (Number.isFinite(tick.bid) && tick.bid > 0 && Number.isFinite(tick.ask) && tick.ask >= tick.bid) {
+      const metadataDigits = window.MT5Markets?.getSymbol(currentSymbol)?.digits;
+      const digits = Number.isInteger(tick.digits) && tick.digits >= 0 && tick.digits <= 8 ? tick.digits
+        : Number.isInteger(metadataDigits) && metadataDigits >= 0 && metadataDigits <= 8 ? metadataDigits : null;
+      const bid = digits === null ? tick.bid : tick.bid.toFixed(digits);
+      const ask = digits === null ? tick.ask : tick.ask.toFixed(digits);
+      document.getElementById("header-bid").innerText = bid;
+      document.getElementById("header-ask").innerText = ask;
       document.getElementById("header-spread").innerText = tick.spread;
-      document.getElementById("btn-bid-price").innerText = `@ ${tick.bid}`;
-      document.getElementById("btn-ask-price").innerText = `@ ${tick.ask}`;
+      document.getElementById("btn-bid-price").innerText = `@ ${bid}`;
+      document.getElementById("btn-ask-price").innerText = `@ ${ask}`;
+    } else {
+      for (const id of ['header-bid','header-ask','header-spread','btn-bid-price','btn-ask-price']) {
+        const node = document.getElementById(id);
+        if (node) node.innerText = '—';
+      }
     }
 }
 
@@ -1229,15 +1338,19 @@ async function fetchPrice(force = false) {
   if (isFetchingPrice) return;
   isFetchingPrice = true;
   const symbol = currentSymbol;
+  const generation = accountSessionGeneration, revision = priceRenderRevision;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
   try {
-    const res = await fetch(`/api/price/${symbol}`);
+    const res = await fetch(`/api/price/${encodeURIComponent(symbol)}`, {signal:controller.signal});
     if (!res.ok) return;
     const tick = await res.json();
 
-    if (symbol === currentSymbol) renderPriceData(tick);
+    if (generation === accountSessionGeneration && revision === priceRenderRevision && symbol === currentSymbol) renderPriceData(tick);
   } catch (err) {
     console.error("fetchPrice error:", err);
   } finally {
+    clearTimeout(timer);
     isFetchingPrice = false;
   }
 }
@@ -1248,7 +1361,7 @@ let latestBotSettings = null;
 async function fetchBotStatus() {
   try {
     const res = await fetch("/api/bot/status");
-    if (!res.ok) return;
+    if (!res.ok) throw new Error('Bot durumu doğrulanamadı.');
     const bot = await res.json();
 
     latestBotSettings = bot;
@@ -1266,6 +1379,17 @@ async function fetchBotStatus() {
       badge.innerText = "DURDURULDU";
       toggleBtn.className = "flex-1 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 text-white font-bold text-xs shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-1.5 transition";
       toggleBtn.innerHTML = `<i class="ph-bold ph-play"></i><span>Botu Başlat</span>`;
+    }
+    const runtime = document.getElementById('bot-runtime-status');
+    if (runtime) {
+      const en = window.MT5I18n?.language?.() === 'en';
+      const labels = {STOPPED:['Durduruldu','Stopped'],WAITING_CONNECTION:['Bağlantı bekleniyor','Waiting for connection'],
+        WAITING_DATA:['Mum verisi bekleniyor','Waiting for candle data'],WAITING_SIGNAL:['Sinyal bekleniyor','Waiting for a signal'],
+        WAITING_CONFIRMATION:['Sinyal onayı bekleniyor','Waiting for signal confirmation'],SUBMITTING:['Emir gönderiliyor','Submitting an order'],
+        ORDER_REJECTED:['Son emir reddedildi','Last order rejected'],ORDER_UNRESOLVED:['Emir sonucu doğrulanmalı','Order outcome requires verification'],ERROR:['Bot hatası','Bot error']};
+      const state = labels[bot.runtime_state]?.[en ? 1 : 0] || (bot.is_running ? (en ? 'Running; readiness unverified' : 'Çalışıyor; işlem hazırlığı doğrulanamadı') : (en ? 'Stopped' : 'Durduruldu'));
+      runtime.textContent = state + (bot.runtime_detail ? ` · ${window.MT5I18n?.translate?.(bot.runtime_detail) || bot.runtime_detail}` : '');
+      runtime.className = 'mb-2 text-[11px] ' + (['ORDER_REJECTED','ORDER_UNRESOLVED','ERROR'].includes(bot.runtime_state) ? 'text-rose-300' : ['WAITING_CONNECTION','WAITING_DATA'].includes(bot.runtime_state) ? 'text-amber-300' : 'text-gray-300');
     }
 
     document.getElementById("bot-disp-hma-p").innerText = bot.hma_period;
@@ -1299,6 +1423,8 @@ async function fetchBotStatus() {
       logsContainer.innerHTML = logsHtml;
     }
   } catch (err) {
+    const runtime = document.getElementById('bot-runtime-status');
+    if (runtime) { runtime.textContent = 'Bot durumu doğrulanamadı; gösterilen bilgiler eski olabilir.'; runtime.className = 'mb-2 text-[11px] text-amber-300'; }
     console.error("fetchBotStatus error:", err);
   }
 }
@@ -1309,10 +1435,12 @@ function adjustLot(delta) {
   let val = parseFloat(lotInput.value) || 0.01;
   val = Math.max(0.01, Math.round((val + delta) * 100) / 100);
   lotInput.value = val.toFixed(2);
+  if (typeof scheduleTradePreview === 'function') scheduleTradePreview();
 }
 
 function setLot(val) {
   document.getElementById("lot-input").value = val.toFixed(2);
+  if (typeof scheduleTradePreview === 'function') scheduleTradePreview();
 }
 
 // Keep the last result per symbol; a broker rejection is not a live session calendar.
@@ -1322,20 +1450,20 @@ const closePending = new Set();
 function newOrderId() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, "0")).join("");
 }
-function unresolvedIntents(symbol = currentSymbol) {
+function unresolvedIntents(symbol = currentSymbol, allOrders = false) {
   const entries = new Map();
   try {
     const orderKey = "order-intent:" + symbol;
     if (localStorage.getItem(orderKey)) entries.set(orderKey, localStorage.getItem(orderKey));
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key.startsWith("close-intent:") || key.startsWith("close-bulk:") || key.startsWith("managed-intent:")) entries.set(key, localStorage.getItem(key));
+      if (key.startsWith("close-intent:") || key.startsWith("close-bulk:") || key.startsWith("managed-intent:") || (allOrders && key.startsWith('order-intent:'))) entries.set(key, localStorage.getItem(key));
     }
   } catch (_) { /* Storage failures are reported by order submission. */ }
   return entries;
 }
 function tradeActionBusy() {
-  return orderPending || closePending.size || (typeof actionLocks !== "undefined" && actionLocks.size);
+  return orderPending || closePending.size || (typeof actionLocks !== "undefined" && actionLocks.size) || aiExecutionBusy || aiSettingsBusy || tradingRiskSettingsBusy;
 }
 function refreshOrderRecovery() {
   const button = document.getElementById("order-reset-btn");
@@ -1427,13 +1555,22 @@ function orderErrorMessage(data) {
 
 // Submit Buy/Sell Order
 async function submitOrder(type) {
-  if (orderPending) return;
+  if (orderPending || accountSwitching) return;
+  if (!['BUY','SELL'].includes(type)) return;
+  if (accountVerificationKnown && !currentAccountIdentity) {
+    setOrderNotice(currentSymbol, 'Hesap doğrulanamadı', 'Broker hesap bağlantısını doğrulayın. Emir gönderilmedi.', 'error');
+    return;
+  }
+  if (window.MT5Markets?.isSelectionVerified(currentSymbol, type) === false) {
+    setOrderNotice(currentSymbol, 'Ürün işlem için doğrulanamadı', window.MT5Markets.selectionIssue(currentSymbol, type), 'error');
+    return;
+  }
   const selectedSymbol = currentSymbol;
-  if (orderSymbolSource === 'chart' && !await verifyChartOrderSymbol()) {
+  if (orderSymbolSource === 'chart' && !await verifyChartOrderSymbol(type)) {
     setOrderNotice(currentSymbol, 'Grafik sembolünü kontrol edin', 'Grafik ve emir sembolü doğrulanamadı veya değişti. Sembolü kontrol edip yeniden deneyin; emir gönderilmedi.', 'error');
     return;
   }
-  if (currentSymbol !== selectedSymbol) return;
+  if (currentSymbol !== selectedSymbol || window.MT5Markets?.isSelectionVerified(currentSymbol, type) === false) return;
   if (chartSelectionBlocked) {
     setOrderNotice(currentSymbol, 'Grafik ürünü eşleşmiyor', 'Emir göndermek için panelden bir MT5 sembolü seçin.', 'error');
     return;
@@ -1446,10 +1583,15 @@ async function submitOrder(type) {
     setOrderNotice(symbol, "Geçersiz lot", "Sıfırdan büyük bir lot miktarı girin.", "error");
     return;
   }
-  const sl = Number(document.getElementById('sl-input').value);
-  const tp = Number(document.getElementById('tp-input').value);
+  const slValue = String(document.getElementById('sl-input').value ?? '').trim(), tpValue = String(document.getElementById('tp-input').value ?? '').trim();
+  const sl = slValue === '' ? NaN : Number(slValue);
+  const tp = tpValue === '' ? NaN : Number(tpValue);
   if (![sl, tp].every(value => Number.isInteger(value) && value >= 0)) {
     setOrderNotice(symbol, 'Geçersiz SL / TP', 'Stop Loss ve Take Profit sıfır veya pozitif tam sayı olmalı.', 'error');
+    return;
+  }
+  if (currentAccountType === 'REAL' && sl <= 0) {
+    setOrderNotice(symbol, 'Stop Loss zorunlu', 'Gerçek hesapta yeni emir için geçerli Stop Loss belirleyin.', 'error');
     return;
   }
   let intent;
@@ -1457,12 +1599,16 @@ async function submitOrder(type) {
     const stored = localStorage.getItem("order-intent:" + symbol);
     if (stored) {
       intent = JSON.parse(stored);
+      if (currentAccountIdentity && JSON.stringify(intent.expected_account) !== JSON.stringify(currentAccountIdentity)) {
+        setOrderNotice(symbol, 'Önceki emir hesabı doğrulanmalı', 'Kayıtlı talep bu hesaba ait değil veya hesap kimliği bilinmiyor. Önce MT5 durumunu kontrol edin.', 'error');
+        return;
+      }
       if (intent.order_type !== type || intent.volume !== volume || intent.sl_points !== sl || intent.tp_points !== tp) {
         setOrderNotice(symbol, "Önceki emir doğrulanmalı", "MT5 durumunu kontrol edip ‘Kontrol ettim’ düğmesini kullanın.", "error");
         return;
       }
     } else {
-      intent = {request_id: newOrderId(), symbol, order_type: type, volume, sl_points: sl, tp_points: tp, comment: "Volta Web Terminal"};
+      intent = {request_id: newOrderId(), symbol, order_type: type, volume, sl_points: sl, tp_points: tp, comment: "Volta Web Terminal", ...tradingAccountPayload()};
       localStorage.setItem("order-intent:" + symbol, JSON.stringify(intent));
     }
   } catch (_) {
@@ -1474,19 +1620,14 @@ async function submitOrder(type) {
   buttons.forEach(btn => { if (btn) btn.disabled = true; });
   setOrderNotice(symbol, "Emir gönderiliyor", `${type === "BUY" ? "Alış" : "Satış"} · ${volume} lot · Broker yanıtı bekleniyor.`, "pending");
   try {
-    const res = await fetch("/api/order/open", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(intent)
-    });
-    const data = await res.json();
+    const {response:res,data} = await tradeRequest('/api/order/open', intent);
     if ((data.request_id && !data.uncertain && !data.pending) || data.reason_code === "trading_halted")
       localStorage.removeItem("order-intent:" + symbol);
     if (res.ok && data.success) {
-      const title = data.partial ? "Emir kısmen gerçekleşti" : (data.retcode === 10008 ? "Emir kabul edildi" : "Emir gerçekleşti");
-      setOrderNotice(symbol, title, `Bilet #${data.ticket} · Açık pozisyonlardan durumu takip edebilirsiniz.`, "success");
-      fetchPositions();
-      fetchAccount();
+      const title = data.partial ? "Emir kısmen gerçekleşti" : (data.pending || data.retcode === 10008 ? "Emir kabul edildi; gerçekleşme bekleniyor" : "Emir gerçekleşti");
+      setOrderNotice(symbol, title, `Bilet #${data.ticket} · Açık pozisyonlardan durumu takip edebilirsiniz.`, data.partial || data.pending ? "warning" : "success");
+      fetchPositions(true);
+      fetchAccount(true);
     } else {
       const [title, message] = orderErrorMessage(data);
       const quoteDiagnostic = !!data.request_id && !data.uncertain && !data.pending &&
@@ -1504,24 +1645,23 @@ async function submitOrder(type) {
 
 // Close Single Position (Instant 1-Click)
 async function closePosition(ticket) {
-  if (closePending.has(ticket)) return;
+  if (closePending.has(ticket) || accountSwitching) return;
+  if (accountVerificationKnown && !currentAccountIdentity) return showToast('Kapatmadan önce broker hesap bağlantısını doğrulayın.', 'error');
   closePending.add(ticket);
   try {
     const key = "close-intent:" + ticket;
     const requestId = localStorage.getItem(key) || newOrderId();
     localStorage.setItem(key, requestId);
-    const res = await fetch("/api/order/close", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ticket, request_id: requestId })
-    });
-
-    const data = await res.json();
+    const {response:res,data} = await tradeRequest('/api/order/close',
+      {ticket,request_id:requestId,...tradingAccountPayload()});
     if (data.request_id && !data.uncertain && !data.pending) localStorage.removeItem(key);
     if (res.ok && data.success) {
-      showToast(`✅ #${ticket} numaralı pozisyon kapatıldı.`, "success");
-      fetchPositions();
-      fetchAccount();
+      const message = data.pending ? `#${ticket} kapatma talebi kabul edildi; broker sonucu bekleniyor.`
+        : data.partial ? `#${ticket} pozisyonu kısmen kapatıldı; kalan lotu kontrol edin.`
+        : `✅ #${ticket} numaralı pozisyon kapatıldı.`;
+      showToast(message, data.pending || data.partial ? "warning" : "success");
+      fetchPositions(true);
+      fetchAccount(true);
       fetchHistory();
       if (currentPositionTab === "reports") fetchReports();
     } else {
@@ -1570,6 +1710,16 @@ async function refreshTradingStatus() {
 
 let tradingRiskDialogState = null;
 let tradingRiskDialogLoad = 0;
+let tradingRiskSettingsBusy = false;
+function tradingRiskAccountPayload(state) {
+  const risk = state?.risk;
+  return Number.isSafeInteger(risk?.login) && typeof risk?.server === 'string' && ['DEMO','REAL'].includes(risk?.account_type)
+    ? {expected_account:[risk.login,risk.server,risk.account_type]} : tradingAccountPayload();
+}
+function tradingRiskRequestCurrent(state, payload) {
+  return state === tradingRiskDialogState && document.getElementById('trading-risk-dialog').open && !accountSwitching
+    && (!accountVerificationKnown || JSON.stringify(payload) === JSON.stringify(tradingAccountPayload()));
+}
 function renderTradingRiskDialog() {
   const state = tradingRiskDialogState;
   if (!state) return;
@@ -1582,9 +1732,9 @@ function renderTradingRiskDialog() {
     (risk.daily_limit_enabled ? '' : (en ? ' (off)' : ' (kapalı)'));
   document.getElementById('trading-risk-limit-input').value = risk.daily_loss_limit;
   document.getElementById('trading-risk-limit-input').disabled = !admin;
-  document.getElementById('trading-risk-save').disabled = !admin;
+  document.getElementById('trading-risk-save').disabled = !admin || tradingRiskSettingsBusy;
   const lockButton = document.getElementById('trading-risk-resume');
-  lockButton.disabled = !admin;
+  lockButton.disabled = !admin || tradingRiskSettingsBusy;
   lockButton.textContent = halted ? (en ? 'Unlock for free trading' : 'Kilidi Aç · Serbest İşlem')
     : (en ? 'Lock new orders' : 'Yeni Emirleri Kilitle');
   document.getElementById('trading-risk-explanation').textContent = !admin
@@ -1600,6 +1750,7 @@ async function openTradingRiskDialog() {
   const dialog = document.getElementById('trading-risk-dialog');
   if (!dialog) return;
   const load = ++tradingRiskDialogLoad;
+  const generation = accountSessionGeneration, expectedAccount = tradingAccountPayload();
   tradingRiskDialogState = null;
   document.getElementById('trading-risk-account').textContent = window.MT5I18n?.language() === 'en' ? 'Checking account…' : 'Hesap kontrol ediliyor…';
   document.getElementById('trading-risk-loss').textContent = '—';
@@ -1614,7 +1765,14 @@ async function openTradingRiskDialog() {
     if (!riskResponse.ok || !statusResponse.ok || !operatorResponse.ok) throw new Error('Hesap riski doğrulanamadı.');
     const [risk, status, operator] = await Promise.all([riskResponse.json(), statusResponse.json(), operatorResponse.json()]);
     if (!dialog.open || load !== tradingRiskDialogLoad) return;
+    if (generation !== accountSessionGeneration || JSON.stringify(expectedAccount) !== JSON.stringify(tradingAccountPayload())) {
+      throw new Error('Hesap değişti; işlem riskini yeniden açıp doğrulayın.');
+    }
     tradingRiskDialogState = {risk, halted:status.new_orders_halted, admin:operator.role === 'ADMIN'};
+    if (!tradingRiskRequestCurrent(tradingRiskDialogState, tradingRiskAccountPayload(tradingRiskDialogState))) {
+      tradingRiskDialogState = null;
+      throw new Error('Hesap değişti; işlem riskini yeniden açıp doğrulayın.');
+    }
     renderTradingRiskDialog();
   } catch (error) {
     if (dialog.open && load === tradingRiskDialogLoad) document.getElementById('trading-risk-explanation').textContent = error.message;
@@ -1623,81 +1781,104 @@ async function openTradingRiskDialog() {
 
 async function saveTradingDailyLimit() {
   const state = tradingRiskDialogState;
-  if (!state?.admin) return;
-  const input = document.getElementById('trading-risk-limit-input');
-  const amount = Number(input.value);
+  if (!state?.admin || tradingRiskSettingsBusy) return;
+  const expectedAccount = tradingRiskAccountPayload(state);
+  if (!tradingRiskRequestCurrent(state, expectedAccount)) {
+    document.getElementById('trading-risk-explanation').textContent = 'Hesap değişti; işlem riskini yeniden açıp doğrulayın.';
+    return;
+  }
+  const amount = Number(document.getElementById('trading-risk-limit-input').value);
   if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000) {
     document.getElementById('trading-risk-explanation').textContent = '0 ile 1.000.000 arasında geçerli bir limit girin.';
     return;
   }
   if (amount === state.risk.daily_loss_limit) return;
   const en = window.MT5I18n?.language() === 'en';
-  let acknowledgeRisk = false;
-  if (amount > state.risk.daily_loss_limit) {
-    acknowledgeRisk = await confirmAction({
-      title: en ? 'Increase daily loss limit' : 'Günlük zarar limitini yükselt',
-      message: en ? 'Increasing this limit can allow new orders after the safety lock is released.' : 'Bu limiti yükseltmek, güvenlik kilidi kaldırıldıktan sonra yeni emirlere izin verebilir.',
-      details: [[en ? 'Current loss' : 'Bugünkü zarar', `${state.risk.daily_loss} ${state.risk.currency}`],
-        [en ? 'Current limit' : 'Mevcut limit', `${state.risk.daily_loss_limit} ${state.risk.currency}`],
-        [en ? 'New limit' : 'Yeni limit', `${amount} ${state.risk.currency}`]],
-      acknowledgement: en ? 'I reviewed the account and accept the higher daily loss limit.' : 'Hesabı kontrol ettim ve daha yüksek günlük zarar limitini kabul ediyorum.',
-      confirmLabel: en ? 'Save higher limit' : 'Yüksek limiti kaydet'
-    });
-    if (!acknowledgeRisk || !document.getElementById('trading-risk-dialog').open) return;
-  }
-  const save = document.getElementById('trading-risk-save');
-  save.disabled = true;
+  tradingRiskSettingsBusy = true;
+  document.getElementById('trading-risk-save').disabled = true;
+  document.getElementById('trading-risk-resume').disabled = true;
   try {
-    const response = await fetch('/api/risk/daily-limit', {method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({amount, acknowledge_risk:acknowledgeRisk})});
-    const data = await response.json();
+    let acknowledgeRisk = false;
+    if (amount > state.risk.daily_loss_limit) {
+      acknowledgeRisk = await confirmAction({
+        title: en ? 'Increase daily loss limit' : 'Günlük zarar limitini yükselt',
+        message: en ? 'Increasing this limit can allow new orders after the safety lock is released.' : 'Bu limiti yükseltmek, güvenlik kilidi kaldırıldıktan sonra yeni emirlere izin verebilir.',
+        details: [[en ? 'Current loss' : 'Bugünkü zarar', `${state.risk.daily_loss} ${state.risk.currency}`],
+          [en ? 'Current limit' : 'Mevcut limit', `${state.risk.daily_loss_limit} ${state.risk.currency}`],
+          [en ? 'New limit' : 'Yeni limit', `${amount} ${state.risk.currency}`]],
+        acknowledgement: en ? 'I reviewed the account and accept the higher daily loss limit.' : 'Hesabı kontrol ettim ve daha yüksek günlük zarar limitini kabul ediyorum.',
+        confirmLabel: en ? 'Save higher limit' : 'Yüksek limiti kaydet'
+      });
+      if (!acknowledgeRisk) return;
+    }
+    if (!tradingRiskRequestCurrent(state, expectedAccount)) throw new Error('Onay sırasında hesap değişti; limit kaydedilmedi.');
+    const {response,data} = await tradeRequest('/api/risk/daily-limit',
+      {amount,acknowledge_risk:acknowledgeRisk,...expectedAccount});
+    if (!tradingRiskRequestCurrent(state, expectedAccount)) return;
     if (!response.ok) throw new Error(data.detail || 'Limit kaydedilemedi.');
     state.risk = data;
     renderTradingRiskDialog();
   } catch (error) {
-    document.getElementById('trading-risk-explanation').textContent = error.message;
-  } finally { save.disabled = false; }
+    if (state === tradingRiskDialogState) document.getElementById('trading-risk-explanation').textContent = error.message;
+  } finally {
+    tradingRiskSettingsBusy = false;
+    if (state === tradingRiskDialogState) {
+      document.getElementById('trading-risk-save').disabled = !state.admin;
+      document.getElementById('trading-risk-resume').disabled = !state.admin;
+    }
+  }
 }
 
 async function toggleTradingLock() {
   const state = tradingRiskDialogState;
-  if (!state?.admin) return;
-  const en = window.MT5I18n?.language() === 'en';
-  const locked = !state.halted;
-  if (!locked) {
-    const approved = await confirmAction({
-      title: en ? 'Unlock for free trading' : 'Kilidi aç ve serbest işlem yap',
-      message: en ? 'New orders will be allowed even though the daily loss limit has been exceeded. Broker margin and order rules still apply.'
-        : 'Günlük zarar limiti aşılmış olsa bile yeni emirlere izin verilecek. Broker teminatı ve emir kuralları geçerli kalır.',
-      details: [[en ? 'Account' : 'Hesap', `#${state.risk.login} · ${state.risk.account_type}`],
-        [en ? 'Daily loss' : 'Bugünkü zarar', `${state.risk.daily_loss} ${state.risk.currency}`],
-        [en ? 'Daily limit' : 'Günlük limit', `${state.risk.daily_loss_limit} ${state.risk.currency}`]],
-      acknowledgement: en ? 'I reviewed the account and accept trading without the daily loss limit.'
-        : 'Hesabı kontrol ettim; günlük zarar sınırı olmadan işlem yapmayı kabul ediyorum.',
-      confirmLabel: en ? 'Unlock trading' : 'Kilidi aç'
-    });
-    if (!approved || !document.getElementById('trading-risk-dialog').open) return;
+  if (!state?.admin || tradingRiskSettingsBusy) return;
+  const expectedAccount = tradingRiskAccountPayload(state);
+  if (!tradingRiskRequestCurrent(state, expectedAccount)) {
+    document.getElementById('trading-risk-explanation').textContent = 'Hesap değişti; işlem riskini yeniden açıp doğrulayın.';
+    return;
   }
-  const button = document.getElementById('trading-risk-resume');
-  button.disabled = true;
+  const en = window.MT5I18n?.language() === 'en', locked = !state.halted;
+  tradingRiskSettingsBusy = true;
+  document.getElementById('trading-risk-save').disabled = true;
+  document.getElementById('trading-risk-resume').disabled = true;
   try {
-    const response = await fetch('/api/trading/lock', {method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({locked, acknowledge_unlimited:!locked})});
-    const data = await response.json();
+    if (!locked) {
+      const approved = await confirmAction({
+        title: en ? 'Unlock for free trading' : 'Kilidi aç ve serbest işlem yap',
+        message: en ? 'New orders will be allowed even though the daily loss limit has been exceeded. Broker margin and order rules still apply.'
+          : 'Günlük zarar limiti aşılmış olsa bile yeni emirlere izin verilecek. Broker teminatı ve emir kuralları geçerli kalır.',
+        details: [[en ? 'Account' : 'Hesap', `#${state.risk.login} · ${state.risk.account_type}`],
+          [en ? 'Daily loss' : 'Bugünkü zarar', `${state.risk.daily_loss} ${state.risk.currency}`],
+          [en ? 'Daily limit' : 'Günlük limit', `${state.risk.daily_loss_limit} ${state.risk.currency}`]],
+        acknowledgement: en ? 'I reviewed the account and accept trading without the daily loss limit.'
+          : 'Hesabı kontrol ettim; günlük zarar sınırı olmadan işlem yapmayı kabul ediyorum.',
+        confirmLabel: en ? 'Unlock trading' : 'Kilidi aç'
+      });
+      if (!approved) return;
+    }
+    if (!tradingRiskRequestCurrent(state, expectedAccount)) throw new Error('Onay sırasında hesap değişti; işlem kilidi değiştirilmedi.');
+    const {response,data} = await tradeRequest('/api/trading/lock', {locked,acknowledge_unlimited:!locked,...expectedAccount});
+    if (!tradingRiskRequestCurrent(state, expectedAccount)) return;
     if (!response.ok) throw new Error(data.detail || 'İşlem kilidi değiştirilemedi.');
     state.halted = data.new_orders_halted;
     state.risk.daily_limit_enabled = data.daily_limit_enabled;
     renderTradingRiskDialog();
     refreshTradingStatus();
   } catch (error) {
-    document.getElementById('trading-risk-explanation').textContent = error.message || 'İşlem kilidi değiştirilemedi.';
+    if (state === tradingRiskDialogState) document.getElementById('trading-risk-explanation').textContent = error.message || 'İşlem kilidi değiştirilemedi.';
   } finally {
-    if (tradingRiskDialogState) button.disabled = !state.admin;
+    tradingRiskSettingsBusy = false;
+    if (state === tradingRiskDialogState) {
+      document.getElementById('trading-risk-save').disabled = !state.admin;
+      document.getElementById('trading-risk-resume').disabled = !state.admin;
+    }
   }
 }
 
 async function closeFilteredPositions(filterType) {
-  if (closePending.has("bulk")) return;
+  if (closePending.has("bulk") || accountSwitching) return;
+  if (!['all','profit','loss'].includes(filterType)) return;
+  if (accountVerificationKnown && !currentAccountIdentity) return showToast('Kapatmadan önce broker hesap bağlantısını doğrulayın.', 'error');
   closePending.add("bulk");
   let label = "Tüm pozisyonlar";
   let endpoint = "/api/order/close-all";
@@ -1714,20 +1895,21 @@ async function closeFilteredPositions(filterType) {
     const key = "close-bulk:" + filterType;
     const requestId = localStorage.getItem(key) || newOrderId();
     localStorage.setItem(key, requestId);
-    const res = await fetch(endpoint, { method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({request_id: requestId}) });
-    const data = await res.json();
+    const {response:res,data} = await tradeRequest(endpoint,
+      {request_id:requestId,...tradingAccountPayload()},60000);
     if (data.request_id && !data.uncertain && !data.pending) localStorage.removeItem(key);
     if (res.ok) {
-      if (!data.success || (data.errors && data.errors.length)) {
+      if (data.pending || data.uncertain || data.partial) {
+        showToast(`${data.closed_count || 0} pozisyon kapatıldı. ${data.uncertain ? 'Sonuç belirsiz; MT5 durumunu kontrol edin.' : data.pending ? 'Kapatma taleplerinin broker sonucu bekleniyor.' : 'Bazı pozisyonlar kısmen kapandı; kalan lotları kontrol edin.'}`, 'warning');
+      } else if (!data.success || (data.errors && data.errors.length)) {
         showToast(`${data.closed_count || 0} pozisyon kapatıldı. Tamamlanamayanlar: ${(data.errors || [data.error || "Sonuç belirsiz"]).join("; ")}`, "error");
       } else if (data.total_matched === 0 && !data.cancelled_count) {
         showToast("Kapatılacak uygun pozisyon bulunamadı.", "info");
       } else {
         showToast(`${data.closed_count} pozisyon kapatıldı; ${data.cancelled_count || 0} bekleyen emir iptal edildi.`, "success");
       }
-      fetchPositions();
-      fetchAccount();
+      fetchPositions(true);
+      fetchAccount(true);
       fetchHistory();
       if (currentPositionTab === "reports") fetchReports();
     } else {
@@ -1747,10 +1929,16 @@ function closeAllPositions() {
 }
 
 // Toggle Bot
+let botTogglePending = false;
 async function toggleBot() {
+  if (botTogglePending || accountSwitching) return;
+  botTogglePending = true;
+  const button = document.getElementById('bot-toggle-btn');
+  if (button) button.disabled = true;
   try {
     const res = await fetch("/api/bot/toggle", { method: "POST" });
     const data = await res.json();
+    if (!res.ok || data.success === false) throw new Error(typeof data.detail === 'string' ? data.detail : data.error || 'Bot komutu doğrulanamadı.');
     if (data.is_running) {
       showToast("🚀 HMA Algoritmik Bot Başlatıldı!", "success");
     } else {
@@ -1759,6 +1947,9 @@ async function toggleBot() {
     fetchBotStatus();
   } catch (err) {
     showToast(`❌ Hata: ${err.message}`, "error");
+  } finally {
+    botTogglePending = false;
+    if (button) button.disabled = window.MT5Permissions?.can?.('toggleBot') === false;
   }
 }
 
@@ -1784,6 +1975,7 @@ async function toggleBotSettingsModal() {
     if (latestBotSettings[key] != null) document.getElementById(id).value = latestBotSettings[key];
   }
   for (const [id, key] of Object.entries(botSettingChecks)) document.getElementById(id).checked = !!latestBotSettings[key];
+  document.getElementById('cfg-single-position').checked = true;
   modal.classList.remove('hidden');
 }
 
@@ -1886,9 +2078,7 @@ function formatMoney(val) {
 }
 
 function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.innerText = text;
-  return div.innerHTML;
+  return String(text ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
 }
 
 // Login Modal Functions
@@ -1913,7 +2103,8 @@ function updateLoginMode() {
 }
 
 async function submitLogin() {
-  const acc = parseInt(document.getElementById("login-acc").value);
+  const accountValue = document.getElementById("login-acc").value.trim();
+  const acc = /^\d+$/.test(accountValue) ? Number(accountValue) : NaN;
   const pass = document.getElementById("login-pass").value;
   const srv = document.getElementById("login-srv").value.trim();
   const accountType = document.getElementById("login-mode-real").checked ? "REAL" : "DEMO";
@@ -1925,7 +2116,42 @@ async function submitLogin() {
   }
 
   if (button.disabled) return;
+  if (tradeActionBusy() || unresolvedIntents(currentSymbol, true).size) {
+    showToast('Hesap değiştirmeden önce aktif ve sonucu belirsiz işlem taleplerini doğrulayın.', 'error');
+    return;
+  }
   button.disabled = true;
+  accountSwitching = true;
+  accountSessionGeneration++;
+  currentAccountType = null;
+  if (typeof liveSource !== 'undefined' && liveSource) { liveSource.close(); liveSource = null; }
+  if (typeof lastLiveMessage !== 'undefined') lastLiveMessage = 0;
+  if (typeof invalidateAIAdvice === 'function') invalidateAIAdvice(currentSymbol);
+  clearSymbolPrices();
+  for (const id of ['acc-balance','acc-equity','acc-margin-free','acc-profit']) {
+    const node = document.getElementById(id);
+    if (node) node.innerText = '—';
+  }
+  document.getElementById('positions-table-body').innerHTML = '';
+  const historyTable = document.getElementById('history-table-body');
+  if (historyTable) historyTable.innerHTML = '';
+  for (const id of ['pos-count-badge','history-count-badge','history-total-profit','history-total-commission']) {
+    const node = document.getElementById(id);
+    if (node) node.innerText = '—';
+  }
+  historyDetailsRequest++;
+  for (const id of ['history-details-modal','position-execution-modal']) {
+    const modal = document.getElementById(id);
+    if (modal?.open) modal.close();
+  }
+  executionPositions.clear();
+  if (typeof managedPositions !== 'undefined') managedPositions.clear();
+  if (typeof editorPosition !== 'undefined') editorPosition = null;
+  const editor = document.getElementById('position-editor');
+  if (editor?.open) editor.close();
+  const pending = document.getElementById('pending-orders-list');
+  if (pending) pending.textContent = 'Hesap bilgisi doğrulanıyor…';
+  showAccountConnectionError('Hesap bilgisi doğrulanıyor…');
   try {
     showToast("Broker hesabına bağlanılıyor...", "info");
     const res = await fetch("/api/account/login", {
@@ -1938,13 +2164,20 @@ async function submitLogin() {
     if (res.ok && data.success) {
       showToast(`${accountType === "REAL" ? "Gerçek" : "Demo"} hesaba giriş başarılı: #${data.login}`, "success");
       toggleLoginModal();
-      fetchAccount(true);
     } else {
       showToast(`❌ Giriş Başarısız: ${data.detail || data.error}`, "error");
     }
   } catch (err) {
     showToast(`❌ Bağlantı Hatası: ${err.message}`, "error");
   } finally {
+    accountSwitching = false;
+    accountSessionGeneration++;
+    if (typeof startLiveFeed === 'function') startLiveFeed();
+    fetchAccount(true);
+    fetchPositions(true);
+    fetchHistory();
+    if (currentPositionTab === 'reports') fetchReports();
+    if (typeof fetchPendingOrders === 'function') fetchPendingOrders();
     document.getElementById("login-pass").value = "";
     button.disabled = false;
   }
@@ -1955,6 +2188,33 @@ async function submitLogin() {
 // ==========================================
 
 let currentAIAdvice = null;
+let aiAdviceGeneration = 0;
+let aiAdviceRequestSymbol = null;
+let aiAdviceRequestGeneration = 0;
+let aiAdviceButtonHtml = null;
+let aiExecutionBusy = false;
+let aiSettingsBusy = false;
+const handledAIAdvice = new Set();
+function aiAdviceKey(advice) {
+  return advice?.id || JSON.stringify([advice?.symbol,advice?.action,advice?.generated_at,advice?.expires_at]);
+}
+function aiAdviceExecutable(advice) {
+  return window.MT5Permissions?.can?.('executeCurrentAdvice') !== false && (!accountVerificationKnown || !!currentAccountIdentity) && !!advice && ['BUY','SELL'].includes(String(advice.action).toUpperCase())
+    && advice.symbol === currentSymbol && Number.isFinite(Number(advice.expires_at))
+    && Number(advice.expires_at)*1000 > Date.now() && !handledAIAdvice.has(aiAdviceKey(advice));
+}
+function invalidateAIAdvice(symbol) {
+  aiAdviceGeneration++;
+  currentAIAdvice = null;
+  const button = document.getElementById('ai-execute-btn');
+  if (button) { button.disabled = true; button.innerText = 'Yeni tavsiye bekleniyor'; }
+  for (const id of ['ai-advice-entry','ai-advice-sl','ai-advice-tp','ai-advice-confidence']) {
+    const node = document.getElementById(id);
+    if (node) node.innerText = '—';
+  }
+  const label = document.getElementById('ai-advice-symbol');
+  if (label) label.innerText = symbol;
+}
 
 async function fetchAIStatus() {
   try {
@@ -2089,7 +2349,7 @@ function renderAIMemory(memory, config) {
         </li>
       `).join("");
     } else {
-      ideasList.innerHTML = `<li class="text-gray-500 text-[11px] py-1">Geçmiş işlemleriniz analiz edildiğinde gelir artırıcı öneriler burada listelenecektir.</li>`;
+      ideasList.innerHTML = `<li class="text-gray-500 text-[11px] py-1">İşlem geçmişiniz analiz edildiğinde strateji önerileri burada gösterilecektir.</li>`;
     }
   }
 
@@ -2131,11 +2391,13 @@ function renderAIMemory(memory, config) {
     const cfgLoss = document.getElementById("ai-cfg-max-loss");
     const cfgSyms = document.getElementById("ai-cfg-symbols");
 
-    if (cfgMode && !cfgMode.dataset.userEditing) cfgMode.value = config.mode || "DISABLED";
-    if (cfgLot && !cfgLot.dataset.userEditing) cfgLot.value = config.max_lot || 0.01;
-    if (cfgConf && !cfgConf.dataset.userEditing) cfgConf.value = config.min_confidence || 75;
-    if (cfgLoss && !cfgLoss.dataset.userEditing) cfgLoss.value = config.daily_loss_limit || 50.0;
-    if (cfgSyms && !cfgSyms.dataset.userEditing) cfgSyms.value = (config.allowed_symbols || []).join(",");
+    const settingsModal = document.getElementById('ai-autopilot-modal');
+    const editing = typeof settingsModal?.classList?.contains === 'function' && !settingsModal.classList.contains('hidden');
+    if (!editing && cfgMode) cfgMode.value = config.mode || "DISABLED";
+    if (!editing && cfgLot) cfgLot.value = config.max_lot ?? 0.01;
+    if (!editing && cfgConf) cfgConf.value = config.min_confidence ?? 75;
+    if (!editing && cfgLoss) cfgLoss.value = config.daily_loss_limit ?? 50.0;
+    if (!editing && cfgSyms) cfgSyms.value = (config.allowed_symbols || []).join(",");
   }
 
   // 7. Last Advice Sync
@@ -2145,7 +2407,7 @@ function renderAIMemory(memory, config) {
 }
 
 function renderAIAdvice(advice) {
-  if (!advice) return;
+  if (!advice || advice.symbol !== currentSymbol) return;
   currentAIAdvice = advice;
 
   const signalEl = document.getElementById("ai-advice-signal");
@@ -2189,7 +2451,7 @@ function renderAIAdvice(advice) {
   }
 
   if (execBtn) {
-    if ((sig === "BUY" || sig === "SELL") && Number(advice.expires_at || 0) * 1000 > Date.now()) {
+    if (!aiExecutionBusy && aiAdviceExecutable(advice)) {
       execBtn.disabled = false;
       execBtn.innerHTML = `<i class="ph-bold ph-paper-plane-tilt text-base"></i> <span>Bu Tavsiyeyi MT5'te Uygula (${sig} - ${advice.symbol || currentSymbol})</span>`;
     } else {
@@ -2223,7 +2485,6 @@ async function triggerAILearn() {
       renderAIMemory(data.memory, null);
       if (data.cached) showToast("İşlem geçmişi değişmedi; kayıtlı analiz kullanıldı. Yeni token harcanmadı.", "info");
       fetchAIStatus();
-      fetchAIStatus();
     } else {
       showToast(`❌ Analiz Hatası: ${data.detail || data.error}`, "error");
     }
@@ -2239,10 +2500,16 @@ async function triggerAILearn() {
 
 async function triggerAIAdvice() {
   const btn = document.getElementById("ai-advice-btn");
-  if (btn?.disabled) return;
+  const symbol = currentSymbol;
+  if (btn?.disabled && aiAdviceRequestSymbol === symbol) return;
+  aiAdviceRequestSymbol = symbol;
+  invalidateAIAdvice(symbol);
+  const activeGeneration = aiAdviceGeneration;
+  aiAdviceRequestGeneration = activeGeneration;
   let originalHtml = "";
   if (btn) {
-    originalHtml = btn.innerHTML;
+    if (aiAdviceButtonHtml === null) aiAdviceButtonHtml = btn.innerHTML;
+    originalHtml = aiAdviceButtonHtml;
     btn.disabled = true;
     btn.innerHTML = `<i class="ph-bold ph-spinner animate-spin text-cyan-400"></i> <span>Piyasa Analiz Ediliyor...</span>`;
   }
@@ -2252,10 +2519,11 @@ async function triggerAIAdvice() {
     const res = await fetch("/api/ai/advice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbol: currentSymbol, timeframe: "M15", language: window.MT5I18n?.language?.() || "tr" })
+      body: JSON.stringify({ symbol, timeframe: "M15", language: window.MT5I18n?.language?.() || "tr" })
     });
 
     const data = await res.json();
+    if (activeGeneration !== aiAdviceGeneration || symbol !== currentSymbol) return;
     if (res.ok && data.success && data.recommendation) {
       renderAIAdvice(data.recommendation);
       if (data.cached) {
@@ -2267,9 +2535,11 @@ async function triggerAIAdvice() {
       showToast(`❌ Tavsiye Üretilemedi: ${data.detail || data.error}`, "error");
     }
   } catch (err) {
+    if (activeGeneration !== aiAdviceGeneration || symbol !== currentSymbol) return;
     showToast(`❌ Tavsiye Hatası: ${err.message}`, "error");
   } finally {
-    if (btn) {
+    if (btn && activeGeneration === aiAdviceRequestGeneration) {
+      aiAdviceRequestSymbol = null;
       btn.disabled = false;
       btn.innerHTML = originalHtml;
     }
@@ -2277,69 +2547,54 @@ async function triggerAIAdvice() {
 }
 
 async function executeCurrentAdvice() {
-  if (document.getElementById("ai-execute-btn")?.disabled) return;
-  if (!currentAIAdvice) {
-    showToast("Uygulanacak aktif bir AI tavsiyesi bulunmuyor.", "error");
+  if (aiExecutionBusy || document.getElementById('ai-execute-btn')?.disabled) return;
+  const advice = currentAIAdvice;
+  if (!aiAdviceExecutable(advice)) {
+    showToast('Tavsiye bu sembol için geçerli değil, süresi doldu veya daha önce gönderildi. Güncel analiz alın.', 'error');
     return;
   }
-
-  const sig = (currentAIAdvice.action || "").toUpperCase();
-  if (sig !== "BUY" && sig !== "SELL") {
-    showToast("Bekleme sinyalinde işlem açılamaz.", "error");
-    return;
-  }
-
-  if (Number(currentAIAdvice.expires_at || 0) * 1000 <= Date.now()) {
-    showToast("Tavsiyenin süresi doldu; yeni mum sonrası analiz alın.", "error");
-    return;
-  }
-  const symbol = currentAIAdvice.symbol || currentSymbol;
-  const sl = currentAIAdvice.sl_price ? Number(currentAIAdvice.sl_price) : null;
-  const tp = currentAIAdvice.tp_price ? Number(currentAIAdvice.tp_price) : null;
-
-  const advice = {...currentAIAdvice};
-  const conf = await confirmAction({
-    title: "AI emrini onayla",
-    message: "Bu emir MT5 hesabınıza gönderilecek.",
-    details: [["Sembol", symbol], ["Yön", sig === "BUY" ? "Alış" : "Satış"], ["Lot", "0.01"], ["Stop loss", sl || "Belirtilmedi"], ["Take profit", tp || "Belirtilmedi"]],
-    confirmLabel: "Emri gönder"
-  });
-  if (!conf || document.getElementById("ai-execute-btn")?.disabled) return;
-  if (Number(advice.expires_at || 0) * 1000 <= Date.now()) {
-    showToast("Tavsiyenin süresi doldu; yeniden analiz alın.", "error");
-    return;
-  }
-
-  const btn = document.getElementById("ai-execute-btn");
-  let originalHtml = "";
-  if (btn) {
-    originalHtml = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = `<i class="ph-bold ph-spinner animate-spin"></i> <span>MT5'e Gönderiliyor...</span>`;
-  }
-
+  const symbol = currentSymbol, generation = aiAdviceGeneration;
+  const snapshot = {...advice};
+  const expectedAccount = typeof tradingAccountPayload === 'function' ? tradingAccountPayload() : {};
+  aiExecutionBusy = true;
+  const btn = document.getElementById('ai-execute-btn');
+  if (btn) btn.disabled = true;
   try {
-    const res = await fetch("/api/ai/execute", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({recommendation: {...advice, suggested_lot: 0.01}})
+    const confirmed = await confirmAction({
+      title:'AI emrini onayla', message:'Bu emir MT5 hesabınıza gönderilecek.',
+      details:[['Sembol',symbol],['Yön',snapshot.action],['Lot','0.01'],['SL mesafesi (puan)',snapshot.sl_points],['TP mesafesi (puan)',snapshot.tp_points]],
+      confirmLabel:'Emri gönder'
     });
-
-    const data = await res.json();
+    if (!confirmed) return;
+    if (currentAIAdvice !== advice || currentSymbol !== symbol || aiAdviceGeneration !== generation || !aiAdviceExecutable(advice)
+        || (typeof tradingAccountPayload === 'function' && JSON.stringify(expectedAccount) !== JSON.stringify(tradingAccountPayload()))) {
+      showToast('Onay sırasında tavsiye, sembol veya hesap değişti. Emir gönderilmedi.', 'error');
+      return;
+    }
+    if (btn) btn.innerText = "MT5'e gönderiliyor…";
+    let data, res;
+    try {
+      ({response:res,data} = await tradeRequest('/api/ai/execute',
+        {recommendation:{...snapshot,suggested_lot:0.01},...expectedAccount}));
+    } catch (error) {
+      handledAIAdvice.add(aiAdviceKey(snapshot));
+      showToast('Emir sonucu belirsiz; MT5 açık pozisyonlarını ve geçmişi kontrol edin.', 'error');
+      return;
+    }
+    if (data.success || data.uncertain || data.pending) handledAIAdvice.add(aiAdviceKey(snapshot));
     if (res.ok && data.success) {
-      showToast(`${data.partial ? "Emir kısmen gerçekleşti" : data.pending ? "Emir kabul edildi; gerçekleşme bekleniyor" : "Emir gerçekleşti"} · #${data.ticket}`, "success");
-      fetchPositions();
-      fetchAccount();
+      showToast(`${data.partial ? 'Emir kısmen gerçekleşti' : data.pending ? 'Emir kabul edildi; gerçekleşme bekleniyor' : 'Emir gerçekleşti'} · #${data.ticket}`,
+        data.partial || data.pending ? 'warning' : 'success');
     } else {
-      showToast(`${data.uncertain ? "Emir sonucu belirsiz; MT5 durumunu kontrol edin" : "Emir tamamlanamadı"}: ${data.detail || data.error}`, "error");
+      showToast(`${data.uncertain ? 'Emir sonucu belirsiz; MT5 durumunu kontrol edin' : 'Emir tamamlanamadı'}: ${data.detail || data.error || ''}`, 'error');
     }
-  } catch (err) {
-    showToast(`❌ İstek Hatası: ${err.message}`, "error");
+    if (typeof fetchPositions === 'function') fetchPositions(true);
+    fetchAccount(true);
   } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = originalHtml;
-    }
+    aiExecutionBusy = false;
+    if (currentAIAdvice) renderAIAdvice(currentAIAdvice);
+    else if (btn) { btn.disabled = true; btn.innerText = 'Yeni tavsiye bekleniyor'; }
+    if (typeof refreshOrderRecovery === 'function') refreshOrderRecovery();
   }
 }
 
@@ -2349,39 +2604,44 @@ function toggleAIAutopilotModal() {
 }
 
 async function saveAIAutopilot() {
+  if (aiSettingsBusy) return;
+  const expectedAccount = tradingAccountPayload();
+  const isCurrentAccount = () => JSON.stringify(expectedAccount) === JSON.stringify(tradingAccountPayload())
+    && !(typeof accountSwitching !== 'undefined' && accountSwitching);
   const mode = document.getElementById("ai-cfg-mode")?.value || "DISABLED";
   const maxLot = parseFloat(document.getElementById("ai-cfg-max-lot")?.value || "0.01");
   const minConf = parseInt(document.getElementById("ai-cfg-min-conf")?.value || "75");
   const maxLoss = parseFloat(document.getElementById("ai-cfg-max-loss")?.value || "50.0");
   const symsRaw = document.getElementById("ai-cfg-symbols")?.value || "EURUSD,GBPUSD";
-  const symbols = symsRaw.split(",").map(s => s.trim().toUpperCase()).filter(s => s.length > 0);
-  let confirmRealFullAuto = false;
-  if (mode === "FULL_AUTO" && currentAccountType === "REAL") {
-    confirmRealFullAuto = await confirmAction({
-      title: "Gerçek hesapta otomatik işlem",
-      message: "Otopilot bu gerçek hesapta sizden ayrıca emir onayı almadan işlem açabilir.",
-      details: [["Mod", "Tam otomatik"], ["Azami lot", String(maxLot)], ["Semboller", symbols.join(", ")]],
-      confirmLabel: "Gerçek hesapta etkinleştir"
-    });
-    if (!confirmRealFullAuto) return;
-  }
-
+  const symbols = symsRaw.split(",").map(s => s.trim()).filter(s => s.length > 0);
+  aiSettingsBusy = true;
   try {
-    const res = await fetch("/api/ai/autopilot", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    let confirmRealFullAuto = false;
+    if (mode === "FULL_AUTO" && currentAccountType === "REAL") {
+      confirmRealFullAuto = await confirmAction({
+        title: "Gerçek hesapta otomatik işlem",
+        message: "Otopilot bu gerçek hesapta sizden ayrıca emir onayı almadan işlem açabilir.",
+        details: [["Mod", "Tam otomatik"], ["Azami lot", String(maxLot)], ["Semboller", symbols.join(", ")]],
+        confirmLabel: "Gerçek hesapta etkinleştir"
+      });
+      if (!confirmRealFullAuto) return;
+    }
+
+    if (!isCurrentAccount()) {
+      showToast('Onay sırasında hesap değişti; otopilot ayarları kaydedilmedi.', 'error');
+      return;
+    }
+    const {response:res,data} = await tradeRequest('/api/ai/autopilot', {
         enabled: mode !== "DISABLED",
         mode: mode === "DISABLED" ? "ADVISORY" : mode,
         max_lot: maxLot,
         min_confidence: minConf,
         daily_loss_limit: maxLoss,
         allowed_symbols: symbols,
-        confirm_real_full_auto: confirmRealFullAuto
-      })
+        confirm_real_full_auto: confirmRealFullAuto,
+        ...expectedAccount
     });
-
-    const data = await res.json();
+    if (!isCurrentAccount()) return;
     if (res.ok && data.success) {
       showToast(`✅ Otopilot Ayarları Kaydedildi! (${mode})`, "success");
       toggleAIAutopilotModal();
@@ -2391,5 +2651,5 @@ async function saveAIAutopilot() {
     }
   } catch (err) {
     showToast(`❌ İstek Hatası: ${err.message}`, "error");
-  }
+  } finally { aiSettingsBusy = false; }
 }

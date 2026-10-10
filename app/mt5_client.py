@@ -8,6 +8,7 @@ import math
 import rpyc
 import tempfile
 import uuid
+import copy
 from pathlib import Path
 from app import mt5_bridge
 from app.order_journal import OrderJournal
@@ -57,7 +58,7 @@ def _execute_close_deal(p, expected_login=0, expected_server=""):
                     "pending": code == 10008, "uncertain": code in (10012, 10031), "retcode": code, "error": str(result.comment)}
     return {"success": False, "ticket": ticket, "error": str(result.comment)}
 
-def hma_native_close_filter(filter_type="all", expected_login=0, expected_server=""):
+def hma_native_close_filter(filter_type="all", expected_login=0, expected_server="", tick_offset=0):
     account = mt5.account_info()
     if expected_login and (account is None or int(account.login) != expected_login or str(account.server) != expected_server):
         return {"success": False, "closed_count": 0, "total_matched": 0, "errors": ["Aktif MT5 hesabı değişti; kapatma engellendi."]}
@@ -92,7 +93,8 @@ def hma_native_close_filter(filter_type="all", expected_login=0, expected_server
     errors = []
 
     for p in targets:
-        r = _execute_close_deal(p, expected_login, expected_server)
+        r = (close_deal(mt5, int(p.ticket), None, expected_login, expected_server, tick_offset)
+             if "close_deal" in globals() else _execute_close_deal(p, expected_login, expected_server))
         if r.get("success"):
             closed_count += 1
         else:
@@ -218,6 +220,9 @@ class MT5Client:
         self.max_total_lots = float(os.getenv("MAX_TOTAL_OPEN_LOTS", "0.50"))
         self.max_open_orders = int(os.getenv("MAX_OPEN_ORDERS", "10"))
         self.ai_max_trade_risk_pct = float(os.getenv("AI_MAX_TRADE_RISK_PCT", "1"))
+        self.max_trade_risk_pct = float(os.getenv("MAX_TRADE_RISK_PCT", "2"))
+        if not math.isfinite(self.max_trade_risk_pct) or not 0 < self.max_trade_risk_pct <= 100:
+            raise ValueError('MAX_TRADE_RISK_PCT must be finite and between 0 and 100')
         self.tick_clock_offset = int(os.getenv('MT5_TICK_CLOCK_OFFSET_SECONDS', '0'))
         if abs(self.tick_clock_offset) > 14*3600 or self.tick_clock_offset % 3600:
             raise ValueError('MT5_TICK_CLOCK_OFFSET_SECONDS must be a whole-hour offset within 14 hours')
@@ -230,6 +235,8 @@ class MT5Client:
         self._positions_cache_commission = False
         self._price_cache = {}
         self._price_cache_time = {}
+        self._symbol_catalog_cache = None
+        self._symbol_catalog_cache_time = 0.0
 
         # Default broker credentials (Tickmill Demo)
         self.login_id = int(os.getenv("MT5_LOGIN", "0"))
@@ -292,6 +299,8 @@ class MT5Client:
         self.connected_at = self.last_ping_time = 0
         self._account_cache = self._positions_cache = None
         self._price_cache.clear()
+        self._symbol_catalog_cache = None
+        self._symbol_catalog_cache_time = 0.0
         if old_conn is not None:
             try:
                 old_conn.close()
@@ -347,6 +356,8 @@ class MT5Client:
         if not self._lock.acquire(timeout=15.0):
             return {"success": False, "error": "MT5 meşgul, lütfen birkaç saniye sonra tekrar deneyin."}
         try:
+            # Login may switch the terminal even when verification subsequently fails.
+            self.invalidate_trading_cache()
             if not self.ensure_connected():
                 self.connect()
 
@@ -395,6 +406,7 @@ class MT5Client:
             except Exception:
                 return {"success": False, "error": "Giriş doğrulanamadı; broker sunucusu ve hesap türünü kontrol edin."}
         finally:
+            self.invalidate_trading_cache()
             self._lock.release()
 
     def ensure_connected(self) -> bool:
@@ -510,21 +522,49 @@ class MT5Client:
             raise MT5DataError("Aktif MT5 hesabı, sunucusu veya türü kayıtlı seçimle uyuşmuyor; işlem engellendi.")
         return active[:2]
 
-    def trade_preview(self, symbol, order_type, volume, sl_points=0, pending_type=None, entry_price=None, tp_points=0):
+    def _bound_account(self, expected_account=None):
+        account = self._selected_account()
+        if expected_account is not None and list(expected_account) != [*account, self.account_type]:
+            raise MT5DataError('İstek hazırlanırken seçilen hesap değişti; işlem gönderilmedi. Hesabı kontrol edip yeni istek oluşturun.')
+        return account
+
+    def trade_preview(self, symbol, order_type, volume, sl_points=0, pending_type=None, entry_price=None, tp_points=0, *, expected_account=None):
         with self._lock:
             if self.journal.trading_halted():
                 return {'success': False, 'error': 'Yeni emirler güvenlik kilidi nedeniyle durduruldu.'}
             if not self.ensure_connected():
                 return {'success': False, 'error': 'MT5 bağlı değil.'}
             try:
-                login, server = self._selected_account()
-                return self._bridge('trade_preview', symbol.upper(), order_type, volume, sl_points,
+                login, server = self._bound_account(expected_account)
+                return self._bridge('trade_preview', symbol, order_type, volume, sl_points,
                                     pending_type, entry_price, login, server, self.tick_clock_offset,
                                     self.effective_daily_loss_limit(login, server),
                                     self.journal.daily_limit_enabled(login, server), self.max_order_lots,
-                                    self.max_total_lots, self.max_open_orders, tp_points)
+                                    self.max_total_lots, self.max_open_orders, tp_points, self.max_trade_risk_pct)
             except (MT5DataError, Exception) as exc:
                 return {'success': False, 'error': str(exc)}
+
+    def get_symbols(self, *, refresh=False):
+        """Account-bound discovery cache; no symbol subscription or trade request."""
+        with self._lock:
+            if not self.ensure_connected():
+                raise MT5DataError('MT5 bağlı değil; sembol kataloğu alınamadı.')
+            login, server = self._selected_account()
+            expected = [login, server, self.account_type]
+            now = time.monotonic()
+            cached = self._symbol_catalog_cache
+            if not refresh and cached is not None and cached['account'] == expected and now - self._symbol_catalog_cache_time < 60:
+                return copy.deepcopy(cached)
+            try:
+                result = self._bridge('symbol_catalog', login, server, {'DEMO': 0, 'REAL': 2}[self.account_type])
+                if result['account'] != expected or self._selected_account() != [login, server]:
+                    raise MT5DataError('Sembol kataloğu okunurken aktif hesap değişti.')
+                self._symbol_catalog_cache = result
+                self._symbol_catalog_cache_time = time.monotonic()
+                return copy.deepcopy(result)
+            except Exception as exc:
+                self._symbol_catalog_cache = None
+                raise MT5DataError('Broker sembol kataloğu doğrulanamadı.') from exc
 
     def get_symbol_spec(self, symbol):
         with self._lock:
@@ -532,7 +572,7 @@ class MT5Client:
                 raise MT5DataError('MT5 bağlı değil.')
             self._selected_account()
             try:
-                return self._bridge('symbol_spec', symbol.upper())
+                return self._bridge('symbol_spec', symbol)
             except Exception as exc:
                 raise MT5DataError('Broker sembol özellikleri alınamadı.') from exc
 
@@ -542,7 +582,7 @@ class MT5Client:
                 raise MT5DataError('MT5 bağlı değil.')
             login, server = self._selected_account()
             try:
-                return self._bridge('broker_compatibility', symbol.upper(), login, server, self.tick_clock_offset)
+                return self._bridge('broker_compatibility', symbol, login, server, self.tick_clock_offset)
             except Exception as exc:
                 raise MT5DataError('Broker emir kontrolleri alınamadı.') from exc
 
@@ -557,6 +597,69 @@ class MT5Client:
         with self._lock:
             account = self._selected_account()
             return self.journal.has_unresolved_open(account, symbol, mt5_bridge.HMA_MAGIC)
+
+    def bot_readiness(self, config):
+        """Read-only startup checks against the same account used for execution."""
+        with self._lock:
+            try:
+                if self.journal.trading_halted():
+                    raise MT5DataError('Yeni emirler güvenlik kilidi nedeniyle durduruldu.')
+                if not self.ensure_connected():
+                    raise MT5DataError('MT5 bağlantısı doğrulanamadı.')
+                account = self._selected_account()
+                broker = self.mt5.account_info()
+                if broker is None or int(broker.margin_mode) != 2:
+                    raise MT5DataError('HMA otomasyonu hedging hesabı gerektirir.')
+                terminal = self.mt5.terminal_info()
+                if terminal is None or any(getattr(source, name, True) is False for source, name in (
+                        (broker, 'trade_allowed'), (broker, 'trade_expert'), (terminal, 'trade_allowed'))) or getattr(terminal, 'tradeapi_disabled', False) is True:
+                    raise MT5DataError('Broker veya terminal otomatik işlem izni kapalı.')
+                symbol = config['symbol']
+                if self.journal.has_unresolved_open(account, symbol, mt5_bridge.HMA_MAGIC):
+                    raise MT5DataError('Önceki HMA emrinin sonucu belirsiz; broker durumunu doğrulayın.')
+                count = max(100, 5 * max(config['hma_period'], config['second_ma_period'],
+                                        config['kama_slow'], config['atr_period']) + 20)
+                rates = self.get_rates(symbol, config['timeframe_minutes'], count)
+                required = max(config['hma_period'] + int(math.sqrt(config['hma_period'])) + 3,
+                    config['second_ma_period'] + (int(math.sqrt(config['second_ma_period'])) + 3 if config['second_ma_type'] == 'HMA' else 2),
+                    max(config['hma_period'], config['second_ma_period'], config['atr_period']) + 15)
+                if not rates or len(rates) < required:
+                    raise MT5DataError('Strateji için yeterli kapanmış mum verisi yok.')
+                if any(rates[i]['time'] >= rates[i + 1]['time'] for i in range(len(rates) - 1)):
+                    raise MT5DataError('Mum sıralaması doğrulanamadı.')
+                sl = config['sl_points'] if config['use_stop_loss'] else 0
+                tp = config['tp_points'] if config['use_take_profit'] else 0
+                if config['risk_mode'] == 'ATR':
+                    from app.strategy_research import Settings, indicators
+                    study = indicators(rates[:-1], Settings(hma_period=config['hma_period'],
+                        kama_period=config['second_ma_period'], kama_fast=config['kama_fast'],
+                        kama_slow=config['kama_slow'], atr_period=config['atr_period']))
+                    atr = study['atr'][-1]
+                    point = float(self.get_symbol_spec(symbol)['point'])
+                    if atr is None or not math.isfinite(atr) or atr <= 0 or point <= 0:
+                        raise MT5DataError('ATR stop mesafesi hesaplanamadı.')
+                    sl = math.ceil(atr * config['atr_stop_multiplier'] / point) if config['use_stop_loss'] else 0
+                    tp = math.ceil(atr * config['atr_target_multiplier'] / point) if config['use_take_profit'] else 0
+                if config['use_stop_loss'] and sl <= 0:
+                    raise MT5DataError('Stop Loss açıkken geçerli bir mesafe gerekli.')
+                if config['use_take_profit'] and tp <= 0:
+                    raise MT5DataError('Kâr Al açıkken geçerli bir mesafe gerekli.')
+                if config['use_h4_filter']:
+                    h4 = self.get_rates(symbol, 240, count)
+                    if not h4 or len(h4) < max(config['hma_period'], config['second_ma_period'], config['atr_period']) + 15:
+                        raise MT5DataError('H4 filtresi için yeterli kapanmış mum verisi yok.')
+                for side in ('BUY', 'SELL'):
+                    preview = self.trade_preview(symbol, side, config['lot_size'], sl, tp_points=tp)
+                    if not preview.get('success'):
+                        raise MT5DataError(preview.get('error', 'İşlem risk kontrolü başarısız.'))
+                    margin, free = preview.get('margin_required'), preview.get('free_margin')
+                    if margin is None or free is None or not all(math.isfinite(v) for v in (margin, free)) or margin < 0 or margin > free:
+                        raise MT5DataError('İşlem için yeterli serbest teminat doğrulanamadı.')
+                self._bound_account([*account, self.account_type])
+                return {'success': True, 'account': [*account, self.account_type],
+                        'symbol': symbol, 'candles': len(rates)}
+            except Exception as exc:
+                return {'success': False, 'error': str(exc)}
 
     def get_risk_status(self):
         with self._lock:
@@ -575,11 +678,11 @@ class MT5Client:
         account_limit = self.journal.daily_loss_limit(login, server) or self.daily_loss_limit
         return min(account_limit, self.ai_daily_loss_limit) if magic == mt5_bridge.AI_MAGIC else account_limit
 
-    def set_daily_loss_limit(self, value, acknowledge_risk=False):
+    def set_daily_loss_limit(self, value, acknowledge_risk=False, *, expected_account=None):
         with self._lock.order():
             if not self.ensure_connected():
                 raise MT5DataError('MT5 bağlı değil.')
-            login, server = self._selected_account()
+            login, server = self._bound_account(expected_account)
             # Verify the broker state before persisting an account-scoped change.
             try:
                 status = self._bridge('risk_status', login, server,
@@ -660,7 +763,8 @@ class MT5Client:
     def open_order(self, symbol: str, order_type: str, volume: float, sl_points: int = 0,
                    tp_points: int = 0, comment: str = "HMA Web App", *,
                    magic: int = mt5_bridge.MANUAL_MAGIC, request_id: Optional[str] = None,
-                   stop_event=None, pending_type=None, entry_price=None) -> Dict[str, Any]:
+                   stop_event=None, pending_type=None, entry_price=None,
+                   expected_account=None) -> Dict[str, Any]:
         if order_type.upper() not in ("BUY", "SELL"):
             return {"success": False, "error": "Emir yönü BUY veya SELL olmalı"}
         if not math.isfinite(volume) or volume <= 0 or sl_points < 0 or tp_points < 0:
@@ -675,11 +779,11 @@ class MT5Client:
                 return {"success": False, "error": "Otomatik işlemler durduruldu."}
             if not self.ensure_connected():
                 return {"success": False, "error": "MT5 bağlı değil."}
-            payload = dict(symbol=symbol.upper(), order_type=order_type.upper(), volume=volume,
+            payload = dict(symbol=symbol, order_type=order_type.upper(), volume=volume,
                            sl_points=sl_points, tp_points=tp_points, comment=comment, magic=magic, pending_type=pending_type, entry_price=entry_price)
             try:
                 request_id = request_id or str(uuid.uuid4())
-                account_scope = self._selected_account()
+                account_scope = self._bound_account(expected_account)
                 daily_loss_limit = self.effective_daily_loss_limit(*account_scope, magic=magic)
                 enforce_daily_limit = self.journal.daily_limit_enabled(*account_scope)
                 tag = "vm:" + hashlib.sha256((str(account_scope) + request_id).encode()).hexdigest()[:24]
@@ -690,7 +794,7 @@ class MT5Client:
                     "open_deal", payload["symbol"], payload["order_type"], volume, sl_points, tp_points,
                     tag, magic, daily_loss_limit, account_scope[0], account_scope[1], 10, pending_type, entry_price,
                     self.max_order_lots, self.max_total_lots, self.max_open_orders, self.tick_clock_offset,
-                    self.ai_max_trade_risk_pct, enforce_daily_limit),
+                    self.ai_max_trade_risk_pct, enforce_daily_limit, self.max_trade_risk_pct),
                     metadata=metadata, queue_ms=queue_ms)
                 return {**res, "queue_ms": queue_ms}
             except MT5DataError as exc:
@@ -702,103 +806,31 @@ class MT5Client:
             finally:
                 self.invalidate_trading_cache()
 
-    def close_position(self, ticket: int, pos_data=None, *, expected_magic=None):
+    def close_position(self, ticket: int, pos_data=None, *, expected_magic=None, expected_account=None, stop_event=None):
         with self._lock.order():
             try:
-                return self._close_position(ticket, pos_data, expected_magic=expected_magic)
+                if stop_event is not None and stop_event.is_set():
+                    return {'success': False, 'error': 'Otomatik kapatma durduruldu.'}
+                return self._close_position(ticket, pos_data, expected_magic=expected_magic, expected_account=expected_account)
             finally:
                 self.invalidate_trading_cache()
 
-    def _close_position(self, ticket: int, pos_data: Optional[Dict[str, Any]] = None, *, expected_magic=None) -> Dict[str, Any]:
+    def _close_position(self, ticket: int, pos_data: Optional[Dict[str, Any]] = None, *, expected_magic=None, expected_account=None) -> Dict[str, Any]:
+        # pos_data is a UI/filter snapshot; use the broker's current volume and owner.
         with self._lock:
             if not self.ensure_connected():
-                return {"success": False, "error": "MT5 is not connected"}
+                return {"success": False, "error": "MT5 bağlı değil."}
             try:
-                self._selected_account()
+                login, server = self._bound_account(expected_account)
             except MT5DataError as exc:
                 return {"success": False, "error": str(exc)}
-
-            if self.conn:
-                try:
-                    self.conn.execute(NATIVE_CLOSE_SCRIPT)
-                    res = self.conn.eval(f"hma_native_close_ticket({int(ticket)}, {expected_magic!r}, {self.login_id}, {self.server!r})")
-                    return dict(res)
-                except Exception as e:
-                    logger.error(f"Native close_position #{ticket} failed: {e}")
-                    return {"success": False, "uncertain": True, "error": "Kapatma sonucu belirsiz; pozisyonu kontrol edin."}
-
             try:
-                if expected_magic is not None:
-                    account = self.mt5.account_info()
-                    owned = next((p for p in self.get_positions(fresh=True) if p["ticket"] == ticket), None)
-                    if account is None or account.margin_mode != 2 or owned is None or owned["magic"] != expected_magic:
-                        return {"success": False, "error": "Strateji sahipliği/hedging hesabı doğrulanamadı."}
-                    pos_data = owned
-                if pos_data:
-                    symbol = pos_data["symbol"]
-                    volume = float(pos_data["volume"])
-                    is_buy = (pos_data.get("type") == "BUY" or pos_data.get("type_raw") == 0)
-                    profit = float(pos_data.get("profit", 0.0))
-                else:
-                    positions = self.get_positions(fresh=True)
-                    matched = [p for p in positions if p["ticket"] == int(ticket)]
-                    if not matched:
-                        return {"success": False, "error": f"Position #{ticket} bulunamadı"}
-                    pos = matched[0]
-                    symbol = pos["symbol"]
-                    volume = float(pos["volume"])
-                    is_buy = (pos["type"] == "BUY" or pos.get("type_raw") == 0)
-                    profit = float(pos.get("profit", 0.0))
-
-                tick = self.mt5.symbol_info_tick(symbol)
-                if not tick:
-                    return {"success": False, "error": f"Could not get tick for {symbol}"}
-
-                close_price = tick.bid if is_buy else tick.ask
-                close_type = 1 if is_buy else 0
-
-                info = self.mt5.symbol_info(symbol)
-                fillings = []
-                if info and hasattr(info, "filling_mode"):
-                    if info.filling_mode & 2:
-                        fillings.append(1)
-                    if info.filling_mode & 1:
-                        fillings.append(0)
-                for f in [1, 0, 2]:
-                    if f not in fillings:
-                        fillings.append(f)
-
-                last_res = None
-                for f in fillings:
-                    self._selected_account()
-                    t = self.mt5.symbol_info_tick(symbol)
-                    cp = (t.bid if is_buy else t.ask) if t else close_price
-                    request = {
-                        "action": 1,
-                        "position": int(ticket),
-                        "symbol": str(symbol),
-                        "volume": float(volume),
-                        "type": int(close_type),
-                        "price": float(cp),
-                        "deviation": 50,
-                        "magic": 123456,
-                        "comment": "Close from HMA Web",
-                        "type_time": 0,
-                        "type_filling": f
-                    }
-                    last_res = self.remote_order_send(request)
-                    if last_res and last_res.retcode == 10009:
-                        return {"success": True, "ticket": ticket, "profit": profit}
-                    if last_res is None or last_res.retcode != 10030:
-                        break
-
-                code = int(last_res.retcode) if last_res else None
-                return {"success": False, "retcode": code, "partial": code == 10010,
-                        "pending": code == 10008, "uncertain": code in (None, 10012, 10031),
-                        "error": str(last_res.comment) if last_res else "Kapatma sonucu belirsiz; pozisyonu kontrol edin."}
-            except Exception as e:
-                logger.error(f"Error closing position #{ticket}: {e}")
-                return {"success": False, "error": str(e)}
+                return self._bridge('close_deal', int(ticket), expected_magic, login, server,
+                                    self.tick_clock_offset)
+            except Exception:
+                logger.exception("Kapatma sonucu doğrulanamadı")
+                return {"success": False, "uncertain": True,
+                        "error": "Kapatma sonucu belirsiz; MT5 durumunu kontrol edin."}
 
     def close_all(self) -> Dict[str, Any]:
         return self.close_by_filter("all")
@@ -826,8 +858,8 @@ class MT5Client:
 
             if self.conn:
                 try:
-                    self.conn.execute(NATIVE_CLOSE_SCRIPT)
-                    res = self.conn.eval(f"hma_native_close_filter({repr(filter_type)}, {self.login_id}, {self.server!r})")
+                    self.conn.execute(Path(mt5_bridge.__file__).read_text(encoding="utf-8") + "\n" + NATIVE_CLOSE_SCRIPT)
+                    res = self.conn.eval(f"hma_native_close_filter({repr(filter_type)}, {self.login_id}, {self.server!r}, {self.tick_clock_offset})")
                     return {
                         "success": bool(res.get("success")),
                         "uncertain": bool(res.get("uncertain")), "pending": bool(res.get("pending")),
@@ -1058,31 +1090,31 @@ class MT5Client:
             except Exception as exc:
                 raise MT5DataError("Canlı veriler doğrulanamadı.") from exc
 
-    def manage_position(self, ticket, operation, values, request_id):
+    def manage_position(self, ticket, operation, values, request_id, *, expected_account=None):
         with self._lock.order():
             if not self.ensure_connected():
                 return {"success": False, "error": "MT5 bağlı değil."}
             try:
-                self._selected_account()
+                account = self._bound_account(expected_account)
             except MT5DataError as exc:
                 return {"success": False, "error": str(exc)}
             try:
-                return self.journal.run(request_id, dict(operation=operation, ticket=ticket, values=values),
+                return self.journal.run(request_id, dict(operation=operation, ticket=ticket, values=values, account=account),
                     lambda: self._bridge("manage_position", ticket, operation, values, self.login_id, self.server,
-                                         self.tick_clock_offset))
+                                         self.tick_clock_offset, self.max_trade_risk_pct, self.ai_max_trade_risk_pct))
             finally:
                 self.invalidate_trading_cache()
 
-    def cancel_pending(self, ticket, request_id):
+    def cancel_pending(self, ticket, request_id, *, expected_account=None):
         with self._lock.order():
             if not self.ensure_connected():
                 return {"success": False, "error": "MT5 bağlı değil."}
             try:
-                self._selected_account()
+                account = self._bound_account(expected_account)
             except MT5DataError as exc:
                 return {"success": False, "error": str(exc)}
             try:
-                return self.journal.run(request_id, dict(operation="cancel",ticket=ticket),
+                return self.journal.run(request_id, dict(operation="cancel",ticket=ticket,account=account),
                     lambda: self._bridge("cancel_pending", ticket, self.login_id, self.server))
             finally:
                 self.invalidate_trading_cache()

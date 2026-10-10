@@ -1,12 +1,74 @@
 """Executed beside MT5 so each operation crosses RPyC as one JSON response."""
 import json
 import math
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
 MANUAL_MAGIC = 123460
 HMA_MAGIC = 123461
 AI_MAGIC = 123462
+
+SYMBOL_NAME_PATTERN = r'^[A-Za-z0-9_.#-]+$'
+
+
+def _symbol_category(info):
+    """Broker folders/metadata provide discovery hints; unknown assets stay other."""
+    name = str(info.name).upper()
+    path = str(getattr(info, 'path', '')).casefold()
+    text = str(getattr(info, 'description', '')).casefold()
+    base = str(getattr(info, 'currency_base', '')).upper()
+    folders = [('crypto', ('crypto', 'kripto')), ('indices', ('indices', 'index', 'endeks')),
+               ('stocks', ('stock', 'equities', 'equity', 'share', 'hisse')),
+               ('metals', ('metal', 'gold', 'silver', 'altın', 'altin', 'gümüş')),
+               ('commodities', ('commodit', 'energies', 'energy', 'oil', 'crude', 'gas', 'agricultur', 'emtia', 'petrol')),
+               ('forex', ('forex', 'foreign exchange', 'döviz'))]
+    for category, keywords in folders:
+        if any(word in path for word in keywords):
+            return category
+    if any(word in text for word in ('crypto', 'bitcoin', 'ethereum', 'kripto')) or base in {'BTC','ETH','LTC','BCH','XRP','SOL','ADA','DOGE'} or re.match(r'^(BTC|ETH|LTC|BCH|XRP|SOL|ADA|DOGE)(USD|EUR|GBP|JPY|USDT)', name):
+        return 'crypto'
+    if re.search(r'\b(metal|gold|silver|platinum|palladium|altın|altin|gümüş)\b', text) or base in {'XAU','XAG','XPT','XPD'} or name.startswith(('XAU','XAG','XPT','XPD')):
+        return 'metals'
+    if any(word in text for word in ('indices', 'index', 'endeks')):
+        return 'indices'
+    if any(word in text for word in ('stock', 'equities', 'equity', 'share', 'hisse')):
+        return 'stocks'
+    if any(word in text for word in ('commodit', 'energies', 'energy', 'oil', 'crude', 'gas', 'agricultur', 'emtia', 'petrol')):
+        return 'commodities'
+    currencies = {'USD','EUR','GBP','JPY','CHF','AUD','CAD','NZD','TRY','ZAR','CNH','CNY','MXN','NOK','SEK','DKK','PLN','HUF','CZK','SGD','HKD','ILS','RUB','BRL','THB'}
+    if ('forex' in text or 'foreign exchange' in text or 'döviz' in text
+            or getattr(info, 'trade_calc_mode', None) in (0, 5)
+            or (len(name) >= 6 and name[:3] in currencies and name[3:6] in currencies and name[:3] != name[3:6])):
+        return 'forex'
+    return 'other'
+
+
+def symbol_catalog(mt5, expected_login, expected_server, expected_trade_mode=None):
+    """Read all terminal symbols once, without subscribing quotes or checking/sending orders."""
+    account = _account(mt5, expected_login, expected_server)
+    mode = int(account.trade_mode)
+    if mode not in (0, 2) or (expected_trade_mode is not None and mode != expected_trade_mode):
+        raise RuntimeError('Sembol kataloğu için seçili hesap türü doğrulanamadı.')
+    status = [int(account.login), str(account.server), mode]
+    rows = mt5.symbols_get()
+    if rows is None:
+        raise RuntimeError('Broker sembol kataloğu okunamadı.')
+    result = []
+    for info in rows:
+        name = str(info.name)
+        trade_mode = int(getattr(info, 'trade_mode', 0))
+        result.append({'name': name, 'description': str(getattr(info, 'description', '')),
+                       'path': str(getattr(info, 'path', '')), 'category': _symbol_category(info),
+                       'trade_mode': trade_mode, 'digits': int(getattr(info, 'digits', 0)),
+                       'visible': bool(getattr(info, 'visible', False)),
+                       'selectable': trade_mode in (1, 2, 4) and 0 < len(name) <= 32
+                                     and re.fullmatch(SYMBOL_NAME_PATTERN, name) is not None})
+    if account_status(mt5) != status:
+        raise RuntimeError('Sembol kataloğu okunurken aktif hesap değişti.')
+    result.sort(key=lambda row: (row['name'].casefold(), row['name']))
+    return {'account': status[:2] + ['DEMO' if mode == 0 else 'REAL'],
+            'symbols': result, 'total': len(result)}
 
 
 def positions(mt5, include_commission=False, tick_offset=0, quotes=None):
@@ -116,6 +178,7 @@ def risk(mt5, tick_offset=0):
     floating = sum(float(p.profit) + float(p.swap) for p in current)
     if not math.isfinite(realized) or not math.isfinite(floating):
         raise RuntimeError('Risk verisi geçersiz; yeni emir engellendi.')
+    _account(mt5, int(account.login), str(account.server))
     return account, current, pending, realized, floating
 
 
@@ -148,13 +211,13 @@ def stop_distance_error(symbol, guidance):
 def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entry_price,
                   expected_login, expected_server, tick_offset=0, daily_loss_limit=None,
                   enforce_daily_limit=True, max_order_lots=None, max_total_lots=None,
-                  max_open_orders=None, tp_points=0):
+                  max_open_orders=None, tp_points=0, max_trade_risk_pct=2.0):
     """Broker-calculated figures only; unknown values remain unknown."""
     try:
         account, current, pending, realized, floating = risk(mt5, tick_offset)
         if int(account.login) != expected_login or str(account.server) != expected_server:
             raise ValueError('Aktif hesap değişti; risk önizlemesi geçersiz.')
-        if order_type not in ('BUY', 'SELL') or not math.isfinite(volume) or volume <= 0 or sl_points < 0 or tp_points < 0:
+        if order_type not in ('BUY', 'SELL') or not math.isfinite(volume) or volume <= 0:
             raise ValueError('Geçersiz emir parametresi.')
         loss = max(0.0, -(realized + min(0.0, floating)))
         if enforce_daily_limit and daily_loss_limit is not None and (
@@ -162,9 +225,9 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
             raise ValueError('Günlük zarar sınırı: yeni emir engellendi.')
         if max_order_lots is not None and (not math.isfinite(max_order_lots) or volume > max_order_lots + 1e-9):
             raise ValueError('Emir lotu yapılandırılan üst sınırı aşıyor.')
-        committed = sum(float(p.volume) for p in current) + sum(float(o.volume_current) for o in pending)
-        if not math.isfinite(committed) or committed < 0:
-            raise ValueError('Açık hacim doğrulanamadı; yeni emir engellendi.')
+        committed = _committed_volume(current, pending)
+        if max_open_orders is not None and (type(max_open_orders) is not int or max_open_orders < 1):
+            raise ValueError('Geçersiz açık işlem sayısı sınırı.')
         if ((max_total_lots is not None and (
                 not math.isfinite(max_total_lots) or committed + volume > max_total_lots + 1e-9)) or
                 (max_open_orders is not None and len(current) + len(pending) + 1 > max_open_orders)):
@@ -186,24 +249,25 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
                    'BUY_STOP':price-tick.ask, 'SELL_STOP':tick.bid-price}[pending_type]
             if gap <= 0 or gap + info.point*1e-5 < info.trade_stops_level*info.point:
                 raise ValueError('Bekleyen emir fiyatı broker mesafesine uymuyor.')
-        sl = round(price + (-1 if order_type == 'BUY' else 1) * sl_points * info.point, info.digits) if sl_points else 0
+        sl, tp = _protection_prices(info, price, order_type == 'BUY', sl_points, tp_points)
+        _opening_permissions(info, order_type, pending_type, sl, tp)
+        _directional_volume(info, symbol, order_type, volume, current, pending)
         guidance = stop_guidance(info, tick, pending_type)
-        tp = round(price + (1 if order_type == 'BUY' else -1) * tp_points * info.point, info.digits) if tp_points else 0
         exit_price = price if pending_type else float(tick.bid if order_type == 'BUY' else tick.ask)
-        if tp and (tp-exit_price if order_type == 'BUY' else exit_price-tp) < float(info.trade_stops_level)*info.point:
+        if tp and not _stop_distance_valid(info, tp-exit_price if order_type == 'BUY' else exit_price-tp):
             return {'success': False, 'error': stop_distance_error(symbol, guidance), 'stop_guidance': guidance}
         if sl:
             exit_price = price if pending_type else float(tick.bid if order_type == 'BUY' else tick.ask)
             stop_distance = exit_price - sl if order_type == 'BUY' else sl - exit_price
-            if stop_distance < float(info.trade_stops_level) * info.point:
+            if not _stop_distance_valid(info, stop_distance):
                 return {'success': False, 'error': 'SL broker mesafesi uygun değil. ' + stop_distance_error(symbol, guidance), 'stop_guidance': guidance}
+        trade_risk = _trade_risk_guard(mt5, account, symbol, order_type, volume, price, sl, max_trade_risk_pct)
+        if not trade_risk['success']:
+            return trade_risk
         broker_type = 0 if order_type == 'BUY' else 1
         calc_profit = getattr(mt5, 'order_calc_profit', None)
         calc_margin = getattr(mt5, 'order_calc_margin', None)
-        stop_result = calc_profit(broker_type, symbol, volume, price, sl) if sl and calc_profit else None
         margin_result = calc_margin(broker_type, symbol, volume, price) if calc_margin else None
-        if stop_result is not None and not math.isfinite(float(stop_result)):
-            stop_result = None
         if margin_result is not None and not math.isfinite(float(margin_result)):
             margin_result = None
         existing_risk, unprotected = 0.0, 0
@@ -218,12 +282,10 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
                 unprotected += 1
             else:
                 existing_risk += max(0.0, -float(outcome))
-        risk_amount = max(0.0, -float(stop_result)) if stop_result is not None else None
-        equity = float(account.equity)
-        return {'success': True, 'symbol': symbol, 'side': order_type, 'volume': volume,
+        _account(mt5, expected_login, expected_server)
+        return {**trade_risk, 'success': True, 'symbol': symbol, 'side': order_type, 'volume': volume,
                 'currency': str(account.currency), 'account_type': {0:'DEMO', 2:'REAL'}.get(int(account.trade_mode), 'OTHER'),
-                'entry_price': price, 'stop_price': sl, 'stop_risk': risk_amount,
-                'risk_pct_equity': round(100*risk_amount/equity, 3) if risk_amount is not None and equity > 0 else None,
+                'entry_price': price, 'stop_price': sl,
                 'margin_required': float(margin_result) if margin_result is not None else None,
                 'free_margin': float(account.margin_free), 'spread_points': round((tick.ask-tick.bid)/info.point, 1),
                 'existing_stop_risk': round(existing_risk, 2), 'positions_without_stop': unprotected,
@@ -335,8 +397,10 @@ def broker_compatibility(mt5, symbol, expected_login, expected_server, tick_offs
 def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, magic,
               daily_loss_limit, expected_login, expected_server, max_tick_age=10, pending_type=None, entry_price=None,
               max_order_lots=.10, max_total_lots=.50, max_open_orders=10, tick_offset=0,
-              ai_max_trade_risk_pct=1.0, enforce_daily_limit=True):
+              ai_max_trade_risk_pct=1.0, enforce_daily_limit=True, max_trade_risk_pct=2.0):
     try:
+        if order_type not in ('BUY', 'SELL') or not isinstance(symbol, str) or not symbol.strip():
+            raise ValueError('Geçersiz sembol veya emir yönü.')
         account, current, pending, realized, floating = risk(mt5, tick_offset)
         if expected_login and (int(account.login) != expected_login or str(account.server) != expected_server):
             return {'success': False, 'error': 'Aktif MT5 hesabı seçilen hesapla uyuşmuyor.'}
@@ -346,13 +410,12 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
             return {'success': False, 'error': 'Günlük zarar sınırı: yeni emir engellendi.',
                     'daily_loss': loss, 'daily_loss_limit': daily_loss_limit, 'currency': str(account.currency)}
         if (not all(math.isfinite(x) and x > 0 for x in (volume, max_order_lots, max_total_lots))
-                or max_open_orders < 1):
+                or type(max_open_orders) is not int or max_open_orders < 1):
             return {'success': False, 'error': 'Geçersiz hesap risk sınırı; yeni emir engellendi.'}
         if volume > max_order_lots + 1e-9:
             return {'success': False, 'error': 'Emir lotu yapılandırılan üst sınırı aşıyor.'}
-        committed = sum(float(p.volume) for p in current) + sum(float(o.volume_current) for o in pending)
-        if not math.isfinite(committed) or committed < 0:
-            return {'success': False, 'error': 'Açık hacim doğrulanamadı; yeni emir engellendi.'}
+        scope = (int(account.login), str(account.server))
+        committed = _committed_volume(current, pending)
         if committed + volume > max_total_lots + 1e-9 or len(current) + len(pending) + 1 > max_open_orders:
             return {'success': False, 'error': 'Toplam açık/bekleyen işlem sınırı aşılıyor.'}
         if magic in (HMA_MAGIC, AI_MAGIC) and int(account.margin_mode) != 2:
@@ -372,8 +435,8 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
         quote_error = _quote_error(tick, tick_offset, max_tick_age, mt5)
         if quote_error:
             return {'success': False, 'error': quote_error}
-        step = float(info.volume_step)
-        if step <= 0 or volume < info.volume_min or volume > info.volume_max or not math.isclose(volume / step, round(volume / step), abs_tol=1e-7):
+        _symbol_rules(info)
+        if not _volume_valid(info, volume):
             return {'success': False, 'error': 'Lot miktarı broker minimum/maksimum veya lot adımına uymuyor.'}
         buy = order_type == 'BUY'
         price = float(tick.ask if buy else tick.bid)
@@ -391,26 +454,23 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
                    'BUY_STOP':price-tick.ask, 'SELL_STOP':tick.bid-price}[pending_type]
             if gap <= 0 or gap + info.point*1e-5 < info.trade_stops_level*info.point:
                 raise ValueError('Emir fiyatı piyasanın doğru tarafında ve minimum mesafe dışında olmalı.')
-        sl = round(price + (-1 if buy else 1) * sl_points * info.point, info.digits) if sl_points else 0.0
-        tp = round(price + (1 if buy else -1) * tp_points * info.point, info.digits) if tp_points else 0.0
-        if magic == AI_MAGIC:
-            if sl_points <= 0 or tp_points <= 0 or not sl or not tp:
-                return {'success': False, 'error': 'AI emri için geçerli Stop Loss ve Kâr Al zorunlu.'}
-            equity = float(account.equity)
-            calc_profit = getattr(mt5, 'order_calc_profit', None)
-            outcome = calc_profit(0 if buy else 1, symbol, volume, price, sl) if calc_profit else None
-            if (outcome is None or not math.isfinite(float(outcome)) or float(outcome) >= 0
-                    or not math.isfinite(equity) or equity <= 0
-                    or not math.isfinite(ai_max_trade_risk_pct) or ai_max_trade_risk_pct <= 0):
-                return {'success': False, 'error': 'AI stop riski broker tarafından doğrulanamadı.'}
-            if -float(outcome) > equity * ai_max_trade_risk_pct / 100:
-                return {'success': False, 'error': 'AI emrinin stop riski hesap özsermaye sınırını aşıyor.'}
+        if not _price_valid(info, price) or price <= 0:
+            raise ValueError('Giriş fiyatı broker fiyat adımına uymuyor.')
+        sl, tp = _protection_prices(info, price, buy, sl_points, tp_points)
+        _opening_permissions(info, order_type, pending_type, sl, tp)
+        _directional_volume(info, symbol, order_type, volume, current, pending)
         exit_price = price if pending_type else float(tick.bid if buy else tick.ask)
-        minimum = float(info.trade_stops_level) * info.point
-        if ((sl and ((exit_price-sl if buy else sl-exit_price) < minimum)) or
-                (tp and ((tp-exit_price if buy else exit_price-tp) < minimum))):
+        if ((sl and not _stop_distance_valid(info, exit_price-sl if buy else sl-exit_price)) or
+                (tp and not _stop_distance_valid(info, tp-exit_price if buy else exit_price-tp))):
             guidance = stop_guidance(info, tick, pending_type)
             return {'success': False, 'error': stop_distance_error(symbol, guidance), 'stop_guidance': guidance}
+        trade_risk = _trade_risk_guard(mt5, account, symbol, order_type, volume, price, sl,
+                                     max_trade_risk_pct, ai_max_trade_risk_pct if magic == AI_MAGIC else None)
+        if not trade_risk['success']:
+            return trade_risk
+        if magic == AI_MAGIC and (not sl or not tp):
+            return {**trade_risk, 'success': False, 'reason_code': 'ai_protection_required',
+                    'error': 'AI emri için geçerli Stop Loss ve Kâr Al zorunlu.'}
         request = dict(action=1, symbol=symbol, volume=volume, type=0 if buy else 1,
                        price=price, sl=sl, tp=tp, deviation=20, magic=magic,
                        comment=comment[:31], type_time=0)
@@ -419,34 +479,20 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
                          quote_time=int(tick.time) - int(tick_offset), deviation_points=20)
         if pending_type:
             request.update(action=5, type=types[pending_type], type_filling=2)
-            return {**_send_once(mt5, request), 'pending_order': True, 'execution': execution}
-        fillings = [f for bit, f in ((2, 1), (1, 0)) if int(info.filling_mode) & bit]
-        if int(info.trade_exemode) != 2:
-            fillings.append(2)  # RETURN is not allowed for Market Execution.
+            return {**trade_risk, **_checked_send(mt5, request, scope, tick_offset=tick_offset, max_tick_age=max_tick_age),
+                    'pending_order': True, 'execution': execution}
+        fillings = _fillings(info)
         if not fillings:
             return {'success': False, 'error': 'Desteklenen emir doldurma yöntemi yok.'}
     except Exception as exc:
         return {'success': False, 'error': str(exc)}
     for filling in fillings:
         request['type_filling'] = filling
-        try:
-            result = mt5.order_send(request)
-            if result is None:
-                raise RuntimeError('Yanıt yok')
-            code = int(result.retcode)
-            response = dict(success=code in (10008, 10009, 10010), retcode=code,
-                            partial=code == 10010, pending=code == 10008,
-                            ticket=int(result.order), price=float(result.price), volume=float(result.volume),
-                            comment=str(result.comment), execution=execution)
-            if code in (10012, 10031):
-                response['uncertain'] = True
-            if not response['success']:
-                response['error'] = str(result.comment)
-            if code != 10030:
-                return response
-        except Exception:
-            return {'success': False, 'uncertain': True,
-                    'error': 'Emir sonucu belirsiz; broker durumunu kontrol edin.', 'execution': execution}
+        response = {**trade_risk, **_checked_send(mt5, request, scope, tick_offset=tick_offset, max_tick_age=max_tick_age),
+                    'execution': execution}
+        # Only an explicit INVALID_FILL is proof that a different policy is safe.
+        if response.get('retcode') != 10030:
+            return response
     return response
 
 
@@ -530,20 +576,197 @@ def _market(mt5, symbol, tick_offset=0):
     info, tick = mt5.symbol_info(symbol), mt5.symbol_info_tick(symbol)
     if info is None:
         raise ValueError('Sembol bilgisi alınamadı.')
+    _symbol_rules(info)
     quote_error = _quote_error(tick, tick_offset, mt5=mt5)
     if quote_error:
         raise ValueError(quote_error)
     return info, tick
 
 
+def _symbol_rules(info):
+    values = (float(info.point), float(info.volume_min), float(info.volume_max),
+              float(info.volume_step), float(getattr(info, 'trade_tick_size', 0) or info.point),
+              float(info.trade_stops_level), float(getattr(info, 'trade_freeze_level', 0)))
+    if (not all(math.isfinite(v) for v in values) or any(v <= 0 for v in values[:5])
+            or values[2] < values[1] or any(v < 0 for v in values[5:])):
+        raise ValueError('Broker sembol fiyat/lot kuralları doğrulanamadı.')
+
+
+def _committed_volume(current, pending):
+    volumes = [float(p.volume) for p in current] + [float(o.volume_current) for o in pending]
+    if any(not math.isfinite(v) or v < 0 for v in volumes):
+        raise ValueError('Açık hacim doğrulanamadı; yeni emir engellendi.')
+    total = sum(volumes)
+    if not math.isfinite(total):
+        raise ValueError('Açık hacim doğrulanamadı; yeni emir engellendi.')
+    return total
+
+
+def _protection_prices(info, price, buy, sl_points, tp_points):
+    if any(not math.isfinite(float(v)) or float(v) < 0 for v in (sl_points, tp_points)):
+        raise ValueError('SL/TP mesafeleri sonlu ve sıfır veya pozitif olmalı.')
+    sl = round(price + (-1 if buy else 1) * sl_points * info.point, info.digits) if sl_points else 0.0
+    tp = round(price + (1 if buy else -1) * tp_points * info.point, info.digits) if tp_points else 0.0
+    # Decimal precision alone does not make a valid price: tick size can exceed point.
+    if (not _price_valid(info, sl) or not _price_valid(info, tp)
+            or (sl_points and (sl <= 0 or (price-sl if buy else sl-price) <= 0))
+            or (tp_points and (tp <= 0 or (tp-price if buy else price-tp) <= 0))):
+        raise ValueError('SL/TP yönü veya fiyatı broker fiyat adımına uymuyor.')
+    return sl, tp
+
+
+def _trade_risk_guard(mt5, account, symbol, side, volume, price, sl, max_trade_risk_pct,
+                      ai_max_trade_risk_pct=None):
+    """Money risk uses broker contract/currency calculations, never just lot size."""
+    real = int(getattr(account, 'trade_mode', -1)) == 2
+    fields = {'stop_required': real, 'stop_risk': None, 'trade_risk_amount': None,
+              'risk_pct_equity': None, 'max_trade_risk_pct': None,
+              'effective_trade_risk_pct': None, 'trade_risk_limit': None,
+              'currency': str(account.currency)}
+
+    def reject(code, message):
+        return {**fields, 'success': False, 'uncertain': False, 'reason_code': code, 'error': message}
+
+    try:
+        maximum = float(max_trade_risk_pct)
+        if not math.isfinite(maximum) or maximum <= 0:
+            return reject('trade_risk_configuration_invalid', 'Emir başına parasal risk sınırı geçersiz; yeni emir engellendi.')
+        fields['max_trade_risk_pct'] = maximum
+        if ai_max_trade_risk_pct is not None:
+            ai_maximum = float(ai_max_trade_risk_pct)
+            if not math.isfinite(ai_maximum) or ai_maximum <= 0:
+                return reject('trade_risk_configuration_invalid', 'AI parasal risk sınırı geçersiz; yeni emir engellendi.')
+            maximum = min(maximum, ai_maximum)
+        fields['effective_trade_risk_pct'] = maximum
+        try:
+            equity = float(getattr(account, 'equity', None))
+        except (TypeError, ValueError):
+            equity = None
+        if equity is not None and math.isfinite(equity) and equity > 0:
+            limit = equity * (maximum / 100)
+            if not math.isfinite(limit) or limit <= 0:
+                return reject('trade_risk_configuration_invalid', 'Parasal risk sınırı hesaplanamadı; yeni emir engellendi.')
+            fields['trade_risk_limit'] = limit
+        if real and not sl:
+            return reject('real_stop_required', 'Gerçek hesapta yeni emir için geçerli Stop Loss zorunlu.')
+        if not sl:
+            return {**fields, 'success': True}
+        if (not math.isfinite(float(volume)) or volume <= 0 or not math.isfinite(float(price))
+                or price <= 0 or not math.isfinite(float(sl)) or sl <= 0):
+            return reject('trade_risk_unverified', 'Stop riski için giriş fiyatı veya hacim doğrulanamadı.')
+        if fields['trade_risk_limit'] is None:
+            return reject('trade_risk_unverified', 'Stop riski için pozitif ve sonlu hesap özsermayesi doğrulanamadı.')
+        calc = getattr(mt5, 'order_calc_profit', None)
+        outcome = calc(0 if side == 'BUY' else 1, symbol, volume, price, sl) if callable(calc) else None
+        if outcome is None or not math.isfinite(float(outcome)) or float(outcome) >= 0:
+            return reject('trade_risk_unverified', 'Stop riski broker tarafından doğrulanamadı; yeni emir engellendi.')
+        amount = -float(outcome)
+        fields.update(stop_risk=amount, trade_risk_amount=amount,
+                      risk_pct_equity=round(100 * (amount / equity), 3))
+        limit = fields['trade_risk_limit']
+        if amount > limit and not math.isclose(amount, limit, rel_tol=1e-10, abs_tol=0):
+            return reject('trade_risk_exceeded',
+                          f"Emrin stop riski {amount:g} {account.currency}; özsermayenin %{maximum:g} "
+                          f"sınırı ({limit:g} {account.currency}) aşılıyor.")
+        return {**fields, 'success': True}
+    except Exception:
+        return reject('trade_risk_unverified', 'Stop riski broker tarafından doğrulanamadı; yeni emir engellendi.')
+
+
+def _stop_distance_valid(info, distance, freeze=False):
+    minimum = float(info.trade_stops_level)
+    if freeze:
+        minimum = max(minimum, float(getattr(info, 'trade_freeze_level', 0)))
+    return distance > 0 and distance + float(info.point) * 1e-5 >= minimum * info.point
+
+
+def _opening_permissions(info, side, pending_type, sl, tp):
+    trade_mode = int(getattr(info, 'trade_mode', 4))
+    if trade_mode not in (1, 2, 4) or (trade_mode == 1 and side != 'BUY') or (trade_mode == 2 and side != 'SELL'):
+        raise ValueError('Broker bu sembolde yeni emrin yönüne izin vermiyor.')
+    modes = int(getattr(info, 'order_mode', 127))
+    required = (2 if pending_type.endswith('LIMIT') else 4) if pending_type else 1
+    if not modes & required or (sl and not modes & 16) or (tp and not modes & 32):
+        raise ValueError('Broker bu emir türünü veya SL/TP korumasını desteklemiyor.')
+
+
+def _directional_volume(info, symbol, side, volume, current, pending):
+    limit = float(getattr(info, 'volume_limit', 0))
+    if not math.isfinite(limit) or limit < 0:
+        raise ValueError('Broker yönsel lot sınırı doğrulanamadı.')
+    if not limit:
+        return
+    buy = side == 'BUY'
+    committed = sum(float(p.volume) for p in current
+                    if str(p.symbol) == symbol and (int(p.type) == 0) == buy)
+    committed += sum(float(o.volume_current) for o in pending
+                     if str(getattr(o, 'symbol', '')) == symbol
+                     and int(getattr(o, 'type', -1)) in ((0, 2, 4, 6) if buy else (1, 3, 5, 7)))
+    if committed + volume > limit + 1e-9:
+        raise ValueError('Emir brokerın aynı yöndeki toplam lot sınırını aşıyor.')
+
+
+def _fillings(info):
+    execution = int(info.trade_exemode)
+    if execution in (0, 1):  # Request and Instant ignore SYMBOL_FILLING_MODE.
+        return [0, 1, 2]
+    if execution not in (2, 3):
+        return []
+    # Prefer a full fill; IOC can leave partial exposure and RETURN a live remainder.
+    fillings = [f for bit, f in ((1, 0), (2, 1)) if int(info.filling_mode) & bit]
+    if execution == 3:
+        fillings.append(2)
+    return fillings
+
+
 def _volume_valid(info, volume):
     step = float(info.volume_step)
-    return math.isfinite(volume) and step > 0 and info.volume_min <= volume <= info.volume_max and math.isclose(volume / step, round(volume / step), rel_tol=0, abs_tol=1e-7)
+    return math.isfinite(volume) and math.isfinite(step) and step > 0 and info.volume_min <= volume <= info.volume_max and math.isclose(volume / step, round(volume / step), rel_tol=0, abs_tol=1e-7)
 
 
 def _price_valid(info, price):
     step = float(getattr(info, 'trade_tick_size', 0) or info.point)
-    return math.isfinite(price) and price >= 0 and (not price or math.isclose(price / step, round(price / step), rel_tol=0, abs_tol=1e-6))
+    return math.isfinite(step) and step > 0 and math.isfinite(price) and price >= 0 and (not price or math.isclose(price / step, round(price / step), rel_tol=0, abs_tol=1e-6))
+
+
+def _checked_send(mt5, request, account_scope, allow_no_change=False, tick_offset=0, max_tick_age=10,
+                  before_send=None):
+    """Validate the actual request, then send once. Check failures never imply a send."""
+    try:
+        account = _account(mt5, *account_scope)
+        terminal = mt5.terminal_info()
+        if (terminal is None or getattr(terminal, 'connected', None) is not True
+                or getattr(terminal, 'trade_allowed', True) is False
+                or getattr(terminal, 'tradeapi_disabled', False) is True
+                or getattr(account, 'trade_allowed', True) is False
+                or getattr(account, 'trade_expert', True) is False):
+            raise ValueError('Broker veya terminal otomatik işlem izni doğrulanamadı; işlem gönderilmedi.')
+        check = getattr(mt5, 'order_check', None)
+        if not callable(check):
+            raise ValueError('Broker emir ön kontrolü kullanılamıyor; işlem gönderilmedi.')
+        checked = check(request)
+        code = getattr(checked, 'retcode', None)
+        if type(code) is not int:
+            raise ValueError('Broker emir ön kontrolü geçerli yanıt vermedi; işlem gönderilmedi.')
+        if code != 0:
+            success = allow_no_change and code == 10025
+            return {'success': success, 'retcode': code, 'uncertain': False, 'preflight': True,
+                    'reason_code': 'broker_preflight_rejected' if not success else 'no_change',
+                    'error': '' if success else 'Broker emir ön kontrolü reddetti: ' + str(getattr(checked, 'comment', code))}
+        # Account/quote may change while the broker calculates the check result.
+        _account(mt5, *account_scope)
+        if request.get('action') in (1, 5, 6):
+            message = _quote_error(mt5.symbol_info_tick(request['symbol']), tick_offset, max_tick_age, mt5)
+            if message:
+                raise ValueError(message)
+        if before_send is not None:
+            before_send()
+        _account(mt5, *account_scope)
+    except Exception as exc:
+        return {'success': False, 'uncertain': False, 'preflight': True,
+                'reason_code': 'broker_preflight_failed', 'error': str(exc)}
+    return {**_send_once(mt5, request, allow_no_change=allow_no_change),
+            'preflight_retcode': 0, 'preflight_comment': str(getattr(checked, 'comment', ''))[:200]}
 
 
 def _send_once(mt5, request, allow_no_change=False):
@@ -571,18 +794,66 @@ def pending_orders(mt5):
                  magic=int(o.magic), time=int(o.time_setup), expiration=int(o.time_expiration)) for o in orders]
 
 
-def manage_position(mt5, ticket, operation, values, expected_login, expected_server, tick_offset=0):
+def close_deal(mt5, ticket, expected_magic=None, expected_login=0, expected_server='', tick_offset=0):
+    """Close one fresh position through the same checked execution path as opens."""
     try:
-        _account(mt5, expected_login, expected_server)
+        account = _account(mt5, expected_login, expected_server)
+        scope = (int(account.login), str(account.server))
+        rows = mt5.positions_get(ticket=ticket)
+        if rows is None:
+            raise RuntimeError('Pozisyon okunamadı; kapatma gönderilmedi.')
+        if len(rows) != 1 or int(rows[0].ticket) != ticket:
+            raise ValueError('Pozisyon artık açık değil; listeyi yenileyin.')
+        p = rows[0]
+        if expected_magic is not None and (int(p.magic) != int(expected_magic) or int(account.margin_mode) != 2):
+            raise ValueError('Pozisyon stratejiye ait değil veya hedging hesabı doğrulanamadı; kapatma gönderilmedi.')
+        expected_state = _position_state(p)
+        info, tick = _market(mt5, str(p.symbol), tick_offset)
+        volume = float(p.volume)
+        if not _volume_valid(info, volume) or int(p.type) not in (0, 1):
+            raise ValueError('Pozisyon hacmi veya yönü doğrulanamadı; kapatma gönderilmedi.')
+        exit_price = float(tick.bid if int(p.type) == 0 else tick.ask)
+        request = dict(action=1, position=ticket, symbol=str(p.symbol), volume=volume,
+                       type=1 if int(p.type) == 0 else 0, price=exit_price, deviation=50,
+                       magic=int(p.magic), comment='Panel close', type_time=0)
+        execution = dict(kind='close', requested_price=exit_price,
+                         bid=float(tick.bid), ask=float(tick.ask), point=float(info.point),
+                         quote_time=int(tick.time)-int(tick_offset), deviation_points=50)
+        fillings = _fillings(info)
+        if not fillings:
+            raise ValueError('Desteklenen doldurma yöntemi yok; kapatma gönderilmedi.')
+    except Exception as exc:
+        return {'success': False, 'uncertain': False, 'error': str(exc)}
+    for filling in fillings:
+        request['type_filling'] = filling
+        response = _checked_send(mt5, request, scope, tick_offset=tick_offset,
+                                 before_send=lambda: _check_position_state(mt5, ticket, expected_state))
+        if response.get('retcode') != 10030:
+            break
+    if response.get('partial') or response.get('pending'):
+        response['error'] = ('Pozisyon kısmen kapandı; kalan hacmi kontrol edin.' if response.get('partial')
+                             else 'Kapatma emri kabul edildi; pozisyonun kapanması henüz doğrulanmadı.')
+    response['success'] = bool(response.get('success') and response.get('retcode') == 10009)
+    return {**response, 'ticket': ticket, 'position': ticket, 'order_ticket': response.get('ticket'),
+            'requested_volume': volume, 'execution': execution}
+
+
+def manage_position(mt5, ticket, operation, values, expected_login, expected_server, tick_offset=0,
+                    max_trade_risk_pct=2.0, ai_max_trade_risk_pct=1.0):
+    try:
+        account = _account(mt5, expected_login, expected_server)
+        scope = (int(account.login), str(account.server))
         rows = mt5.positions_get(ticket=ticket)
         if rows is None:
             raise RuntimeError('Pozisyon okunamadı.')
         if len(rows) != 1 or int(rows[0].ticket) != ticket:
             raise ValueError('Pozisyon artık açık değil; listeyi yenileyin.')
         p = rows[0]
+        expected_state = _position_state(p)
         info, tick = _market(mt5, str(p.symbol), tick_offset)
         buy = int(p.type) == 0
         exit_price = float(tick.bid if buy else tick.ask)
+        trade_risk = {}
         if operation == 'stops':
             # Reject stale edits instead of silently overwriting another terminal's changes.
             for name in ('sl', 'tp'):
@@ -593,10 +864,19 @@ def manage_position(mt5, ticket, operation, values, expected_login, expected_ser
             tp = float(p.tp if values.get('tp') is None else values['tp'])
             if not _price_valid(info, sl) or not _price_valid(info, tp):
                 raise ValueError('SL/TP fiyat adımına uymuyor.')
-            minimum = max(float(info.trade_stops_level), float(info.trade_freeze_level)) * info.point
-            epsilon = info.point * 1e-5
-            if (sl and (exit_price-sl if buy else sl-exit_price) + epsilon < minimum) or (tp and (tp-exit_price if buy else exit_price-tp) + epsilon < minimum):
+            if ((sl and not _stop_distance_valid(info, exit_price-sl if buy else sl-exit_price, freeze=True))
+                    or (tp and not _stop_distance_valid(info, tp-exit_price if buy else exit_price-tp, freeze=True))):
                 raise ValueError('SL/TP yönü veya broker stop/dondurma mesafesi uygun değil.')
+            old_sl = float(p.sl)
+            widens_stop = sl and (not old_sl or (sl < old_sl if buy else sl > old_sl))
+            if (int(account.trade_mode) == 2 and not sl) or widens_stop:
+                # Price movement is already in equity. Bound the extra loss from the
+                # current liquidation quote to the new stop, not from original entry.
+                trade_risk = _trade_risk_guard(mt5, account, str(p.symbol), 'BUY' if buy else 'SELL',
+                                             float(p.volume), exit_price, sl, max_trade_risk_pct,
+                                             ai_max_trade_risk_pct if int(p.magic) == AI_MAGIC else None)
+                if not trade_risk['success']:
+                    return trade_risk
             request = dict(action=6, position=ticket, symbol=str(p.symbol), sl=sl, tp=tp)
         elif operation == 'partial':
             volume = float(values['volume'])
@@ -610,33 +890,49 @@ def manage_position(mt5, ticket, operation, values, expected_login, expected_ser
             raise ValueError('Desteklenmeyen pozisyon işlemi.')
     except Exception as exc:
         return {'success': False, 'error': str(exc)}
+    guard = lambda: _check_position_state(mt5, ticket, expected_state)
     if operation == 'stops':
-        result = _send_once(mt5, request, allow_no_change=True)
+        result = _checked_send(mt5, request, scope, allow_no_change=True,
+                               tick_offset=tick_offset, before_send=guard)
     else:
-        fillings = [f for bit, f in ((2,1), (1,0)) if int(info.filling_mode) & bit]
-        if int(info.trade_exemode) != 2:
-            fillings.append(2)
+        fillings = _fillings(info)
         if not fillings:
             return {'success': False, 'error': 'Desteklenen doldurma yöntemi yok.'}
         for filling in fillings:
             request['type_filling'] = filling
-            result = _send_once(mt5, request)
+            result = _checked_send(mt5, request, scope, tick_offset=tick_offset, before_send=guard)
             if result.get('retcode') != 10030:
                 break
-    return {**result, 'position': ticket, 'operation': operation}
+    return {**trade_risk, **result, 'position': ticket, 'operation': operation}
 
 
 def cancel_pending(mt5, ticket, expected_login, expected_server):
     try:
-        _account(mt5, expected_login, expected_server)
-        orders = mt5.orders_get(ticket=ticket)
-        if orders is None:
-            raise RuntimeError('Bekleyen emir doğrulanamadı.')
-        if not orders:
-            raise ValueError('Emir artık beklemiyor; gerçekleşmiş olabilir. Pozisyonları kontrol edin.')
+        account = _account(mt5, expected_login, expected_server)
+        scope = (int(account.login), str(account.server))
+        _check_pending_ticket(mt5, ticket)
     except Exception as exc:
         return {'success': False, 'error': str(exc)}
-    return {**_send_once(mt5, dict(action=8, order=ticket)), 'order_ticket': ticket}
+    return {**_checked_send(mt5, dict(action=8, order=ticket), scope,
+                           before_send=lambda: _check_pending_ticket(mt5, ticket)), 'order_ticket': ticket}
+
+
+def _position_state(position):
+    return {k: getattr(position, k) for k in ('ticket', 'symbol', 'type', 'magic', 'volume', 'sl', 'tp')}
+
+
+def _check_position_state(mt5, ticket, expected):
+    rows = mt5.positions_get(ticket=ticket)
+    if rows is None or len(rows) != 1 or _position_state(rows[0]) != expected:
+        raise ValueError('Pozisyon kontrol sırasında değişti veya kapandı; listeyi yenileyin. İşlem gönderilmedi.')
+
+
+def _check_pending_ticket(mt5, ticket):
+    orders = mt5.orders_get(ticket=ticket)
+    if orders is None:
+        raise RuntimeError('Bekleyen emir doğrulanamadı.')
+    if len(orders) != 1 or int(orders[0].ticket) != ticket:
+        raise ValueError('Emir artık beklemiyor; gerçekleşmiş olabilir. Pozisyonları kontrol edin.')
 
 
 def live_snapshot(mt5, symbols, tick_offset=0):

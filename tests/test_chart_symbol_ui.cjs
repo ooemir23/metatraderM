@@ -4,7 +4,7 @@ const fs=require('node:fs'), vm=require('node:vm'), assert=require('node:assert/
  const node=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',innerText:'',value:'0.01',className:''});return nodes.get(id);};
  const frameWindow={postMessage(){}};
  node('chart-frame').src='https://s.tradingview.com/widgetembed/';node('chart-frame').contentWindow=frameWindow;
- const context=vm.createContext({console,URL,setTimeout,clearTimeout,setInterval,clearInterval,
+ const context=vm.createContext({console,URL,AbortController,setTimeout,clearTimeout,setInterval,clearInterval,
  document:{addEventListener(){},getElementById:node,querySelectorAll:()=>[],createElement:()=>({})},
  window:{addEventListener:(name,fn)=>{listeners[name]=fn;}},fetch:async()=>({ok:true,json:async()=>({symbol:'BTCUSD',bid:100,ask:101,spread:1})})});
  vm.runInContext(fs.readFileSync('app/static/app.js','utf8'),context);

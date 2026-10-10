@@ -12,7 +12,7 @@ const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:a
     LightweightCharts:{CandlestickSeries:'candles',BarSeries:'bars',LineSeries:'line',AreaSeries:'area',HistogramSeries:'volume',
       createChart(){ const chart={series:[],removed:false,applyOptions(){},remove(){this.removed=true;},removeSeries(){},
         timeScale:()=>({fitContent(){},setVisibleLogicalRange(){}}),takeScreenshot:()=>({toBlob:fn=>fn(new Blob(['PNG'],{type:'image/png'}))}),
-        addSeries(type){const s={type,data:[],applyOptions(){},setData(rows){assert(!chart.removed,'late response cannot update disposed chart');this.data=rows;},
+        addSeries(type){const s={type,data:[],options:{},applyOptions(options){Object.assign(this.options,options);},setData(rows){assert(!chart.removed,'late response cannot update disposed chart');this.data=rows;},
           priceScale:()=>({applyOptions(){}}),createPriceLine(){return {};},coordinateToPrice:()=>1};chart.series.push(s);return s;}};charts.push(chart);return chart;}}
   };
   globals.window.LightweightCharts=globals.LightweightCharts;
@@ -44,7 +44,25 @@ const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:a
   nodes.get('.mt5-chart-canvas').events.contextmenu({clientX:50,clientY:50,preventDefault(){}});
   action('copy-price');await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(copied,['1']);
   assert(pending.every(p=>p.url.startsWith('/api/chart/candles?')),'chart only requests history, never orders');
+  globals.window.MT5Markets={getSymbol:symbol=>symbol==='BTCUSDm'?{digits:2}:symbol==='EURUSD.a'?{digits:5}:null};
+  api.mount('BTCUSDm');
+  assert.match(pending[2].url,/symbol=BTCUSDm/,'broker suffix keeps its exact case in the chart request');
+  pending[2].resolve({ok:true,json:async()=>({symbol:'BTCUSDm',timeframe_minutes:15,rates:[good(3,82000.12999999999)]})});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(charts[2].series[0].options.priceFormat.precision,2,'crypto chart uses broker precision instead of float string length');
+  assert.equal(charts[2].series[2].options.priceFormat.precision,2,'indicator precision follows the broker too');
+  api.mount('EURUSD.a');
+  pending[3].resolve({ok:true,json:async()=>({symbol:'EURUSD.a',timeframe_minutes:15,rates:[good(4,1.120169999999999)]})});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(charts[3].series[0].options.priceFormat.precision,5);
   api.dispose();
   storage.set('mt5.chart.mode.v1',JSON.stringify('tradingview'));assert.equal(api.mode(),'tradingview');
+  globals.localStorage.setItem=()=>{throw new Error('Storage writes denied');};
+  globals.currentSymbol='BTCUSDm';
+  const modes=[];
+  globals.switchSymbol=()=>{modes.push(api.mode());if(api.mode()==='tradingview')api.setMode('mt5');};
+  api.setMode('tradingview');
+  assert.deepEqual(modes,['tradingview','mt5'],'fallback terminates even when the saved TradingView preference cannot be changed');
+  assert.equal(api.mode(),'mt5','broker chart selection takes effect in memory with blocked storage');
   console.log('Native chart: invalid candle rejection, stale symbol response, cleanup, order isolation and reversible engine PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});

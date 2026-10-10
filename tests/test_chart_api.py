@@ -22,8 +22,8 @@ def test_chart_history_validates_input_and_returns_broker_data(monkeypatch):
     assert response.status_code == 200
     assert response.json()['rates'] == rows
     assert response.json()['time_basis'] == 'broker'
-    assert response.json()['symbol'] == 'BTCUSD'
-    get_rates.assert_called_once_with('BTCUSD', 60, 3)
+    assert response.json()['symbol'] == 'btcusd'
+    get_rates.assert_called_once_with('btcusd', 60, 3)
 
 
 def test_chart_unavailable_does_not_supply_fake_prices(monkeypatch):

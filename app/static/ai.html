@@ -215,12 +215,12 @@
           <div class="flex items-center justify-between border-b border-gray-800/80 pb-3">
             <div class="flex items-center gap-2">
               <i class="ph-bold ph-trend-up text-emerald-400 text-lg"></i>
-              <h2 class="font-bold text-white text-sm sm:text-base">Gelir Kazanmak & Kâr Artırmak İçin Stratejik Öneriler</h2>
+              <h2 class="font-bold text-white text-sm sm:text-base">İşlem Disiplini ve Strateji Önerileri</h2>
             </div>
             <span class="text-xs text-gray-500">DeepSeek Stratejileri</span>
           </div>
           <ul id="ai-ideas-list" class="text-xs sm:text-sm text-gray-300 space-y-2">
-            <li class="text-gray-500 text-xs py-2">Geçmiş işlemleriniz analiz edildiğinde gelir artırıcı özel öneriler burada listelenecektir.</li>
+            <li class="text-gray-500 text-xs py-2">İşlem geçmişiniz analiz edildiğinde strateji önerileri burada gösterilecektir.</li>
           </ul>
         </div>
 
@@ -303,7 +303,7 @@
 
             <div class="flex items-center justify-between text-xs text-gray-400 px-1">
               <span class="flex items-center gap-1">
-                <i class="ph-bold ph-shield-check text-cyan-400 text-sm"></i> Güvenli Magic: 777888
+                <i class="ph-bold ph-shield-check text-cyan-400 text-sm"></i> Emirler sunucuda doğrulanır
               </span>
               <button onclick="toggleAIAutopilotModal()" class="text-purple-400 hover:text-purple-300 underline font-medium">
                 Otopilot Ayarları
@@ -356,7 +356,7 @@
 
         <div>
           <label class="block text-gray-300 font-semibold mb-1">Günlük Zarar Limiti (hesap para birimi, UTC)</label>
-          <p class="text-xs text-gray-400">Manuel, HMA ve AI yeni emirlerini kapsar. Gerçekleşen net sonuç ve açık zarar birlikte değerlendirilir.</p>
+          <p class="text-xs text-gray-400">AI yeni emirlerini sınırlar. Hesabın gerçekleşen net sonucu ve açık zararı birlikte değerlendirilir; ortak günlük limit daha düşükse o kullanılır.</p>
           <input type="number" id="ai-cfg-max-loss" value="50.0" step="5" min="0" class="w-full bg-[#1c2233] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-purple-500 focus:outline-none">
           <p class="text-[11px] text-gray-500 mt-0.5">Günün toplam zararı bu tutarı aşarsa AI otopilot otomatik durur.</p>
         </div>
@@ -370,7 +370,7 @@
           <span class="font-bold flex items-center gap-1 text-purple-300 mb-0.5">
             <i class="ph-bold ph-shield-check"></i> Güvenlik Koruması
           </span>
-          AI tarafından açılan pozisyonlar <code>123462</code> Magic Number ile etiketlenir; geçerli Stop Loss (SL), Kâr Al (TP) ve işlem başına risk sınırı olmadan emir gönderilmez.
+          AI emirleri sunucuda doğrulanır; geçerli Stop Loss (SL), Kâr Al (TP) ve işlem başına risk sınırı olmadan emir gönderilmez.
         </div>
       </div>
 

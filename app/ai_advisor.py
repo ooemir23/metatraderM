@@ -8,6 +8,7 @@ import threading
 import tempfile
 import uuid
 import math
+import re
 from app.mt5_bridge import AI_MAGIC
 from functools import wraps
 from datetime import datetime, timezone
@@ -101,6 +102,8 @@ class DeepSeekAdvisor:
         self._empty_memory = json.loads(json.dumps(self.memory))
 
         self.load_memory()
+        # Restored settings are preferences, not authorization to trade after a restart.
+        self.autopilot['enabled'] = False
         self.sync_account_scope()
         if not self.autopilot.get("enabled"):
             self._auto_stop.set()
@@ -141,7 +144,9 @@ class DeepSeekAdvisor:
                     with tempfile.NamedTemporaryFile(mode="w", dir=parent, delete=False,
                                                      encoding="utf-8") as f:
                         temp_path = f.name
-                        json.dump(data, f, ensure_ascii=False)
+                        json.dump(data, f, ensure_ascii=False, allow_nan=False)
+                        f.flush()
+                        os.fsync(f.fileno())
                     os.replace(temp_path, path)
                     return True
                 except Exception as exc:
@@ -181,6 +186,17 @@ class DeepSeekAdvisor:
             self.autopilot_generation += 1
             self._auto_stop.set()
             self.save_memory()
+
+    def _account_identity(self):
+        values = [getattr(self.mt5, key, None) for key in ('login_id', 'server', 'account_type')]
+        if isinstance(values[0], int) and values[0] > 0 and all(isinstance(value, str) for value in values[1:]):
+            return values
+        return None
+
+    def _check_analysis_account(self, expected_scope, expected_account):
+        self.sync_account_scope()
+        if self.account_scope != expected_scope or self._account_identity() != expected_account:
+            raise ValueError('Analiz sırasında MT5 hesabı değişti; sonuç kullanılmadı. Güncel analiz alın.')
 
     def _usage(self, day=None):
         day = day or datetime.now(timezone.utc).date().isoformat()
@@ -265,8 +281,11 @@ class DeepSeekAdvisor:
 
     @serialized_analysis
     def analyze_user_trades(self, deals: List[Dict[str, Any]], stats: Optional[Dict[str, Any]] = None,
-                            language: str = "tr") -> Dict[str, Any]:
+                            language: str = "tr", expected_account=None) -> Dict[str, Any]:
         self.sync_account_scope()
+        analysis_scope, analysis_account = self.account_scope, self._account_identity()
+        if expected_account is not None and expected_account != analysis_account:
+            return {'success': False, 'error': 'İşlem geçmişi alındıktan sonra MT5 hesabı değişti; analiz yapılmadı.'}
         if not deals or len(deals) == 0:
             return {
                 "success": False,
@@ -319,20 +338,24 @@ Use at most three short items per list and two sentences in the summary."""
             parsed = self._request_json(payload, 30, "learn")
             if not isinstance(parsed.get("persona"), dict) or not isinstance(parsed.get("learned_rules"), list):
                 raise ValueError("AI öğrenme yanıtı geçersiz.")
-            self.cost_state["learn_digest"] = learning_digest
-
-            self.memory["last_analyzed"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            self.memory["language"] = language
-            self.memory["analyzed_trades_count"] = len(clean_deals)
-            self.memory["learning_status"] = parsed.get("learning_status", "Analyzed" if language == "en" else "Öğrenildi")
-            self.memory["persona"] = parsed.get("persona", self.memory["persona"])
-            self.memory["strengths"] = parsed.get("strengths", [])
-            self.memory["weaknesses"] = parsed.get("weaknesses", [])
-            self.memory["learned_rules"] = parsed.get("learned_rules", [])
-            self.memory["revenue_tips"] = parsed.get("revenue_tips", [])
-
-            self.save_memory()
-            return {"success": True, "memory": self.memory}
+            with self._state_lock:
+                self._check_analysis_account(analysis_scope, analysis_account)
+                previous_memory, previous_digest = dict(self.memory), self.cost_state['learn_digest']
+                self.cost_state["learn_digest"] = learning_digest
+                self.memory["last_analyzed"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                self.memory["language"] = language
+                self.memory["analyzed_trades_count"] = len(clean_deals)
+                self.memory["learning_status"] = parsed.get("learning_status", "Analyzed" if language == "en" else "Öğrenildi")
+                self.memory["persona"] = parsed.get("persona", self.memory["persona"])
+                self.memory["strengths"] = parsed.get("strengths", [])
+                self.memory["weaknesses"] = parsed.get("weaknesses", [])
+                self.memory["learned_rules"] = parsed.get("learned_rules", [])
+                self.memory["revenue_tips"] = parsed.get("revenue_tips", [])
+                if not self.save_memory():
+                    self.memory = previous_memory
+                    self.cost_state['learn_digest'] = previous_digest
+                    raise ValueError('AI öğrenme sonucu kaydedilemedi.')
+                return {"success": True, "memory": self.memory}
 
         except Exception as e:
             logger.error(f"Error during DeepSeek trade analysis: {e}")
@@ -349,10 +372,14 @@ Use at most three short items per list and two sentences in the summary."""
         hma_val: Optional[float] = None,
         ma2_val: Optional[float] = None,
         language: str = "tr",
-        source: str = "manual"
+        source: str = "manual",
+        expected_account=None
     ) -> Dict[str, Any]:
         self.sync_account_scope()
-        symbol = symbol.upper()
+        analysis_scope, analysis_account = self.account_scope, self._account_identity()
+        if expected_account is not None and expected_account != analysis_account:
+            return {'success': False, 'error': 'Piyasa verisi alındıktan sonra MT5 hesabı değişti; analiz yapılmadı.'}
+        symbol = symbol.strip()
         if not rates or len(rates) < 2 or not tick or not tick.get("bid"):
             return {"success": False, "error": "Güncel fiyat ve kapanmış mum verisi gerekli."}
         closed = rates[:-1][-10:]
@@ -411,20 +438,32 @@ risk_reward_ratio, action_title. Keep prices, points, and lots distinct; prefer 
                 raise ValueError('AI güven değeri geçersiz.')
             rec['confidence'] = confidence
             if rec['action'] in ('BUY', 'SELL'):
-                if (not isinstance(rec.get('sl_points'), int) or rec['sl_points'] <= 0 or
-                        not isinstance(rec.get('tp_points'), int) or rec['tp_points'] <= 0):
+                if (type(rec.get('sl_points')) is not int or rec['sl_points'] <= 0 or
+                        type(rec.get('tp_points')) is not int or rec['tp_points'] <= 0):
                     raise ValueError('AI önerisi geçerli SL/TP içermiyor.')
+                lot = float(rec.get('suggested_lot', .01))
+                if isinstance(rec.get('suggested_lot'), bool) or not math.isfinite(lot) or lot <= 0:
+                    raise ValueError('AI önerisi geçerli lot içermiyor.')
+                rec['suggested_lot'] = lot
             rec["id"] = str(uuid.uuid4())
             rec["generated_at"] = time.strftime("%H:%M:%S")
             rec["symbol"] = symbol
             rec["language"] = language
+            if analysis_account is not None:
+                rec['account'] = analysis_account
 
             rec["expires_at"] = time.time() + 900
-            self.cost_state["advice_cache"][cache_key] = {"expires_at": rec["expires_at"], "recommendation": rec}
-            self.cost_state["advice_cache"] = dict(sorted(
-                self.cost_state["advice_cache"].items(), key=lambda item: item[1]["expires_at"])[-64:])
-            self.memory["latest_recommendation"] = rec
-            self.save_memory()
+            with self._state_lock:
+                self._check_analysis_account(analysis_scope, analysis_account)
+                previous_cache, previous_rec = dict(self.cost_state['advice_cache']), self.memory['latest_recommendation']
+                self.cost_state["advice_cache"][cache_key] = {"expires_at": rec["expires_at"], "recommendation": rec}
+                self.cost_state["advice_cache"] = dict(sorted(
+                    self.cost_state["advice_cache"].items(), key=lambda item: item[1]["expires_at"])[-64:])
+                self.memory["latest_recommendation"] = rec
+                if not self.save_memory():
+                    self.cost_state['advice_cache'] = previous_cache
+                    self.memory['latest_recommendation'] = previous_rec
+                    raise ValueError('AI tavsiyesi kaydedilemedi; emir için kullanılamaz.')
 
             return {"success": True, "recommendation": rec}
 
@@ -432,11 +471,13 @@ risk_reward_ratio, action_title. Keep prices, points, and lots distinct; prefer 
             logger.error(f"Error getting market advice: {e}")
             return {"success": False, "error": str(e)}
 
-    def execute_recommendation(self, rec=None, *, automatic=False, generation=None):
+    def execute_recommendation(self, rec=None, *, automatic=False, generation=None, expected_account=None):
         self.sync_account_scope()
         if not self.mt5:
             return {"success": False, "error": "MT5 istemcisi bağlı değil."}
         candidate = (self.memory.get("latest_recommendation") or {}) if rec is None else rec
+        if not isinstance(candidate, dict):
+            return {"success": False, "error": "Geçersiz tavsiye."}
         # Use the server-side recommendation; only the requested lot may be overridden.
         target = next((entry["recommendation"] for entry in self.cost_state["advice_cache"].values()
                        if entry["recommendation"].get("id") and entry["recommendation"]["id"] == candidate.get("id")), None)
@@ -452,15 +493,25 @@ risk_reward_ratio, action_title. Keep prices, points, and lots distinct; prefer 
             action = target.get("action", "").upper()
             if action not in ("BUY", "SELL"):
                 raise ValueError("Bekleme tavsiyesinde işlem açılamaz.")
-            symbol = target["symbol"].upper()
+            symbol = target["symbol"]
+            recommendation_account = target.get('account') or self._account_identity()
+            if recommendation_account is not None and recommendation_account != self._account_identity():
+                raise ValueError('Tavsiye başka bir MT5 hesabına ait; güncel analiz alın.')
+            if expected_account is not None and recommendation_account is not None and expected_account != recommendation_account:
+                raise ValueError('İşlem doğrulamasından sonra MT5 hesabı değişti.')
             if automatic and symbol not in self.autopilot["allowed_symbols"]:
                 raise ValueError("Sembol otomatik işlem listesinde değil.")
-            volume = float(candidate.get("suggested_lot") or target.get("suggested_lot") or .01)
-            volume = min(volume, float(self.autopilot["max_lot"]))
-            if not math.isfinite(volume) or volume <= 0:
+            if automatic:
+                confidence = float(target.get('confidence', -1))
+                if not math.isfinite(confidence) or confidence < self.autopilot['min_confidence'] or confidence > 100:
+                    raise ValueError('AI güven değeri otomatik işlem eşiğini karşılamıyor.')
+            requested_lot = candidate.get('suggested_lot', target.get('suggested_lot', .01))
+            volume, max_lot = float(requested_lot), float(self.autopilot['max_lot'])
+            if isinstance(requested_lot, bool) or not math.isfinite(volume) or volume <= 0 or not math.isfinite(max_lot) or max_lot <= 0:
                 raise ValueError("Geçersiz lot miktarı.")
-            sl, tp = int(target.get("sl_points", 0)), int(target.get("tp_points", 0))
-            if sl <= 0 or tp <= 0:
+            volume = min(volume, max_lot)
+            sl, tp = target.get('sl_points', 0), target.get('tp_points', 0)
+            if type(sl) is not int or type(tp) is not int or sl <= 0 or tp <= 0:
                 raise ValueError('AI emri için Stop Loss ve Kâr Al zorunlu.')
         except (ValueError, TypeError, KeyError, OverflowError) as exc:
             return {"success": False, "error": str(exc)}
@@ -473,53 +524,73 @@ risk_reward_ratio, action_title. Keep prices, points, and lots distinct; prefer 
                     expected_price = None
         except (AttributeError, KeyError, ValueError, TypeError):
             pass
+        account_guard = expected_account if expected_account is not None else recommendation_account
+        kwargs = {'expected_account': account_guard} if account_guard is not None else {}
         res = self.mt5.open_order(symbol, action, volume, sl_points=sl, tp_points=tp,
                                   comment="AI Trade", magic=AI_MAGIC,
                                   request_id="ai-" + target["id"],
-                                  stop_event=auto_stop if automatic else None)
-        if res.get("success") or res.get("uncertain"):
-            self.autopilot["last_auto_trade_time"] = time.time()
-            request_id = 'ai-' + target['id']
-            if not any(row.get('request_id') == request_id for row in self.execution_records):
-                self.execution_records.append({
-                    'request_id': request_id, 'symbol': symbol, 'action': action,
-                    'confidence': target['confidence'] if 'confidence' in target else None,
-                    'expected_price': expected_price, 'fill_price': res.get('price'),
-                    'order_ticket': res.get('ticket'), 'volume': volume,
-                    'automatic': automatic, 'created': time.time(),
-                    'uncertain': bool(res.get('uncertain'))})
-                self.execution_records = self.execution_records[-500:]
-            self.save_memory()
+                                  stop_event=auto_stop if automatic else None, **kwargs)
+        if res.get("success") or res.get("uncertain") or res.get('pending') or res.get('partial'):
+            with self._state_lock:
+                self.sync_account_scope()
+                self.autopilot["last_auto_trade_time"] = time.time()
+                record_scope = digest(recommendation_account) if recommendation_account is not None else self.account_scope
+                records = self.execution_records if record_scope == self.account_scope else self.account_states.setdefault(record_scope, {}).setdefault('execution_records', [])
+                request_id = 'ai-' + target['id']
+                if not any(row.get('request_id') == request_id for row in records):
+                    records.append({
+                        'request_id': request_id, 'symbol': symbol, 'action': action,
+                        'confidence': target['confidence'] if 'confidence' in target else None,
+                        'expected_price': expected_price, 'fill_price': res.get('price'),
+                        'order_ticket': res.get('ticket'), 'volume': volume,
+                        'automatic': automatic, 'created': time.time(),
+                        'uncertain': bool(res.get('uncertain')), 'pending': bool(res.get('pending')),
+                        'partial': bool(res.get('partial'))})
+                    del records[:-500]
+                self.save_memory()
+        if res.get('uncertain') or res.get('pending') or res.get('partial'):
+            self.update_autopilot({'enabled': False})
         return res
 
     def update_autopilot(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        self.autopilot_generation += 1
-        self._auto_stop.set()
-        if "enabled" in config:
-            self.autopilot["enabled"] = bool(config["enabled"])
-        if "mode" in config:
-            self.autopilot["mode"] = str(config["mode"]).upper()
-        if "min_confidence" in config:
-            self.autopilot["min_confidence"] = max(50, min(99, int(config["min_confidence"])))
-        if "max_lot" in config:
-            self.autopilot["max_lot"] = float(config["max_lot"])
-        if "daily_loss_limit" in config:
-            self.autopilot["daily_loss_limit"] = float(config["daily_loss_limit"])
-        if "allowed_symbols" in config and isinstance(config["allowed_symbols"], list):
-            self.autopilot["allowed_symbols"] = [str(s).upper() for s in config["allowed_symbols"]]
-
-        if self.mt5:
-            self.mt5.ai_daily_loss_limit = float(self.autopilot["daily_loss_limit"])
-            if self.autopilot["enabled"]:
-                self.mt5.automation_stopped.clear()
-        if self.autopilot["enabled"]:
-            # Old in-flight analyses/orders retain the signalled event.
-            self._auto_stop = threading.Event()
-        if not self.save_memory():
+        with self._state_lock:
+            candidate = {**self.autopilot, **config}
+            try:
+                if not isinstance(candidate['enabled'], bool) or not isinstance(candidate['mode'], str):
+                    raise ValueError('Geçersiz otopilot durumu veya modu.')
+                candidate['mode'] = candidate['mode'].upper()
+                if candidate['mode'] not in ('ADVISORY', 'SEMI_AUTO', 'FULL_AUTO'):
+                    raise ValueError('Geçersiz otopilot modu.')
+                confidence = candidate['min_confidence']
+                if isinstance(confidence, bool) or not isinstance(confidence, int) or not 50 <= confidence <= 99:
+                    raise ValueError('AI güven eşiği 50 ile 99 arasında olmalı.')
+                for key in ('max_lot', 'daily_loss_limit'):
+                    value = candidate[key]
+                    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+                        raise ValueError('Lot ve günlük zarar sınırı pozitif, sonlu olmalı.')
+                symbols = candidate['allowed_symbols']
+                if not isinstance(symbols, list) or any(not isinstance(symbol, str) or not re.fullmatch(r'[A-Za-z0-9_.#-]{1,32}', symbol) for symbol in symbols):
+                    raise ValueError('Geçersiz otomatik işlem sembolü.')
+                candidate['allowed_symbols'] = list(dict.fromkeys(symbols))
+                if candidate['enabled'] and candidate['mode'] == 'FULL_AUTO' and not candidate['allowed_symbols']:
+                    raise ValueError('Tam otomatik işlem için en az bir sembol gerekli.')
+            except (ValueError, TypeError, KeyError) as exc:
+                return {'success': False, 'error': str(exc)}
+            self.autopilot_generation += 1
             self._auto_stop.set()
-            self.autopilot["enabled"] = False
-            return {"success": False, "error": "Ayarlar diske kaydedilemedi; otopilot durduruldu."}
-        return {"success": True, "autopilot": self.autopilot}
+            previous = self.autopilot
+            self.autopilot = candidate
+            if not self.save_memory():
+                self.autopilot = {**previous, 'enabled': False}
+                return {'success': False, 'error': 'Ayarlar diske kaydedilemedi; otopilot durduruldu.'}
+            if self.mt5:
+                self.mt5.ai_daily_loss_limit = float(self.autopilot['daily_loss_limit'])
+            if self.autopilot['enabled']:
+                # Only published settings may permit new work. Old orders keep the signalled event.
+                self._auto_stop = threading.Event()
+                if self.mt5:
+                    self.mt5.automation_stopped.clear()
+            return {'success': True, 'autopilot': self.autopilot}
 
     def get_status(self) -> Dict[str, Any]:
         self.sync_account_scope()

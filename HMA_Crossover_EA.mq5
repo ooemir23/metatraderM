@@ -77,10 +77,25 @@ int            m_ma2_handle = INVALID_HANDLE;
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   if(InpDailyLossLimit <= 0 || InpMaxOrderLots <= 0 || InpMaxTotalLots <= 0 ||
+   if(!MathIsValidNumber(InpDailyLossLimit) || !MathIsValidNumber(InpMaxOrderLots) ||
+      !MathIsValidNumber(InpMaxTotalLots) || !MathIsValidNumber(InpLotSize) ||
+      InpDailyLossLimit <= 0 || InpMaxOrderLots <= 0 || InpMaxTotalLots <= 0 ||
       InpMaxOpenOrders < 1 || InpLotSize <= 0 || InpLotSize > InpMaxOrderLots)
    {
       Print("Gecersiz EA risk ayari; baslatma engellendi.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   if(InpHMAPeriod < 2 || InpSecondMAPeriod < 2 ||
+      InpStopLossPoints < 0 || InpTakeProfitPoints < 0 ||
+      (InpUseStopLoss && InpStopLossPoints <= 0) ||
+      (InpUseTakeProfit && InpTakeProfitPoints <= 0))
+   {
+      Print("Gecersiz indikator veya SL/TP ayari; baslatma engellendi.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   if(InpAllowTrading && AccountInfoInteger(ACCOUNT_TRADE_MODE) == ACCOUNT_TRADE_MODE_REAL && !InpUseStopLoss)
+   {
+      Print("Gercek hesapta otomatik EA islemleri icin Stop Loss zorunlu.");
       return INIT_PARAMETERS_INCORRECT;
    }
    // Sembol bilgilerini yukle
@@ -111,6 +126,9 @@ int OnInit()
       }
    }
 
+   // Ilk yuklemede kapanmis eski bir sinyali isleme donusturme.
+   // Gecmis henuz hazir degilse ilk gecerli tick yalnizca bu degeri kurar.
+   m_lastBarTime = iTime(_Symbol, _Period, 0);
    Print("HMA Crossover EA basariyla baslatildi. Sembol: ", _Symbol, " | Stop Loss: ", (InpUseStopLoss ? "AKTIF" : "KAPALI"));
    return(INIT_SUCCEEDED);
 }
@@ -133,7 +151,14 @@ void OnTick()
 {
    // Yeni mum kontrolu (Sinyalleri mum kapanisinda hesaplayip sahte sinyalleri onler)
    datetime currentBarTime = iTime(_Symbol, _Period, 0);
-   if(currentBarTime == m_lastBarTime)
+   if(currentBarTime <= 0)
+      return; // Gecmis henuz hazir degil.
+   if(m_lastBarTime <= 0)
+   {
+      m_lastBarTime = currentBarTime;
+      return;
+   }
+   if(currentBarTime <= m_lastBarTime)
       return; // Ayni mum icerisinde tekrar hesaplama yapma
 
    m_symbol.RefreshRates();
@@ -164,7 +189,11 @@ void OnTick()
    }
 
    // Eger degerler hesaplanamadiysa cik
-   if(hma_val1 == 0 || hma_val2 == 0 || ma2_val1 == 0 || ma2_val2 == 0)
+   if(!MathIsValidNumber(hma_val1) || !MathIsValidNumber(hma_val2) ||
+      !MathIsValidNumber(ma2_val1) || !MathIsValidNumber(ma2_val2) ||
+      hma_val1 == EMPTY_VALUE || hma_val2 == EMPTY_VALUE ||
+      ma2_val1 == EMPTY_VALUE || ma2_val2 == EMPTY_VALUE ||
+      hma_val1 == 0 || hma_val2 == 0 || ma2_val1 == 0 || ma2_val2 == 0)
       return;
 
    // Kesisim Kontrolu (Crossover Logic)
@@ -214,6 +243,18 @@ void ProcessSignal(ENUM_ORDER_TYPE orderType, double val1, double val2)
    if(!InpAllowTrading)
       return;
 
+   // Netting sahipligi birlestirir; hesap kontrolu kapatmadan once yapilir.
+   if(AccountInfoInteger(ACCOUNT_MARGIN_MODE) != ACCOUNT_MARGIN_MODE_RETAIL_HEDGING)
+   {
+      Print("EA icin hedging hesabi gerekli; acma/kapatma gonderilmedi.");
+      return;
+   }
+   if(AccountInfoInteger(ACCOUNT_TRADE_MODE) == ACCOUNT_TRADE_MODE_REAL && !InpUseStopLoss)
+   {
+      Print("Gercek hesapta Stop Loss olmadan otomatik islem gonderilmedi.");
+      return;
+   }
+
    // Ters pozisyon kontrolu
    if(InpCloseOpposite)
    {
@@ -242,6 +283,7 @@ void ProcessSignal(ENUM_ORDER_TYPE orderType, double val1, double val2)
       if(InpUseTakeProfit && InpTakeProfitPoints > 0)
          tp = NormalizeDouble(price + (InpTakeProfitPoints * point), _Digits);
 
+      if(!ValidProtectionPrices(orderType, price, point, sl, tp)) return;
       if(m_trade.Buy(InpLotSize, _Symbol, price, sl, tp, "HMA Buy Signal") && m_trade.ResultRetcode() == TRADE_RETCODE_DONE)
       {
          Print("Basarili BUY Emri: ", _Symbol, " Lot: ", InpLotSize, " SL: ", sl, " TP: ", tp);
@@ -260,6 +302,7 @@ void ProcessSignal(ENUM_ORDER_TYPE orderType, double val1, double val2)
       if(InpUseTakeProfit && InpTakeProfitPoints > 0)
          tp = NormalizeDouble(price - (InpTakeProfitPoints * point), _Digits);
 
+      if(!ValidProtectionPrices(orderType, price, point, sl, tp)) return;
       if(m_trade.Sell(InpLotSize, _Symbol, price, sl, tp, "HMA Sell Signal") && m_trade.ResultRetcode() == TRADE_RETCODE_DONE)
       {
          Print("Basarili SELL Emri: ", _Symbol, " Lot: ", InpLotSize, " SL: ", sl, " TP: ", tp);
@@ -269,6 +312,27 @@ void ProcessSignal(ENUM_ORDER_TYPE orderType, double val1, double val2)
          Print("SELL Emri Acilamadi! Hata: ", m_trade.ResultRetcodeDescription());
       }
    }
+}
+
+bool ValidProtectionPrices(ENUM_ORDER_TYPE orderType, double price, double point, double sl, double tp)
+{
+   if(!MathIsValidNumber(price) || !MathIsValidNumber(point) || price <= 0 || point <= 0)
+   {
+      Print("Giris fiyati veya point gecersiz; emir gonderilmedi.");
+      return false;
+   }
+   bool buy = (orderType == ORDER_TYPE_BUY);
+   if(InpUseStopLoss && (!MathIsValidNumber(sl) || sl <= 0 || (buy ? sl >= price : sl <= price)))
+   {
+      Print("Stop Loss fiyat veya yon kontrolunu gecemedi; emir gonderilmedi.");
+      return false;
+   }
+   if(InpUseTakeProfit && (!MathIsValidNumber(tp) || tp <= 0 || (buy ? tp <= price : tp >= price)))
+   {
+      Print("Kar Al fiyat veya yon kontrolunu gecemedi; emir gonderilmedi.");
+      return false;
+   }
+   return true;
 }
 
 // Broker hesabinin tamamini esas alir; web paneliyle ayni varsayilan sinirlar.
@@ -449,6 +513,11 @@ bool ClosePositionsByDirection(ENUM_ORDER_TYPE oppositeType)
             }
          }
       }
+      else
+      {
+         Print("Pozisyon okunamadi; ters acilis engellendi.");
+         return false;
+      }
    }
    return true;
 }
@@ -467,6 +536,11 @@ bool HasOpenPosition(ENUM_ORDER_TYPE orderType)
             if((ENUM_ORDER_TYPE)m_position.PositionType() == orderType)
                return true;
          }
+      }
+      else
+      {
+         Print("Pozisyon okunamadi; yeni acilis engellendi.");
+         return true; // Yokluk dogrulanamadigi icin acilisi engelle.
       }
    }
    return false;

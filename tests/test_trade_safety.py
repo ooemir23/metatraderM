@@ -22,7 +22,8 @@ def client(monkeypatch):
     c.last_ping_time = time.time()
     c.mt5 = Mock()
     c.mt5.terminal_info.return_value = NS(connected=True)
-    c.mt5.account_info.return_value = NS(login=1, server='test', trade_mode=0, currency='EUR', margin_mode=2)
+    c.mt5.account_info.return_value = NS(login=1, server='test', trade_mode=0, currency='EUR', margin_mode=2,
+        equity=10000., margin_free=8000.)
     c.mt5.positions_get.return_value = []
     c.mt5.orders_get.return_value = []
     c.mt5.history_deals_get.return_value = []
@@ -30,6 +31,9 @@ def client(monkeypatch):
         volume_max=10, trade_stops_level=10, filling_mode=3, trade_exemode=2)
     c.mt5.symbol_info_tick.return_value = NS(ask=1.1, bid=1.0999, time=time.time())
     c.mt5.order_send.return_value = NS(retcode=10009, order=123, price=1.1, volume=.01, comment='done')
+    c.mt5.order_check.return_value = NS(retcode=0, comment='checked')
+    c.mt5.order_calc_profit.return_value = -2.
+    c.mt5.order_calc_margin.return_value = 25.
     return c
 
 
@@ -353,6 +357,8 @@ def test_account_login_requires_explicit_demo_or_real_choice():
 
 def test_real_full_auto_requires_explicit_confirmation(monkeypatch):
     from app import main
+    monkeypatch.setattr(main.mt5_client, 'login_id', 3)
+    monkeypatch.setattr(main.mt5_client, 'server', 'broker-live')
     monkeypatch.setattr(main.mt5_client, 'account_type', 'REAL')
     monkeypatch.setattr(main.mt5_client, 'ensure_connected', lambda: True)
     monkeypatch.setattr(main.mt5_client, '_selected_account', lambda: [3, 'broker-live'])
@@ -411,6 +417,9 @@ def test_close_all_stops_automation_before_close(monkeypatch):
 
 def test_resume_requires_verified_account_and_clears_halt(monkeypatch):
     from app import main
+    monkeypatch.setattr(main.mt5_client, 'login_id', 1)
+    monkeypatch.setattr(main.mt5_client, 'server', 'test')
+    monkeypatch.setattr(main.mt5_client, 'account_type', 'DEMO')
     main.mt5_client.journal.set_trading_halted(True)
     monkeypatch.setattr(main.mt5_client, 'ensure_connected', lambda: True)
     monkeypatch.setattr(main.mt5_client, '_selected_account', Mock(side_effect=MT5DataError('Yanlış hesap')))
@@ -529,7 +538,7 @@ def test_remote_bridge_serializes_full_result_once(client, monkeypatch):
     from rpyc.utils.server import ThreadedServer
     from app.mt5_client import rpyc
     fake = ModuleType('MetaTrader5')
-    for name in ('terminal_info','account_info','positions_get','orders_get','history_deals_get','symbol_select','symbol_info','symbol_info_tick','order_send'):
+    for name in ('terminal_info','account_info','positions_get','orders_get','history_deals_get','symbol_select','symbol_info','symbol_info_tick','order_check','order_send'):
         setattr(fake, name, getattr(client.mt5, name))
     monkeypatch.setitem(sys.modules, 'MetaTrader5', fake)
     disconnected = threading.Event()

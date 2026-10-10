@@ -137,7 +137,7 @@ def test_live_feed_contains_the_same_execution_measurements(client):
     assert row['execution_quality']['slippage_points'] == 3
     assert row['execution_quality']['current_spread_points'] == 10
     # Quote is read once per symbol and shared by positions and the chart snapshot.
-    assert client.mt5.symbol_info_tick.call_count == 2  # once for submission, once for snapshot
+    assert client.mt5.symbol_info_tick.call_count == 3  # request, post-check quote verification, shared snapshot
 
 
 def test_pending_placement_quote_is_not_presented_as_trigger_spread(client):
