@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       badge.title = english ? 'Panel permissions' : 'Panel yetkileri';
     }
     const adminActions = ['toggleAIAutopilotModal', 'saveAIAutopilot', 'toggleBot',
-      'toggleBotSettingsModal', 'saveBotSettings', 'resumeTrading', 'submitLogin'];
+      'toggleBotSettingsModal', 'saveBotSettings', 'resumeTrading', 'submitLogin', 'openNativeTerminal'];
     const tradeActions = ['submitOrder', 'savePendingOrder', 'executeCurrentAdvice', 'submitPendingOrder', 'cancelPendingOrder',
       'savePositionStops', 'partialClosePosition', 'closePosition', 'closeFilteredPositions', 'closeAllPositions',
       'closeEditorPosition','closeByPosition','saveTrailingStop'];

@@ -7,6 +7,8 @@ services:
   web-dashboard:
     environment:
       DASHBOARD_PUBLIC_ORIGIN: https://trade.46.225.94.54.sslip.io
+      MT5_DESKTOP_USER: admin
+      MT5_DESKTOP_PASSWORD: ${VNC_PASSWORD:?Set VNC_PASSWORD in .env}
     labels:
       traefik.enable: "true"
       traefik.docker.network: dokploy-network

@@ -243,6 +243,7 @@ class MT5Client:
         self.password = os.getenv("MT5_PASSWORD", "")
         self.server = os.getenv("MT5_SERVER", "Tickmill-Demo")
         self.account_type = os.getenv("MT5_ACCOUNT_TYPE", "").upper()
+        self.terminal_managed_login = False
 
         # Load persisted credentials from volume if available
         self.load_credentials()
@@ -260,6 +261,7 @@ class MT5Client:
                     if data.get("password"): self.password = str(data["password"])
                     if data.get("server"): self.server = str(data["server"])
                     self.account_type = str(data.get("account_type") or self.account_type).upper()
+                    self.terminal_managed_login = data.get('login_via_terminal') is True
                     logger.info(f"Loaded credentials from {path}: #{self.login_id} @ {self.server}")
                     return
                 except Exception as e:
@@ -272,6 +274,8 @@ class MT5Client:
             "server": self.server,
             "account_type": self.account_type
         }
+        if self.terminal_managed_login:
+            data['login_via_terminal'] = True
         for path in ["/config/credentials.json", "/tmp/credentials.json"]:
             try:
                 d = os.path.dirname(path)
@@ -290,6 +294,12 @@ class MT5Client:
                     return
             except Exception as e:
                 logger.warning(f"Could not save credentials to {path}: {e}")
+
+    def use_native_terminal_login(self):
+        with self._lock.order():
+            if not self.terminal_managed_login:
+                self.terminal_managed_login = True
+                self.save_credentials()
 
     def _reset_connection(self):
         self._bridge_ready = False
@@ -395,6 +405,7 @@ class MT5Client:
                     self.password = str(password)
                     self.server = server_clean
                     self.account_type = account_type
+                    self.terminal_managed_login = False
                     self.is_connected = True
                     self._account_cache = self._positions_cache = None
                     self._price_cache.clear()
@@ -451,7 +462,8 @@ class MT5Client:
             try:
                 acc = self.mt5.account_info()
                 now = time.time()
-                if acc is None and self.login_id and self.password and self.account_type in ("DEMO", "REAL"):
+                if (acc is None and not self.terminal_managed_login and self.login_id
+                        and self.password and self.account_type in ("DEMO", "REAL")):
                     if now - self.last_auto_login_attempt > self.auto_login_cooldown:
                         self.last_auto_login_attempt = now
                         try:

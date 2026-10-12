@@ -211,6 +211,8 @@ function clearSymbolPrices() {
 
 function quoteOrderIssue() {
   const en = window.MT5I18n?.language?.() === 'en';
+  if(typeof nativeTerminalOpen!=='undefined'&&nativeTerminalOpen)
+    return en?'Place new orders in the original MT5 terminal while it is open.':'Orijinal terminal açıkken yeni emirleri MT5 ekranından verin.';
   const quote = executableQuote, status = quote?.status;
   const elapsed = quote ? (Date.now() - quote.receivedAt) / 1000 : NaN;
   if (!quote || quote.symbol !== currentSymbol || !status || !Number.isFinite(elapsed) || elapsed < 0 || elapsed >= 5

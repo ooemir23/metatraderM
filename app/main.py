@@ -14,6 +14,7 @@ from app.ai_performance import summarize as summarize_ai_performance
 from app.security import protect_dashboard
 from app.live_feed import LiveFeed
 from app.trailing_stops import TrailingStops
+from app.native_terminal import NativeTerminal
 from app.strategy_bot import StrategyBot
 from app.ai_advisor import DeepSeekAdvisor
 from app import security_sessions
@@ -210,6 +211,8 @@ async def lifespan(app: FastAPI):
         logger.info("Shutting down HMA Trading Application...")
 
 app = FastAPI(title="HMA Trading Dashboard", lifespan=lifespan)
+native_terminal = NativeTerminal(login_mode_allowed=lambda:mt5_client.terminal_managed_login)
+app.include_router(native_terminal.router)
 app.middleware("http")(protect_dashboard)
 
 @app.exception_handler(MT5DataError)
@@ -241,6 +244,16 @@ class OrderRequest(AccountBoundRequest):
 
 class ActionRequest(AccountBoundRequest):
     request_id: str = Field(min_length=16, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
+
+@app.post('/api/terminal/activate')
+def activate_native_terminal(req: ActionRequest):
+    try:
+        native_terminal.desktop_authorization()
+    except ValueError:
+        raise HTTPException(status_code=503,detail='Orijinal terminal sunucu bağlantısı yapılandırılmadı.') from None
+    mt5_client.use_native_terminal_login()
+    mt5_client.journal.event('info','settings','Original terminal enabled; broker login is managed by MT5')
+    return {'success':True,'terminal_managed_login':True}
 
 class CloseRequest(ActionRequest):
     ticket: int = Field(gt=0)

@@ -106,6 +106,15 @@
       <div class="lg:col-span-8 flex flex-col gap-3 sm:gap-4">
         
         <!-- INTERACTIVE TRADINGVIEW CHART -->
+      <details id="native-terminal-panel" ontoggle="if(!this.open)closeNativeTerminal()" class="w-full bg-[#121620] p-4 rounded-2xl border border-gray-800 mb-4">
+        <summary class="font-bold text-white cursor-pointer">Orijinal MetaTrader 5 terminali</summary>
+        <p class="text-xs text-gray-400 mt-3">Sunucudaki gerçek MT5 terminali bu ekranda açılır. Grafik, gösterge, emir, MetaEditor ve Strategy Tester ayarları terminalin kendisinde yapılır.</p>
+        <p class="text-xs text-amber-300 mt-2">Yönetici erişimi. Bu terminalin kendi emir penceresine panelin ek risk sınırları, TOTP ve emir kilidi uygulanmaz; MT5 ve broker kuralları geçerlidir.</p>
+        <div class="flex gap-2 mt-3"><button onclick="openNativeTerminal()" class="px-3 py-2 text-xs bg-cyan-700 rounded text-white">Orijinal terminali aç / Yenile</button><button onclick="fullscreenNativeTerminal()" class="px-3 py-2 text-xs bg-gray-700 rounded text-white">Terminali tam ekran aç</button><button onclick="closeNativeTerminal()" class="px-3 py-2 text-xs bg-gray-700 rounded text-white">Terminal ekranını kapat</button></div>
+        <p id="native-terminal-status" role="status" class="text-xs text-gray-400 mt-2"></p>
+        <iframe id="native-terminal-frame" hidden title="Orijinal MetaTrader 5 terminali" class="w-full h-[720px] mt-3 rounded border border-gray-700 bg-black" allow="fullscreen" referrerpolicy="no-referrer"></iframe>
+      </details>
+
       <div id="chart-card" class="w-full bg-[#121620] rounded-2xl border border-gray-800/80 overflow-hidden flex flex-col h-[480px] lg:h-[520px] xl:h-[580px] shadow-xl">
         <div class="px-3.5 py-2 border-b border-gray-800 flex items-center justify-between bg-[#151a26] flex-wrap gap-2">
           <div class="flex items-center gap-2">

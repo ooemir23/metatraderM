@@ -30,3 +30,7 @@ Kaynaklar: [MT5 işlem penceresi](https://www.metatrader5.com/en/terminal/help/t
 `890d46f8208a24791087fce5721fa7e8be03265f` 12 Ekim 2026 tarihinde yalnız web servisinin yeniden oluşturulmasıyla yayımlandı. Yayın öncesi `/config/backups/backup-20261012T173622Z-5t4f7k` doğrulandı. Önceki web imajı `mt5-web-rollback:981b8c5` etiketiyle saklandı. MT5, CineLists ve diğer servisler yeniden başlatılmadı.
 
 Canlı DEMO hesap bağlantısı ve hedging modu doğrulandı. Yayın öncesindeki bir pozisyonun kimliği, hacmi, yönü ve SL/TP seviyeleri yayın sonrasında aynı kaldı. Pozisyon yetenekleri API'si brokerın Close By desteğini ve IOC kapatma politikasını döndürüyor. Yeni kontroller HTML'de mevcut; dört JS dosyası test edilen kaynakla SHA256 düzeyinde eşleşiyor. EURUSD/BTCUSD önizlemeleri başarılı. İki sembolde broker piyasa derinliği sağlamıyor; API bunu HTTP 200 ve `available:false` ile bildiriyor. Otomatik trailing başlangıçta kapalı, HMA/AI kapalı. Canlı emir gönderilmedi. Diskte yaklaşık 13 GB boş alan ve depolama bakım zamanlayıcısı aktif.
+
+## Orijinal programın ekranı
+
+Özel panelin yukarıda belirtilen uyum sınırları devam eder. Bütün terminal menüleri için ayrıca [orijinal MT5 ekranı](MT5_ORIJINAL_TERMINAL_2026-10-12.md) uygulama içine entegre edildi. Bu bölüm mevcut MT5 programını gösterir; özel panelin MQL5/MetaEditor/Strategy Tester'i yeniden yazdığı iddia edilmez. Bu eklemeyle toplam 626 Python testi ve 24 JavaScript test dosyası geçti.

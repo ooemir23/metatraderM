@@ -8,6 +8,34 @@ let displayedTickTime = 0;
 let displayedQuoteStatus = null;
 let displayedQuoteReceivedAt = 0;
 let quoteDiagnosticFailed = false;
+let nativeTerminalOpen = false;
+let nativeTerminalRequest = 0;
+async function openNativeTerminal() {
+  if(window.MT5Permissions?.can('openNativeTerminal')===false)return showToast('Orijinal terminal için yönetici erişimi gerekli.','error');
+  const frame=document.getElementById('native-terminal-frame');
+  const status=document.getElementById('native-terminal-status');
+  const request=++nativeTerminalRequest;
+  try {
+    const {response,data}=await tradeRequest('/api/terminal/activate',{request_id:newOrderId()});
+    if(!response.ok||!data.success)throw new Error(data.detail||data.error||'Orijinal terminal etkinleştirilemedi.');
+  }catch(err){if(request!==nativeTerminalRequest)return;status.textContent=err.message;return showToast(err.message,'error');}
+  if(request!==nativeTerminalRequest)return;
+  nativeTerminalOpen=true;
+  frame.hidden=false;frame.src='/native-mt5/vnc/index.html?path=native-mt5%2Fwebsockify&autoconnect=true&resize=remote';
+  status.textContent='Orijinal MT5 ekranına bağlanılıyor. Ekrandaki işlemler doğrudan terminalde yapılır.';
+  updateOrderButtons();
+}
+function closeNativeTerminal() {
+  nativeTerminalRequest++;
+  const frame=document.getElementById('native-terminal-frame');frame.src='about:blank';frame.hidden=true;
+  nativeTerminalOpen=false;updateOrderButtons();
+  document.getElementById('native-terminal-status').textContent='Ekran bağlantısı kapandı. MT5 terminali sunucuda çalışmaya devam eder.';
+}
+async function fullscreenNativeTerminal() {
+  const frame=document.getElementById('native-terminal-frame');
+  if(frame.hidden)return showToast('Önce orijinal terminali açın.','info');
+  try {await frame.requestFullscreen();}catch(_){showToast('Tarayıcı tam ekranı açamadı.','error');}
+}
 function safeText(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -242,6 +270,7 @@ function pendingOrderTicket() {
     entry_price:Number(document.getElementById('pending-price').value), ...readOrderProtection(true), ...pendingOrderOptions()};
 }
 async function submitPendingOrder() {
+  if(nativeTerminalOpen)return showToast('Orijinal terminal açıkken yeni emirleri MT5 ekranından verin.','info');
   if (accountSwitching || pendingOrderPreflight) return;
   const protection = readOrderProtection(true), ticket = pendingOrderTicket();
   if (!protection || ![ticket.volume,ticket.entry_price].every(v=>Number.isFinite(v)&&v>0)
