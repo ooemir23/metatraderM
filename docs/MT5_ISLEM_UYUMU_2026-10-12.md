@@ -24,3 +24,9 @@ Bu sürüm MT5 terminalinin tam kopyası değildir. Bekleyen emre trailing bağl
 Panelin hesap doğrulaması, gerçek hesap TOTP, acil kilidi ve HMA/AI güvenlik politikaları uygulamaya özgüdür. MT5 modunda manuel panel risk limitlerinin kaldırılması broker ve terminal kurallarını kaldırmaz.
 
 Kaynaklar: [MT5 işlem penceresi](https://www.metatrader5.com/en/terminal/help/trading/performing_deals), [netting/hedging ve trailing davranışları](https://www.metatrader5.com/en/terminal/help/trading/general_concept), [MQL5 emir ve doldurma özellikleri](https://www.mql5.com/en/docs/constants/tradingconstants/orderproperties).
+
+## Canlı yayın
+
+`890d46f8208a24791087fce5721fa7e8be03265f` 12 Ekim 2026 tarihinde yalnız web servisinin yeniden oluşturulmasıyla yayımlandı. Yayın öncesi `/config/backups/backup-20261012T173622Z-5t4f7k` doğrulandı. Önceki web imajı `mt5-web-rollback:981b8c5` etiketiyle saklandı. MT5, CineLists ve diğer servisler yeniden başlatılmadı.
+
+Canlı DEMO hesap bağlantısı ve hedging modu doğrulandı. Yayın öncesindeki bir pozisyonun kimliği, hacmi, yönü ve SL/TP seviyeleri yayın sonrasında aynı kaldı. Pozisyon yetenekleri API'si brokerın Close By desteğini ve IOC kapatma politikasını döndürüyor. Yeni kontroller HTML'de mevcut; dört JS dosyası test edilen kaynakla SHA256 düzeyinde eşleşiyor. EURUSD/BTCUSD önizlemeleri başarılı. İki sembolde broker piyasa derinliği sağlamıyor; API bunu HTTP 200 ve `available:false` ile bildiriyor. Otomatik trailing başlangıçta kapalı, HMA/AI kapalı. Canlı emir gönderilmedi. Diskte yaklaşık 13 GB boş alan ve depolama bakım zamanlayıcısı aktif.
