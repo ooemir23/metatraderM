@@ -21,3 +21,9 @@ WebSocket için yöneticiye imzalanmış, HttpOnly/Secure/SameSite=Strict, 30 da
 ## Doğrulama
 
 Yetkisiz rol, sahte/süresi dolmuş cookie, farklı Origin, yol geçişi, dış yönlendirme, çift yönlü binary bağlantı, bağlantı temizliği ve native/özel emir ayrımı testlerle kontrol edilir. Orijinal upstream HTML ve VNC protokol el sıkışması yalnız görüntü bağlantısı seviyesinde doğrulanır; mouse/klavye ile canlı broker emri gönderilmez.
+
+## Canlı yayın sonucu
+
+12 Ekim 2026 tarihinde `14240834b1ad1d2759e972c5cd57cfc36b185453` canlıya alındı. Yalnız web servisi yeniden oluşturuldu. Yayın öncesi `/config/backups/backup-20261012T185931Z-quex8j` doğrulandı; önceki web sürümü `mt5-web-rollback:890d46f` olarak korundu.
+
+626 Python testi ve 24 JavaScript test dosyası geçti. Canlı `/api/terminal/activate`, orijinal VNC HTML'i ve JS dosyaları HTTP 200 döndü. Yönetici cookie'siyle aynı HTTPS adresindeki korunan WebSocket'ten gerçek `RFB 003.008` protokol yanıtı alındı. Cookie Secure/HttpOnly/SameSite=Strict; orijinal ekran SAMEORIGIN ve panelin diğer sayfaları DENY olarak doğrulandı. Dört panel JS dosyası test edilen kaynakla eşleşiyor. DEMO hesap bağlı ve yayın öncesindeki bir pozisyonun kimliği/hacmi/SL/TP değerleri korundu. Test broker emri gönderilmedi. Canlı orijinal ekran üzerinde mouse/klavye ile emir verme veya MQL5 derleme/test çalıştırma otomatik denenmedi.
