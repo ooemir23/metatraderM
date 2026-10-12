@@ -16,7 +16,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const adminActions = ['toggleAIAutopilotModal', 'saveAIAutopilot', 'toggleBot',
       'toggleBotSettingsModal', 'saveBotSettings', 'resumeTrading', 'submitLogin'];
     const tradeActions = ['submitOrder', 'savePendingOrder', 'executeCurrentAdvice', 'submitPendingOrder', 'cancelPendingOrder',
-      'savePositionStops', 'partialClosePosition', 'closePosition', 'closeFilteredPositions', 'closeAllPositions'];
+      'savePositionStops', 'partialClosePosition', 'closePosition', 'closeFilteredPositions', 'closeAllPositions',
+      'closeEditorPosition','closeByPosition','saveTrailingStop'];
     const can = action => !((role !== 'ADMIN' && adminActions.includes(action)) ||
       (role === 'VIEWER' && tradeActions.includes(action)));
     const apply = () => document.querySelectorAll('button[onclick]').forEach(button => {

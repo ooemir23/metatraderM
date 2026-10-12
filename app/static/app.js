@@ -23,6 +23,7 @@ const TV_SYMBOLS = {
 
 // Initialize on DOM load
 document.addEventListener("DOMContentLoaded", () => {
+  for(const id of ['sl-input','tp-input'])document.getElementById(id)?.addEventListener('input',()=>{ticketProtectionEdited=true;});
   window.MT5Markets?.init({onSelect:switchSymbol, onChange:marketCatalogueChanged});
   window.MT5Markets?.setActive(currentSymbol);
   initTradingView(currentSymbol);
@@ -255,6 +256,7 @@ function marketCatalogueChanged() {
   if (typeof invalidateAIAdvice === 'function') invalidateAIAdvice(currentSymbol);
   if (typeof scheduleTradePreview === 'function') scheduleTradePreview();
   if (window.MT5Markets?.getSymbol(currentSymbol)) fetchPrice(true);
+  if(document.getElementById('market-depth-panel')?.open&&typeof refreshMarketDepth==='function')refreshMarketDepth();
 }
 
 // Check if currently in fullscreen
@@ -605,12 +607,14 @@ function switchSymbol(symbol, reloadChart = true) {
   chartSelectionBlocked = false;
   orderSymbolSource = reloadChart ? 'panel' : 'chart';
   if (symbol !== currentSymbol) {
+    ticketProtectionEdited=false;nettingProtectionSeed=null;
     if (document.getElementById('order-stop-mode')?.value === 'price') changeOrderStopMode();
     if (document.getElementById('pending-stop-mode')?.value === 'price') changeOrderStopMode(true);
     const entry = document.getElementById('pending-price');
     if (entry) entry.value = '';
   }
   currentSymbol = symbol;
+  if(document.getElementById('market-depth-panel')?.open&&typeof refreshMarketDepth==='function')refreshMarketDepth();
   updateLotRules();
   window.MT5Markets?.setActive(symbol);
   updateOrderButtons();
@@ -766,6 +770,9 @@ function showAccountConnectionError(message) {
 let accountCurrency = "USD";
 let currentAccountType = null;
 let currentAccountIdentity = null;
+let currentAccountMarginMode = null;
+let ticketProtectionEdited = false;
+let nettingProtectionSeed = null;
 let lastObservedAccountIdentity = null;
 let accountVerificationKnown = false;
 async function tradeRequest(endpoint, payload, timeoutMs = 30000) {
@@ -794,6 +801,8 @@ function renderAccountData(data) {
       if (typeof invalidateAIAdvice === 'function') invalidateAIAdvice(currentSymbol);
     }
     currentAccountIdentity = identity;
+    currentAccountMarginMode = identity && [0,1,2].includes(data.margin_mode) ? data.margin_mode : null;
+    if(identityChanged){ticketProtectionEdited=false;nettingProtectionSeed=null;}
     if (identityChanged && identity) restoreOrderTicketPreferences();
     if (identity) lastObservedAccountIdentity = identity;
     accountVerificationKnown = true;
@@ -957,6 +966,7 @@ function renderPositionsData(positions) {
     (positions || []).forEach(p => executionPositions.set(p.ticket, p));
     updatePositionExecution();
     if (typeof rememberPositions === "function") rememberPositions(positions);
+    seedNettingProtection(positions);
     const tbody = document.getElementById("positions-table-body");
     const countBadge = document.getElementById("pos-count-badge");
     if (countBadge) countBadge.innerText = positions.length;
@@ -1607,6 +1617,10 @@ function orderErrorMessage(data) {
     return ["SL / TP uygun değil", "Stop Loss ve Take Profit mesafelerini kontrol edin."];
   if (code === 10014 || /invalid volume/i.test(raw))
     return ["Lot miktarı uygun değil", "Bu sembolün minimum lot ve lot adımını kontrol edin."];
+  if (data.requote || code === 10004 || code === 10020) {
+    const quote=data.broker_quote;
+    return ['Broker fiyatı değişti',`Emir gerçekleşmedi. ${quote ? `Yeni Bid ${quote.bid} · Ask ${quote.ask}. ` : ''}Güncel fiyatı kontrol edip yeniden onaylayın.`];
+  }
   if (code === 10017 || /trade disabled/i.test(raw))
     return ["İşlem devre dışı", "Broker bu sembol veya hesap için işlem izni vermiyor."];
   return ["Emir gönderilemedi", raw];
@@ -1616,6 +1630,18 @@ const TICKET_PREFERENCES = {
   'order-rule-mode':['MT5','PANEL'], 'order-filling':['AUTO','FOK','IOC','RETURN'],
   'order-stop-mode':['price','points'], 'pending-stop-mode':['price','points']
 };
+function seedNettingProtection(positions) {
+  if(ticketProtectionEdited||!currentAccountIdentity||![0,1].includes(currentAccountMarginMode)
+      ||manualOrderMode()!=='MT5'||document.getElementById('order-stop-mode')?.value!=='price')return;
+  const matches=positions.filter(row=>row.symbol===currentSymbol);
+  if(matches.length!==1)return;
+  const p=matches[0],key=JSON.stringify([currentAccountIdentity,currentSymbol,p.identifier||p.ticket]);
+  if(nettingProtectionSeed===key)return;
+  const sl=document.getElementById('sl-input'),tp=document.getElementById('tp-input');
+  if(!sl||!tp||Number(sl.value)!==0||Number(tp.value)!==0)return;
+  sl.value=String(p.sl||0);tp.value=String(p.tp||0);nettingProtectionSeed=key;
+  if(typeof scheduleTradePreview==='function')scheduleTradePreview();
+}
 function ticketPreferencesKey() {
   return currentAccountIdentity ? 'mt5.ticket.preferences:'+JSON.stringify(currentAccountIdentity) : null;
 }

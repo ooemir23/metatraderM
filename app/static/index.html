@@ -771,6 +771,7 @@
             <label>Tür<select id="pending-type" onchange="changePendingOptions()" class="w-full bg-gray-800 p-2 rounded"><option>BUY_LIMIT</option><option>SELL_LIMIT</option><option>BUY_STOP</option><option>SELL_STOP</option><option>BUY_STOP_LIMIT</option><option>SELL_STOP_LIMIT</option></select></label>
             <label>Emir fiyatı<input id="pending-price" type="number" step="any" min="0" class="w-full bg-gray-800 p-2 rounded"></label>
             <label>Lot<input id="pending-volume" type="number" step="0.01" value="0.01" min="0.01" class="w-full bg-gray-800 p-2 rounded"></label>
+            <label>Doldurma<select id="pending-filling" class="w-full bg-gray-800 p-2 rounded"><option value="RETURN">Return</option><option value="BOC">Book or Cancel (BOC)</option></select></label>
             <label id="pending-stoplimit-field" hidden>Stop Limit fiyatı<input id="pending-stoplimit" type="number" min="0" step="any" class="w-full bg-gray-800 p-2 rounded"></label>
             <label>Geçerlilik<select id="pending-time-type" onchange="changePendingOptions()" class="w-full bg-gray-800 p-2 rounded"><option value="GTC">İptal edilene kadar (GTC)</option><option value="DAY">Günlük (DAY)</option><option value="SPECIFIED">Belirtilen tarih/saat</option><option value="SPECIFIED_DAY">Belirtilen gün</option></select></label>
             <label id="pending-expiration-field" hidden>Son geçerlilik (yerel saat)<input id="pending-expiration" type="datetime-local" class="w-full bg-gray-800 p-2 rounded"></label>
@@ -779,6 +780,14 @@
           </div>
           <button onclick="submitPendingOrder()" class="mt-3 py-2 px-3 rounded bg-cyan-700 text-white font-semibold">Bekleyen emir gönder</button>
           <div id="pending-orders-list" class="mt-3" aria-live="polite">Emirler yükleniyor…</div>
+        </details>
+
+        <details id="market-depth-panel" ontoggle="if(this.open)refreshMarketDepth()" class="bg-[#121620] p-4 rounded-2xl border border-gray-800 text-xs">
+          <summary class="text-white font-bold cursor-pointer">Piyasa Derinliği · MT5</summary>
+          <button onclick="refreshMarketDepth()" class="my-2 px-3 py-1 rounded bg-gray-700">Yenile</button>
+          <p class="text-gray-400 mb-2">Broker emir defteri gösterilir. Fiyat seçmek bekleyen emir formunu doldurur; emir göndermez.</p>
+          <p id="market-depth-status" role="status" class="text-gray-400"></p>
+          <div id="market-depth-levels" class="max-h-64 overflow-y-auto"></div>
         </details>
 
         <!-- CARD 2: HMA CROSSOVER STRATEGY BOT -->
@@ -1087,8 +1096,8 @@
     <button type="button" onclick="document.getElementById('pending-editor').close()" class="mt-4 ml-3 text-xs underline">Pencereyi kapat</button>
   </dialog>
 
-  <dialog id="position-editor" class="bg-[#121620] text-gray-200 rounded-2xl border border-gray-700 p-5 w-[min(94vw,440px)] backdrop:bg-black/70">
-    <h2 id="position-editor-title" class="font-bold text-white mb-3"></h2>
+  <dialog id="position-editor" class="bg-[#121620] text-gray-200 rounded-2xl border border-gray-700 p-5 w-[min(94vw,440px)] max-h-[calc(100dvh-32px)] overflow-y-auto backdrop:bg-black/70">
+    <div class="flex items-center justify-between gap-3 mb-3"><h2 id="position-editor-title" class="font-bold text-white"></h2><button type="button" onclick="document.getElementById('position-editor').close()" aria-label="Pozisyon penceresini kapat" class="text-xl text-gray-400 hover:text-white">×</button></div>
     <p class="text-xs text-gray-400 mb-3">SL/TP alanları fiyat cinsindedir. 0 ilgili korumayı kaldırır.</p>
     <div class="grid grid-cols-2 gap-3 text-xs">
       <label>Stop Loss fiyatı<input id="edit-sl" type="number" step="any" min="0" class="w-full bg-gray-800 p-2 rounded mt-1"></label>
@@ -1096,8 +1105,24 @@
     </div>
     <button onclick="savePositionStops()" class="my-3 px-3 py-2 rounded bg-cyan-700 text-white text-xs">SL/TP güncelle</button>
     <div class="border-t border-gray-700 pt-3 text-xs">
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <label>Sapma (puan)<input id="close-deviation" type="number" min="0" max="100000" step="1" value="20" class="w-full bg-gray-800 p-2 rounded mt-1"></label>
+        <label>Doldurma<select id="close-filling" class="w-full bg-gray-800 p-2 rounded mt-1"><option>AUTO</option><option>FOK</option><option>IOC</option><option>RETURN</option></select></label>
+      </div>
       <label>Kapatılacak lot<input id="partial-volume" type="number" min="0" step="any" class="w-full bg-gray-800 p-2 rounded mt-1" placeholder="Örn. 0.01"></label>
       <button onclick="partialClosePosition()" class="mt-3 px-3 py-2 rounded bg-rose-700 text-white">Kısmi kapat</button>
+      <button onclick="closeEditorPosition()" class="mt-3 px-3 py-2 rounded bg-rose-800 text-white">Tam kapat</button>
+    </div>
+    <div class="border-t border-gray-700 pt-3 mt-3 text-xs">
+      <label>Karşıt pozisyon<select id="close-by-ticket" disabled class="w-full bg-gray-800 p-2 rounded mt-1"></select></label>
+      <button id="close-by-button" disabled onclick="closeByPosition()" class="mt-3 px-3 py-2 rounded bg-amber-700 disabled:opacity-40 text-white">Karşıt pozisyonla kapat · Close By</button>
+      <p id="close-by-note" class="text-gray-400 mt-2">Broker hesap kuralları doğrulanıyor…</p>
+    </div>
+    <div class="border-t border-gray-700 pt-3 mt-3 text-xs">
+      <label>İz süren stop (puan)<input id="trailing-distance" type="number" min="0" max="10000000" step="1" value="0" class="w-full bg-gray-800 p-2 rounded mt-1"></label>
+      <button onclick="saveTrailingStop()" class="mt-3 px-3 py-2 rounded bg-cyan-700 text-white">İz süren stopu ayarla</button>
+      <p id="trailing-status" role="status" class="text-gray-400 mt-2"></p>
+      <p class="text-gray-400 mt-2">0 iz süren stopu kapatır, mevcut SL korunur. Uygulama sunucusu çalışırken fiyat takip edilir; yeniden başlatmada tekrar etkinleştirin.</p>
     </div>
     <p id="position-editor-status" role="status" class="text-xs text-amber-300 mt-3"></p>
     <button onclick="document.getElementById('position-editor').close()" class="mt-4 text-xs underline">Pencereyi kapat</button>

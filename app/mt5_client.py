@@ -476,6 +476,8 @@ class MT5Client:
                     "connected": self._bridge("broker_connection") is True,
                     "login": acc.login,
                     "account_type": {0: "DEMO", 1: "CONTEST", 2: "REAL"}.get(int(acc.trade_mode), "UNKNOWN"),
+                    "margin_mode": int(getattr(acc,'margin_mode',-1)),
+                    "fifo_close": bool(getattr(acc,'fifo_close',False)),
                     "account_mismatch": self.login_id <= 0 or int(acc.login) != self.login_id or str(acc.server) != self.server
                                         or int(acc.trade_mode) != {"DEMO": 0, "REAL": 2}.get(self.account_type),
                     "balance": round(acc.balance, 2),
@@ -818,16 +820,19 @@ class MT5Client:
             finally:
                 self.invalidate_trading_cache()
 
-    def close_position(self, ticket: int, pos_data=None, *, expected_magic=None, expected_account=None, stop_event=None):
+    def close_position(self, ticket: int, pos_data=None, *, expected_magic=None, expected_account=None, stop_event=None,
+                       deviation_points=50, filling_policy='AUTO'):
         with self._lock.order():
             try:
                 if stop_event is not None and stop_event.is_set():
                     return {'success': False, 'error': 'Otomatik kapatma durduruldu.'}
-                return self._close_position(ticket, pos_data, expected_magic=expected_magic, expected_account=expected_account)
+                return self._close_position(ticket, pos_data, expected_magic=expected_magic, expected_account=expected_account,
+                                            deviation_points=deviation_points, filling_policy=filling_policy)
             finally:
                 self.invalidate_trading_cache()
 
-    def _close_position(self, ticket: int, pos_data: Optional[Dict[str, Any]] = None, *, expected_magic=None, expected_account=None) -> Dict[str, Any]:
+    def _close_position(self, ticket: int, pos_data: Optional[Dict[str, Any]] = None, *, expected_magic=None, expected_account=None,
+                        deviation_points=50, filling_policy='AUTO') -> Dict[str, Any]:
         # pos_data is a UI/filter snapshot; use the broker's current volume and owner.
         with self._lock:
             if not self.ensure_connected():
@@ -837,8 +842,10 @@ class MT5Client:
             except MT5DataError as exc:
                 return {"success": False, "error": str(exc)}
             try:
-                return self._bridge('close_deal', int(ticket), expected_magic, login, server,
-                                    self.tick_clock_offset)
+                args = [int(ticket), expected_magic, login, server, self.tick_clock_offset]
+                if deviation_points != 50 or filling_policy != 'AUTO':
+                    args.extend((deviation_points, filling_policy))
+                return self._bridge('close_deal', *args)
             except Exception:
                 logger.exception("Kapatma sonucu doğrulanamadı")
                 return {"success": False, "uncertain": True,
@@ -1114,6 +1121,23 @@ class MT5Client:
                 return self.journal.run(request_id, dict(operation=operation, ticket=ticket, values=values, account=account),
                     lambda: self._bridge("manage_position", ticket, operation, values, self.login_id, self.server,
                                          self.tick_clock_offset, self.max_trade_risk_pct, self.ai_max_trade_risk_pct))
+            finally:
+                self.invalidate_trading_cache()
+
+    def close_opposite(self, ticket, opposite_ticket, request_id, *, expected_account=None):
+        with self._lock.order():
+            try:
+                if not self.ensure_connected():
+                    raise MT5DataError('MT5 bağlı değil.')
+                account = self._bound_account(expected_account)
+                return self.journal.run(request_id,
+                    dict(operation='close_by',ticket=ticket,position_by=opposite_ticket,account=account),
+                    lambda:self._bridge('close_opposite',ticket,opposite_ticket,*account))
+            except MT5DataError as exc:
+                return {'success':False,'error':str(exc)}
+            except Exception:
+                logger.exception('Close By sonucu doğrulanamadı')
+                return {'success':False,'uncertain':True,'error':'Close By sonucu belirsiz; MT5 durumunu kontrol edin.'}
             finally:
                 self.invalidate_trading_cache()
 

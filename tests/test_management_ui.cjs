@@ -9,7 +9,10 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  document:{addEventListener(){},getElementById:node,querySelectorAll:()=>[]},window:{addEventListener(){}},
  localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
  setInterval(){},setTimeout(){},clearTimeout(){},confirm:()=>true,
- fetch:async(url,opts)=>{sent.push({url,...JSON.parse(opts?.body || "{}")});return {ok:true,json:async()=>reply};}});
+ fetch:async(url,opts)=>{
+   if(url.endsWith('/capabilities'))return {ok:true,json:async()=>({close_by:false,opposites:[],fillings:[0,1],volume_min:.01,volume_step:.01})};
+   if(url==='/api/position/trailing'&&!opts?.body)return {ok:true,json:async()=>[]};
+   sent.push({url,...JSON.parse(opts?.body || "{}")});return {ok:true,json:async()=>reply};}});
  for(const name of ['app','trading']) vm.runInContext(fs.readFileSync(`app/static/${name}.js`,'utf8'),ctx);
  ctx.showToast=()=>{};ctx.fetchPositions=()=>{};ctx.fetchAccount=()=>{};ctx.fetchPendingOrders=()=>{};
  const position={ticket:1,symbol:'EURUSD',type:'BUY',volume:.03,sl:1.08,tp:1.12};

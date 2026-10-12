@@ -13,6 +13,7 @@ from app.mt5_bridge import AI_MAGIC
 from app.ai_performance import summarize as summarize_ai_performance
 from app.security import protect_dashboard
 from app.live_feed import LiveFeed
+from app.trailing_stops import TrailingStops
 from app.strategy_bot import StrategyBot
 from app.ai_advisor import DeepSeekAdvisor
 from app import security_sessions
@@ -29,6 +30,7 @@ import threading
 
 mt5_client = MT5Client()
 live_feed = LiveFeed(mt5_client)
+trailing_stops = TrailingStops(mt5_client)
 bot = StrategyBot(mt5_client, config_path=state_path('bot_settings.json'))
 ai_advisor = DeepSeekAdvisor(mt5_client)
 flatten_active = threading.Event()
@@ -184,6 +186,7 @@ async def lifespan(app: FastAPI):
     task = asyncio.create_task(auto_reconnect_loop())
     feed_task = asyncio.create_task(live_feed.run())
     maintenance_task = asyncio.create_task(maintenance_loop())
+    trailing_task = asyncio.create_task(trailing_stops.run())
     try:
         yield
     finally:
@@ -191,15 +194,19 @@ async def lifespan(app: FastAPI):
         mt5_client.automation_stopped.set()
         ai_advisor.update_autopilot({"enabled": False})
         bot.stop()
+        await asyncio.to_thread(trailing_stops.stop)
         task.cancel()
         feed_task.cancel()
         maintenance_task.cancel()
+        trailing_task.cancel()
         with suppress(asyncio.CancelledError):
             await task
         with suppress(asyncio.CancelledError):
             await feed_task
         with suppress(asyncio.CancelledError):
             await maintenance_task
+        with suppress(asyncio.CancelledError):
+            await trailing_task
         logger.info("Shutting down HMA Trading Application...")
 
 app = FastAPI(title="HMA Trading Dashboard", lifespan=lifespan)
@@ -290,6 +297,7 @@ class AIAutopilotRequest(AccountBoundRequest):
     confirm_real_full_auto: bool = False
 
 class PendingRequest(OrderRequest):
+    filling_policy: Literal['AUTO','FOK','IOC','RETURN','BOC'] = 'AUTO'
     pending_type: Literal["BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP", "BUY_STOP_LIMIT", "SELL_STOP_LIMIT"]
     entry_price: float = Field(gt=0)
 
@@ -299,7 +307,7 @@ class PreviewRequest(AccountBoundRequest):
     tp_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     deviation_points: int = Field(default=20, ge=0, le=100000)
     manual_mode: Literal['MT5','PANEL'] = 'PANEL'
-    filling_policy: Literal['AUTO','FOK','IOC','RETURN'] = 'AUTO'
+    filling_policy: Literal['AUTO','FOK','IOC','RETURN','BOC'] = 'AUTO'
     stoplimit_price: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
     time_type: Literal['GTC','DAY','SPECIFIED','SPECIFIED_DAY'] = 'GTC'
     expiration: int = Field(default=0, ge=0)
@@ -582,6 +590,21 @@ class PendingModifyRequest(CloseRequest):
 
 class PartialCloseRequest(CloseRequest):
     volume: float = Field(gt=0, allow_inf_nan=False)
+    deviation_points: int = Field(default=50, ge=0, le=100000)
+    filling_policy: Literal['AUTO','FOK','IOC','RETURN'] = 'AUTO'
+
+class PositionCloseRequest(CloseRequest):
+    model_config = ConfigDict(extra='forbid')
+    deviation_points: int = Field(default=50, ge=0, le=100000)
+    filling_policy: Literal['AUTO','FOK','IOC','RETURN'] = 'AUTO'
+
+class CloseByRequest(CloseRequest):
+    model_config = ConfigDict(extra='forbid')
+    position_by: int = Field(gt=0)
+
+class TrailingRequest(CloseRequest):
+    model_config = ConfigDict(extra='forbid')
+    distance_points: int = Field(ge=0, le=10000000)
 
 
 def trade_response(result):
@@ -662,8 +685,57 @@ def update_stops(req: StopsRequest, account=Depends(require_real_unlock)):
 
 @app.post("/api/position/partial-close")
 def partial_close(req: PartialCloseRequest):
-    return trade_response(mt5_client.manage_position(req.ticket, "partial", {"volume":req.volume}, "partial-" + req.request_id,
+    values = {'volume':req.volume}
+    if req.deviation_points != 50 or req.filling_policy != 'AUTO':
+        values.update(deviation_points=req.deviation_points,filling_policy=req.filling_policy)
+    return trade_response(mt5_client.manage_position(req.ticket, "partial", values, "partial-" + req.request_id,
         expected_account=bound_request_account(req)))
+
+@app.post('/api/position/close-by')
+def close_by(req: CloseByRequest):
+    return trade_response(mt5_client.close_opposite(req.ticket,req.position_by,'close-by-'+req.request_id,
+                                                   expected_account=bound_request_account(req)))
+
+@app.get('/api/position/trailing')
+def trailing_status():
+    return trailing_stops.status()
+
+@app.get('/api/position/{ticket}/capabilities')
+def position_capabilities(ticket: int = Path(gt=0)):
+    with mt5_client._lock:
+        if not mt5_client.ensure_connected():
+            raise HTTPException(status_code=503,detail='MT5 bağlı değil.')
+        scope = mt5_client._bound_account(None)
+        try:
+            return mt5_client._bridge('position_capabilities',ticket,*scope)
+        except ValueError as exc:
+            raise HTTPException(status_code=400,detail=str(exc)) from exc
+
+@app.get('/api/market/depth')
+def market_depth(symbol: str = Query(min_length=1,max_length=32,pattern=r'^[A-Za-z0-9_.#-]+$')):
+    with mt5_client._lock:
+        if not mt5_client.ensure_connected():
+            raise HTTPException(status_code=503,detail='MT5 bağlı değil.')
+        scope = mt5_client._bound_account(None)
+        try:
+            return mt5_client._bridge('market_depth',symbol,*scope)
+        except Exception as exc:
+            raise HTTPException(status_code=503,detail='Broker derinlik verisi doğrulanamadı.') from exc
+
+@app.post('/api/position/trailing')
+def configure_trailing(req: TrailingRequest, account=Depends(require_real_unlock)):
+    with mt5_client._lock.order():
+        scope = bound_request_account(req,account)
+        def configure():
+            try:
+                return trailing_stops.configure(req.ticket,req.distance_points,scope)
+            except (ValueError, MT5DataError) as exc:
+                return {'success':False,'error':str(exc)}
+        result = mt5_client.journal.run('trailing-config-'+req.request_id,
+            {'ticket':req.ticket,'points':req.distance_points,'account':scope},configure)
+        if result.get('replayed') and req.distance_points and req.ticket not in trailing_stops.configs:
+            result.update(success=False,enabled=False,error='Uygulama yeniden başladı veya pozisyon değişti; iz süren stopu yeni taleple etkinleştirin.')
+        return trade_response(result)
 
 
 # API Endpoints
@@ -819,11 +891,16 @@ def open_order(req: OrderRequest, account=Depends(require_real_unlock)):
     return res
 
 @app.post("/api/order/close")
-def close_order(req: CloseRequest):
+def close_order(req: PositionCloseRequest):
     with mt5_client._lock.order():
         account = bound_request_account(req)
-        res = mt5_client.journal.run("close-" + req.request_id, {"ticket": req.ticket, 'account': account},
-                                     lambda: mt5_client.close_position(req.ticket))
+        payload = {'ticket':req.ticket,'account':account}
+        options = {}
+        if req.deviation_points != 50 or req.filling_policy != 'AUTO':
+            options = {'deviation_points':req.deviation_points,'filling_policy':req.filling_policy}
+            payload.update(options)
+        res = mt5_client.journal.run('close-'+req.request_id,payload,
+                                     lambda:mt5_client.close_position(req.ticket,**options))
     if not res.get("success"):
         return JSONResponse(status_code=400, content={**res, "detail": res.get("error", "Close failed")})
     return res

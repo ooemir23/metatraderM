@@ -253,7 +253,8 @@ def _pending_configuration(info, tick, side, kind, entry, stoplimit=None, time_t
         raise ValueError('Emir fiyatı broker fiyat adımına uymuyor.')
     buy = side == 'BUY'
     gap = (float(tick.ask)-price if buy else price-float(tick.bid)) if required == 2 else (price-float(tick.ask) if buy else float(tick.bid)-price)
-    if not _stop_distance_valid(info, gap):
+    # Exchange limit orders may cross the book and execute immediately.
+    if not (required == 2 and int(info.trade_exemode) == 3) and not _stop_distance_valid(info, gap):
         raise ValueError('Bekleyen emir fiyatı piyasanın doğru tarafında ve broker minimum mesafesi dışında olmalı.')
     limit = 0.0
     if required == 8:
@@ -270,6 +271,26 @@ def _ticket_mode(mode):
     if mode not in ('MT5','PANEL'):
         raise ValueError('Geçersiz manuel emir modu.')
     return mode == 'MT5'
+
+
+def _pending_filling(info, kind, policy):
+    if policy == 'BOC':
+        if kind not in ('BUY_LIMIT','SELL_LIMIT','BUY_STOP_LIMIT','SELL_STOP_LIMIT') or not int(info.filling_mode) & 4:
+            raise ValueError('BOC yalnız brokerın desteklediği Limit/Stop Limit emirlerinde kullanılabilir.')
+        return 3
+    if policy not in ('AUTO','FOK','IOC','RETURN'):
+        raise ValueError('Geçersiz bekleyen emir doldurma politikası.')
+    return 2  # MT5 pending requests use RETURN, independently of market execution.
+
+
+def _netting_reduction(account, current, symbol, side, volume, pending_type, native):
+    if not native or pending_type or int(account.margin_mode) not in (0,1):
+        return False
+    rows = [p for p in current if str(p.symbol)==symbol]
+    if len(rows)>1:
+        raise ValueError('Netting hesabında aynı sembol için birden fazla pozisyon bildirildi.')
+    return bool(rows and int(rows[0].type) != (0 if side=='BUY' else 1)
+                and volume <= float(rows[0].volume)+1e-9)
 
 
 def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entry_price,
@@ -313,16 +334,20 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
             if stoplimit_price is not None or time_type != 'GTC' or expiration:
                 raise ValueError('Stop Limit ve geçerlilik alanları yalnız bekleyen emir içindir.')
             _selected_fillings(info, filling_policy)
+        else:
+            _pending_filling(info,pending_type,filling_policy)
         sl, tp = _protection_prices(info, protection_entry, order_type == 'BUY', sl_points, tp_points, sl_price, tp_price)
-        _opening_permissions(info, order_type, pending_type, sl, tp)
+        reducing = _netting_reduction(account,current,symbol,order_type,volume,pending_type,native)
+        if not reducing:
+            _opening_permissions(info, order_type, pending_type, sl, tp)
         if not (native and int(account.margin_mode) != 2):
             _directional_volume(info, symbol, order_type, volume, current, pending)
         guidance = stop_guidance(info, tick, pending_type, order_type, protection_entry)
         guidance['input_mode'] = 'price' if sl_price is not None or tp_price is not None else 'points'
         exit_price = protection_entry if pending_type else float(tick.bid if order_type == 'BUY' else tick.ask)
-        if tp and not _stop_distance_valid(info, tp-exit_price if order_type == 'BUY' else exit_price-tp):
+        if not reducing and tp and not _stop_distance_valid(info, tp-exit_price if order_type == 'BUY' else exit_price-tp):
             return {'success': False, 'error': stop_distance_error(symbol, guidance), 'stop_guidance': guidance}
-        if sl:
+        if sl and not reducing:
             exit_price = protection_entry if pending_type else float(tick.bid if order_type == 'BUY' else tick.ask)
             stop_distance = exit_price - sl if order_type == 'BUY' else sl - exit_price
             if not _stop_distance_valid(info, stop_distance):
@@ -351,7 +376,7 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
         _account(mt5, expected_login, expected_server)
         return {**trade_risk, 'success': True, 'symbol': symbol, 'side': order_type, 'volume': volume,
                 'currency': str(account.currency), 'account_type': {0:'DEMO', 2:'REAL'}.get(int(account.trade_mode), 'OTHER'),
-                'manual_mode': manual_mode, 'time_type':time_type, 'expiration':expiration,
+                'manual_mode': manual_mode, 'reducing_position':reducing, 'time_type':time_type, 'expiration':expiration,
                 'stoplimit_price':config['stoplimit'] if config else 0, 'entry_price': price, 'stop_price': sl, 'take_profit_price': tp,
                 'bid': float(tick.bid), 'ask': float(tick.ask), 'deviation_points': deviation_points,
                 'margin_required': float(margin_result) if margin_result is not None else None,
@@ -521,11 +546,13 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
             raise ValueError('Giriş fiyatı broker fiyat adımına uymuyor.')
         protection_entry = config['stoplimit'] if config and config['stoplimit'] else price
         sl, tp = _protection_prices(info, protection_entry, buy, sl_points, tp_points, sl_price, tp_price)
-        _opening_permissions(info, order_type, pending_type, sl, tp)
+        reducing = _netting_reduction(account,current,symbol,order_type,volume,pending_type,native)
+        if not reducing:
+            _opening_permissions(info, order_type, pending_type, sl, tp)
         if not (native and int(account.margin_mode) != 2):
             _directional_volume(info, symbol, order_type, volume, current, pending)
         exit_price = protection_entry if pending_type else float(tick.bid if buy else tick.ask)
-        if ((sl and not _stop_distance_valid(info, exit_price-sl if buy else sl-exit_price)) or
+        if not reducing and ((sl and not _stop_distance_valid(info, exit_price-sl if buy else sl-exit_price)) or
                 (tp and not _stop_distance_valid(info, tp-exit_price if buy else exit_price-tp))):
             guidance = stop_guidance(info, tick, pending_type, order_type, protection_entry)
             guidance['input_mode'] = 'price' if sl_price is not None or tp_price is not None else 'points'
@@ -547,7 +574,7 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
                          bid=float(tick.bid), ask=float(tick.ask), point=float(info.point),
                          quote_time=int(tick.time) - int(tick_offset), deviation_points=deviation_points)
         if pending_type:
-            request.update(action=5, type_filling=2, **config)
+            request.update(action=5, type_filling=_pending_filling(info,pending_type,filling_policy), **config)
             return {**trade_risk, **_checked_send(mt5, request, scope, tick_offset=tick_offset, max_tick_age=max_tick_age),
                     'pending_order': True, 'execution': execution}
         if int(info.trade_exemode) == 2:
@@ -883,10 +910,16 @@ def _send_once(mt5, request, allow_no_change=False):
             raise RuntimeError('Yanıt alınamadı')
         code = int(result.retcode)
         success = code in (10008, 10009, 10010) or (allow_no_change and code == 10025)
-        return dict(success=success, retcode=code, partial=code == 10010, pending=code == 10008,
+        response = dict(success=success, retcode=code, partial=code == 10010, pending=code == 10008,
                     uncertain=code in (10012, 10031), ticket=int(result.order),
                     volume=float(result.volume), price=float(result.price),
                     error='' if success else str(result.comment), comment=str(result.comment))
+        if code in (10004,10020):
+            response['requote'] = True
+            bid, ask = float(getattr(result,'bid',0)),float(getattr(result,'ask',0))
+            if math.isfinite(bid) and math.isfinite(ask) and 0 < bid <= ask:
+                response['broker_quote'] = {'bid':bid,'ask':ask}
+        return response
     except Exception:
         return {'success': False, 'uncertain': True, 'error': 'İşlem sonucu belirsiz; MT5 üzerinden kontrol edin.'}
 
@@ -899,10 +932,12 @@ def pending_orders(mt5):
     return [dict(ticket=int(o.ticket), symbol=str(o.symbol), type=names.get(int(o.type), str(o.type)),
                  volume=float(o.volume_current), price=float(o.price_open), sl=float(o.sl), tp=float(o.tp),
                  magic=int(o.magic), time=int(o.time_setup), expiration=int(o.time_expiration),
-                 stoplimit=float(getattr(o,'price_stoplimit',0)), type_time=int(getattr(o,'type_time',0))) for o in orders]
+                 stoplimit=float(getattr(o,'price_stoplimit',0)), type_time=int(getattr(o,'type_time',0)),
+                 filling_policy='BOC' if int(getattr(o,'type_filling',2))==3 else 'RETURN') for o in orders]
 
 
-def close_deal(mt5, ticket, expected_magic=None, expected_login=0, expected_server='', tick_offset=0):
+def close_deal(mt5, ticket, expected_magic=None, expected_login=0, expected_server='', tick_offset=0,
+               deviation_points=50, filling_policy='AUTO'):
     """Close one fresh position through the same checked execution path as opens."""
     try:
         account = _account(mt5, expected_login, expected_server)
@@ -922,12 +957,16 @@ def close_deal(mt5, ticket, expected_magic=None, expected_login=0, expected_serv
             raise ValueError('Pozisyon hacmi veya yönü doğrulanamadı; kapatma gönderilmedi.')
         exit_price = float(tick.bid if int(p.type) == 0 else tick.ask)
         request = dict(action=1, position=ticket, symbol=str(p.symbol), volume=volume,
-                       type=1 if int(p.type) == 0 else 0, price=exit_price, deviation=50,
+                       type=1 if int(p.type) == 0 else 0, price=exit_price, deviation=deviation_points,
                        magic=int(p.magic), comment='Panel close', type_time=0)
         execution = dict(kind='close', requested_price=exit_price,
                          bid=float(tick.bid), ask=float(tick.ask), point=float(info.point),
-                         quote_time=int(tick.time)-int(tick_offset), deviation_points=50)
-        fillings = _fillings(info)
+                         quote_time=int(tick.time)-int(tick_offset), deviation_points=deviation_points)
+        if type(deviation_points) is not int or not 0 <= deviation_points <= 100000:
+            raise ValueError('Geçersiz sapma değeri.')
+        if int(info.trade_exemode) == 2:
+            request.pop('price', None)
+        fillings = _selected_fillings(info, filling_policy)
         if not fillings:
             raise ValueError('Desteklenen doldurma yöntemi yok; kapatma gönderilmedi.')
     except Exception as exc:
@@ -993,9 +1032,14 @@ def manage_position(mt5, ticket, operation, values, expected_login, expected_ser
             remaining = float(p.volume) - volume
             if not _volume_valid(info, volume) or remaining <= 1e-9 or not _volume_valid(info, remaining):
                 raise ValueError('Kapatılacak lot ve kalan lot broker adımına uymalı; tam kapatma için Kapat düğmesini kullanın.')
+            deviation = values.get('deviation_points', 50)
+            if type(deviation) is not int or not 0 <= deviation <= 100000:
+                raise ValueError('Geçersiz sapma değeri.')
             request = dict(action=1, position=ticket, symbol=str(p.symbol), volume=volume,
-                           type=1 if buy else 0, price=exit_price, deviation=50, magic=int(p.magic),
+                           type=1 if buy else 0, price=exit_price, deviation=deviation, magic=int(p.magic),
                            comment='Panel partial close', type_time=0)
+            if int(info.trade_exemode) == 2:
+                request.pop('price', None)
         else:
             raise ValueError('Desteklenmeyen pozisyon işlemi.')
     except Exception as exc:
@@ -1005,7 +1049,10 @@ def manage_position(mt5, ticket, operation, values, expected_login, expected_ser
         result = _checked_send(mt5, request, scope, allow_no_change=True,
                                tick_offset=tick_offset, before_send=guard)
     else:
-        fillings = _fillings(info)
+        try:
+            fillings = _selected_fillings(info, values.get('filling_policy', 'AUTO'))
+        except ValueError as exc:
+            return {'success': False, 'error': str(exc)}
         if not fillings:
             return {'success': False, 'error': 'Desteklenen doldurma yöntemi yok.'}
         for filling in fillings:
@@ -1014,6 +1061,136 @@ def manage_position(mt5, ticket, operation, values, expected_login, expected_ser
             if result.get('retcode') != 10030:
                 break
     return {**trade_risk, **result, 'position': ticket, 'operation': operation}
+
+
+def market_depth(mt5, symbol, expected_login, expected_server):
+    _account(mt5, expected_login, expected_server)
+    if not re.fullmatch(SYMBOL_NAME_PATTERN, symbol) or len(symbol) > 32:
+        raise ValueError('Geçersiz broker sembolü.')
+    info = mt5.symbol_info(symbol)
+    if info is None or not mt5.symbol_select(symbol, True):
+        raise ValueError('Broker sembolü bulunamadı.')
+    subscribed = False
+    try:
+        subscribed = bool(mt5.market_book_add(symbol))
+        if not subscribed:
+            return {'available':False,'symbol':symbol,'levels':[],
+                    'message':'Broker bu sembolde piyasa derinliği sağlamıyor.'}
+        rows = mt5.market_book_get(symbol)
+        if rows is None:
+            return {'available':False,'symbol':symbol,'levels':[],
+                    'message':'Broker derinlik verisi henüz hazır değil; yenileyin.'}
+        result = []
+        for row in rows[:200]:
+            kind, value = int(row.type), float(row.price)
+            volume = float(getattr(row,'volume_dbl',getattr(row,'volume',0)))
+            if kind not in (1,2,3,4) or not math.isfinite(value) or value < 0 or not math.isfinite(volume) or volume < 0:
+                raise ValueError('Broker derinlik verisi doğrulanamadı.')
+            result.append({'side':'SELL' if kind in (1,3) else 'BUY','market':kind in (3,4),
+                           'price':value,'volume':volume})
+        _account(mt5, expected_login, expected_server)
+        return {'available':True,'symbol':symbol,'levels':result,'digits':int(info.digits),
+                'sampled_at':time.time(),'account':[expected_login,expected_server]}
+    finally:
+        if subscribed:
+            mt5.market_book_release(symbol)
+
+
+def position_capabilities(mt5, ticket, expected_login, expected_server):
+    account = _account(mt5, expected_login, expected_server)
+    rows = mt5.positions_get()
+    if rows is None:
+        raise RuntimeError('Pozisyonlar doğrulanamadı.')
+    matches = [p for p in rows if int(p.ticket) == ticket]
+    if len(matches) != 1:
+        raise ValueError('Pozisyon artık açık değil.')
+    p = matches[0]
+    info = mt5.symbol_info(str(p.symbol))
+    if info is None:
+        raise ValueError('Sembol kuralları okunamadı.')
+    allowed = (int(account.margin_mode) == 2 and not getattr(account,'fifo_close',False)
+               and bool(int(getattr(info,'order_mode',0)) & 64))
+    result = dict(close_by=allowed, margin_mode=int(account.margin_mode),
+        fifo_close=bool(getattr(account,'fifo_close',False)), volume_step=float(info.volume_step),
+        volume_min=float(info.volume_min), volume_max=float(info.volume_max),
+        fillings=_fillings(info), execution_mode=int(info.trade_exemode),
+        opposites=[{'ticket':int(row.ticket),'volume':float(row.volume)} for row in rows
+                   if allowed and str(row.symbol)==str(p.symbol) and int(row.type)!=int(p.type)])
+    _account(mt5, expected_login, expected_server)
+    return result
+
+
+def close_opposite(mt5, ticket, opposite_ticket, expected_login, expected_server):
+    """Broker CLOSE_BY is a single operation, never two market closes."""
+    try:
+        account = _account(mt5, expected_login, expected_server)
+        if int(account.margin_mode) != 2 or getattr(account, 'fifo_close', False):
+            raise ValueError('Close By için FIFO kısıtı olmayan hedging hesabı gerekli.')
+        if ticket == opposite_ticket:
+            raise ValueError('İki farklı karşıt pozisyon seçin.')
+        pair = []
+        for number in (ticket, opposite_ticket):
+            rows = mt5.positions_get(ticket=number)
+            if rows is None or len(rows) != 1 or int(rows[0].ticket) != number:
+                raise ValueError('Karşıt pozisyon artık açık değil; listeyi yenileyin.')
+            pair.append(rows[0])
+        p, other = pair
+        if str(p.symbol) != str(other.symbol) or {int(p.type), int(other.type)} != {0, 1}:
+            raise ValueError('Aynı sembolde BUY ve SELL pozisyonu gerekli.')
+        info = mt5.symbol_info(str(p.symbol))
+        if info is None or not int(getattr(info, 'order_mode', 0)) & 64:
+            raise ValueError('Broker bu sembolde Close By desteklemiyor.')
+        if any(not _volume_valid(info, float(row.volume)) for row in pair):
+            raise ValueError('Pozisyon hacmi doğrulanamadı.')
+        states = [_position_state(row) for row in pair]
+        def guard():
+            fresh_account = _account(mt5, expected_login, expected_server)
+            if int(fresh_account.margin_mode) != 2 or getattr(fresh_account, 'fifo_close', False):
+                raise ValueError('Hesap kapatma kuralları değişti.')
+            for number, state in zip((ticket, opposite_ticket), states):
+                _check_position_state(mt5, number, state)
+        request = dict(action=10, position=ticket, position_by=opposite_ticket,
+                       symbol=str(p.symbol), comment='Panel Close By')
+        result = _checked_send(mt5, request, (expected_login, expected_server), before_send=guard)
+        return {**result, 'position': ticket, 'position_by': opposite_ticket,
+                'requested_volume': min(float(p.volume), float(other.volume)),
+                'remaining_volume': abs(float(p.volume)-float(other.volume))}
+    except Exception as exc:
+        return {'success': False, 'uncertain': False, 'error': str(exc)}
+
+
+def trailing_candidate(mt5, ticket, distance_points, expected_login, expected_server, tick_offset=0):
+    """Calculate an improving stop; neither this read nor configuration sends an order."""
+    _account(mt5, expected_login, expected_server)
+    if type(distance_points) is not int or not 0 < distance_points <= 10000000:
+        raise ValueError('Pozitif, tam sayı iz süren stop mesafesi gerekli.')
+    rows = mt5.positions_get(ticket=ticket)
+    if rows is None:
+        raise RuntimeError('İz süren stop için pozisyon okunamadı.')
+    if not rows:
+        return {'closed': True}
+    if len(rows) != 1 or int(rows[0].ticket) != ticket or int(rows[0].type) not in (0, 1):
+        raise ValueError('Pozisyon kimliği doğrulanamadı.')
+    p = rows[0]
+    info, tick = _market(mt5, str(p.symbol), tick_offset)
+    if not int(getattr(info, 'order_mode', 127)) & 16:
+        raise ValueError('Broker bu sembolde Stop Loss desteklemiyor.')
+    buy = int(p.type) == 0
+    quote = float(tick.bid if buy else tick.ask)
+    distance = distance_points * float(info.point)
+    step = float(getattr(info, 'trade_tick_size', 0) or info.point)
+    if not math.isfinite(step) or step <= 0 or not math.isfinite(distance) or distance <= 0:
+        raise ValueError('Broker fiyat adımı doğrulanamadı.')
+    units = (quote-distance if buy else quote+distance) / step
+    sl = round((math.floor(units+1e-8) if buy else math.ceil(units-1e-8))*step, int(info.digits))
+    earned = quote-float(p.price_open) if buy else float(p.price_open)-quote
+    improves = not p.sl or (sl > float(p.sl)+step/2 if buy else sl < float(p.sl)-step/2)
+    ready = (earned+step*1e-7 >= distance and sl > 0 and improves
+             and _stop_distance_valid(info, quote-sl if buy else sl-quote, freeze=True))
+    _account(mt5, expected_login, expected_server)
+    return {'closed': False, 'ready': bool(ready), 'sl': sl, 'tp': float(p.tp),
+            'expected_sl': float(p.sl), 'expected_tp': float(p.tp),
+            'identifier': int(p.identifier), 'side': int(p.type), 'symbol': str(p.symbol)}
 
 
 def _pending_state(order):
@@ -1106,6 +1283,8 @@ def live_snapshot(mt5, symbols, tick_offset=0):
     account = _account(mt5)
     fields = ('login','trade_mode','balance','equity','profit','margin','margin_free','margin_level','currency','server','leverage')
     account_data = {k:getattr(account, k) for k in fields}
+    account_data.update(margin_mode=int(getattr(account,'margin_mode',-1)),
+                        fifo_close=bool(getattr(account,'fifo_close',False)))
     account_data['connected'] = broker_connection(mt5) is True
     account_data['server_time'] = time.strftime('%H:%M:%S')
     ticks = {symbol: price(mt5, symbol, tick_offset) for symbol in symbols}

@@ -11,6 +11,35 @@ let quoteDiagnosticFailed = false;
 function safeText(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+let depthRequestRevision=0;
+let displayedDepth=null;
+async function refreshMarketDepth() {
+  const revision=++depthRequestRevision,symbol=currentSymbol,generation=accountSessionGeneration,account=JSON.stringify(currentAccountIdentity);
+  const status=document.getElementById('market-depth-status'),root=document.getElementById('market-depth-levels');
+  if(!status||!root)return;
+  displayedDepth=null;root.innerHTML='';status.textContent='Broker derinliği doğrulanıyor…';
+  try {
+    const response=await fetch('/api/market/depth?symbol='+encodeURIComponent(symbol));
+    const data=await response.json();
+    if(revision!==depthRequestRevision||symbol!==currentSymbol||generation!==accountSessionGeneration||account!==JSON.stringify(currentAccountIdentity)||accountSwitching)return;
+    if(!response.ok||!data.available){status.textContent=data.message||data.detail||'Broker derinlik verisi sağlamıyor.';return;}
+    if(!Array.isArray(data.levels)||data.symbol!==symbol||!currentAccountIdentity||JSON.stringify(data.account)!==JSON.stringify(currentAccountIdentity.slice(0,2)))throw new Error('Derinlik hesabı veya sembolü uyuşmuyor.');
+    const levels=data.levels.filter(row=>['BUY','SELL'].includes(row.side)&&Number.isFinite(row.price)&&row.price>=0&&Number.isFinite(row.volume)&&row.volume>=0);
+    displayedDepth={symbol,generation,account,levels};
+    const digits=Number.isInteger(data.digits)&&data.digits>=0&&data.digits<=12?data.digits:5;
+    root.innerHTML=levels.map((row,index)=>`<button type="button" ${row.market||!row.price?'disabled':''} onclick="stageDepthOrder(${index})" class="w-full flex justify-between px-2 py-1 rounded hover:bg-gray-800 ${row.side==='BUY'?'text-emerald-400':'text-rose-400'}"><span>${safeText(row.side)}${row.market?' · Market':''}</span><span>${Number(row.price).toFixed(digits)}</span><span>${Number(row.volume)}</span></button>`).join('');
+    status.textContent=`${symbol} · ${levels.length} seviye · ${new Date(data.sampled_at*1000).toLocaleTimeString()}`;
+  }catch(err){if(revision===depthRequestRevision){displayedDepth=null;root.innerHTML='';status.textContent=err.message;}}
+}
+function stageDepthOrder(index) {
+  const snapshot=displayedDepth,row=snapshot?.levels[index];
+  if(!row||row.market||!(row.price>0)||snapshot.symbol!==currentSymbol||snapshot.generation!==accountSessionGeneration||snapshot.account!==JSON.stringify(currentAccountIdentity)||accountSwitching)return showToast('Derinlik değişti; veriyi yenileyin.','error');
+  const type=document.getElementById('pending-type'),price=document.getElementById('pending-price');
+  type.value=row.side+'_LIMIT';price.value=String(row.price);changePendingOptions();
+  const panel=type.closest?.('details');if(panel)panel.open=true;
+  price.focus?.();
+  showToast('Bekleyen emir formu dolduruldu; emir gönderilmedi.','info');
+}
 function rememberPositions(rows) {
   managedPositions.clear();
   rows.forEach(p => managedPositions.set(p.ticket, p));
@@ -23,8 +52,58 @@ function showPositionEditor(ticket) {
   document.getElementById('edit-sl').value = p.sl || 0;
   document.getElementById('edit-tp').value = p.tp || 0;
   document.getElementById('partial-volume').value = '';
+  for (const [id,value] of [['close-deviation',document.getElementById('order-deviation')?.value || '20'],['close-filling','AUTO'],['trailing-distance','0']]) {
+    const node=document.getElementById(id);if(node) node.value=value;
+  }
+  const closeBy=document.getElementById('close-by-button');if(closeBy) closeBy.disabled=true;
   document.getElementById('position-editor-status').textContent = '';
   document.getElementById('position-editor').showModal();
+  loadPositionManagement(editorPosition);
+}
+function editorIsCurrent(p) {
+  return p && editorPosition === p && p.account === JSON.stringify(currentAccountIdentity)
+    && p.generation === accountSessionGeneration && !accountSwitching;
+}
+async function loadPositionManagement(p) {
+  try {
+    const [capResponse,trailResponse]=await Promise.all([fetch(`/api/position/${p.ticket}/capabilities`),fetch('/api/position/trailing')]);
+    if(!capResponse.ok||!trailResponse.ok) throw new Error('Pozisyon kuralları doğrulanamadı.');
+    const [cap,trails]=await Promise.all([capResponse.json(),trailResponse.json()]);
+    if(!editorIsCurrent(p)) return;
+    const select=document.getElementById('close-by-ticket'),button=document.getElementById('close-by-button');
+    if(select) {select.innerHTML=(cap.opposites||[]).map(row=>`<option value="${Number(row.ticket)}">#${Number(row.ticket)} · ${Number(row.volume)} lot</option>`).join('');select.disabled=!cap.close_by||!cap.opposites?.length;}
+    if(button)button.disabled=!cap.close_by||!cap.opposites?.length||window.MT5Permissions?.can('closeByPosition')===false;
+    const note=document.getElementById('close-by-note');if(note)note.textContent=cap.close_by?'Broker iki pozisyonun küçük hacmini karşılıklı kapatır; fark açık kalır.':'Bu hesap veya sembol Close By desteklemiyor.';
+    const volume=document.getElementById('partial-volume');if(volume){volume.step=String(cap.volume_step);volume.min=String(cap.volume_min);volume.max=String(p.volume-cap.volume_min);}
+    const filling=document.getElementById('close-filling');if(filling)for(const option of Array.from(filling.options||[]))option.disabled=option.value!=='AUTO'&&!cap.fillings.includes({FOK:0,IOC:1,RETURN:2}[option.value]);
+    const trail=trails.find(row=>row.ticket===p.ticket);
+    const distance=document.getElementById('trailing-distance');if(distance)distance.value=String(trail?.points||0);
+    const status=document.getElementById('trailing-status');if(status)status.textContent=trail?`${trail.points} puan · ${{armed:'Etkin',paused:'Doğrulama bekleniyor',uncertain:'Sonuç belirsiz; yeniden etkinleştirmeden önce MT5 durumunu kontrol edin',rejected:'Broker reddetti'}[trail.status]||trail.status}${trail.message?' · '+trail.message:''}`:'İz süren stop kapalı.';
+  }catch(err){if(editorIsCurrent(p))document.getElementById('position-editor-status').textContent=err.message;}
+}
+function closeExecutionSettings() {
+  const deviation_points=Number(document.getElementById('close-deviation')?.value??20);
+  const filling_policy=document.getElementById('close-filling')?.value||'AUTO';
+  if(!Number.isInteger(deviation_points)||deviation_points<0||deviation_points>100000||!['AUTO','FOK','IOC','RETURN'].includes(filling_policy))return null;
+  return {deviation_points,filling_policy};
+}
+async function closeEditorPosition() {
+  const p=editorPosition,settings=closeExecutionSettings();
+  if(!editorIsCurrent(p)||!settings)return showToast('Hesabı ve kapatma ayarlarını doğrulayın.','error');
+  const result=await guardedAction('close:'+p.ticket,'/api/order/close',{ticket:p.ticket,...settings});
+  if(result?.success&&!result.pending&&!result.partial&&!result.uncertain&&editorIsCurrent(p))document.getElementById('position-editor').close();
+}
+async function closeByPosition() {
+  const p=editorPosition,position_by=Number(document.getElementById('close-by-ticket')?.value);
+  if(!editorIsCurrent(p)||!Number.isSafeInteger(position_by)||position_by<=0||position_by===p.ticket||document.getElementById('close-by-button')?.disabled)return showToast('Geçerli karşıt pozisyon seçin.','error');
+  const result=await guardedAction('close-by:'+p.ticket,'/api/position/close-by',{ticket:p.ticket,position_by});
+  if(result?.success&&!result.pending&&!result.uncertain&&editorIsCurrent(p))document.getElementById('position-editor').close();
+}
+async function saveTrailingStop() {
+  const p=editorPosition,distance_points=Number(document.getElementById('trailing-distance')?.value);
+  if(!editorIsCurrent(p)||!Number.isInteger(distance_points)||distance_points<0||distance_points>10000000)return showToast('Geçerli iz süren stop mesafesi girin.','error');
+  await guardedAction('trailing:'+p.ticket,'/api/position/trailing',{ticket:p.ticket,distance_points});
+  if(editorIsCurrent(p))await loadPositionManagement(p);
 }
 async function guardedAction(key, endpoint, payload) {
   if (actionLocks.has(key) || accountSwitching) return null;
@@ -78,15 +157,18 @@ async function partialClosePosition() {
   if (!p) return;
   if (p.account !== JSON.stringify(currentAccountIdentity) || p.generation !== accountSessionGeneration) return showToast('Hesap değişti; pozisyonu yeniden açın.', 'error');
   const volume=Number(document.getElementById('partial-volume').value);
+  const settings=closeExecutionSettings();
+  if(!settings)return showToast('Geçerli kapatma ayarları girin.','error');
   if (!Number.isFinite(volume)||volume<=0||volume>=p.volume) return showToast('Açık lottan küçük, pozitif bir miktar girin.', 'error');
-  const result=await guardedAction('partial:'+p.ticket,'/api/position/partial-close',{ticket:p.ticket,volume});
+  const result=await guardedAction('partial:'+p.ticket,'/api/position/partial-close',{ticket:p.ticket,volume,...settings});
   if (result?.success && !result.pending && !result.partial && !result.uncertain && editorPosition?.ticket === p.ticket) document.getElementById('position-editor').close();
 }
 function pendingOrderOptions() {
   const kind = document.getElementById('pending-type').value;
   const value = document.getElementById('pending-time-type')?.value;
   const time_type = ['GTC','DAY','SPECIFIED','SPECIFIED_DAY'].includes(value) ? value : 'GTC';
-  const options = {time_type,expiration:0};
+  const filling=document.getElementById('pending-filling')?.value;
+  const options = {time_type,expiration:0,filling_policy:filling==='BOC'?'BOC':'RETURN'};
   if (kind.endsWith('STOP_LIMIT')) options.stoplimit_price = Number(document.getElementById('pending-stoplimit')?.value);
   if (['SPECIFIED','SPECIFIED_DAY'].includes(time_type)) {
     const raw = document.getElementById('pending-expiration')?.value;
@@ -103,6 +185,8 @@ function changePendingOptions() {
   if (expiry) expiry.hidden = !['SPECIFIED','SPECIFIED_DAY'].includes(selectedTime);
   const expiryInput=document.getElementById('pending-expiration');
   if (expiryInput) expiryInput.type=selectedTime==='SPECIFIED_DAY'?'date':'datetime-local';
+  const filling=document.getElementById('pending-filling'),spec=window.MT5Markets?.getSymbol(currentSymbol);
+  if(filling?.options)for(const option of filling.options)option.disabled=option.value==='BOC'&&(!kind.endsWith('LIMIT')||!spec||(spec.filling_mode&4)===0);
 }
 
 const managedPendingOrders = new Map();
@@ -189,7 +273,7 @@ function renderPendingOrders(orders) {
   pendingRenderRevision++;
   managedPendingOrders.clear();
   orders.forEach(order=>managedPendingOrders.set(Number(order.ticket),{...order}));
-  root.innerHTML=orders.length ? orders.map(o=>`<div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 py-2"><span><strong>${safeText(o.symbol)}</strong> ${safeText(o.type)}<br><span class="text-gray-400">#${Number(o.ticket)} · ${Number(o.volume)} lot @ ${Number(o.price)} · SL ${Number(o.sl)||0} · TP ${Number(o.tp)||0}${o.stoplimit ? ` · Limit ${Number(o.stoplimit)}` : ''} · ${['GTC','DAY','SPECIFIED','SPECIFIED_DAY'][o.type_time||0]}${o.expiration ? ` · ${safeText(new Date(o.expiration*1000).toLocaleString())}` : ''}</span></span><button onclick="showPendingOrderEditor(${Number(o.ticket)})" class="px-2 py-1 rounded bg-cyan-500/10 text-cyan-300">Değiştir</button><button onclick="cancelPendingOrder(${Number(o.ticket)})" class="px-2 py-1 rounded bg-rose-500/10 text-rose-300">İptal et</button></div>`).join('') : '<p class="text-gray-500 py-2">Bekleyen emir yok.</p>';
+  root.innerHTML=orders.length ? orders.map(o=>`<div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 py-2"><span><strong>${safeText(o.symbol)}</strong> ${safeText(o.type)}<br><span class="text-gray-400">#${Number(o.ticket)} · ${Number(o.volume)} lot @ ${Number(o.price)} · SL ${Number(o.sl)||0} · TP ${Number(o.tp)||0}${o.stoplimit ? ` · Limit ${Number(o.stoplimit)}` : ''} · ${['GTC','DAY','SPECIFIED','SPECIFIED_DAY'][o.type_time||0]} · ${safeText(o.filling_policy||'RETURN')}${o.expiration ? ` · ${safeText(new Date(o.expiration*1000).toLocaleString())}` : ''}</span></span><button onclick="showPendingOrderEditor(${Number(o.ticket)})" class="px-2 py-1 rounded bg-cyan-500/10 text-cyan-300">Değiştir</button><button onclick="cancelPendingOrder(${Number(o.ticket)})" class="px-2 py-1 rounded bg-rose-500/10 text-rose-300">İptal et</button></div>`).join('') : '<p class="text-gray-500 py-2">Bekleyen emir yok.</p>';
 }
 let fetchingPending=false;
 let pendingRenderRevision=0;

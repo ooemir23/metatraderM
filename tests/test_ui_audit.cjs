@@ -28,7 +28,10 @@ function harness(files = ['app.js', 'trading.js', 'operations.js']) {
     setTimeout(fn){const id=++timer;timers.set(id,fn);return id},clearTimeout:id=>timers.delete(id),setInterval(){},clearInterval(){},
     EventSource:class {constructor(url){this.url=url;feeds.push(this)} close(){this.closed=true}},
     confirmAction:async()=>true,
-    fetch:async(url,options={})=>{const request={url,payload:options.body?JSON.parse(options.body):null,signal:options.signal};requests.push(request);return reply(request)}
+    fetch:async(url,options={})=>{
+      if(url.endsWith('/capabilities'))return {ok:true,json:async()=>({close_by:false,opposites:[],fillings:[0,1],volume_min:.01,volume_step:.01})};
+      if(url==='/api/position/trailing'&&!options.body)return {ok:true,json:async()=>[]};
+      const request={url,payload:options.body?JSON.parse(options.body):null,signal:options.signal};requests.push(request);return reply(request)}
   });
   for (const file of files) vm.runInContext(fs.readFileSync('app/static/'+file,'utf8'),context);
   // Isolate the existing account/intent regressions; readiness integration is tested independently.

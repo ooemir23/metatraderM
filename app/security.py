@@ -12,6 +12,7 @@ TRADER_ACTIONS = {
     '/api/ai/execute', '/api/order/open', '/api/order/pending', '/api/order/modify', '/api/order/cancel',
     '/api/order/close', '/api/order/close-all', '/api/order/close-profit',
     '/api/order/close-loss', '/api/position/stops', '/api/position/partial-close',
+    '/api/position/close-by', '/api/position/trailing',
 }
 VIEWER_ACTIONS = {'/api/trade/preview', '/api/backtest', '/api/research/compare', '/api/research/export'}
 
