@@ -61,6 +61,9 @@ def symbol_catalog(mt5, expected_login, expected_server, expected_trade_mode=Non
         result.append({'name': name, 'description': str(getattr(info, 'description', '')),
                        'path': str(getattr(info, 'path', '')), 'category': _symbol_category(info),
                        'trade_mode': trade_mode, 'digits': int(getattr(info, 'digits', 0)),
+                       'volume_min': float(getattr(info, 'volume_min', 0)),
+                       'volume_max': float(getattr(info, 'volume_max', 0)),
+                       'volume_step': float(getattr(info, 'volume_step', 0)),
                        'visible': bool(getattr(info, 'visible', False)),
                        'selectable': trade_mode in (1, 2, 4) and 0 < len(name) <= 32
                                      and re.fullmatch(SYMBOL_NAME_PATTERN, name) is not None})
@@ -193,16 +196,30 @@ def risk_status(mt5, expected_login, expected_server, daily_loss_limit, tick_off
             'open_positions':len(current), 'pending_orders':len(pending)}
 
 
-def stop_guidance(info, tick, pending_type=None):
-    spread = 0 if pending_type else (float(tick.ask) - float(tick.bid)) / info.point
+def stop_guidance(info, tick, pending_type=None, side='BUY', entry_price=None):
+    spread = (float(tick.ask) - float(tick.bid)) / info.point
     stops = float(info.trade_stops_level)
+    tick_size = float(getattr(info, 'trade_tick_size', 0) or info.point)
+    distance = max(stops * info.point, tick_size)
+    reference = float(entry_price) if pending_type else float(tick.bid if side == 'BUY' else tick.ask)
+    def aligned(value, up):
+        units = value / tick_size
+        return round((math.ceil(units - 1e-7) if up else math.floor(units + 1e-7)) * tick_size, info.digits)
+    buy = side == 'BUY'
     return {'point': float(info.point), 'spread_points': round(spread, 3),
-            'stops_level_points': stops,
-            'min_sl_points': max(1, math.ceil(spread + stops - 1e-7) + 1),
-            'min_tp_points': max(1, math.ceil(stops - spread - 1e-7) + 1)}
+            'stops_level_points': stops, 'tick_size': tick_size, 'side': side,
+            'sl_boundary_price': aligned(reference - distance if buy else reference + distance, not buy),
+            'tp_boundary_price': aligned(reference + distance if buy else reference - distance, buy),
+            'min_sl_points': max(1, math.ceil((0 if pending_type else spread) + stops - 1e-7) + 1),
+            'min_tp_points': max(1, math.ceil(stops - (0 if pending_type else spread) - 1e-7) + 1)}
 
 
 def stop_distance_error(symbol, guidance):
+    if guidance.get('input_mode') == 'price':
+        buy = guidance['side'] == 'BUY'
+        return (f"SL/TP broker stop mesafesine uymuyor. {symbol}: "
+                f"SL {'en fazla' if buy else 'en az'} {guidance['sl_boundary_price']:g}; "
+                f"TP {'en az' if buy else 'en fazla'} {guidance['tp_boundary_price']:g}. 0 = yok.")
     return (f"SL/TP broker stop mesafesine veya spread mesafesine uymuyor. {symbol}: "
             f"spread {guidance['spread_points']:g} puan; SL için en az {guidance['min_sl_points']} puan, "
             f"TP için en az {guidance['min_tp_points']} puan girin. 0 korumayı kaldırır.")
@@ -211,12 +228,14 @@ def stop_distance_error(symbol, guidance):
 def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entry_price,
                   expected_login, expected_server, tick_offset=0, daily_loss_limit=None,
                   enforce_daily_limit=True, max_order_lots=None, max_total_lots=None,
-                  max_open_orders=None, tp_points=0, max_trade_risk_pct=2.0):
+                  max_open_orders=None, tp_points=0, max_trade_risk_pct=2.0, sl_price=None, tp_price=None, deviation_points=20):
     """Broker-calculated figures only; unknown values remain unknown."""
     try:
         account, current, pending, realized, floating = risk(mt5, tick_offset)
         if int(account.login) != expected_login or str(account.server) != expected_server:
             raise ValueError('Aktif hesap değişti; risk önizlemesi geçersiz.')
+        if type(deviation_points) is not int or not 0 <= deviation_points <= 100000:
+            raise ValueError('Sapma sıfır veya pozitif tam sayı puan olmalı.')
         if order_type not in ('BUY', 'SELL') or not math.isfinite(volume) or volume <= 0:
             raise ValueError('Geçersiz emir parametresi.')
         loss = max(0.0, -(realized + min(0.0, floating)))
@@ -249,10 +268,11 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
                    'BUY_STOP':price-tick.ask, 'SELL_STOP':tick.bid-price}[pending_type]
             if gap <= 0 or gap + info.point*1e-5 < info.trade_stops_level*info.point:
                 raise ValueError('Bekleyen emir fiyatı broker mesafesine uymuyor.')
-        sl, tp = _protection_prices(info, price, order_type == 'BUY', sl_points, tp_points)
+        sl, tp = _protection_prices(info, price, order_type == 'BUY', sl_points, tp_points, sl_price, tp_price)
         _opening_permissions(info, order_type, pending_type, sl, tp)
         _directional_volume(info, symbol, order_type, volume, current, pending)
-        guidance = stop_guidance(info, tick, pending_type)
+        guidance = stop_guidance(info, tick, pending_type, order_type, price)
+        guidance['input_mode'] = 'price' if sl_price is not None or tp_price is not None else 'points'
         exit_price = price if pending_type else float(tick.bid if order_type == 'BUY' else tick.ask)
         if tp and not _stop_distance_valid(info, tp-exit_price if order_type == 'BUY' else exit_price-tp):
             return {'success': False, 'error': stop_distance_error(symbol, guidance), 'stop_guidance': guidance}
@@ -285,7 +305,8 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
         _account(mt5, expected_login, expected_server)
         return {**trade_risk, 'success': True, 'symbol': symbol, 'side': order_type, 'volume': volume,
                 'currency': str(account.currency), 'account_type': {0:'DEMO', 2:'REAL'}.get(int(account.trade_mode), 'OTHER'),
-                'entry_price': price, 'stop_price': sl,
+                'entry_price': price, 'stop_price': sl, 'take_profit_price': tp,
+                'bid': float(tick.bid), 'ask': float(tick.ask), 'deviation_points': deviation_points,
                 'margin_required': float(margin_result) if margin_result is not None else None,
                 'free_margin': float(account.margin_free), 'spread_points': round((tick.ask-tick.bid)/info.point, 1),
                 'existing_stop_risk': round(existing_risk, 2), 'positions_without_stop': unprotected,
@@ -397,7 +418,8 @@ def broker_compatibility(mt5, symbol, expected_login, expected_server, tick_offs
 def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, magic,
               daily_loss_limit, expected_login, expected_server, max_tick_age=10, pending_type=None, entry_price=None,
               max_order_lots=.10, max_total_lots=.50, max_open_orders=10, tick_offset=0,
-              ai_max_trade_risk_pct=1.0, enforce_daily_limit=True, max_trade_risk_pct=2.0):
+              ai_max_trade_risk_pct=1.0, enforce_daily_limit=True, max_trade_risk_pct=2.0,
+              sl_price=None, tp_price=None, deviation_points=20):
     try:
         if order_type not in ('BUY', 'SELL') or not isinstance(symbol, str) or not symbol.strip():
             raise ValueError('Geçersiz sembol veya emir yönü.')
@@ -456,13 +478,14 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
                 raise ValueError('Emir fiyatı piyasanın doğru tarafında ve minimum mesafe dışında olmalı.')
         if not _price_valid(info, price) or price <= 0:
             raise ValueError('Giriş fiyatı broker fiyat adımına uymuyor.')
-        sl, tp = _protection_prices(info, price, buy, sl_points, tp_points)
+        sl, tp = _protection_prices(info, price, buy, sl_points, tp_points, sl_price, tp_price)
         _opening_permissions(info, order_type, pending_type, sl, tp)
         _directional_volume(info, symbol, order_type, volume, current, pending)
         exit_price = price if pending_type else float(tick.bid if buy else tick.ask)
         if ((sl and not _stop_distance_valid(info, exit_price-sl if buy else sl-exit_price)) or
                 (tp and not _stop_distance_valid(info, tp-exit_price if buy else exit_price-tp))):
-            guidance = stop_guidance(info, tick, pending_type)
+            guidance = stop_guidance(info, tick, pending_type, order_type, price)
+            guidance['input_mode'] = 'price' if sl_price is not None or tp_price is not None else 'points'
             return {'success': False, 'error': stop_distance_error(symbol, guidance), 'stop_guidance': guidance}
         trade_risk = _trade_risk_guard(mt5, account, symbol, order_type, volume, price, sl,
                                      max_trade_risk_pct, ai_max_trade_risk_pct if magic == AI_MAGIC else None)
@@ -471,12 +494,14 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
         if magic == AI_MAGIC and (not sl or not tp):
             return {**trade_risk, 'success': False, 'reason_code': 'ai_protection_required',
                     'error': 'AI emri için geçerli Stop Loss ve Kâr Al zorunlu.'}
+        if type(deviation_points) is not int or not 0 <= deviation_points <= 100000:
+            raise ValueError('Sapma sıfır veya pozitif tam sayı puan olmalı.')
         request = dict(action=1, symbol=symbol, volume=volume, type=0 if buy else 1,
-                       price=price, sl=sl, tp=tp, deviation=20, magic=magic,
+                       price=price, sl=sl, tp=tp, deviation=deviation_points, magic=magic,
                        comment=comment[:31], type_time=0)
         execution = dict(kind='pending' if pending_type else 'market', requested_price=price,
                          bid=float(tick.bid), ask=float(tick.ask), point=float(info.point),
-                         quote_time=int(tick.time) - int(tick_offset), deviation_points=20)
+                         quote_time=int(tick.time) - int(tick_offset), deviation_points=deviation_points)
         if pending_type:
             request.update(action=5, type=types[pending_type], type_filling=2)
             return {**trade_risk, **_checked_send(mt5, request, scope, tick_offset=tick_offset, max_tick_age=max_tick_age),
@@ -602,7 +627,15 @@ def _committed_volume(current, pending):
     return total
 
 
-def _protection_prices(info, price, buy, sl_points, tp_points):
+def _protection_prices(info, price, buy, sl_points, tp_points, sl_price=None, tp_price=None):
+    # Keep explicit MT5 levels unchanged; validate closing-quote distance below.
+    if sl_price is not None or tp_price is not None:
+        if sl_points or tp_points:
+            raise ValueError('SL/TP için fiyat ve puan aynı istekte kullanılamaz.')
+        sl, tp = float(sl_price or 0), float(tp_price or 0)
+        if not _price_valid(info, sl) or not _price_valid(info, tp):
+            raise ValueError('SL/TP fiyatı broker fiyat adımına uymuyor.')
+        return sl, tp
     if any(not math.isfinite(float(v)) or float(v) < 0 for v in (sl_points, tp_points)):
         raise ValueError('SL/TP mesafeleri sonlu ve sıfır veya pozitif olmalı.')
     sl = round(price + (-1 if buy else 1) * sl_points * info.point, info.digits) if sl_points else 0.0

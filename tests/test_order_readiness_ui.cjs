@@ -70,5 +70,36 @@ function harness(){
   await h.c.submitOrder('BUY');assert.equal(h.storage.has('order-intent:EURUSD'),false,'definitive pre-handler rejection needs no broker recovery');
   h.order(()=>{throw new Error('response lost')});await h.c.submitOrder('BUY');assert.equal(h.storage.has('order-intent:EURUSD'),true,'unknown outcomes retain their identity');
  }
+ {
+  const h=harness();h.c.renderPriceData(tick());h.node('order-stop-mode').value='price';
+  h.node('sl-input').value='1.099';h.node('tp-input').value='1.102';h.node('order-deviation').value='37';
+  await h.c.submitOrder('BUY');assert.equal(h.opens().length,1);
+  const sent=h.opens()[0].payload;
+  assert.equal(sent.sl_price,1.099);assert.equal(sent.tp_price,1.102);assert.equal(sent.sl_points,0);assert.equal(sent.deviation_points,37);
+  for(const r of h.requests.filter(r=>r.url==='/api/trade/preview')){
+   assert.equal(r.payload.sl_price,sent.sl_price);assert.equal(r.payload.tp_price,sent.tp_price);assert.equal(r.payload.deviation_points,37);
+  }
+  h.c.changeOrderStopMode();assert.equal(h.node('sl-input').value,'0');assert.equal(h.node('tp-input').value,'0');
+ }
+ for(const change of [h=>{h.node('sl-input').value='1.098'},h=>{h.node('order-stop-mode').value='points'},h=>{h.node('order-deviation').value='50'}]){
+  const h=harness(),pending=[];h.c.renderPriceData(tick());h.node('order-stop-mode').value='price';
+  h.node('sl-input').value='1.099';h.node('tp-input').value='1.102';h.node('order-deviation').value='20';
+  h.preview(()=>new Promise(resolve=>pending.push(resolve)));const attempt=h.c.submitOrder('BUY');
+  change(h);pending.forEach(resolve=>resolve(response(success)));await attempt;assert.equal(h.opens().length,0,'changed price/mode/deviation must invalidate preflight');
+ }
+ {
+  const h=harness();h.c.window.MT5Markets.getSymbol=()=>({digits:5,volume_min:.001,volume_max:50,volume_step:.001});
+  h.node('lot-input').value='.001';h.c.adjustLot(.01);assert.equal(h.node('lot-input').value,'0.002');
+  h.c.adjustLot(-.01);assert.equal(h.node('lot-input').value,'0.001');h.c.adjustLot(-.01);assert.equal(h.node('lot-input').value,'0.001');
+  h.c.updateLotRules();assert.equal(h.node('lot-input').step,'0.001');assert.equal(h.node('pending-volume').min,'0.001');
+ }
+ {
+  const h=harness();h.c.renderPriceData(tick());let release;
+  h.c.verifyChartOrderSymbol=()=>new Promise(resolve=>{release=resolve});
+  const attempt=h.c.submitPendingOrder();await h.c.submitPendingOrder();
+  h.node('pending-type').value='BUY_STOP';release(true);await attempt;
+  assert.equal(h.requests.filter(r=>r.url==='/api/order/pending').length,0,'changed pending type must not submit a stale ticket');
+  assert.equal(h.read('pendingOrderPreflight'),false);
+ }
  console.log('Order readiness integration: current quotes, per-side risk, account/input/catalogue races, double click, timeout and definitive rejection PASS');
 })().catch(e=>{console.error(e);process.exitCode=1});

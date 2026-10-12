@@ -10,7 +10,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  vm.runInContext(fs.readFileSync('app/static/app.js','utf8'),ctx);
  // Isolate durable intent/feedback behavior; real quote and preview gates have separate integration tests.
  ctx.quoteOrderIssue=()=>'';ctx.window.MT5TradePreview={issue:()=>'',verify:async()=>true};
- node('sl-input').value='200';node('tp-input').value='400';
+ node('sl-input').value='200';node('tp-input').value='400';node('order-stop-mode').value='points';node('order-deviation').value='20';
  assert.deepEqual(Array.from(ctx.orderErrorMessage({reason_code:'trading_halted',detail:'Safety lock'})),
    ['Yeni emirler durduruldu','Safety lock']);
  ctx.initTradingView=()=>{};ctx.fetchPrice=()=>{};ctx.fetchPositions=()=>{};ctx.fetchAccount=()=>{};

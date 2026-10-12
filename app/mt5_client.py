@@ -528,7 +528,7 @@ class MT5Client:
             raise MT5DataError('İstek hazırlanırken seçilen hesap değişti; işlem gönderilmedi. Hesabı kontrol edip yeni istek oluşturun.')
         return account
 
-    def trade_preview(self, symbol, order_type, volume, sl_points=0, pending_type=None, entry_price=None, tp_points=0, *, expected_account=None):
+    def trade_preview(self, symbol, order_type, volume, sl_points=0, pending_type=None, entry_price=None, tp_points=0, *, expected_account=None, sl_price=None, tp_price=None, deviation_points=20):
         with self._lock:
             if self.journal.trading_halted():
                 return {'success': False, 'error': 'Yeni emirler güvenlik kilidi nedeniyle durduruldu.'}
@@ -540,7 +540,8 @@ class MT5Client:
                                     pending_type, entry_price, login, server, self.tick_clock_offset,
                                     self.effective_daily_loss_limit(login, server),
                                     self.journal.daily_limit_enabled(login, server), self.max_order_lots,
-                                    self.max_total_lots, self.max_open_orders, tp_points, self.max_trade_risk_pct)
+                                    self.max_total_lots, self.max_open_orders, tp_points, self.max_trade_risk_pct,
+                                    sl_price, tp_price, deviation_points)
             except (MT5DataError, Exception) as exc:
                 return {'success': False, 'error': str(exc)}
 
@@ -764,7 +765,7 @@ class MT5Client:
                    tp_points: int = 0, comment: str = "HMA Web App", *,
                    magic: int = mt5_bridge.MANUAL_MAGIC, request_id: Optional[str] = None,
                    stop_event=None, pending_type=None, entry_price=None,
-                   expected_account=None) -> Dict[str, Any]:
+                   expected_account=None, sl_price=None, tp_price=None, deviation_points=20) -> Dict[str, Any]:
         if order_type.upper() not in ("BUY", "SELL"):
             return {"success": False, "error": "Emir yönü BUY veya SELL olmalı"}
         if not math.isfinite(volume) or volume <= 0 or sl_points < 0 or tp_points < 0:
@@ -781,6 +782,11 @@ class MT5Client:
                 return {"success": False, "error": "MT5 bağlı değil."}
             payload = dict(symbol=symbol, order_type=order_type.upper(), volume=volume,
                            sl_points=sl_points, tp_points=tp_points, comment=comment, magic=magic, pending_type=pending_type, entry_price=entry_price)
+            # Preserve the fingerprint of pre-upgrade point-based requests.
+            if sl_price is not None or tp_price is not None:
+                payload.update(sl_price=sl_price, tp_price=tp_price)
+            if deviation_points != 20:
+                payload['deviation_points'] = deviation_points
             try:
                 request_id = request_id or str(uuid.uuid4())
                 account_scope = self._bound_account(expected_account)
@@ -794,7 +800,8 @@ class MT5Client:
                     "open_deal", payload["symbol"], payload["order_type"], volume, sl_points, tp_points,
                     tag, magic, daily_loss_limit, account_scope[0], account_scope[1], 10, pending_type, entry_price,
                     self.max_order_lots, self.max_total_lots, self.max_open_orders, self.tick_clock_offset,
-                    self.ai_max_trade_risk_pct, enforce_daily_limit, self.max_trade_risk_pct),
+                    self.ai_max_trade_risk_pct, enforce_daily_limit, self.max_trade_risk_pct,
+                    sl_price, tp_price, deviation_points),
                     metadata=metadata, queue_ms=queue_ms)
                 return {**res, "queue_ms": queue_ms}
             except MT5DataError as exc:

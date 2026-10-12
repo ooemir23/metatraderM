@@ -10,8 +10,9 @@ function tradePreviewIdentity(side = previewSide) {
   const slValue = String(document.getElementById('sl-input')?.value ?? '').trim(), tpValue = String(document.getElementById('tp-input')?.value ?? '').trim();
   const sl_points = slValue ? Number(slValue) : NaN;
   const tp_points = tpValue ? Number(tpValue) : NaN;
-  return {symbol, volume, sl_points, tp_points, side,
-    key:JSON.stringify([symbol, side, volume, sl_points, tp_points,
+  const protection = typeof readOrderProtection === 'function' ? readOrderProtection() : {sl_points,tp_points};
+  return {symbol, volume, sl_points, tp_points, protection, side,
+    key:JSON.stringify([symbol, side, volume, protection,
       typeof accountSessionGeneration === 'undefined' ? null : accountSessionGeneration,
       window.MT5Markets?.version?.() ?? null])};
 }
@@ -31,7 +32,7 @@ async function requestTradePreview(identity, account) {
   try {
     const response = await fetch('/api/trade/preview', {method:'POST', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({symbol:identity.symbol,order_type:identity.side,volume:identity.volume,
-        sl_points:identity.sl_points,tp_points:identity.tp_points,...account}),signal:controller.signal});
+        ...(identity.protection || {sl_points:identity.sl_points,tp_points:identity.tp_points}),...account}),signal:controller.signal});
     const result = await response.json();
     return response.ok && result?.success === true ? result
       : {...result,success:false,error:result?.detail || result?.error || 'Risk verisi alınamadı.'};
@@ -47,6 +48,8 @@ window.MT5TradePreview = {
   }
 };
 function markTradePreview(state, text) {
+  const levels = document.getElementById('order-level-preview');
+  if (levels && state !== 'verified') levels.textContent = '';
   const label = document.getElementById('trade-preview');
   if (label?.dataset) label.dataset.state = state;
   if (label?.setAttribute) label.setAttribute('aria-busy', String(state === 'refreshing'));
@@ -60,19 +63,21 @@ function renderTradePolicy(result) {
   const en = window.MT5I18n?.language?.() === 'en';
   const cap = result?.effective_trade_risk_pct ?? result?.max_trade_risk_pct;
   const parts = [];
-  if (result?.stop_required) parts.push(en ? 'A stop loss is required on this real account.' : 'Bu gerçek hesapta Stop Loss zorunlu.');
-  if (Number.isFinite(cap) && cap > 0) parts.push(en ? `Maximum risk per order: ${cap}% of equity.` : `Emir başına azami risk: varlığın %${cap}'i.`);
+  if (result?.stop_required) parts.push(en ? 'A stop loss is required on this real account.' : 'Uygulama kuralı: bu gerçek hesapta Stop Loss zorunlu.');
+  if (Number.isFinite(cap) && cap > 0) parts.push(en ? `Maximum risk per order: ${cap}% of equity.` : `Uygulama risk sınırı: varlığın %${cap}'i.`);
   label.textContent = parts.join(' ');
 }
 function renderStopGuidance(guidance, identity) {
   const label = document.getElementById('stop-distance-guidance');
   const button = document.getElementById('apply-stop-minimum');
+  const priceMode = identity.protection?.sl_price !== undefined;
   const valid = guidance && ['min_sl_points','min_tp_points','point','spread_points'].every(k => Number.isFinite(guidance[k])) && guidance.point > 0;
   latestStopGuidance = valid ? {guidance, key:identity.key, at:Date.now()} : null;
-  if (label) label.textContent = valid
-    ? `${identity.symbol}: 1 puan = ${guidance.point} fiyat birimi. Spread ${guidance.spread_points} puan. 1 puan payla SL en az ${guidance.min_sl_points}, TP en az ${guidance.min_tp_points} puan (0 = yok). SL genişlerse olası kayıp artar.`
+  if (label) label.textContent = valid && priceMode
+    ? `${identity.side}: SL ${identity.side === 'BUY' ? 'en fazla' : 'en az'} ${guidance.sl_boundary_price}; TP ${identity.side === 'BUY' ? 'en az' : 'en fazla'} ${guidance.tp_boundary_price}. Broker stop mesafesi ${guidance.stops_level_points} puan; fiyat adımı ${guidance.tick_size}. 0 = yok.`
+    : valid ? `${identity.symbol}: 1 puan = ${guidance.point} fiyat birimi. Spread ${guidance.spread_points} puan. 1 puan payla SL en az ${guidance.min_sl_points}, TP en az ${guidance.min_tp_points} puan (0 = yok). SL genişlerse olası kayıp artar.`
     : '';
-  if (button) button.hidden = !valid || !((identity.sl_points > 0 && identity.sl_points < guidance.min_sl_points) || (identity.tp_points > 0 && identity.tp_points < guidance.min_tp_points));
+  if (button) button.hidden = priceMode || !valid || !((identity.sl_points > 0 && identity.sl_points < guidance.min_sl_points) || (identity.tp_points > 0 && identity.tp_points < guidance.min_tp_points));
 }
 function applyStopMinimum() {
   const identity = tradePreviewIdentity(), saved = latestStopGuidance;
@@ -131,7 +136,7 @@ async function refreshTradePreview(scheduledGeneration) {
   if (generation !== previewGeneration) return;
   const identity = tradePreviewIdentity();
   const {symbol, volume, sl_points, tp_points, side, key} = identity;
-  if (!Number.isFinite(volume) || volume <= 0 || ![sl_points,tp_points].every(value=>Number.isInteger(value)&&value>=0)) {
+  if (!Number.isFinite(volume) || volume <= 0 || !identity.protection || !Object.values(identity.protection).every(value=>Number.isFinite(value)&&value>=0)) {
     label.textContent = 'Geçerli lot ve SL/TP mesafesi girin.';
     markTradePreview('unavailable', '');
     renderStopGuidance(null, identity);
@@ -160,7 +165,7 @@ async function refreshTradePreview(scheduledGeneration) {
     const money = n => `${Number(n).toLocaleString(window.MT5I18n?.language() === 'en' ? 'en-US' : 'tr-TR', {maximumFractionDigits:2})} ${result.currency}`;
     const en = window.MT5I18n?.language() === 'en';
     let message = result.stop_risk == null
-      ? (en ? 'No verified stop-loss risk. Set a stop before trading.' : 'Doğrulanmış stop riski yok. İşlemden önce stop belirleyin.')
+      ? (en ? 'SL disabled; loss cannot be bounded by a stop.' : 'SL kapalı; stop ile sınırlandırılmış kayıp hesaplanamaz.')
       : (en ? `Stop risk ${money(result.stop_risk)} (${result.risk_pct_equity}% of equity)` : `Stop riski ${money(result.stop_risk)} (varlığın %${result.risk_pct_equity}'i)`);
     message += result.margin_required == null
       ? (en ? ' · Margin unavailable' : ' · Teminat hesaplanamadı')
@@ -176,6 +181,8 @@ async function refreshTradePreview(scheduledGeneration) {
     label.textContent = message;
     markTradePreview('verified', en ? `${symbol} · ${side} · ${volume} lot · Estimate updated`
       : `${symbol} · ${side} · ${volume} lot · Tahmin güncellendi`);
+    const levels = document.getElementById('order-level-preview');
+    if (levels) levels.textContent = `${side === 'BUY' ? (en ? 'BUY · Ask' : 'AL · Ask') : (en ? 'SELL · Bid' : 'SAT · Bid')}: ${result.entry_price} · SL: ${result.stop_price || (en ? 'None' : 'Yok')} · TP: ${result.take_profit_price || (en ? 'None' : 'Yok')}`;
     return true;
   } catch (error) {
     if (isCurrent()) {
@@ -186,7 +193,7 @@ async function refreshTradePreview(scheduledGeneration) {
   }
 }
 document.addEventListener('DOMContentLoaded', () => {
-  for (const id of ['lot-input','sl-input','tp-input']) document.getElementById(id)?.addEventListener('input', () => scheduleTradePreview());
+  for (const id of ['lot-input','sl-input','tp-input','order-deviation']) document.getElementById(id)?.addEventListener('input', () => scheduleTradePreview());
   document.getElementById('order-buy-btn')?.addEventListener('mouseenter', () => { if (previewSide !== 'BUY') scheduleTradePreview('BUY'); });
   document.getElementById('order-sell-btn')?.addEventListener('mouseenter', () => { if (previewSide !== 'SELL') scheduleTradePreview('SELL'); });
   document.getElementById('order-buy-btn')?.addEventListener('focus', () => { if (previewSide !== 'BUY') scheduleTradePreview('BUY'); });

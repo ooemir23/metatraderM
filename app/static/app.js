@@ -227,6 +227,7 @@ function quoteOrderIssue() {
 }
 
 function updateOrderButtons() {
+  updateLotRules();
   const quoteIssue = quoteOrderIssue();
   const messages = [];
   for (const id of ['order-buy-btn', 'order-sell-btn']) {
@@ -603,7 +604,14 @@ function switchSymbol(symbol, reloadChart = true) {
   if (symbol !== currentSymbol && typeof invalidateAIAdvice === 'function') invalidateAIAdvice(symbol);
   chartSelectionBlocked = false;
   orderSymbolSource = reloadChart ? 'panel' : 'chart';
+  if (symbol !== currentSymbol) {
+    if (document.getElementById('order-stop-mode')?.value === 'price') changeOrderStopMode();
+    if (document.getElementById('pending-stop-mode')?.value === 'price') changeOrderStopMode(true);
+    const entry = document.getElementById('pending-price');
+    if (entry) entry.value = '';
+  }
   currentSymbol = symbol;
+  updateLotRules();
   window.MT5Markets?.setActive(symbol);
   updateOrderButtons();
   clearSymbolPrices();
@@ -1462,17 +1470,33 @@ async function fetchBotStatus() {
   }
 }
 
-// Lot adjustments
+// MT5 lot controls follow the selected broker contract, including 0.001 steps.
+function brokerLotRules() {
+  const spec = window.MT5Markets?.getSymbol(currentSymbol);
+  return spec && [spec.volume_min,spec.volume_max,spec.volume_step].every(n => Number.isFinite(n) && n > 0)
+    ? {min:spec.volume_min,max:spec.volume_max,step:spec.volume_step} : {min:0.01,max:Infinity,step:0.01};
+}
+function updateLotRules() {
+  const rules = brokerLotRules();
+  for (const id of ['lot-input','pending-volume']) {
+    const input = document.getElementById(id);
+    if (!input) continue;
+    input.min = String(rules.min); input.step = String(rules.step);
+    if (Number.isFinite(rules.max)) input.max = String(rules.max);
+    else input.removeAttribute?.('max');
+  }
+  const label = document.getElementById('lot-rules');
+  if (label) label.textContent = Number.isFinite(rules.max) ? `${currentSymbol}: min ${rules.min} · max ${rules.max} · ${window.MT5I18n?.language?.() === 'en' ? 'step' : 'adım'} ${rules.step} lot` : '';
+}
 function adjustLot(delta) {
-  const lotInput = document.getElementById("lot-input");
-  let val = parseFloat(lotInput.value) || 0.01;
-  val = Math.max(0.01, Math.round((val + delta) * 100) / 100);
-  lotInput.value = val.toFixed(2);
+  const rules = brokerLotRules(), lotInput = document.getElementById('lot-input');
+  const value = Number(lotInput.value);
+  const units = Math.round((Number.isFinite(value) ? value : rules.min) / rules.step) + Math.sign(delta);
+  lotInput.value = String(Number(Math.min(rules.max, Math.max(rules.min, units * rules.step)).toFixed(8)));
   if (typeof scheduleTradePreview === 'function') scheduleTradePreview();
 }
-
 function setLot(val) {
-  document.getElementById("lot-input").value = val.toFixed(2);
+  document.getElementById('lot-input').value = String(val);
   if (typeof scheduleTradePreview === 'function') scheduleTradePreview();
 }
 
@@ -1586,6 +1610,30 @@ function orderErrorMessage(data) {
   return ["Emir gönderilemedi", raw];
 }
 
+// MT5 ticket: explicit price levels or point distances; zero means no level.
+function readOrderProtection(pending = false) {
+  const id = pending ? 'pending-' : '';
+  const mode = document.getElementById(pending ? 'pending-stop-mode' : 'order-stop-mode')?.value || 'points';
+  const value = name => {
+    const raw = String(document.getElementById(pending ? id + name : name + '-input')?.value ?? '').trim();
+    return raw === '' && mode === 'price' ? 0 : raw === '' ? NaN : Number(raw);
+  };
+  const sl = value('sl'), tp = value('tp');
+  const deviation = Number(document.getElementById('order-deviation')?.value ?? 20);
+  if (![sl,tp].every(n => Number.isFinite(n) && n >= 0 && (mode === 'price' || Number.isInteger(n)))
+      || !Number.isInteger(deviation) || deviation < 0 || deviation > 100000) return null;
+  return mode === 'price' ? {sl_points:0,tp_points:0,sl_price:sl,tp_price:tp,deviation_points:deviation}
+    : {sl_points:sl,tp_points:tp,deviation_points:deviation};
+}
+function changeOrderStopMode(pending = false) {
+  // Never reinterpret a point distance as an absolute price or silently widen SL.
+  for (const name of ['sl','tp']) {
+    const input = document.getElementById(pending ? 'pending-' + name : name + '-input');
+    if (input) {input.value = '0'; input.step = (document.getElementById(pending ? 'pending-stop-mode' : 'order-stop-mode')?.value === 'price') ? 'any' : '1';}
+  }
+  if (typeof scheduleTradePreview === 'function') scheduleTradePreview();
+}
+
 // Submit Buy/Sell Order
 async function submitOrder(type) {
   if (orderPending || orderPreflightPending || accountSwitching) return;
@@ -1615,15 +1663,14 @@ async function submitOrder(type) {
     setOrderNotice(symbol, "Geçersiz lot", "Sıfırdan büyük bir lot miktarı girin.", "error");
     return;
   }
-  const slValue = String(document.getElementById('sl-input').value ?? '').trim(), tpValue = String(document.getElementById('tp-input').value ?? '').trim();
-  const sl = slValue === '' ? NaN : Number(slValue);
-  const tp = tpValue === '' ? NaN : Number(tpValue);
-  if (![sl, tp].every(value => Number.isInteger(value) && value >= 0)) {
-    setOrderNotice(symbol, 'Geçersiz SL / TP', 'Stop Loss ve Take Profit sıfır veya pozitif tam sayı olmalı.', 'error');
+  const protection = readOrderProtection();
+  if (!protection) {
+    setOrderNotice(symbol, 'Geçersiz SL / TP veya sapma', 'Fiyat seviyelerini veya tam sayı puan mesafelerini kontrol edin.', 'error');
     return;
   }
-  if (currentAccountType === 'REAL' && sl <= 0) {
-    setOrderNotice(symbol, 'Stop Loss zorunlu', 'Gerçek hesapta yeni emir için geçerli Stop Loss belirleyin.', 'error');
+  const {sl_points:sl, tp_points:tp} = protection;
+  if (currentAccountType === 'REAL' && !(protection.sl_price ?? sl)) {
+    setOrderNotice(symbol, 'Uygulama risk kuralı', 'Bu panelde gerçek hesapta yeni emir için Stop Loss zorunlu.', 'error');
     return;
   }
   const quoteIssue = quoteOrderIssue();
@@ -1632,7 +1679,7 @@ async function submitOrder(type) {
     updateOrderButtons();
     return;
   }
-  const selection = JSON.stringify([symbol,volume,sl,tp,tradingAccountPayload(),accountSessionGeneration,window.MT5Markets?.version?.()]);
+  const selection = JSON.stringify([symbol,volume,protection,tradingAccountPayload(),accountSessionGeneration,window.MT5Markets?.version?.()]);
   orderPreflightPending = true;
   updateOrderButtons();
   let verified = false;
@@ -1640,8 +1687,7 @@ async function submitOrder(type) {
   catch (_) { verified = false; }
   finally { orderPreflightPending = false; updateOrderButtons(); }
   const currentSelection = JSON.stringify([currentSymbol,Number(document.getElementById('lot-input').value),
-    Number(document.getElementById('sl-input').value),Number(document.getElementById('tp-input').value),
-    tradingAccountPayload(),accountSessionGeneration,window.MT5Markets?.version?.()]);
+    readOrderProtection(),tradingAccountPayload(),accountSessionGeneration,window.MT5Markets?.version?.()]);
   if (!verified || selection !== currentSelection || quoteOrderIssue() || accountSwitching || chartSelectionBlocked
       || window.MT5Markets?.isSelectionVerified(symbol, type) === false) {
     setOrderNotice(symbol, 'İşlem öncesi kontrol', quoteOrderIssue() || window.MT5TradePreview?.issue(type)
@@ -1657,12 +1703,13 @@ async function submitOrder(type) {
         setOrderNotice(symbol, 'Önceki emir hesabı doğrulanmalı', 'Kayıtlı talep bu hesaba ait değil veya hesap kimliği bilinmiyor. Önce MT5 durumunu kontrol edin.', 'error');
         return;
       }
-      if (intent.order_type !== type || intent.volume !== volume || intent.sl_points !== sl || intent.tp_points !== tp) {
+      if (intent.order_type !== type || intent.volume !== volume || intent.sl_points !== sl || intent.tp_points !== tp || (intent.sl_price ?? null) !== (protection.sl_price ?? null)
+          || (intent.tp_price ?? null) !== (protection.tp_price ?? null) || (intent.deviation_points ?? 20) !== protection.deviation_points) {
         setOrderNotice(symbol, "Önceki emir doğrulanmalı", "MT5 durumunu kontrol edip ‘Kontrol ettim’ düğmesini kullanın.", "error");
         return;
       }
     } else {
-      intent = {request_id: newOrderId(), symbol, order_type: type, volume, sl_points: sl, tp_points: tp, comment: "Volta Web Terminal", ...tradingAccountPayload()};
+      intent = {request_id: newOrderId(), symbol, order_type: type, volume, ...protection, comment: "Volta Web Terminal", ...tradingAccountPayload()};
       localStorage.setItem("order-intent:" + symbol, JSON.stringify(intent));
     }
   } catch (_) {

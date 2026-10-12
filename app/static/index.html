@@ -653,18 +653,27 @@
             </div>
           </div>
 
-          <!-- SL & TP (Points) -->
+          <label class="block text-[11px] text-gray-400 mb-2">SL / TP girişi
+            <select id="order-stop-mode" onchange="changeOrderStopMode()" class="bg-gray-800 rounded p-1 ml-2"><option value="price">Fiyat seviyesi (MT5)</option><option value="points">Girişten uzaklık (puan)</option></select>
+          </label>
+          <p id="lot-rules" class="text-[11px] text-gray-400 mb-2"></p>
+          <!-- MT5 protection levels; 0 means omitted -->
           <div class="grid grid-cols-2 gap-2 mb-2.5">
             <div>
-              <label class="block text-[11px] font-semibold text-gray-400 mb-0.5">Stop Loss (Puan)</label>
-              <input type="number" id="sl-input" value="200" step="50" min="0" placeholder="0 = Yok" class="w-full bg-[#181d2a] border border-gray-700 rounded-lg px-2 py-1 text-center text-white text-xs font-mono focus:outline-none focus:border-red-500">
+              <label for="sl-input" class="block text-[11px] font-semibold text-gray-400 mb-0.5">Stop Loss · 0 = Yok</label>
+              <input type="number" id="sl-input" value="0" step="any" min="0" placeholder="0 = Yok" class="w-full bg-[#181d2a] border border-gray-700 rounded-lg px-2 py-1 text-center text-white text-xs font-mono focus:outline-none focus:border-red-500">
             </div>
             <div>
-              <label class="block text-[11px] font-semibold text-gray-400 mb-0.5">Take Profit (Puan)</label>
-              <input type="number" id="tp-input" value="400" step="50" min="0" placeholder="0 = Yok" class="w-full bg-[#181d2a] border border-gray-700 rounded-lg px-2 py-1 text-center text-white text-xs font-mono focus:outline-none focus:border-emerald-500">
+              <label for="tp-input" class="block text-[11px] font-semibold text-gray-400 mb-0.5">Take Profit · 0 = Yok</label>
+              <input type="number" id="tp-input" value="0" step="any" min="0" placeholder="0 = Yok" class="w-full bg-[#181d2a] border border-gray-700 rounded-lg px-2 py-1 text-center text-white text-xs font-mono focus:outline-none focus:border-emerald-500">
             </div>
           </div>
 
+          <label class="block text-[11px] text-gray-400 mb-2">Azami sapma (puan)
+            <input id="order-deviation" type="number" min="0" max="100000" step="1" value="20" class="bg-gray-800 rounded px-2 py-1 w-20">
+            <span>Request/Instant yürütmede uygulanır; Market yürütmede broker fiyatı belirler.</span>
+          </label>
+          <p id="order-level-preview" class="text-[11px] text-gray-300 mb-2" aria-live="polite"></p>
           <p class="text-[11px] text-gray-400 mb-2"><span id="live-feed-status">Sunucu bağlantısı bekleniyor</span> · <span id="mt5-feed-status">MT5 broker bağlantısı doğrulanamadı</span> · <span id="tick-age">Fiyat bekleniyor</span></p>
           <div class="mb-2 rounded-xl border border-cyan-800/50 bg-cyan-950/20 p-2 text-[11px]">
             <div class="flex items-center justify-between gap-2"><strong class="text-cyan-200">İşlem öncesi risk</strong><button type="button" onclick="refreshTradePreview()" class="text-cyan-300 underline">Hesapla</button></div>
@@ -750,12 +759,13 @@
         <details class="bg-[#121620] p-4 rounded-2xl border border-gray-800 text-xs">
           <summary class="text-white font-bold cursor-pointer">Bekleyen emir oluştur / yönet</summary>
           <p class="text-gray-400 my-2">Aktif sembol için fiyat girin. Emir iptal edilene kadar brokerda kalır ve panel kapalıyken de çalışır. Günlük zarar sınırı yerleştirme anında kontrol edilir; gelecekteki tetiklenmeyi garantiyle durdurmaz.</p>
+          <label>SL / TP girişi<select id="pending-stop-mode" onchange="changeOrderStopMode(true)" class="bg-gray-800 rounded p-1 mb-2 ml-2"><option value="price">Fiyat seviyesi (MT5)</option><option value="points">Girişten uzaklık (puan)</option></select></label>
           <div class="grid grid-cols-2 gap-2">
             <label>Tür<select id="pending-type" class="w-full bg-gray-800 p-2 rounded"><option>BUY_LIMIT</option><option>SELL_LIMIT</option><option>BUY_STOP</option><option>SELL_STOP</option></select></label>
             <label>Emir fiyatı<input id="pending-price" type="number" step="any" min="0" class="w-full bg-gray-800 p-2 rounded"></label>
             <label>Lot<input id="pending-volume" type="number" step="0.01" value="0.01" min="0.01" class="w-full bg-gray-800 p-2 rounded"></label>
-            <label>SL (puan)<input id="pending-sl" type="number" step="1" value="200" min="0" class="w-full bg-gray-800 p-2 rounded"></label>
-            <label>TP (puan)<input id="pending-tp" type="number" step="1" value="400" min="0" class="w-full bg-gray-800 p-2 rounded"></label>
+            <label>SL · 0 = Yok<input id="pending-sl" type="number" step="any" value="0" min="0" class="w-full bg-gray-800 p-2 rounded"></label>
+            <label>TP · 0 = Yok<input id="pending-tp" type="number" step="any" value="0" min="0" class="w-full bg-gray-800 p-2 rounded"></label>
           </div>
           <button onclick="submitPendingOrder()" class="mt-3 py-2 px-3 rounded bg-cyan-700 text-white font-semibold">Bekleyen emir gönder</button>
           <div id="pending-orders-list" class="mt-3" aria-live="polite">Emirler yükleniyor…</div>

@@ -221,6 +221,9 @@ class OrderRequest(AccountBoundRequest):
     volume: float = Field(default=0.01, gt=0)
     sl_points: int = Field(default=0, ge=0)
     tp_points: int = Field(default=0, ge=0)
+    sl_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    tp_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    deviation_points: int = Field(default=20, ge=0, le=100000)
     comment: str = "HMA Web Trade"
 
 class ActionRequest(AccountBoundRequest):
@@ -285,10 +288,14 @@ class PendingRequest(OrderRequest):
     entry_price: float = Field(gt=0)
 
 class PreviewRequest(AccountBoundRequest):
+    sl_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    tp_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    deviation_points: int = Field(default=20, ge=0, le=100000)
+
     symbol: str = Field(pattern=r"^[A-Za-z0-9_.#-]+$", max_length=32)
     order_type: Literal["BUY", "SELL"]
     volume: float = Field(gt=0, allow_inf_nan=False)
-    sl_points: int = Field(ge=0)
+    sl_points: int = Field(default=0, ge=0)
     tp_points: int = Field(default=0, ge=0)
     pending_type: Optional[Literal["BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP"]] = None
     entry_price: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
@@ -588,7 +595,8 @@ def pending_orders():
 def trade_preview(req: PreviewRequest):
     result = mt5_client.trade_preview(req.symbol, req.order_type, req.volume,
                                       req.sl_points, req.pending_type, req.entry_price, tp_points=req.tp_points,
-                                      expected_account=bound_request_account(req))
+                                      expected_account=bound_request_account(req), sl_price=req.sl_price,
+                                      tp_price=req.tp_price, deviation_points=req.deviation_points)
     return trade_response(result)
 
 
@@ -597,6 +605,7 @@ def place_pending(req: PendingRequest, account=Depends(require_real_unlock)):
     return trade_response(mt5_client.open_order(req.symbol, req.order_type, req.volume,
         sl_points=req.sl_points, tp_points=req.tp_points, comment="Panel pending", request_id=req.request_id,
         pending_type=req.pending_type, entry_price=req.entry_price,
+        sl_price=req.sl_price, tp_price=req.tp_price, deviation_points=req.deviation_points,
         expected_account=bound_request_account(req, account)))
 
 
@@ -763,6 +772,7 @@ def open_order(req: OrderRequest, account=Depends(require_real_unlock)):
         sl_points=req.sl_points,
         tp_points=req.tp_points,
         comment=req.comment, request_id=req.request_id,
+        sl_price=req.sl_price, tp_price=req.tp_price, deviation_points=req.deviation_points,
         expected_account=bound_request_account(req, account)
     )
     if not res.get("success"):

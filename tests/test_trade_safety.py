@@ -576,3 +576,108 @@ def test_unresolved_barrier_is_account_symbol_and_strategy_scoped(tmp_path):
     assert not journal.has_unresolved_open([1,'demo'],'XAUUSD',MANUAL_MAGIC)
     journal.resolve('pending-hma',{'success':False,'uncertain':False,'pending':False})
     assert not journal.has_unresolved_open([1,'demo'],'XAUUSD',HMA_MAGIC)
+
+# MT5 ticket compatibility: explicit prices must survive preview, journal and send.
+@pytest.mark.parametrize('side,sl,tp,expected_type', [
+    ('BUY', 1.099, 1.102, 0), ('SELL', 1.101, 1.098, 1),
+])
+def test_manual_price_ticket_matches_preview_and_actual_request(client, side, sl, tp, expected_type):
+    preview = client.trade_preview('EURUSD', side, .01, sl_price=sl, tp_price=tp, deviation_points=37)
+    assert preview['success']
+    assert preview['entry_price'] == (1.1 if side == 'BUY' else 1.0999)
+    assert (preview['stop_price'], preview['take_profit_price']) == (sl, tp)
+    result = client.open_order('EURUSD', side, .01, sl_price=sl, tp_price=tp, deviation_points=37)
+    assert result['success']
+    request = client.mt5.order_send.call_args.args[0]
+    assert (request['type'], request['sl'], request['tp'], request['deviation']) == (expected_type, sl, tp, 37)
+    assert result['execution']['deviation_points'] == 37
+
+
+def test_manual_zero_price_levels_do_not_create_default_protection(client):
+    result = client.open_order('EURUSD', 'BUY', .01, sl_price=0, tp_price=0)
+    assert result['success']
+    request = client.mt5.order_send.call_args.args[0]
+    assert request['sl'] == request['tp'] == 0
+
+
+@pytest.mark.parametrize('kwargs', [
+    {'sl_price':1.099, 'sl_points':200},
+    {'sl_price':1.09995},  # Below Ask, but above the executable Bid.
+    {'sl_price':float('nan')},
+    {'tp_price':-1},
+    {'deviation_points':-1},
+])
+def test_invalid_price_ticket_never_sends(client, kwargs):
+    assert not client.open_order('EURUSD', 'BUY', .01, **kwargs)['success']
+    client.mt5.order_send.assert_not_called()
+
+
+def test_price_ticket_tp_uses_bid_not_opening_ask(client):
+    # A BUY TP between Bid and Ask is legal when it satisfies the stop distance.
+    client.mt5.symbol_info.return_value.trade_stops_level = 1
+    assert client.open_order('EURUSD', 'BUY', .01, sl_price=0, tp_price=1.09995)['success']
+
+
+def test_pending_ticket_uses_explicit_prices_and_return_policy(client):
+    info = client.mt5.symbol_info.return_value
+    info.order_mode, info.expiration_mode = 127, 1
+    result = client.open_order('EURUSD', 'BUY', .01, pending_type='BUY_LIMIT', entry_price=1.09,
+                               sl_price=1.089, tp_price=1.092)
+    assert result['success']
+    request = client.mt5.order_send.call_args.args[0]
+    assert (request['action'], request['type'], request['price'], request['type_filling']) == (5,2,1.09,2)
+    assert (request['sl'], request['tp']) == (1.089,1.092)
+
+
+def test_changed_price_or_deviation_cannot_reuse_existing_request_id(client):
+    rid = 'mt5-price-ticket-id'
+    assert client.open_order('EURUSD','BUY',.01,sl_price=1.099,tp_price=1.102,request_id=rid)['success']
+    for change in ({'sl_price':1.098}, {'deviation_points':50}):
+        kwargs = {'sl_price':1.099,'tp_price':1.102,**change}
+        result = client.open_order('EURUSD','BUY',.01,request_id=rid,**kwargs)
+        assert result.get('conflict')
+    assert client.mt5.order_send.call_count == 1
+
+
+def test_bitcoin_spread_does_not_block_unprotected_demo_ticket(client):
+    info = client.mt5.symbol_info.return_value
+    info.point, info.digits, info.trade_stops_level = .01, 2, 0
+    client.mt5.symbol_info_tick.return_value = NS(ask=82476.5, bid=82462.5, time=time.time())
+    preview = client.trade_preview('BTCUSD','BUY',.01,sl_price=0,tp_price=0)
+    assert preview['success'] and preview['spread_points'] == 1400
+    assert client.open_order('BTCUSD','BUY',.01,sl_price=0,tp_price=0)['success']
+    assert client.mt5.order_send.call_args.args[0]['sl'] == 0
+
+
+def test_explicit_price_not_silently_rounded_to_broker_tick_size(client):
+    client.mt5.symbol_info.return_value.trade_tick_size = .0001
+    result = client.open_order('EURUSD','BUY',.01,sl_price=1.09895,tp_price=1.102)
+    assert not result['success'] and 'fiyat adımına' in result['error']
+    client.mt5.order_send.assert_not_called()
+
+
+def test_point_ticket_replays_pre_upgrade_journal_without_resending(client):
+    rid = 'pre-upgrade-point-ticket'
+    old_payload = dict(symbol='EURUSD',order_type='BUY',volume=.01,sl_points=200,tp_points=400,
+                       comment='HMA Web App',magic=MANUAL_MAGIC,pending_type=None,entry_price=None)
+    client.journal.run(rid, old_payload, lambda: {'success':True,'ticket':321},metadata={'account':[1,'test']})
+    result = client.open_order('EURUSD','BUY',.01,200,400,request_id=rid)
+    assert result['success'] and result['replayed'] and result['ticket'] == 321
+    client.mt5.order_send.assert_not_called()
+
+
+def test_http_price_ticket_fields_reach_preview_and_pending_bridge(client, monkeypatch):
+    from app import main
+    monkeypatch.setattr(main, 'mt5_client', client)
+    info = client.mt5.symbol_info.return_value
+    info.order_mode, info.expiration_mode = 127,1
+    payload={'symbol':'EURUSD','order_type':'BUY','volume':.01,'sl_price':1.089,'tp_price':1.092,
+             'pending_type':'BUY_LIMIT','entry_price':1.09,'deviation_points':35}
+    preview = authenticated_web().post('/api/trade/preview',json=payload)
+    assert preview.status_code == 200
+    assert preview.json()['stop_price'] == payload['sl_price']
+    result = authenticated_web().post('/api/order/pending',json={**payload,'request_id':'http-mt5-price-test'})
+    assert result.status_code == 200
+    request = client.mt5.order_send.call_args.args[0]
+    assert request['sl'] == payload['sl_price'] and request['tp'] == payload['tp_price']
+    assert request['deviation'] == 35

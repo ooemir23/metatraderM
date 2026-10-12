@@ -80,24 +80,31 @@ async function partialClosePosition() {
   const result=await guardedAction('partial:'+p.ticket,'/api/position/partial-close',{ticket:p.ticket,volume});
   if (result?.success && !result.pending && !result.partial && !result.uncertain && editorPosition?.ticket === p.ticket) document.getElementById('position-editor').close();
 }
+let pendingOrderPreflight = false;
+function pendingOrderTicket() {
+  const pending_type = document.getElementById('pending-type').value;
+  return {symbol:currentSymbol,pending_type,order_type:pending_type.startsWith('BUY')?'BUY':'SELL',
+    volume:Number(document.getElementById('pending-volume').value),
+    entry_price:Number(document.getElementById('pending-price').value), ...readOrderProtection(true)};
+}
 async function submitPendingOrder() {
-  if (accountSwitching) return;
-  const selectedSymbol = currentSymbol;
-  const pending_type=document.getElementById('pending-type').value;
-  const side = pending_type.startsWith('BUY') ? 'BUY' : 'SELL';
-  if (!await verifyChartOrderSymbol(side) || currentSymbol !== selectedSymbol
-      || window.MT5Markets?.isSelectionVerified(currentSymbol, side) === false)
-    return showToast(window.MT5Markets?.selectionIssue(currentSymbol, side) || 'Grafik ve emir sembolü doğrulanamadı veya değişti. Emir gönderilmedi.', 'error');
-  const volume=Number(document.getElementById('pending-volume').value);
-  const entry_price=Number(document.getElementById('pending-price').value);
-  const slValue=String(document.getElementById('pending-sl').value ?? '').trim(), tpValue=String(document.getElementById('pending-tp').value ?? '').trim();
-  const sl_points=slValue===''?NaN:Number(slValue), tp_points=tpValue===''?NaN:Number(tpValue);
-  if (![volume,entry_price].every(v=>Number.isFinite(v)&&v>0)||![sl_points,tp_points].every(v=>Number.isInteger(v)&&v>=0)) return showToast('Fiyat, lot ve puan alanlarını kontrol edin.', 'error');
-  if (currentAccountType==='REAL' && sl_points<=0) return showToast('Gerçek hesapta yeni bekleyen emir için Stop Loss zorunlu.', 'error');
-  const quoteIssue = quoteOrderIssue();
-  if (quoteIssue) return showToast(quoteIssue + ' Bekleyen emir gönderilmedi.', 'warning');
-  const symbol=currentSymbol;
-  await guardedAction('pending:'+symbol,'/api/order/pending', {symbol,pending_type,order_type:pending_type.startsWith('BUY')?'BUY':'SELL',volume,entry_price,sl_points,tp_points});
+  if (accountSwitching || pendingOrderPreflight) return;
+  const protection = readOrderProtection(true), ticket = pendingOrderTicket();
+  if (!protection || ![ticket.volume,ticket.entry_price].every(v=>Number.isFinite(v)&&v>0))
+    return showToast('Fiyat, lot ve SL/TP alanlarını kontrol edin.', 'error');
+  const snapshot = () => JSON.stringify([pendingOrderTicket(),tradingAccountPayload(),accountSessionGeneration,window.MT5Markets?.version?.()]);
+  const selected = snapshot();
+  pendingOrderPreflight = true;
+  try {
+    if (!await verifyChartOrderSymbol(ticket.order_type) || selected !== snapshot()
+        || window.MT5Markets?.isSelectionVerified(currentSymbol, ticket.order_type) === false)
+      return showToast('Hesap, sembol veya emir bilgileri değişti ya da doğrulanamadı. Emir gönderilmedi.', 'error');
+    if (currentAccountType==='REAL' && !(protection.sl_price ?? protection.sl_points))
+      return showToast('Uygulama kuralı: gerçek hesapta yeni bekleyen emir için Stop Loss zorunlu.', 'error');
+    const quoteIssue = quoteOrderIssue();
+    if (quoteIssue) return showToast(quoteIssue + ' Bekleyen emir gönderilmedi.', 'warning');
+    await guardedAction('pending:'+ticket.symbol,'/api/order/pending', ticket);
+  } finally { pendingOrderPreflight = false; }
 }
 async function cancelPendingOrder(ticket) {
   await guardedAction('cancel:'+ticket,'/api/order/cancel',{ticket});

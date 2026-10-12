@@ -2,6 +2,15 @@
 (function () {
   const STORAGE_KEY = "hma_ui_language";
   const en = Object.fromEntries([
+    ["SL / TP girişi", "SL / TP input"],
+    ["Fiyat seviyesi (MT5)", "Price level (MT5)"],
+    ["Girişten uzaklık (puan)", "Distance from entry (points)"],
+    ["Stop Loss · 0 = Yok", "Stop Loss · 0 = None"],
+    ["Take Profit · 0 = Yok", "Take Profit · 0 = None"],
+    ["SL · 0 = Yok", "SL · 0 = None"],
+    ["TP · 0 = Yok", "TP · 0 = None"],
+    ["Azami sapma (puan)", "Maximum deviation (points)"],
+    ["Request/Instant yürütmede uygulanır; Market yürütmede broker fiyatı belirler.", "Applies to Request/Instant execution; for Market execution the broker determines the price."],
     ["Güncel fiyat ve işlem öncesi risk doğrulanıyor.", "Verifying current prices and pre-trade risk."],
     ["Emirler sunucuda doğrulanır", "Orders are verified on the server"],
     ["AI emirleri sunucuda doğrulanır; geçerli Stop Loss (SL), Kâr Al (TP) ve işlem başına risk sınırı olmadan emir gönderilmez.", "AI orders are verified on the server; valid Stop Loss (SL), Take Profit (TP), and a per-order risk limit are required."],
