@@ -653,6 +653,13 @@
             </div>
           </div>
 
+          <label class="block text-[11px] text-gray-400 mb-2">Manuel işlem kuralları
+            <select id="order-rule-mode" onchange="changeOrderRules()" class="bg-gray-800 rounded p-1 ml-2"><option value="MT5">MT5 kuralları</option><option value="PANEL">Broker + panel risk sınırları</option></select>
+          </label>
+          <p id="order-rule-note" class="text-[11px] text-gray-400 mb-2"></p>
+          <label class="block text-[11px] text-gray-400 mb-2">Doldurma politikası
+            <select id="order-filling" onchange="saveOrderTicketPreferences();scheduleTradePreview()" class="bg-gray-800 rounded p-1 ml-2"><option value="AUTO">Broker varsayılanı</option><option value="FOK">Fill or Kill (FOK)</option><option value="IOC">Immediate or Cancel (IOC)</option><option value="RETURN">Return</option></select>
+          </label>
           <label class="block text-[11px] text-gray-400 mb-2">SL / TP girişi
             <select id="order-stop-mode" onchange="changeOrderStopMode()" class="bg-gray-800 rounded p-1 ml-2"><option value="price">Fiyat seviyesi (MT5)</option><option value="points">Girişten uzaklık (puan)</option></select>
           </label>
@@ -670,7 +677,7 @@
           </div>
 
           <label class="block text-[11px] text-gray-400 mb-2">Azami sapma (puan)
-            <input id="order-deviation" type="number" min="0" max="100000" step="1" value="20" class="bg-gray-800 rounded px-2 py-1 w-20">
+            <input id="order-deviation" onchange="saveOrderTicketPreferences()" type="number" min="0" max="100000" step="1" value="20" class="bg-gray-800 rounded px-2 py-1 w-20">
             <span>Request/Instant yürütmede uygulanır; Market yürütmede broker fiyatı belirler.</span>
           </label>
           <p id="order-level-preview" class="text-[11px] text-gray-300 mb-2" aria-live="polite"></p>
@@ -758,12 +765,15 @@
 
         <details class="bg-[#121620] p-4 rounded-2xl border border-gray-800 text-xs">
           <summary class="text-white font-bold cursor-pointer">Bekleyen emir oluştur / yönet</summary>
-          <p class="text-gray-400 my-2">Aktif sembol için fiyat girin. Emir iptal edilene kadar brokerda kalır ve panel kapalıyken de çalışır. Günlük zarar sınırı yerleştirme anında kontrol edilir; gelecekteki tetiklenmeyi garantiyle durdurmaz.</p>
+          <p class="text-gray-400 my-2">Aktif sembol için fiyat girin. Emir seçilen geçerlilik süresince brokerda kalır ve panel kapalıyken de tetiklenebilir. MT5 modunda broker kuralları; panel modunda ek risk sınırları uygulanır.</p>
           <label>SL / TP girişi<select id="pending-stop-mode" onchange="changeOrderStopMode(true)" class="bg-gray-800 rounded p-1 mb-2 ml-2"><option value="price">Fiyat seviyesi (MT5)</option><option value="points">Girişten uzaklık (puan)</option></select></label>
           <div class="grid grid-cols-2 gap-2">
-            <label>Tür<select id="pending-type" class="w-full bg-gray-800 p-2 rounded"><option>BUY_LIMIT</option><option>SELL_LIMIT</option><option>BUY_STOP</option><option>SELL_STOP</option></select></label>
+            <label>Tür<select id="pending-type" onchange="changePendingOptions()" class="w-full bg-gray-800 p-2 rounded"><option>BUY_LIMIT</option><option>SELL_LIMIT</option><option>BUY_STOP</option><option>SELL_STOP</option><option>BUY_STOP_LIMIT</option><option>SELL_STOP_LIMIT</option></select></label>
             <label>Emir fiyatı<input id="pending-price" type="number" step="any" min="0" class="w-full bg-gray-800 p-2 rounded"></label>
             <label>Lot<input id="pending-volume" type="number" step="0.01" value="0.01" min="0.01" class="w-full bg-gray-800 p-2 rounded"></label>
+            <label id="pending-stoplimit-field" hidden>Stop Limit fiyatı<input id="pending-stoplimit" type="number" min="0" step="any" class="w-full bg-gray-800 p-2 rounded"></label>
+            <label>Geçerlilik<select id="pending-time-type" onchange="changePendingOptions()" class="w-full bg-gray-800 p-2 rounded"><option value="GTC">İptal edilene kadar (GTC)</option><option value="DAY">Günlük (DAY)</option><option value="SPECIFIED">Belirtilen tarih/saat</option><option value="SPECIFIED_DAY">Belirtilen gün</option></select></label>
+            <label id="pending-expiration-field" hidden>Son geçerlilik (yerel saat)<input id="pending-expiration" type="datetime-local" class="w-full bg-gray-800 p-2 rounded"></label>
             <label>SL · 0 = Yok<input id="pending-sl" type="number" step="any" value="0" min="0" class="w-full bg-gray-800 p-2 rounded"></label>
             <label>TP · 0 = Yok<input id="pending-tp" type="number" step="any" value="0" min="0" class="w-full bg-gray-800 p-2 rounded"></label>
           </div>
@@ -1062,6 +1072,20 @@
       </div>
     </div>
   </div>
+
+  <dialog id="pending-editor" class="bg-[#121620] text-gray-200 rounded-2xl border border-gray-700 p-5 w-[min(94vw,480px)] backdrop:bg-black/70">
+    <h2 id="pending-editor-title" class="font-bold text-white mb-3"></h2>
+    <div class="grid grid-cols-2 gap-3 text-xs">
+      <label>Emir fiyatı<input id="pending-edit-price" type="number" min="0" step="any" class="w-full bg-gray-800 rounded p-2"></label>
+      <label id="pending-edit-limit-field">Stop Limit fiyatı<input id="pending-edit-stoplimit" type="number" min="0" step="any" class="w-full bg-gray-800 rounded p-2"></label>
+      <label>SL · 0 = Yok<input id="pending-edit-sl" type="number" min="0" step="any" class="w-full bg-gray-800 rounded p-2"></label>
+      <label>TP · 0 = Yok<input id="pending-edit-tp" type="number" min="0" step="any" class="w-full bg-gray-800 rounded p-2"></label>
+      <label>Geçerlilik<select id="pending-edit-time" onchange="changePendingEditorTime()" class="w-full bg-gray-800 rounded p-2"><option value="GTC">İptal edilene kadar (GTC)</option><option value="DAY">Günlük (DAY)</option><option value="SPECIFIED">Belirtilen tarih/saat</option><option value="SPECIFIED_DAY">Belirtilen gün</option></select></label>
+      <label id="pending-edit-expiration-field">Son geçerlilik (yerel saat)<input id="pending-edit-expiration" type="datetime-local" class="w-full bg-gray-800 rounded p-2"></label>
+    </div>
+    <button type="button" onclick="savePendingOrder()" class="mt-4 rounded bg-cyan-700 px-3 py-2 text-sm">Değişikliği gönder</button>
+    <button type="button" onclick="document.getElementById('pending-editor').close()" class="mt-4 ml-3 text-xs underline">Pencereyi kapat</button>
+  </dialog>
 
   <dialog id="position-editor" class="bg-[#121620] text-gray-200 rounded-2xl border border-gray-700 p-5 w-[min(94vw,440px)] backdrop:bg-black/70">
     <h2 id="position-editor-title" class="font-bold text-white mb-3"></h2>

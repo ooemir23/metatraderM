@@ -2,6 +2,21 @@
 (function () {
   const STORAGE_KEY = "hma_ui_language";
   const en = Object.fromEntries([
+    ["Değiştir", "Modify"],
+    ["Değişikliği gönder", "Submit modification"],
+    ["Manuel işlem kuralları", "Manual trading rules"],
+    ["MT5 kuralları", "MT5 rules"],
+    ["Broker + panel risk sınırları", "Broker + panel risk limits"],
+    ["Doldurma politikası", "Fill policy"],
+    ["Broker varsayılanı", "Broker default"],
+    ["Stop Limit fiyatı", "Stop Limit price"],
+    ["Geçerlilik", "Validity"],
+    ["İptal edilene kadar (GTC)", "Good Till Canceled (GTC)"],
+    ["Günlük (DAY)", "Today (DAY)"],
+    ["Belirtilen tarih/saat", "Specified date/time"],
+    ["Belirtilen gün", "Specified day"],
+    ["Son geçerlilik (yerel saat)", "Expiration (local time)"],
+    ["Aktif sembol için fiyat girin. Emir seçilen geçerlilik süresince brokerda kalır ve panel kapalıyken de tetiklenebilir. MT5 modunda broker kuralları; panel modunda ek risk sınırları uygulanır.", "Enter a price for the active symbol. Orders remain at the broker until expiry and can trigger while the panel is closed. MT5 mode follows broker rules; panel mode applies additional risk limits."],
     ["SL / TP girişi", "SL / TP input"],
     ["Fiyat seviyesi (MT5)", "Price level (MT5)"],
     ["Girişten uzaklık (puan)", "Distance from entry (points)"],

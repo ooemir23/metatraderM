@@ -794,6 +794,7 @@ function renderAccountData(data) {
       if (typeof invalidateAIAdvice === 'function') invalidateAIAdvice(currentSymbol);
     }
     currentAccountIdentity = identity;
+    if (identityChanged && identity) restoreOrderTicketPreferences();
     if (identity) lastObservedAccountIdentity = identity;
     accountVerificationKnown = true;
     window.MT5Markets?.setAccount(identity, accountSessionGeneration);
@@ -1477,6 +1478,7 @@ function brokerLotRules() {
     ? {min:spec.volume_min,max:spec.volume_max,step:spec.volume_step} : {min:0.01,max:Infinity,step:0.01};
 }
 function updateLotRules() {
+  updateBrokerTicketChoices();
   const rules = brokerLotRules();
   for (const id of ['lot-input','pending-volume']) {
     const input = document.getElementById(id);
@@ -1610,6 +1612,58 @@ function orderErrorMessage(data) {
   return ["Emir gönderilemedi", raw];
 }
 
+const TICKET_PREFERENCES = {
+  'order-rule-mode':['MT5','PANEL'], 'order-filling':['AUTO','FOK','IOC','RETURN'],
+  'order-stop-mode':['price','points'], 'pending-stop-mode':['price','points']
+};
+function ticketPreferencesKey() {
+  return currentAccountIdentity ? 'mt5.ticket.preferences:'+JSON.stringify(currentAccountIdentity) : null;
+}
+function saveOrderTicketPreferences() {
+  const key = ticketPreferencesKey();
+  if (!key) return;
+  const values = {};
+  for (const id of Object.keys(TICKET_PREFERENCES)) values[id] = document.getElementById(id)?.value;
+  const deviation = Number(document.getElementById('order-deviation')?.value);
+  if (Number.isInteger(deviation) && deviation >= 0 && deviation <= 100000) values['order-deviation'] = deviation;
+  try { localStorage.setItem(key,JSON.stringify(values)); } catch (_) {}
+}
+function restoreOrderTicketPreferences() {
+  let values={};
+  try { values=JSON.parse(localStorage.getItem(ticketPreferencesKey())||'{}'); } catch (_) {}
+  for (const [id, choices] of Object.entries(TICKET_PREFERENCES)) {
+    const input = document.getElementById(id);
+    if (input) input.value = choices.includes(values?.[id]) ? values[id] : choices[0];
+  }
+  const deviation=document.getElementById('order-deviation');
+  if (deviation) deviation.value=String(Number.isInteger(values?.['order-deviation'])&&values['order-deviation']>=0&&values['order-deviation']<=100000 ? values['order-deviation'] : 20);
+  changeOrderStopMode(); changeOrderStopMode(true); changeOrderRules();
+}
+function updateBrokerTicketChoices() {
+  const spec=window.MT5Markets?.getSymbol(currentSymbol);
+  if (!spec) return;
+  const configure=(id, allowed)=>{
+    const select=document.getElementById(id);
+    if (!select?.options) return;
+    for(const option of select.options) option.disabled=!allowed(option.value);
+  };
+  if(Number.isInteger(spec.order_mode)&&spec.order_mode>0) configure('pending-type',kind=>!!(spec.order_mode&(kind.endsWith('STOP_LIMIT')?8:kind.endsWith('LIMIT')?2:4)));
+  if(Number.isInteger(spec.expiration_mode)&&spec.expiration_mode>0) configure('pending-time-type',type=>!!(spec.expiration_mode&(1<<({GTC:0,DAY:1,SPECIFIED:2,SPECIFIED_DAY:3}[type]))));
+  if([0,1,2,3].includes(spec.execution_mode)) configure('order-filling',policy=>policy==='AUTO'||spec.execution_mode<2||(policy==='RETURN'?spec.execution_mode===3:!!(spec.filling_mode&(policy==='FOK'?1:2))));
+}
+
+function manualOrderMode() {
+  const value = document.getElementById('order-rule-mode')?.value;
+  return value === 'MT5' ? 'MT5' : 'PANEL';
+}
+function changeOrderRules() {
+  saveOrderTicketPreferences();
+  const note = document.getElementById('order-rule-note');
+  const native = manualOrderMode() === 'MT5';
+  if (note) note.textContent = native ? 'Manuel işlemlerde broker kuralları geçerli. SL/TP isteğe bağlı; panel lot, günlük zarar ve stop riski sınırları uygulanmaz. Hesap doğrulaması ve acil kilit geçerlidir.' : 'Manuel işlemlerde broker kuralları ve panel risk sınırları birlikte uygulanır.';
+  if (typeof scheduleTradePreview === 'function') scheduleTradePreview();
+}
+
 // MT5 ticket: explicit price levels or point distances; zero means no level.
 function readOrderProtection(pending = false) {
   const id = pending ? 'pending-' : '';
@@ -1620,12 +1674,15 @@ function readOrderProtection(pending = false) {
   };
   const sl = value('sl'), tp = value('tp');
   const deviation = Number(document.getElementById('order-deviation')?.value ?? 20);
+  const selectedFilling = document.getElementById('order-filling')?.value || 'AUTO';
+  const options = {manual_mode:manualOrderMode(),filling_policy:['AUTO','FOK','IOC','RETURN'].includes(selectedFilling) ? selectedFilling : 'AUTO'};
   if (![sl,tp].every(n => Number.isFinite(n) && n >= 0 && (mode === 'price' || Number.isInteger(n)))
       || !Number.isInteger(deviation) || deviation < 0 || deviation > 100000) return null;
-  return mode === 'price' ? {sl_points:0,tp_points:0,sl_price:sl,tp_price:tp,deviation_points:deviation}
-    : {sl_points:sl,tp_points:tp,deviation_points:deviation};
+  return mode === 'price' ? {sl_points:0,tp_points:0,sl_price:sl,tp_price:tp,deviation_points:deviation,...options}
+    : {sl_points:sl,tp_points:tp,deviation_points:deviation,...options};
 }
 function changeOrderStopMode(pending = false) {
+  saveOrderTicketPreferences();
   // Never reinterpret a point distance as an absolute price or silently widen SL.
   for (const name of ['sl','tp']) {
     const input = document.getElementById(pending ? 'pending-' + name : name + '-input');
@@ -1669,7 +1726,7 @@ async function submitOrder(type) {
     return;
   }
   const {sl_points:sl, tp_points:tp} = protection;
-  if (currentAccountType === 'REAL' && !(protection.sl_price ?? sl)) {
+  if (protection.manual_mode !== 'MT5' && currentAccountType === 'REAL' && !(protection.sl_price ?? sl)) {
     setOrderNotice(symbol, 'Uygulama risk kuralı', 'Bu panelde gerçek hesapta yeni emir için Stop Loss zorunlu.', 'error');
     return;
   }
@@ -1704,7 +1761,8 @@ async function submitOrder(type) {
         return;
       }
       if (intent.order_type !== type || intent.volume !== volume || intent.sl_points !== sl || intent.tp_points !== tp || (intent.sl_price ?? null) !== (protection.sl_price ?? null)
-          || (intent.tp_price ?? null) !== (protection.tp_price ?? null) || (intent.deviation_points ?? 20) !== protection.deviation_points) {
+          || (intent.tp_price ?? null) !== (protection.tp_price ?? null) || (intent.deviation_points ?? 20) !== protection.deviation_points
+          || (intent.manual_mode ?? 'PANEL') !== protection.manual_mode || (intent.filling_policy ?? 'AUTO') !== protection.filling_policy) {
         setOrderNotice(symbol, "Önceki emir doğrulanmalı", "MT5 durumunu kontrol edip ‘Kontrol ettim’ düğmesini kullanın.", "error");
         return;
       }

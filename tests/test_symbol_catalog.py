@@ -22,7 +22,7 @@ def symbol(name, *, path='', description='', trade_mode=4, visible=False, **fiel
 @pytest.fixture
 def catalog_client(client):
     client.mt5.symbols_get.return_value = (
-        symbol('EURUSD.a', path='Forex\\Majors', description='Euro vs US Dollar', visible=True, volume_min=.001, volume_max=50., volume_step=.001),
+        symbol('EURUSD.a', path='Forex\\Majors', description='Euro vs US Dollar', visible=True, volume_min=.001, volume_max=50., volume_step=.001, order_mode=0, expiration_mode=0, trade_exemode=2, filling_mode=3),
         symbol('BTCUSDm', path='Cryptocurrencies', description='Bitcoin', digits_unused=2),
         symbol('XAUUSD', path='Metals', description='Gold'),
         symbol('US500', path='Indices\\Cash'),
@@ -47,7 +47,7 @@ def test_catalog_contract_preserves_broker_metadata_and_infers_categories(catalo
         'GS.N':'stocks', 'WTI':'commodities', 'CustomProduct':'other'}
     assert rows['EURUSD.a'] == dict(name='EURUSD.a', path='Forex\\Majors',
         description='Euro vs US Dollar', category='forex', trade_mode=4,
-        digits=5, visible=True, selectable=True, volume_min=.001, volume_max=50., volume_step=.001)
+        digits=5, visible=True, selectable=True, volume_min=.001, volume_max=50., volume_step=.001, order_mode=0, expiration_mode=0, execution_mode=2, filling_mode=3)
     assert all(row['selectable'] for row in rows.values())
     assert_catalog_is_read_only(catalog_client.mt5)
 

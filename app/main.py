@@ -215,7 +215,7 @@ class AccountBoundRequest(BaseModel):
 
 class OrderRequest(AccountBoundRequest):
     request_id: str = Field(min_length=16, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
-    model_config = ConfigDict(allow_inf_nan=False)
+    model_config = ConfigDict(allow_inf_nan=False, extra='forbid')
     symbol: str = Field(min_length=1, max_length=32, pattern=r'^[A-Za-z0-9_.#-]+$')
     order_type: Literal["BUY", "SELL"]
     volume: float = Field(default=0.01, gt=0)
@@ -224,6 +224,12 @@ class OrderRequest(AccountBoundRequest):
     sl_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     tp_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     deviation_points: int = Field(default=20, ge=0, le=100000)
+    manual_mode: Literal['MT5','PANEL'] = 'PANEL'
+    filling_policy: Literal['AUTO','FOK','IOC','RETURN'] = 'AUTO'
+    stoplimit_price: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
+    time_type: Literal['GTC','DAY','SPECIFIED','SPECIFIED_DAY'] = 'GTC'
+    expiration: int = Field(default=0, ge=0)
+
     comment: str = "HMA Web Trade"
 
 class ActionRequest(AccountBoundRequest):
@@ -284,20 +290,27 @@ class AIAutopilotRequest(AccountBoundRequest):
     confirm_real_full_auto: bool = False
 
 class PendingRequest(OrderRequest):
-    pending_type: Literal["BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP"]
+    pending_type: Literal["BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP", "BUY_STOP_LIMIT", "SELL_STOP_LIMIT"]
     entry_price: float = Field(gt=0)
 
 class PreviewRequest(AccountBoundRequest):
+    model_config = ConfigDict(allow_inf_nan=False, extra='forbid')
     sl_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     tp_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     deviation_points: int = Field(default=20, ge=0, le=100000)
+    manual_mode: Literal['MT5','PANEL'] = 'PANEL'
+    filling_policy: Literal['AUTO','FOK','IOC','RETURN'] = 'AUTO'
+    stoplimit_price: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
+    time_type: Literal['GTC','DAY','SPECIFIED','SPECIFIED_DAY'] = 'GTC'
+    expiration: int = Field(default=0, ge=0)
+
 
     symbol: str = Field(pattern=r"^[A-Za-z0-9_.#-]+$", max_length=32)
     order_type: Literal["BUY", "SELL"]
     volume: float = Field(gt=0, allow_inf_nan=False)
     sl_points: int = Field(default=0, ge=0)
     tp_points: int = Field(default=0, ge=0)
-    pending_type: Optional[Literal["BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP"]] = None
+    pending_type: Optional[Literal["BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP", "BUY_STOP_LIMIT", "SELL_STOP_LIMIT"]] = None
     entry_price: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
 
 class UnlockRequest(BaseModel):
@@ -550,10 +563,22 @@ def security_lock(request: Request):
     return response
 
 class StopsRequest(CloseRequest):
+    manual_mode: Literal['MT5','PANEL'] = 'PANEL'
     sl: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     tp: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     expected_sl: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     expected_tp: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+
+class PendingModifyRequest(CloseRequest):
+    model_config = ConfigDict(allow_inf_nan=False, extra='forbid')
+    entry_price: float = Field(gt=0, allow_inf_nan=False)
+    sl_price: float = Field(default=0, ge=0, allow_inf_nan=False)
+    tp_price: float = Field(default=0, ge=0, allow_inf_nan=False)
+    stoplimit_price: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
+    time_type: Literal['GTC','DAY','SPECIFIED','SPECIFIED_DAY'] = 'GTC'
+    expiration: int = Field(default=0, ge=0)
+    manual_mode: Literal['MT5','PANEL'] = 'PANEL'
+    expected_state: tuple[int,str,int,int,float,float,float,float,float,int,int]
 
 class PartialCloseRequest(CloseRequest):
     volume: float = Field(gt=0, allow_inf_nan=False)
@@ -596,7 +621,9 @@ def trade_preview(req: PreviewRequest):
     result = mt5_client.trade_preview(req.symbol, req.order_type, req.volume,
                                       req.sl_points, req.pending_type, req.entry_price, tp_points=req.tp_points,
                                       expected_account=bound_request_account(req), sl_price=req.sl_price,
-                                      tp_price=req.tp_price, deviation_points=req.deviation_points)
+                                      tp_price=req.tp_price, deviation_points=req.deviation_points,
+                                      stoplimit_price=req.stoplimit_price, time_type=req.time_type, expiration=req.expiration,
+                                      manual_mode=req.manual_mode, filling_policy=req.filling_policy)
     return trade_response(result)
 
 
@@ -606,7 +633,16 @@ def place_pending(req: PendingRequest, account=Depends(require_real_unlock)):
         sl_points=req.sl_points, tp_points=req.tp_points, comment="Panel pending", request_id=req.request_id,
         pending_type=req.pending_type, entry_price=req.entry_price,
         sl_price=req.sl_price, tp_price=req.tp_price, deviation_points=req.deviation_points,
+        stoplimit_price=req.stoplimit_price, time_type=req.time_type, expiration=req.expiration,
+        manual_mode=req.manual_mode, filling_policy=req.filling_policy,
         expected_account=bound_request_account(req, account)))
+
+
+@app.post('/api/order/modify')
+def modify_pending(req: PendingModifyRequest, account=Depends(require_real_unlock)):
+    return trade_response(mt5_client.modify_pending(req.ticket,
+        req.model_dump(exclude={'ticket','request_id','expected_account'},exclude_none=True),
+        'pending-modify-'+req.request_id, expected_account=bound_request_account(req,account)))
 
 
 @app.post("/api/order/cancel")
@@ -773,6 +809,8 @@ def open_order(req: OrderRequest, account=Depends(require_real_unlock)):
         tp_points=req.tp_points,
         comment=req.comment, request_id=req.request_id,
         sl_price=req.sl_price, tp_price=req.tp_price, deviation_points=req.deviation_points,
+        stoplimit_price=req.stoplimit_price, time_type=req.time_type, expiration=req.expiration,
+        manual_mode=req.manual_mode, filling_policy=req.filling_policy,
         expected_account=bound_request_account(req, account)
     )
     if not res.get("success"):

@@ -18,7 +18,7 @@ function rememberPositions(rows) {
 function showPositionEditor(ticket) {
   const p = managedPositions.get(ticket);
   if (!p) return showToast('Pozisyon güncel listede bulunamadı.', 'error');
-  editorPosition = {...p};
+  editorPosition = {...p,account:JSON.stringify(currentAccountIdentity),generation:accountSessionGeneration};
   document.getElementById('position-editor-title').textContent = `${p.symbol} ${p.type} · #${p.ticket} · ${p.volume} lot`;
   document.getElementById('edit-sl').value = p.sl || 0;
   document.getElementById('edit-tp').value = p.tp || 0;
@@ -64,10 +64,11 @@ async function guardedAction(key, endpoint, payload) {
 async function savePositionStops() {
   const p = editorPosition;
   if (!p) return;
+  if (p.account !== JSON.stringify(currentAccountIdentity) || p.generation !== accountSessionGeneration) return showToast('Hesap değişti; pozisyonu yeniden açın.', 'error');
   const slValue = String(document.getElementById('edit-sl').value ?? '').trim(), tpValue = String(document.getElementById('edit-tp').value ?? '').trim();
   const sl = slValue === '' ? NaN : Number(slValue), tp = tpValue === '' ? NaN : Number(tpValue);
   if (![sl,tp].every(v=>Number.isFinite(v)&&v>=0)) return showToast('Geçerli SL/TP fiyatları girin.', 'error');
-  const result = await guardedAction('stops:'+p.ticket, '/api/position/stops', {ticket:p.ticket,sl,tp,expected_sl:p.sl,expected_tp:p.tp});
+  const result = await guardedAction('stops:'+p.ticket, '/api/position/stops', {ticket:p.ticket,sl,tp,expected_sl:p.sl,expected_tp:p.tp,manual_mode:manualOrderMode()});
   if (result?.success && !result.pending && !result.partial && !result.uncertain && editorPosition?.ticket === p.ticket) {
     editorPosition = {...p,sl,tp};
   }
@@ -75,22 +76,93 @@ async function savePositionStops() {
 async function partialClosePosition() {
   const p=editorPosition;
   if (!p) return;
+  if (p.account !== JSON.stringify(currentAccountIdentity) || p.generation !== accountSessionGeneration) return showToast('Hesap değişti; pozisyonu yeniden açın.', 'error');
   const volume=Number(document.getElementById('partial-volume').value);
   if (!Number.isFinite(volume)||volume<=0||volume>=p.volume) return showToast('Açık lottan küçük, pozitif bir miktar girin.', 'error');
   const result=await guardedAction('partial:'+p.ticket,'/api/position/partial-close',{ticket:p.ticket,volume});
   if (result?.success && !result.pending && !result.partial && !result.uncertain && editorPosition?.ticket === p.ticket) document.getElementById('position-editor').close();
 }
+function pendingOrderOptions() {
+  const kind = document.getElementById('pending-type').value;
+  const value = document.getElementById('pending-time-type')?.value;
+  const time_type = ['GTC','DAY','SPECIFIED','SPECIFIED_DAY'].includes(value) ? value : 'GTC';
+  const options = {time_type,expiration:0};
+  if (kind.endsWith('STOP_LIMIT')) options.stoplimit_price = Number(document.getElementById('pending-stoplimit')?.value);
+  if (['SPECIFIED','SPECIFIED_DAY'].includes(time_type)) {
+    const raw = document.getElementById('pending-expiration')?.value;
+    options.expiration = Math.floor(new Date(raw || NaN).getTime()/1000);
+  }
+  return options;
+}
+function changePendingOptions() {
+  const kind = document.getElementById('pending-type')?.value || '';
+  const selectedTime = document.getElementById('pending-time-type')?.value || 'GTC';
+  const limit = document.getElementById('pending-stoplimit-field');
+  const expiry = document.getElementById('pending-expiration-field');
+  if (limit) limit.hidden = !kind.endsWith('STOP_LIMIT');
+  if (expiry) expiry.hidden = !['SPECIFIED','SPECIFIED_DAY'].includes(selectedTime);
+  const expiryInput=document.getElementById('pending-expiration');
+  if (expiryInput) expiryInput.type=selectedTime==='SPECIFIED_DAY'?'date':'datetime-local';
+}
+
+const managedPendingOrders = new Map();
+let editorPendingOrder = null;
+function pendingState(order) {
+  return [Number(order.ticket),order.symbol,{BUY_LIMIT:2,SELL_LIMIT:3,BUY_STOP:4,SELL_STOP:5,BUY_STOP_LIMIT:6,SELL_STOP_LIMIT:7}[order.type],
+    Number(order.magic),Number(order.volume),Number(order.price),Number(order.sl),Number(order.tp),Number(order.stoplimit||0),Number(order.type_time||0),Number(order.expiration||0)];
+}
+function localDateInput(epoch) {
+  if (!epoch) return '';
+  const d = new Date(epoch*1000);
+  return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
+}
+function showPendingOrderEditor(ticket) {
+  const order=managedPendingOrders.get(ticket);
+  if (!order || accountSwitching || !currentAccountIdentity) return showToast('Bekleyen emir veya hesap doğrulanamadı.', 'error');
+  editorPendingOrder={...order,account:JSON.stringify(currentAccountIdentity),generation:accountSessionGeneration};
+  document.getElementById('pending-editor-title').textContent=`${order.symbol} ${order.type} · #${order.ticket}`;
+  for(const [id,value] of [['price',order.price],['sl',order.sl],['tp',order.tp],['stoplimit',order.stoplimit||0]]) document.getElementById('pending-edit-'+id).value=String(value);
+  document.getElementById('pending-edit-limit-field').hidden=!order.type.endsWith('STOP_LIMIT');
+  document.getElementById('pending-edit-time').value=['GTC','DAY','SPECIFIED','SPECIFIED_DAY'][order.type_time||0];
+  changePendingEditorTime();
+  document.getElementById('pending-edit-expiration').value=order.type_time===3 ? localDateInput(order.expiration).slice(0,10) : localDateInput(order.expiration);
+  document.getElementById('pending-editor').showModal();
+}
+function changePendingEditorTime() {
+  const type=document.getElementById('pending-edit-time').value;
+  document.getElementById('pending-edit-expiration-field').hidden=!['SPECIFIED','SPECIFIED_DAY'].includes(type);
+  document.getElementById('pending-edit-expiration').type=type==='SPECIFIED_DAY'?'date':'datetime-local';
+}
+async function savePendingOrder() {
+  const order=editorPendingOrder;
+  if(!order || accountSwitching || order.account!==JSON.stringify(currentAccountIdentity) || order.generation!==accountSessionGeneration)
+    return showToast('Hesap değişti; bekleyen emri yeniden açın.', 'error');
+  const value=id=>Number(document.getElementById('pending-edit-'+id).value);
+  const time_type=document.getElementById('pending-edit-time').value;
+  const expiration=['SPECIFIED','SPECIFIED_DAY'].includes(time_type) ? Math.floor(new Date(document.getElementById('pending-edit-expiration').value).getTime()/1000) : 0;
+  const payload={ticket:order.ticket,entry_price:value('price'),sl_price:value('sl'),tp_price:value('tp'),time_type,expiration,
+    manual_mode:manualOrderMode(),expected_state:pendingState(order)};
+  if(order.type.endsWith('STOP_LIMIT')) payload.stoplimit_price=value('stoplimit');
+  if(!Number.isFinite(payload.entry_price)||payload.entry_price<=0||![payload.sl_price,payload.tp_price].every(n=>Number.isFinite(n)&&n>=0)
+      ||!Number.isInteger(expiration)||(payload.stoplimit_price!==undefined&&!(payload.stoplimit_price>0)))
+    return showToast('Emir fiyatlarını ve son geçerlilik zamanını kontrol edin.', 'error');
+  const result=await guardedAction('pending-modify:'+order.ticket,'/api/order/modify',payload);
+  if(result?.success&&!result.uncertain&&!result.pending&&editorPendingOrder===order)document.getElementById('pending-editor').close();
+}
+
 let pendingOrderPreflight = false;
 function pendingOrderTicket() {
   const pending_type = document.getElementById('pending-type').value;
   return {symbol:currentSymbol,pending_type,order_type:pending_type.startsWith('BUY')?'BUY':'SELL',
     volume:Number(document.getElementById('pending-volume').value),
-    entry_price:Number(document.getElementById('pending-price').value), ...readOrderProtection(true)};
+    entry_price:Number(document.getElementById('pending-price').value), ...readOrderProtection(true), ...pendingOrderOptions()};
 }
 async function submitPendingOrder() {
   if (accountSwitching || pendingOrderPreflight) return;
   const protection = readOrderProtection(true), ticket = pendingOrderTicket();
-  if (!protection || ![ticket.volume,ticket.entry_price].every(v=>Number.isFinite(v)&&v>0))
+  if (!protection || ![ticket.volume,ticket.entry_price].every(v=>Number.isFinite(v)&&v>0)
+      || (ticket.stoplimit_price !== undefined && !(Number.isFinite(ticket.stoplimit_price)&&ticket.stoplimit_price>0))
+      || !Number.isInteger(ticket.expiration) || ticket.expiration < 0)
     return showToast('Fiyat, lot ve SL/TP alanlarını kontrol edin.', 'error');
   const snapshot = () => JSON.stringify([pendingOrderTicket(),tradingAccountPayload(),accountSessionGeneration,window.MT5Markets?.version?.()]);
   const selected = snapshot();
@@ -99,7 +171,7 @@ async function submitPendingOrder() {
     if (!await verifyChartOrderSymbol(ticket.order_type) || selected !== snapshot()
         || window.MT5Markets?.isSelectionVerified(currentSymbol, ticket.order_type) === false)
       return showToast('Hesap, sembol veya emir bilgileri değişti ya da doğrulanamadı. Emir gönderilmedi.', 'error');
-    if (currentAccountType==='REAL' && !(protection.sl_price ?? protection.sl_points))
+    if (protection.manual_mode !== 'MT5' && currentAccountType==='REAL' && !(protection.sl_price ?? protection.sl_points))
       return showToast('Uygulama kuralı: gerçek hesapta yeni bekleyen emir için Stop Loss zorunlu.', 'error');
     const quoteIssue = quoteOrderIssue();
     if (quoteIssue) return showToast(quoteIssue + ' Bekleyen emir gönderilmedi.', 'warning');
@@ -115,7 +187,9 @@ function renderPendingOrders(orders) {
   if (accountSwitching) return;
   if (!Array.isArray(orders)) throw new Error('Bekleyen emir listesi doğrulanamadı.');
   pendingRenderRevision++;
-  root.innerHTML=orders.length ? orders.map(o=>`<div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 py-2"><span><strong>${safeText(o.symbol)}</strong> ${safeText(o.type)}<br><span class="text-gray-400">#${Number(o.ticket)} · ${Number(o.volume)} lot @ ${Number(o.price)}</span></span><button onclick="cancelPendingOrder(${Number(o.ticket)})" class="px-2 py-1 rounded bg-rose-500/10 text-rose-300">İptal et</button></div>`).join('') : '<p class="text-gray-500 py-2">Bekleyen emir yok.</p>';
+  managedPendingOrders.clear();
+  orders.forEach(order=>managedPendingOrders.set(Number(order.ticket),{...order}));
+  root.innerHTML=orders.length ? orders.map(o=>`<div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 py-2"><span><strong>${safeText(o.symbol)}</strong> ${safeText(o.type)}<br><span class="text-gray-400">#${Number(o.ticket)} · ${Number(o.volume)} lot @ ${Number(o.price)} · SL ${Number(o.sl)||0} · TP ${Number(o.tp)||0}${o.stoplimit ? ` · Limit ${Number(o.stoplimit)}` : ''} · ${['GTC','DAY','SPECIFIED','SPECIFIED_DAY'][o.type_time||0]}${o.expiration ? ` · ${safeText(new Date(o.expiration*1000).toLocaleString())}` : ''}</span></span><button onclick="showPendingOrderEditor(${Number(o.ticket)})" class="px-2 py-1 rounded bg-cyan-500/10 text-cyan-300">Değiştir</button><button onclick="cancelPendingOrder(${Number(o.ticket)})" class="px-2 py-1 rounded bg-rose-500/10 text-rose-300">İptal et</button></div>`).join('') : '<p class="text-gray-500 py-2">Bekleyen emir yok.</p>';
 }
 let fetchingPending=false;
 let pendingRenderRevision=0;

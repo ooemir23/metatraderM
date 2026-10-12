@@ -528,7 +528,7 @@ class MT5Client:
             raise MT5DataError('İstek hazırlanırken seçilen hesap değişti; işlem gönderilmedi. Hesabı kontrol edip yeni istek oluşturun.')
         return account
 
-    def trade_preview(self, symbol, order_type, volume, sl_points=0, pending_type=None, entry_price=None, tp_points=0, *, expected_account=None, sl_price=None, tp_price=None, deviation_points=20):
+    def trade_preview(self, symbol, order_type, volume, sl_points=0, pending_type=None, entry_price=None, tp_points=0, *, expected_account=None, sl_price=None, tp_price=None, deviation_points=20, stoplimit_price=None, time_type='GTC', expiration=0, manual_mode='PANEL', filling_policy='AUTO'):
         with self._lock:
             if self.journal.trading_halted():
                 return {'success': False, 'error': 'Yeni emirler güvenlik kilidi nedeniyle durduruldu.'}
@@ -541,7 +541,7 @@ class MT5Client:
                                     self.effective_daily_loss_limit(login, server),
                                     self.journal.daily_limit_enabled(login, server), self.max_order_lots,
                                     self.max_total_lots, self.max_open_orders, tp_points, self.max_trade_risk_pct,
-                                    sl_price, tp_price, deviation_points)
+                                    sl_price, tp_price, deviation_points, stoplimit_price, time_type, expiration, manual_mode, filling_policy)
             except (MT5DataError, Exception) as exc:
                 return {'success': False, 'error': str(exc)}
 
@@ -765,7 +765,8 @@ class MT5Client:
                    tp_points: int = 0, comment: str = "HMA Web App", *,
                    magic: int = mt5_bridge.MANUAL_MAGIC, request_id: Optional[str] = None,
                    stop_event=None, pending_type=None, entry_price=None,
-                   expected_account=None, sl_price=None, tp_price=None, deviation_points=20) -> Dict[str, Any]:
+                   expected_account=None, sl_price=None, tp_price=None, deviation_points=20, stoplimit_price=None, time_type='GTC', expiration=0,
+                   manual_mode='PANEL', filling_policy='AUTO') -> Dict[str, Any]:
         if order_type.upper() not in ("BUY", "SELL"):
             return {"success": False, "error": "Emir yönü BUY veya SELL olmalı"}
         if not math.isfinite(volume) or volume <= 0 or sl_points < 0 or tp_points < 0:
@@ -785,6 +786,10 @@ class MT5Client:
             # Preserve the fingerprint of pre-upgrade point-based requests.
             if sl_price is not None or tp_price is not None:
                 payload.update(sl_price=sl_price, tp_price=tp_price)
+            if stoplimit_price is not None: payload['stoplimit_price'] = stoplimit_price
+            if time_type != 'GTC' or expiration: payload.update(time_type=time_type, expiration=expiration)
+            if manual_mode != 'PANEL': payload['manual_mode'] = manual_mode
+            if filling_policy != 'AUTO': payload['filling_policy'] = filling_policy
             if deviation_points != 20:
                 payload['deviation_points'] = deviation_points
             try:
@@ -793,7 +798,7 @@ class MT5Client:
                 daily_loss_limit = self.effective_daily_loss_limit(*account_scope, magic=magic)
                 enforce_daily_limit = self.journal.daily_limit_enabled(*account_scope)
                 tag = "vm:" + hashlib.sha256((str(account_scope) + request_id).encode()).hexdigest()[:24]
-                order_kind = {"BUY_LIMIT": 2, "SELL_LIMIT": 3, "BUY_STOP": 4, "SELL_STOP": 5}.get(pending_type, 0 if payload['order_type'] == 'BUY' else 1)
+                order_kind = mt5_bridge.PENDING_TYPES.get(pending_type, 0 if payload['order_type'] == 'BUY' else 1)
                 metadata = {'account': account_scope, 'tag': tag, 'order': {
                     'symbol': payload['symbol'], 'magic': magic, 'type': order_kind, 'volume': volume}}
                 res = self.journal.run(request_id, payload, lambda: self._bridge(
@@ -801,7 +806,7 @@ class MT5Client:
                     tag, magic, daily_loss_limit, account_scope[0], account_scope[1], 10, pending_type, entry_price,
                     self.max_order_lots, self.max_total_lots, self.max_open_orders, self.tick_clock_offset,
                     self.ai_max_trade_risk_pct, enforce_daily_limit, self.max_trade_risk_pct,
-                    sl_price, tp_price, deviation_points),
+                    sl_price, tp_price, deviation_points, stoplimit_price, time_type, expiration, manual_mode, filling_policy),
                     metadata=metadata, queue_ms=queue_ms)
                 return {**res, "queue_ms": queue_ms}
             except MT5DataError as exc:
@@ -1109,6 +1114,23 @@ class MT5Client:
                 return self.journal.run(request_id, dict(operation=operation, ticket=ticket, values=values, account=account),
                     lambda: self._bridge("manage_position", ticket, operation, values, self.login_id, self.server,
                                          self.tick_clock_offset, self.max_trade_risk_pct, self.ai_max_trade_risk_pct))
+            finally:
+                self.invalidate_trading_cache()
+
+    def modify_pending(self, ticket, values, request_id, *, expected_account=None):
+        with self._lock.order():
+            if not self.ensure_connected():
+                return {'success':False,'error':'MT5 bağlı değil.'}
+            try:
+                account = self._bound_account(expected_account)
+                return self.journal.run(request_id, dict(operation='pending_modify',ticket=ticket,values=values,account=account),
+                    lambda:self._bridge('modify_pending',ticket,values,*account,self.tick_clock_offset,
+                                        self.max_trade_risk_pct,self.ai_max_trade_risk_pct))
+            except MT5DataError as exc:
+                return {'success':False,'error':str(exc)}
+            except Exception:
+                logger.exception('Bekleyen emir değişikliğinin sonucu kaydedilemedi')
+                return {'success':False,'uncertain':True,'error':'Bekleyen emir değişikliğinin sonucu doğrulanamadı; MT5 durumunu kontrol edin.'}
             finally:
                 self.invalidate_trading_cache()
 

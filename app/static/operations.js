@@ -61,6 +61,10 @@ function renderTradePolicy(result) {
   const label = document.getElementById('trade-risk-policy');
   if (!label) return;
   const en = window.MT5I18n?.language?.() === 'en';
+  if (result?.manual_mode === 'MT5') {
+    label.textContent = en ? 'MT5 mode: broker rules; SL/TP optional. Panel risk limits do not apply to manual orders.' : 'MT5 modu: broker kuralları; SL/TP isteğe bağlı. Manuel işlemlere panel risk sınırları uygulanmaz.';
+    return;
+  }
   const cap = result?.effective_trade_risk_pct ?? result?.max_trade_risk_pct;
   const parts = [];
   if (result?.stop_required) parts.push(en ? 'A stop loss is required on this real account.' : 'Uygulama kuralı: bu gerçek hesapta Stop Loss zorunlu.');
@@ -136,7 +140,7 @@ async function refreshTradePreview(scheduledGeneration) {
   if (generation !== previewGeneration) return;
   const identity = tradePreviewIdentity();
   const {symbol, volume, sl_points, tp_points, side, key} = identity;
-  if (!Number.isFinite(volume) || volume <= 0 || !identity.protection || !Object.values(identity.protection).every(value=>Number.isFinite(value)&&value>=0)) {
+  if (!Number.isFinite(volume) || volume <= 0 || !identity.protection || !Object.entries(identity.protection).filter(([name])=>!['manual_mode','filling_policy'].includes(name)).every(([,value])=>Number.isFinite(value)&&value>=0)) {
     label.textContent = 'Geçerli lot ve SL/TP mesafesi girin.';
     markTradePreview('unavailable', '');
     renderStopGuidance(null, identity);
@@ -171,8 +175,9 @@ async function refreshTradePreview(scheduledGeneration) {
       ? (en ? ' · Margin unavailable' : ' · Teminat hesaplanamadı')
       : (en ? ` · Required margin ${money(result.margin_required)}` : ` · Gerekli teminat ${money(result.margin_required)}`);
     message += en ? ` · Spread ${result.spread_points} points` : ` · Spread ${result.spread_points} puan`;
-    message += en ? ` · Existing stop risk ${money(result.existing_stop_risk)} · Daily loss ${money(result.daily_loss)}`
-      : ` · Açık stop riski ${money(result.existing_stop_risk)} · Günlük zarar ${money(result.daily_loss)}`;
+    message += en ? ` · Existing stop risk ${money(result.existing_stop_risk)}` : ` · Açık stop riski ${money(result.existing_stop_risk)}`;
+    if (result.daily_loss != null) message += en ? ` · Daily loss ${money(result.daily_loss)}` : ` · Günlük zarar ${money(result.daily_loss)}`;
+    if(result.position_mode) message += ` · ${result.position_mode}`;
     if (result.positions_without_stop) message += en
       ? ` · ${result.positions_without_stop} open positions without a stop`
       : ` · ${result.positions_without_stop} açık pozisyonda stop yok`;
@@ -193,6 +198,7 @@ async function refreshTradePreview(scheduledGeneration) {
   }
 }
 document.addEventListener('DOMContentLoaded', () => {
+  if (typeof changeOrderRules === 'function') changeOrderRules();
   for (const id of ['lot-input','sl-input','tp-input','order-deviation']) document.getElementById(id)?.addEventListener('input', () => scheduleTradePreview());
   document.getElementById('order-buy-btn')?.addEventListener('mouseenter', () => { if (previewSide !== 'BUY') scheduleTradePreview('BUY'); });
   document.getElementById('order-sell-btn')?.addEventListener('mouseenter', () => { if (previewSide !== 'SELL') scheduleTradePreview('SELL'); });

@@ -681,3 +681,170 @@ def test_http_price_ticket_fields_reach_preview_and_pending_bridge(client, monke
     request = client.mt5.order_send.call_args.args[0]
     assert request['sl'] == payload['sl_price'] and request['tp'] == payload['tp_price']
     assert request['deviation'] == 35
+
+
+@pytest.mark.parametrize('side,kind,entry,limit,expected', [
+    ('BUY','BUY_LIMIT',1.09,None,2),('SELL','SELL_LIMIT',1.11,None,3),
+    ('BUY','BUY_STOP',1.11,None,4),('SELL','SELL_STOP',1.09,None,5),
+    ('BUY','BUY_STOP_LIMIT',1.11,1.105,6),('SELL','SELL_STOP_LIMIT',1.09,1.095,7),
+])
+@pytest.mark.parametrize('time_type,code', [('GTC',0),('DAY',1),('SPECIFIED',2),('SPECIFIED_DAY',3)])
+def test_mt5_all_pending_types_and_expiration_modes(client,side,kind,entry,limit,expected,time_type,code):
+    info=client.mt5.symbol_info.return_value
+    info.order_mode,info.expiration_mode=127,15
+    expiry=int(time.time())+86400 if code>=2 else 0
+    kwargs=dict(pending_type=kind,entry_price=entry,stoplimit_price=limit,time_type=time_type,expiration=expiry,
+                sl_price=0,tp_price=0,manual_mode='MT5')
+    preview=client.trade_preview('EURUSD',side,.01,**kwargs)
+    assert preview['success'] and preview['stoplimit_price']==(limit or 0)
+    result=client.open_order('EURUSD',side,.01,**kwargs)
+    assert result['success']
+    req=client.mt5.order_send.call_args.args[0]
+    assert (req['action'],req['type'],req['type_time'],req['expiration'],req['type_filling'])==(5,expected,code,expiry,2)
+    assert req['stoplimit']==(limit or 0) and req['price']==entry
+
+
+@pytest.mark.parametrize('kwargs', [
+    {'pending_type':'BUY_STOP_LIMIT','entry_price':1.11,'stoplimit_price':1.12},
+    {'pending_type':'BUY_STOP_LIMIT','entry_price':1.11},
+    {'pending_type':'SELL_STOP_LIMIT','entry_price':1.09,'stoplimit_price':1.08},
+    {'pending_type':'BUY_LIMIT','entry_price':1.09,'stoplimit_price':1.08},
+    {'pending_type':'BUY_LIMIT','entry_price':1.09,'time_type':'SPECIFIED','expiration':1},
+    {'pending_type':'BUY_LIMIT','entry_price':1.09,'expiration':int(time.time())+86400},
+])
+def test_invalid_mt5_pending_fields_never_send(client,kwargs):
+    client.mt5.symbol_info.return_value.order_mode=127
+    client.mt5.symbol_info.return_value.expiration_mode=15
+    side=kwargs['pending_type'].split('_')[0]
+    assert not client.open_order('EURUSD',side,.01,manual_mode='MT5',**kwargs)['success']
+    client.mt5.order_send.assert_not_called()
+
+
+def test_mt5_manual_mode_uses_broker_limits_not_panel_caps_or_history(client):
+    client.mt5.history_deals_get.return_value=None
+    result=client.open_order('EURUSD','BUY',2,manual_mode='MT5',sl_price=0,tp_price=0)
+    assert result['success'] and not result['stop_required']
+    req=client.mt5.order_send.call_args.args[0]
+    assert req['volume']==2 and req['sl']==req['tp']==0
+    assert 'price' not in req
+    client.mt5.history_deals_get.assert_not_called()
+    client.mt5.order_check.assert_called_once()
+
+
+def test_mt5_manual_real_account_accepts_optional_stop_but_ai_does_not(client):
+    client.account_type='REAL';client.mt5.account_info.return_value.trade_mode=2
+    assert client.open_order('EURUSD','BUY',.01,manual_mode='MT5',sl_price=0,tp_price=0)['success']
+    assert not client.open_order('EURUSD','BUY',.01,manual_mode='MT5',magic=AI_MAGIC)['success']
+    assert client.mt5.order_send.call_count==1
+
+
+def test_mt5_manual_netting_allows_opposite_native_position(client):
+    client.mt5.account_info.return_value.margin_mode=0
+    client.mt5.positions_get.return_value=[pos(magic=0,side=1)]
+    assert client.open_order('EURUSD','BUY',.01,manual_mode='MT5')['success']
+    req=client.mt5.order_send.call_args.args[0]
+    assert req['type']==0 and req['volume']==.01
+
+
+@pytest.mark.parametrize('policy,code',[('FOK',0),('IOC',1)])
+def test_explicit_mt5_fill_policy_is_sent_once(client,policy,code):
+    assert client.open_order('EURUSD','BUY',.01,manual_mode='MT5',filling_policy=policy)['success']
+    assert client.mt5.order_send.call_args.args[0]['type_filling']==code
+    assert client.mt5.order_send.call_count==1
+
+
+def test_unsupported_return_market_policy_and_expiry_never_send(client):
+    assert not client.open_order('EURUSD','BUY',.01,manual_mode='MT5',filling_policy='RETURN')['success']
+    client.mt5.symbol_info.return_value.order_mode=127
+    client.mt5.symbol_info.return_value.expiration_mode=1
+    assert not client.open_order('EURUSD','BUY',.01,manual_mode='MT5',pending_type='BUY_STOP_LIMIT',entry_price=1.11,
+                                 stoplimit_price=1.105,time_type='DAY')['success']
+    client.mt5.order_send.assert_not_called()
+
+
+def pending_row(**updates):
+    return NS(ticket=432,symbol='EURUSD',type=2,magic=MANUAL_MAGIC,volume_current=.01,price_open=1.09,
+              sl=1.089,tp=1.092,price_stoplimit=0,type_time=0,time_expiration=0,**updates)
+
+
+def test_pending_modification_matches_mt5_and_replays_without_sending_twice(client):
+    from app.mt5_bridge import _pending_state
+    order=pending_row();client.mt5.orders_get.return_value=[order]
+    client.mt5.symbol_info.return_value.order_mode=127
+    client.mt5.symbol_info.return_value.expiration_mode=15
+    values=dict(entry_price=1.08,sl_price=0,tp_price=0,time_type='DAY',expiration=0,manual_mode='MT5',expected_state=list(_pending_state(order)))
+    result=client.modify_pending(432,values,'pending-modify-mt5-test')
+    assert result['success']
+    req=client.mt5.order_send.call_args.args[0]
+    assert (req['action'],req['order'],req['price'],req['type_time'])==(7,432,1.08,1)
+    assert req['sl']==req['tp']==0
+    assert client.modify_pending(432,values,'pending-modify-mt5-test')['replayed']
+    assert client.mt5.order_send.call_count==1
+
+
+def test_pending_order_changed_during_preflight_is_not_modified(client):
+    from app.mt5_bridge import _pending_state
+    order=pending_row();client.mt5.orders_get.return_value=[order]
+    client.mt5.symbol_info.return_value.order_mode=127
+    client.mt5.symbol_info.return_value.expiration_mode=1
+    values=dict(entry_price=1.08,manual_mode='MT5',expected_state=list(_pending_state(order)))
+    def changed(req):
+        order.price_open=1.085
+        return NS(retcode=0,comment='ok')
+    client.mt5.order_check.side_effect=changed
+    result=client.modify_pending(432,values,'pending-change-mt5-test')
+    assert not result['success'] and not result.get('uncertain')
+    client.mt5.order_send.assert_not_called()
+
+
+def test_mt5_manual_position_stop_removal_is_allowed_on_real(client):
+    client.account_type='REAL';client.mt5.account_info.return_value.trade_mode=2
+    p=pos(magic=MANUAL_MAGIC,side=0);p.sl=1.099
+    client.mt5.positions_get.return_value=[p]
+    result=client.manage_position(1,'stops',{'sl':0,'tp':0,'manual_mode':'MT5'},'mt5-manual-remove-stop')
+    assert result['success'] and client.mt5.order_send.call_args.args[0]['sl']==0
+
+
+def test_market_endpoint_rejects_pending_fields_instead_of_sending_market_order(client,monkeypatch):
+    from app import main
+    monkeypatch.setattr(main,'mt5_client',client)
+    payload={'symbol':'EURUSD','order_type':'BUY','volume':.01,'request_id':'mistyped-endpoint-pending',
+             'pending_type':'BUY_LIMIT','entry_price':1.09,'manual_mode':'MT5'}
+    response=authenticated_web().post('/api/order/open',json=payload)
+    assert response.status_code==422
+    client.mt5.order_send.assert_not_called()
+
+
+def test_mt5_manual_mode_still_respects_broker_rejection_and_emergency_lock(client):
+    client.mt5.order_check.return_value=NS(retcode=10019,comment='No money')
+    result=client.open_order('EURUSD','BUY',2,manual_mode='MT5')
+    assert not result['success'] and result['retcode']==10019
+    client.journal.set_trading_halted(True)
+    result=client.open_order('EURUSD','BUY',2,manual_mode='MT5')
+    assert result['reason_code']=='trading_halted'
+    client.mt5.order_send.assert_not_called()
+
+
+def test_pending_modify_http_preserves_snapshot_and_price_fields(client,monkeypatch):
+    from app import main
+    from app.mt5_bridge import _pending_state
+    monkeypatch.setattr(main,'mt5_client',client)
+    order=pending_row();client.mt5.orders_get.return_value=[order]
+    client.mt5.symbol_info.return_value.order_mode=127
+    client.mt5.symbol_info.return_value.expiration_mode=1
+    payload=dict(ticket=432,request_id='pending-modify-http-test',entry_price=1.08,sl_price=0,tp_price=0,
+                 manual_mode='MT5',expected_state=list(_pending_state(order)))
+    response=authenticated_web().post('/api/order/modify',json=payload)
+    assert response.status_code==200
+    req=client.mt5.order_send.call_args.args[0]
+    assert req['action']==7 and req['price']==1.08
+
+
+def test_pending_modify_api_rejects_nonfinite_expected_price_before_broker(client,monkeypatch):
+    from app import main
+    from app.mt5_bridge import _pending_state
+    monkeypatch.setattr(main,'mt5_client',client)
+    state=list(_pending_state(pending_row()));state[5]='NaN'
+    response=authenticated_web().post('/api/order/modify',json={'ticket':432,'request_id':'pending-bad-state-test','entry_price':1.08,'expected_state':state})
+    assert response.status_code==422
+    client.mt5.order_send.assert_not_called()

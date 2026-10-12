@@ -153,7 +153,7 @@ function stopRefreshes(h) { for(const fn of ['fetchAccount','fetchPositions','fe
     c.rememberPositions([{ticket:7,symbol:'EURUSD',type:'BUY',volume:.03,sl:1.08,tp:1.14}]);c.showPositionEditor(7);
     h.node('edit-sl').value='';await c.savePositionStops();assert.equal(h.requests.length,0);
     h.node('pending-sl').value='';await c.submitPendingOrder();assert.equal(h.requests.length,0);
-    c.renderAccountData({...account(),account_type:'REAL'});h.node('sl-input').value='0';
+    c.renderAccountData({...account(),account_type:'REAL'});h.node('order-rule-mode').value='PANEL';h.node('sl-input').value='0';
     await c.submitOrder('BUY');assert.equal(h.requests.length,0);
     c.renderAccountData({...account(),account_type:'CONTEST'});
     assert.match(h.node('status-text').innerText,/türü doğrulanamadı/);

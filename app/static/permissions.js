@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     const adminActions = ['toggleAIAutopilotModal', 'saveAIAutopilot', 'toggleBot',
       'toggleBotSettingsModal', 'saveBotSettings', 'resumeTrading', 'submitLogin'];
-    const tradeActions = ['submitOrder', 'executeCurrentAdvice', 'submitPendingOrder', 'cancelPendingOrder',
+    const tradeActions = ['submitOrder', 'savePendingOrder', 'executeCurrentAdvice', 'submitPendingOrder', 'cancelPendingOrder',
       'savePositionStops', 'partialClosePosition', 'closePosition', 'closeFilteredPositions', 'closeAllPositions'];
     const can = action => !((role !== 'ADMIN' && adminActions.includes(action)) ||
       (role === 'VIEWER' && tradeActions.includes(action)));
