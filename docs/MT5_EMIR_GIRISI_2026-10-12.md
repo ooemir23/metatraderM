@@ -27,8 +27,18 @@ Mod, doldurma, SL/TP gösterimi ve sapma tercihleri tarayıcıda hesap/sunucu/he
 
 Sahte broker testleri altı bekleyen tür × dört geçerlilik seçeneğini, yanlış limit/tarih reddini, seçilen doldurma politikasını, Market yürütmede fiyatın çıkarılmasını, gerçek hesapta isteğe bağlı manuel SL'yi, panel limitlerinden bağımsız manuel lotu, netting ters emrini ve otomasyon kurallarının korunmasını kapsar. Broker reddi ve acil kilit, MT5 modunda da emir göndermez. Bekleyen değişiklikte snapshot yarışları, HTTP veri aktarımı ve eski kimliğin tekrarı kontrol edilir.
 
-Arayüz testleri MT5/panel seçimini, hesap bazlı tercihleri, broker seçeneklerini, Stop Limit/süre alanlarını, bekleyen emri düzenlemeyi ve hesap değişiminde eski editörün reddini kapsar. Testler gerçek broker emri göndermez. İlk fiyat/puan sürümü yerel Browser becerisiyle görülmüştü; bu tamamlanan sürümde Browser yeni sekmeye bağlanamadığından son görsel doğrulama yapılmadı.
+Arayüz testleri MT5/panel seçimini, hesap bazlı tercihleri, broker seçeneklerini, Stop Limit/süre alanlarını, bekleyen emri düzenlemeyi ve hesap değişiminde eski editörün reddini kapsar. Testler gerçek broker emri göndermez. İlk fiyat/puan sürümü yerel Browser becerisiyle görülmüştü. Son canlı sürüm için tarayıcıda panel oturumu açılamadığı için görsel doğrulama tamamlanmadı; aşağıdaki canlı kontroller yetkili bakım bağlantısıyla yapıldı.
 
-Canlı panel bağlı DEMO hesap bildiriyor. Dokploy `/` ve `/dashboard/home` HTTP 500 veriyor. Mevcut yönetim SSH anahtarı kabul edilmiyor; yerelde Docker yönetim istemcisi/bağlantısı yok. Bu yüzden canlı kurulum henüz gerçekleşmedi; sunucu yönetim erişimi bekleniyor. Mevcut canlı sürümün değiştiği iddia edilmez.
+### Canlı yayın ve sunucu kurtarma
+
+`981b8c52b4a018f22405a17c4f0687e25768d2df` sürümü 12 Ekim 2026'da canlıya alındı. Yalnız web servisi yeniden oluşturuldu; çalışma ortamının Compose ayarları korundu.
+
+Dokploy 500 hatasının nedeni 38 GB kök diskin tamamen dolmasıydı. PostgreSQL `postmaster.pid` yazamadığı için başlatılamıyordu. Kullanılmayan dangling imaj ve paket önbelleği temizlendi; mevcut RAM kontrolünden sonra swap 4 GB'dan 2 GB'a indirildi, ext4 ayrılmış blok oranı %1 yapıldı. Veritabanı ve Dokploy yeniden başlatıldı. `/` ve `/dashboard/home` HTTP 200 döndü. MT5 başlangıç betikleri disk doluyken sıfır bayta düşmüştü; mevcut MT5 konteynerini yeniden başlatmak betikleri yeniden üretti ve RPyC bağlantısını düzeltti. Uygulama verileri ve Docker veri volume'leri silinmedi.
+
+Yayın öncesi doğrulanmış durum yedeği `/config/backups/backup-20261012T162330Z-otz153`, kaynak/özel yapılandırma arşivi `/config/backups/pre-mt5-native-20261012T162330Z.tar.gz` olarak saklandı. Eski web imajı `mt5-web-rollback:171e2d9` etiketiyle korundu. Yeni servis başlangıcındaki otomatik yedek de doğrulandı.
+
+Canlı hesap DEMO, broker bağlantısı açık ve hesap kimliği eşleşiyor. Katalog 618 ürün döndürüyor. EURUSD ve BTCUSD için SL/TP olmadan MT5 modu risk önizlemeleri HTTP 200 ve başarı döndürüyor. Altı bekleyen emir türü, dört geçerlilik seçeneği ve sıkı istek şemaları canlı API'de mevcut. Beş JavaScript dosyasının SHA256 değerleri test edilen kaynakla eşleşiyor; HTML'de yeni emir modu seçimi var. Açık pozisyon/bekleyen emir sayısı 0, HMA ve AI otomasyonları kapalı. Doğrulama sırasında gerçek veya demo emir gönderilmedi.
+
+Yayın sonrası kök diskte yaklaşık 1,8 GB boş alan (%96 kullanım) kaldı. Bu kurtarma kapasite artışı sağlamaz; sonraki imajlar/yedekler için disk alanı hâlâ sınırlıdır.
 
 Kaynaklar: [MT5 emir penceresi](https://www.metatrader5.com/en/terminal/help/trading/performing_deals), [MQL5 emir/doldurma/geçerlilik özellikleri](https://www.mql5.com/en/docs/constants/tradingconstants/orderproperties), [MT5 netting/hedging ve stop prensipleri](https://www.metatrader5.com/en/terminal/help/trading/general_concept).
