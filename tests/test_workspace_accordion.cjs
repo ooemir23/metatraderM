@@ -11,7 +11,7 @@ assert.equal((html.match(/id="signal-scanner-card"/g) || []).length, 1, 'scanner
 assert.ok(html.includes('id="signals-toggle"') && html.includes('id="positions-strip"'));
 assert.ok(html.includes('/static/workspace.js'), 'script included');
 const drawerAt = html.indexOf('id="tools-drawer"');
-for (const id of ['research-panel', 'market-depth-panel', 'system-logs']) assert.ok(html.indexOf(`id="${id}"`) > drawerAt, `${id} lives in the tools drawer`);
+for (const id of ['native-terminal-panel', 'research-panel', 'market-depth-panel', 'system-logs']) assert.ok(html.indexOf(`id="${id}"`) > drawerAt, `${id} lives in the tools drawer`);
 assert.ok(html.indexOf('id="positions-card"') < html.indexOf('</main>') && html.indexOf('id="positions-card"') > html.indexOf('id="order-buy-btn"'), 'positions row is full width below the grid');
 
 function load(stored, {blockStorage = false} = {}) {

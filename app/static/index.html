@@ -10,7 +10,7 @@
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
   <!-- TradingView Widget -->
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=signals-1">
+  <link rel="stylesheet" href="/static/style.css?v=tools-2">
   <script src="/static/ui-scale.js?v=1"></script>
   <script src="/static/vendor/lightweight-charts.js"></script>
 </head>
@@ -117,14 +117,6 @@
       <div class="lg:col-span-8 flex flex-col gap-3 sm:gap-4">
         
         <!-- INTERACTIVE TRADINGVIEW CHART -->
-      <details id="native-terminal-panel" ontoggle="if(!this.open)closeNativeTerminal()" class="w-full bg-[#121620] p-4 rounded-2xl border border-gray-800 mb-4">
-        <summary class="font-bold text-white cursor-pointer">Orijinal MetaTrader 5 terminali</summary>
-        <p class="text-xs text-gray-400 mt-3">Sunucudaki gerçek MT5 terminali bu ekranda açılır. Grafik, gösterge, emir, MetaEditor ve Strategy Tester ayarları terminalin kendisinde yapılır.</p>
-        <p class="text-xs text-amber-300 mt-2">Yönetici erişimi. Bu terminalin kendi emir penceresine panelin ek risk sınırları, TOTP ve emir kilidi uygulanmaz; MT5 ve broker kuralları geçerlidir.</p>
-        <div class="flex gap-2 mt-3"><button onclick="openNativeTerminal()" class="px-3 py-2 text-xs bg-cyan-700 rounded text-white">Orijinal terminali aç / Yenile</button><button onclick="fullscreenNativeTerminal()" class="px-3 py-2 text-xs bg-gray-700 rounded text-white">Terminali tam ekran aç</button><button onclick="closeNativeTerminal()" class="px-3 py-2 text-xs bg-gray-700 rounded text-white">Terminal ekranını kapat</button></div>
-        <p id="native-terminal-status" role="status" class="text-xs text-gray-400 mt-2"></p>
-        <iframe id="native-terminal-frame" hidden title="Orijinal MetaTrader 5 terminali" class="w-full h-[720px] mt-3 rounded border border-gray-700 bg-black" allow="fullscreen" referrerpolicy="no-referrer"></iframe>
-      </details>
 
       <div id="chart-card" class="w-full bg-[#121620] rounded-2xl border border-gray-800/80 overflow-hidden flex flex-col h-[480px] lg:h-[520px] xl:h-[580px] shadow-xl">
         <div class="px-3.5 py-2 border-b border-gray-800 flex items-center justify-between bg-[#151a26] flex-wrap gap-2">
@@ -1030,6 +1022,14 @@
       <button type="button" class="tools-drawer-close" onclick="setToolsDrawer(false)" aria-label="Araçları kapat"><i class="ph-bold ph-x"></i></button>
     </div>
     <div class="tools-drawer-body">
+        <details id="native-terminal-panel" ontoggle="if(!this.open)closeNativeTerminal()" class="w-full bg-[#121620] p-4 rounded-2xl border border-gray-800 text-xs">
+          <summary class="font-bold text-white cursor-pointer">Orijinal MetaTrader 5 terminali</summary>
+          <p class="text-xs text-gray-400 mt-3">Sunucudaki gerçek MT5 terminali bu ekranda açılır. Grafik, gösterge, emir, MetaEditor ve Strategy Tester ayarları terminalin kendisinde yapılır.</p>
+          <p class="text-xs text-amber-300 mt-2">Yönetici erişimi. Bu terminalin kendi emir penceresine panelin ek risk sınırları, TOTP ve emir kilidi uygulanmaz; MT5 ve broker kuralları geçerlidir.</p>
+          <div class="flex gap-2 mt-3"><button onclick="openNativeTerminal()" class="px-3 py-2 text-xs bg-cyan-700 rounded text-white">Orijinal terminali aç / Yenile</button><button onclick="fullscreenNativeTerminal()" class="px-3 py-2 text-xs bg-gray-700 rounded text-white">Terminali tam ekran aç</button><button onclick="closeNativeTerminal()" class="px-3 py-2 text-xs bg-gray-700 rounded text-white">Terminal ekranını kapat</button></div>
+          <p id="native-terminal-status" role="status" class="text-xs text-gray-400 mt-2"></p>
+          <iframe id="native-terminal-frame" hidden title="Orijinal MetaTrader 5 terminali" class="native-terminal-frame w-full mt-3 rounded border border-gray-700 bg-black" allow="fullscreen" referrerpolicy="no-referrer"></iframe>
+        </details>
         <details class="bg-[#121620] p-4 rounded-2xl border border-gray-800 text-xs">
           <summary class="text-white font-bold cursor-pointer">Strateji testi ve broker uyumluluğu</summary>
           <p class="mt-2 text-gray-400">Geçmiş kapanmış mumlarda HMA kesişimini test eder. Sonuçlar hesap para birimi yerine puandır; geçmiş spread, swap ve kayma dahil değildir.</p>
@@ -1469,10 +1469,10 @@
   <script src="/static/market-watch.js"></script>
   <script src="/static/signal-settings.js?v=1"></script>
   <script src="/static/app.js?v=signals-1"></script>
-  <script src="/static/trading.js"></script>
+  <script src="/static/trading.js?v=2"></script>
   <script src="/static/operations.js"></script>
   <script src="/static/permissions.js"></script>
   <script src="/static/research.js"></script>
-  <script src="/static/workspace.js?v=2"></script>
+  <script src="/static/workspace.js?v=3"></script>
 </body>
 </html>

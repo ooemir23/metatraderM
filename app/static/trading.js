@@ -21,6 +21,7 @@ async function openNativeTerminal() {
   }catch(err){if(request!==nativeTerminalRequest)return;status.textContent=err.message;return showToast(err.message,'error');}
   if(request!==nativeTerminalRequest)return;
   nativeTerminalOpen=true;
+  document.getElementById('tools-drawer')?.classList.add('wide');
   frame.hidden=false;frame.src='/native-mt5/vnc/index.html?path=native-mt5%2Fwebsockify&autoconnect=true&resize=remote';
   status.textContent='Orijinal MT5 ekranına bağlanılıyor. Ekrandaki işlemler doğrudan terminalde yapılır.';
   updateOrderButtons();
@@ -29,6 +30,7 @@ function closeNativeTerminal() {
   nativeTerminalRequest++;
   const frame=document.getElementById('native-terminal-frame');frame.src='about:blank';frame.hidden=true;
   nativeTerminalOpen=false;updateOrderButtons();
+  document.getElementById('tools-drawer')?.classList.remove('wide');
   document.getElementById('native-terminal-status').textContent='Ekran bağlantısı kapandı. MT5 terminali sunucuda çalışmaya devam eder.';
 }
 async function fullscreenNativeTerminal() {

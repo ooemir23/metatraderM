@@ -77,6 +77,10 @@
     const drawer = $('tools-drawer'), backdrop = $('tools-backdrop');
     if (!drawer) return;
     if (open) toolsReturnFocus = document.activeElement;
+    // Closing the drawer also disconnects the native MT5 screen so the panel's order buttons unlock;
+    // the terminal itself keeps running on the server.
+    const terminal = $('native-terminal-panel');
+    if (!open && terminal?.open) terminal.open = false;
     drawer.classList.toggle('open', open);
     drawer.toggleAttribute('inert', !open);
     drawer.setAttribute('aria-hidden', String(!open));
