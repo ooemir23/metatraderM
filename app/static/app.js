@@ -3092,16 +3092,21 @@ async function assignScannerSymbolToBot(symbol, timeframeMinutes) {
       showToast('Sembolü bota aktarmadan önce çalışan botu durdurun.', 'warning');
       return;
     }
+    const tf = Number(timeframeMinutes) || 15;
+    const payload = {symbol, timeframe_minutes: tf};
+    if (tf !== 60 || latestBotSettings?.second_ma_type !== 'KAMA' || !latestBotSettings?.use_atr_filter) {
+      payload.use_h4_filter = false;
+    }
     const res = await fetch('/api/bot/config', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({symbol, timeframe_minutes: Number(timeframeMinutes) || 15}),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.detail || 'Bot sembolü güncellenemedi.');
     }
-    showToast(`🤖 HMA Algoritmik Bot hedefi ${symbol} (M${timeframeMinutes}) olarak ayarlandı!`, 'success');
+    showToast(`🤖 HMA Algoritmik Bot hedefi ${symbol} (M${tf}) olarak ayarlandı!`, 'success');
     fetchBotStatus();
     fetchBotLiveSignal();
   } catch (err) {
