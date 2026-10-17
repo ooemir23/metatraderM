@@ -366,3 +366,13 @@ body.resizing-positions #tradingview-container iframe {
   box-shadow: none;
   transform: none;
 }
+
+/* Interface size control (ui-scale.js). html background avoids an empty band when zoomed out. */
+html { background: #0b0e14; }
+.ui-scale { display:inline-flex; align-items:center; flex-shrink:0; border:1px solid #334155; border-radius:9px; background:#181d2a; overflow:hidden; }
+.ui-scale button { height:28px; padding:0 9px; color:#cbd5e1; font-size:12px; font-weight:700; line-height:1; transition:background .15s, color .15s; }
+.ui-scale button:hover:not(:disabled) { background:#243044; color:#fff; }
+.ui-scale button:disabled { opacity:.35; cursor:not-allowed; }
+.ui-scale button:focus-visible { outline:2px solid #22d3ee; outline-offset:-2px; }
+.ui-scale .ui-scale-value { min-width:48px; border-left:1px solid #334155; border-right:1px solid #334155; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-weight:600; color:#67e8f9; }
+.ui-scale-width { max-width: calc(1700px / var(--ui-scale, 1)) !important; }

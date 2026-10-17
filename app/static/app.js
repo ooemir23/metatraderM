@@ -759,7 +759,7 @@ function switchPositionTab(tab) {
   const reportsContainer = document.getElementById("reports-container");
   const aiContainer = document.getElementById("ai-container");
 
-  const defaultTabClass = "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200";
+  const defaultTabClass = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200";
   if (btnOpen) btnOpen.className = defaultTabClass;
   if (btnClosed) btnClosed.className = defaultTabClass;
   if (btnReports) btnReports.className = defaultTabClass;
@@ -775,12 +775,12 @@ function switchPositionTab(tab) {
   if (aiContainer) { aiContainer.classList.add("hidden"); aiContainer.classList.remove("flex"); }
 
   if (tab === "open") {
-    if (btnOpen) btnOpen.className = "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-2 bg-emerald-500/20 text-emerald-400 shadow-sm";
+    if (btnOpen) btnOpen.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-emerald-500/20 text-emerald-400 shadow-sm";
     if (openActions) openActions.classList.remove("hidden");
     if (openContainer) openContainer.classList.remove("hidden");
     fetchPositions();
   } else if (tab === "closed") {
-    if (btnClosed) btnClosed.className = "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-2 bg-cyan-500/20 text-cyan-400 shadow-sm";
+    if (btnClosed) btnClosed.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-cyan-500/20 text-cyan-400 shadow-sm";
     if (closedSummary) {
       closedSummary.classList.remove("hidden");
       closedSummary.classList.add("flex");
@@ -788,7 +788,7 @@ function switchPositionTab(tab) {
     if (closedContainer) closedContainer.classList.remove("hidden");
     fetchHistory();
   } else if (tab === "reports") {
-    if (btnReports) btnReports.className = "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-2 bg-indigo-500/20 text-indigo-400 shadow-sm";
+    if (btnReports) btnReports.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-indigo-500/20 text-indigo-400 shadow-sm";
     if (reportsActions) {
       reportsActions.classList.remove("hidden");
       reportsActions.classList.add("flex");
@@ -1027,18 +1027,18 @@ function tradeSourceBadge(item) {
   const effectiveMagic = magic || fillMagic;
   const comment = String(item?.comment || '');
   if (effectiveMagic === 123461 || /hma bot/i.test(comment)) {
-    return `<span class="inline-block mt-1 px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-xs font-sans font-bold leading-tight" title="HMA Algoritmik Bot / Otomatik Sinyal Yakalama (Magic #123461)">🤖 Otomatik Sinyal (HMA Bot)</span>`;
+    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[10.5px] font-sans font-semibold leading-tight" title="HMA Algoritmik Bot / Otomatik Sinyal Yakalama (Magic #123461)">🤖 Otomatik Sinyal (HMA Bot)</span>`;
   }
   if (effectiveMagic === 123462 || /ai|deepseek|mevo/i.test(comment)) {
-    return `<span class="inline-block mt-1 px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/40 text-xs font-sans font-bold leading-tight" title="MevO Yapay Zeka Sinyali (Magic #123462)">🧠 Otomatik Sinyal (MevO AI)</span>`;
+    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10.5px] font-sans font-semibold leading-tight" title="MevO Yapay Zeka Sinyali (Magic #123462)">🧠 Otomatik Sinyal (MevO AI)</span>`;
   }
   if (effectiveMagic === 123460 || comment.startsWith('vm:') || /hma web|panel/i.test(comment)) {
-    return `<span class="inline-block mt-1 px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-sans font-bold leading-tight" title="HMA Web Sitesinden Manuel Açıldı (Magic #123460)">🌐 HMA Sitesi (Manuel)</span>`;
+    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10.5px] font-sans font-semibold leading-tight" title="HMA Web Sitesinden Manuel Açıldı (Magic #123460)">🌐 HMA Sitesi (Manuel)</span>`;
   }
   if (effectiveMagic === 0) {
-    return `<span class="inline-block mt-1 px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-sans font-bold leading-tight" title="Orijinal MetaTrader 5 Terminalinden Manuel Açıldı (Magic #0)">🖥️ Orijinal MT5 (Manuel)</span>`;
+    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10.5px] font-sans font-semibold leading-tight" title="Orijinal MetaTrader 5 Terminalinden Manuel Açıldı (Magic #0)">🖥️ Orijinal MT5 (Manuel)</span>`;
   }
-  return `<span class="inline-block mt-1 px-2 py-0.5 rounded-md bg-gray-800 text-gray-200 border border-gray-700 text-xs font-sans font-bold leading-tight" title="Harici Uzman Danışman / EA (Magic #${effectiveMagic})">⚙️ Harici Bot (#${effectiveMagic})</span>`;
+  return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-gray-800 text-gray-200 border border-gray-700 text-[10.5px] font-sans font-semibold leading-tight" title="Harici Uzman Danışman / EA (Magic #${effectiveMagic})">⚙️ Harici Bot (#${effectiveMagic})</span>`;
 }
 
 function renderPositionsData(positions) {
@@ -1063,30 +1063,30 @@ function renderPositionsData(positions) {
     positions.forEach(p => {
       const isBuy = p.type === "BUY";
       const typeBadge = isBuy
-        ? `<span class="px-2.5 py-1 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-xs font-black tracking-wider">BUY</span>`
-        : `<span class="px-2.5 py-1 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/30 text-xs font-black tracking-wider">SELL</span>`;
+        ? `<span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold tracking-wide">BUY</span>`
+        : `<span class="px-2 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-500/30 text-[11px] font-bold tracking-wide">SELL</span>`;
 
       const profitColor = p.profit >= 0 ? "text-emerald-400" : "text-rose-400";
       const profitSign = p.profit >= 0 ? "+" : "";
 
       rowsHtml += `
         <tr class="hover:bg-[#151a26]/70 transition border-b border-gray-800/60 group">
-          <td class="py-3 px-3 whitespace-nowrap">
-            <span class="block font-mono font-bold text-sm sm:text-base text-white">#${p.ticket}</span>
+          <td class="py-2 px-2.5 whitespace-nowrap">
+            <span class="block font-mono font-semibold text-[13px] text-gray-100">#${p.ticket}</span>
             ${tradeSourceBadge(p)}
           </td>
-          <td class="py-3 px-3 font-extrabold text-white text-sm sm:text-base whitespace-nowrap tracking-wide">${escapeHtml(p.symbol)}</td>
-          <td class="py-3 px-3 whitespace-nowrap">${typeBadge}</td>
-          <td class="py-3 px-3 text-white font-extrabold text-sm sm:text-base whitespace-nowrap">${p.volume}</td>
-          <td class="py-3 px-3 text-gray-300 font-mono text-sm sm:text-[15px] font-medium whitespace-nowrap tabular-nums">${Number(p.price_open).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
-          <td class="py-3 px-3 text-white font-mono text-sm sm:text-[15px] font-bold whitespace-nowrap tabular-nums">${Number(p.price_current).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
-          <td class="py-3 px-3 text-gray-300 font-mono text-xs sm:text-sm whitespace-nowrap tabular-nums">${p.sl ? Number(p.sl).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "—"} / ${p.tp ? Number(p.tp).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "—"}</td>
-          <td class="py-3 px-3 text-right font-mono font-bold text-sm sm:text-[15px] text-amber-400 whitespace-nowrap">${p.commission == null ? "—" : `${p.commission > 0 ? "+" : ""}${accountCurrency} ${formatMoney(p.commission)}`}</td>
-          <td class="py-3 px-3 text-right font-mono font-black text-sm sm:text-base whitespace-nowrap ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(p.profit)}</td>
-          <td class="py-3 px-3 text-center whitespace-nowrap sticky right-0 bg-[#121620] group-hover:bg-[#151a26] shadow-[-6px_0_12px_rgba(0,0,0,0.35)]">
+          <td class="py-2 px-2.5 font-bold text-white text-[13px] whitespace-nowrap tracking-wide">${escapeHtml(p.symbol)}</td>
+          <td class="py-2 px-2.5 whitespace-nowrap">${typeBadge}</td>
+          <td class="py-2 px-2.5 text-white font-semibold text-[13px] whitespace-nowrap">${p.volume}</td>
+          <td class="py-2 px-2.5 text-gray-300 font-mono text-[13px] font-medium whitespace-nowrap tabular-nums">${Number(p.price_open).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
+          <td class="py-2 px-2.5 text-white font-mono text-[13px] font-bold whitespace-nowrap tabular-nums">${Number(p.price_current).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
+          <td class="py-2 px-2.5 text-gray-300 font-mono text-xs whitespace-nowrap tabular-nums">${p.sl ? Number(p.sl).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "—"} / ${p.tp ? Number(p.tp).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "—"}</td>
+          <td class="py-2 px-2.5 text-right font-mono font-bold text-[13px] text-amber-400 whitespace-nowrap">${p.commission == null ? "—" : `${p.commission > 0 ? "+" : ""}${accountCurrency} ${formatMoney(p.commission)}`}</td>
+          <td class="py-2 px-2.5 text-right font-mono font-bold text-[13px] whitespace-nowrap ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(p.profit)}</td>
+          <td class="py-2 px-2.5 text-center whitespace-nowrap sticky right-0 bg-[#121620] group-hover:bg-[#151a26] shadow-[-6px_0_12px_rgba(0,0,0,0.35)]">
             <div class="inline-flex items-center gap-2">
-              <button onclick="showPositionEditor(${p.ticket})" class="px-3 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-xs sm:text-sm font-bold transition active:scale-95" title="SL/TP veya kısmi kapatma yönet">Yönet</button>
-              <button onclick="closePosition(${p.ticket})" class="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs sm:text-sm font-bold transition active:scale-95 flex items-center gap-1" title="Pozisyon #${p.ticket} kapat">
+              <button onclick="showPositionEditor(${p.ticket})" class="px-2.5 py-1 rounded-md bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-xs font-bold transition active:scale-95" title="SL/TP veya kısmi kapatma yönet">Yönet</button>
+              <button onclick="closePosition(${p.ticket})" class="px-2.5 py-1 rounded-md bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold transition active:scale-95 flex items-center gap-1" title="Pozisyon #${p.ticket} kapat">
                 <span>✕</span>
                 <span>Kapat</span>
               </button>
@@ -1249,8 +1249,8 @@ async function fetchHistory() {
     history.forEach(d => {
       const isBuy = (d.position_type || d.type) === "BUY";
       const typeBadge = isBuy
-        ? `<span class="px-2.5 py-1 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-xs font-black tracking-wider">BUY</span>`
-        : `<span class="px-2.5 py-1 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/30 text-xs font-black tracking-wider">SELL</span>`;
+        ? `<span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold tracking-wide">BUY</span>`
+        : `<span class="px-2 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-500/30 text-[11px] font-bold tracking-wide">SELL</span>`;
 
       const netProfit=(d.profit||0)+(d.commission||0)+(d.swap||0)+(d.fee||0);
       const profitColor = netProfit >= 0 ? "text-emerald-400" : "text-rose-400";
@@ -1265,20 +1265,20 @@ async function fetchHistory() {
 
       rowsHtml += `
         <tr data-testid="history-deal-${ticket}" onclick="showHistoryDetails(${positionId}, ${ticket}, this)" class="cursor-pointer hover:bg-[#151a26]/70 transition border-b border-gray-800/60" title="Açılış ve kapanış detaylarını göster">
-          <td class="py-3 px-3">
-            <button type="button" onclick="event.stopPropagation(); showHistoryDetails(${positionId}, ${ticket}, this)" class="text-left font-mono font-bold text-sm sm:text-base text-white hover:text-cyan-400 focus:outline focus:outline-2 focus:outline-cyan-400 rounded" aria-label="İşlem #${ticket} detayları">
+          <td class="py-2 px-2.5">
+            <button type="button" onclick="event.stopPropagation(); showHistoryDetails(${positionId}, ${ticket}, this)" class="text-left font-mono font-bold text-[13px] text-white hover:text-cyan-400 focus:outline focus:outline-2 focus:outline-cyan-400 rounded" aria-label="İşlem #${ticket} detayları">
               #${ticket} <span class="text-xs text-gray-400 block font-normal">Pos: #${positionId} · Detay</span>
             </button>
             <div>${tradeSourceBadge(d)}</div>
           </td>
-          <td class="py-3 px-3 font-extrabold text-white text-sm sm:text-base tracking-wide">${escapeHtml(d.symbol)}</td>
-          <td class="py-3 px-3">${typeBadge}</td>
-          <td class="py-3 px-3 text-white font-extrabold text-sm sm:text-base">${d.volume}</td>
-          <td class="py-3 px-3 text-gray-200 font-mono text-sm sm:text-[15px] font-medium">${d.price}</td>
-          <td class="py-3 px-3 text-right font-mono font-bold text-sm sm:text-[15px] text-amber-400 whitespace-nowrap">${commissionText}</td>
-          <td class="py-3 px-3 text-right font-mono text-xs sm:text-sm text-gray-300 whitespace-nowrap">${feeText}</td>
-          <td class="py-3 px-3 font-mono text-xs sm:text-sm text-gray-300 whitespace-nowrap">${d.time}</td>
-          <td class="py-3 px-3 text-right font-bold font-mono text-sm sm:text-base whitespace-nowrap ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(netProfit)}</td>
+          <td class="py-2 px-2.5 font-bold text-white text-[13px] tracking-wide">${escapeHtml(d.symbol)}</td>
+          <td class="py-2 px-2.5">${typeBadge}</td>
+          <td class="py-2 px-2.5 text-white font-semibold text-[13px]">${d.volume}</td>
+          <td class="py-2 px-2.5 text-gray-200 font-mono text-[13px] font-medium">${d.price}</td>
+          <td class="py-2 px-2.5 text-right font-mono font-bold text-[13px] text-amber-400 whitespace-nowrap">${commissionText}</td>
+          <td class="py-2 px-2.5 text-right font-mono text-xs text-gray-300 whitespace-nowrap">${feeText}</td>
+          <td class="py-2 px-2.5 font-mono text-xs text-gray-300 whitespace-nowrap">${d.time}</td>
+          <td class="py-2 px-2.5 text-right font-bold font-mono text-[13px] whitespace-nowrap ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(netProfit)}</td>
         </tr>
       `;
     });
@@ -3095,7 +3095,7 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
     if (statusNode && (manual || forceReplace)) statusNode.textContent = mode === 'SELECTED'
       ? `${activeSym} taranıyor…` : `${symbolsToScan.length} sembol taranıyor (seçili: ${activeSym})…`;
     if (forceReplace && mode === 'SELECTED') {
-      listNode.innerHTML = `<div class="text-gray-400 text-xs sm:text-sm py-3 text-center">${escapeHtml(activeSym)} için sinyal hesaplanıyor…</div>`;
+      listNode.innerHTML = `<div class="text-gray-400 text-xs py-3 text-center">${escapeHtml(activeSym)} için sinyal hesaplanıyor…</div>`;
     }
     const res = await fetch(`/api/signals/scan?symbols=${encodeURIComponent(symbolsToScan.join(','))}&timeframe_minutes=${tf}`,
       controller ? {signal: controller.signal} : undefined);
@@ -3119,7 +3119,7 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
       statusNode.textContent = `${rows.length} Sinyal (${tfText} mum) · HMA(${data.hma_period || 14}) / EMA(${data.ema_period || 34}) · Son: ${new Date().toLocaleTimeString('tr-TR')}`;
     }
     if (!rows.length) {
-      listNode.innerHTML = `<div class="text-gray-400 text-xs sm:text-sm py-3 text-center">${escapeHtml(activeSym)} için MT5 mum verisi bekleniyor…</div>`;
+      listNode.innerHTML = `<div class="text-gray-400 text-xs py-3 text-center">${escapeHtml(activeSym)} için MT5 mum verisi bekleniyor…</div>`;
       return;
     }
     listNode.innerHTML = rows.map(item => {
@@ -3174,21 +3174,21 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
       return `<div class="bg-[#181d2a] border ${isActive ? 'border-cyan-500/70 ring-1 ring-cyan-500/30' : 'border-gray-800/90'} rounded-xl p-3 space-y-2.5" data-scan-symbol="${symEsc}">
         <div class="flex items-center justify-between gap-2">
           <div class="min-w-0">
-            <span class="font-extrabold text-white text-sm sm:text-base block tracking-wide">${symEsc}${isActive ? ' <span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-600 text-white font-bold align-middle">SEÇİLİ</span>' : ''} <span class="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono font-bold">${tfText} (${tfCode})</span></span>
-            <span class="text-xs sm:text-sm text-gray-200 font-mono">Fiyat: <strong class="text-white">${priceFmt}</strong> · RSI(14): <strong>${Number(item.rsi || 50).toFixed(1)}</strong> · ATR: <strong>${item.atr}</strong></span>
+            <span class="font-bold text-white text-[13px] block tracking-wide">${symEsc}${isActive ? ' <span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-600 text-white font-bold align-middle">SEÇİLİ</span>' : ''} <span class="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono font-bold">${tfText} (${tfCode})</span></span>
+            <span class="text-xs text-gray-200 font-mono">Fiyat: <strong class="text-white">${priceFmt}</strong> · RSI(14): <strong>${Number(item.rsi || 50).toFixed(1)}</strong> · ATR: <strong>${item.atr}</strong></span>
           </div>
           <span class="px-2.5 py-1.5 rounded-lg text-xs font-bold ${badgeClass}">${badgeText}</span>
         </div>
-        <div class="grid grid-cols-2 gap-2 text-xs sm:text-sm font-mono bg-[#121620] p-2.5 rounded-lg border border-gray-800/80">
+        <div class="grid grid-cols-2 gap-2 text-xs font-mono bg-[#121620] p-2.5 rounded-lg border border-gray-800/80">
           <div class="text-gray-300">HMA(14): <span class="text-cyan-300 font-bold">${hmaFmt}</span></div>
           <div class="text-gray-300">EMA(34): <span class="text-amber-300 font-bold">${emaFmt}</span></div>
           <div class="text-gray-300">Önerilen SL: <span class="text-rose-300 font-bold">${slFmt}</span></div>
           <div class="text-gray-300">Önerilen TP: <span class="text-emerald-300 font-bold">${tpFmt}</span></div>
         </div>
         <div class="flex items-center gap-2 pt-0.5">
-          <button type="button" onclick="applyScannedSignalToTicket('${symEsc}', ${sl}, ${tp})" class="flex-1 py-2 px-2.5 rounded-lg bg-cyan-700/80 hover:bg-cyan-600 text-white text-xs sm:text-sm font-bold transition active:scale-95" title="SL/TP değerlerini manuel emir formuna aktar">🎯 Emre Aktar</button>
-          <button type="button" onclick="assignScannerSymbolToBot('${symEsc}', ${tf})" class="flex-1 py-2 px-2.5 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs sm:text-sm font-bold transition active:scale-95" title="${symEsc} sembolünü botun çoklu takip listesine ekle">🤖 Bota Ekle</button>
-          <button type="button" ${tradable ? '' : 'disabled title="Nötr sinyal: yön yok, emir gönderilemez"'} onclick="sendSignalDirectToBot('${symEsc}', '${item.side}', ${item.price}, {signalId: 'scan-${symEsc}-${tf}-${item.side}-${item.candle_time}', slPrice: ${sl}, tpPrice: ${tp}})" class="disabled:opacity-40 disabled:cursor-not-allowed flex-1 py-2 px-2.5 rounded-lg bg-indigo-700/80 hover:bg-indigo-600 text-white text-xs sm:text-sm font-bold transition active:scale-95" title="Bu sinyali hemen HMA Botu ile işleme al">⚡ Bota Gönder</button>
+          <button type="button" onclick="applyScannedSignalToTicket('${symEsc}', ${sl}, ${tp})" class="flex-1 py-2 px-2.5 rounded-lg bg-cyan-700/80 hover:bg-cyan-600 text-white text-xs font-bold transition active:scale-95" title="SL/TP değerlerini manuel emir formuna aktar">🎯 Emre Aktar</button>
+          <button type="button" onclick="assignScannerSymbolToBot('${symEsc}', ${tf})" class="flex-1 py-2 px-2.5 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs font-bold transition active:scale-95" title="${symEsc} sembolünü botun çoklu takip listesine ekle">🤖 Bota Ekle</button>
+          <button type="button" ${tradable ? '' : 'disabled title="Nötr sinyal: yön yok, emir gönderilemez"'} onclick="sendSignalDirectToBot('${symEsc}', '${item.side}', ${item.price}, {signalId: 'scan-${symEsc}-${tf}-${item.side}-${item.candle_time}', slPrice: ${sl}, tpPrice: ${tp}})" class="disabled:opacity-40 disabled:cursor-not-allowed flex-1 py-2 px-2.5 rounded-lg bg-indigo-700/80 hover:bg-indigo-600 text-white text-xs font-bold transition active:scale-95" title="Bu sinyali hemen HMA Botu ile işleme al">⚡ Bota Gönder</button>
         </div>
       </div>`;
     }).join('');
@@ -3196,7 +3196,7 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
     if (!isCurrent() || err?.name === 'AbortError') return;
     if (statusNode) statusNode.textContent = 'Sinyal taraması şu an yapılamadı.';
     if (listNode && /yükleniyor|hesaplanıyor/.test(listNode.textContent)) {
-      listNode.innerHTML = '<div class="text-amber-300/80 text-xs sm:text-sm py-3 text-center font-medium">Sinyal servisine ulaşılamadı, yeniden deneniyor…</div>';
+      listNode.innerHTML = '<div class="text-amber-300/80 text-xs py-3 text-center font-medium">Sinyal servisine ulaşılamadı, yeniden deneniyor…</div>';
     }
   } finally {
     if (isCurrent()) { signalScannerBusy = false; signalScanController = null; }
@@ -3237,7 +3237,7 @@ async function fetchBotLiveSignal() {
       if (trendNode) {
         const trendText = data.trend === 'BUY' ? '▲ AL Yönlü' : data.trend === 'SELL' ? '▼ SAT Yönlü' : 'Yatay';
         trendNode.textContent = `${data.symbol} (M${data.timeframe_minutes}) · RSI(14): ${Number(data.rsi || 50).toFixed(1)} · Trend: ${trendText} · Fark: ${data.gap}`;
-        trendNode.className = 'mb-2.5 text-xs sm:text-sm font-mono font-semibold ' + (data.trend === 'BUY' ? 'text-emerald-300' : data.trend === 'SELL' ? 'text-rose-300' : 'text-cyan-300');
+        trendNode.className = 'mb-2.5 text-xs font-mono font-semibold ' + (data.trend === 'BUY' ? 'text-emerald-300' : data.trend === 'SELL' ? 'text-rose-300' : 'text-cyan-300');
       }
     }
 
