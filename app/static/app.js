@@ -66,6 +66,35 @@ function setChartTimeframe(tf) {
   if (botTf && [1,5,15,30,60,240,1440].includes(num)) {
     botTf.value = String(num);
   }
+  // Bot follows the chart timeframe (applied now if the bot is stopped, otherwise at next start).
+  if (typeof syncBotTimeframe === 'function') syncBotTimeframe(num);
+}
+
+// Keep the HMA bot on the chart's timeframe so chart, scanner and bot see the same candles.
+// Settings can only change while the bot is stopped; a running bot is synced at its next start.
+let botTimeframeSyncing = null;
+async function syncBotTimeframe(tf, {announce = true} = {}) {
+  tf = Number(tf || window.MT5Chart?.getTimeframe?.());
+  if (![1, 5, 15, 30, 60, 240, 1440].includes(tf)) return false;
+  const bot = latestBotSettings;
+  if (!bot || bot.is_running || bot.timeframe_minutes === tf) return bot?.timeframe_minutes === tf;
+  if (botTimeframeSyncing) await botTimeframeSyncing.catch(() => {});
+  const run = (async () => {
+    const body = {timeframe_minutes: tf};
+    if (bot.use_h4_filter && tf !== 60) body.use_h4_filter = false;   // H4 filter is only valid on H1
+    const res = await fetch('/api/bot/config', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Bot zaman dilimi güncellenemedi.');
+    latestBotSettings = data;
+    const code = {1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'}[tf];
+    if (announce) showToast(`⏱️ Bot zaman dilimi grafikle eşitlendi: ${code}${body.use_h4_filter === false ? ' (H4 filtresi yalnız H1\'de geçerli olduğu için kapatıldı)' : ''}`, 'info');
+    if (typeof renderBotSymbolStatus === 'function') renderBotSymbolStatus(data);
+    return true;
+  })();
+  botTimeframeSyncing = run;
+  try { return await run; }
+  catch (err) { showToast(`❌ ${err.message}`, 'error'); return false; }
+  finally { if (botTimeframeSyncing === run) botTimeframeSyncing = null; }
 }
 
 function onScannerTimeframeChange(tf) {
@@ -2308,7 +2337,9 @@ function renderBotSymbolStatus(bot) {
   if (!bot.is_running) notes.push('Bot durdurulmuş; işlem açmaz.');
   else if (bot.execution_mode === 'SIGNAL_ONLY') notes.push('"Sadece Sinyal" modunda: bot işlem açmaz, sinyalleri onayına sunar.');
   if (scanTf && bot.timeframe_minutes && scanTf !== bot.timeframe_minutes)
-    notes.push(`Bot ${tfCode(bot.timeframe_minutes)} ile çalışıyor, tarayıcı ${tfCode(scanTf)} gösteriyor; farklı zaman dilimleri farklı sinyal verir.`);
+    notes.push(bot.is_running
+      ? `Bot ${tfCode(bot.timeframe_minutes)} ile çalışıyor, grafik ${tfCode(scanTf)} gösteriyor. Botu durdurup yeniden başlatınca grafikle eşitlenir.`
+      : `Bot ${tfCode(bot.timeframe_minutes)}, grafik ${tfCode(scanTf)}; bot başlatılırken grafikle eşitlenir.`);
   const rows = symbols.map(sym => {
     const row = status[sym] || {};
     const [label, tone] = BOT_STATE_LABELS[row.state] || (bot.is_running ? ['Kontrol ediliyor', 'idle'] : ['Bot durdu', 'idle']);
@@ -2406,6 +2437,8 @@ async function toggleBot() {
   const button = document.getElementById('bot-toggle-btn');
   if (button) button.disabled = true;
   try {
+    // Starting: align the bot with the chart timeframe first.
+    if (!isBotRunning && !(latestBotSettings?.is_running)) await syncBotTimeframe(undefined);
     const res = await fetch("/api/bot/toggle", { method: "POST" });
     const data = await res.json();
     if (!res.ok || data.success === false) throw new Error(typeof data.detail === 'string' ? data.detail : data.error || 'Bot komutu doğrulanamadı.');
