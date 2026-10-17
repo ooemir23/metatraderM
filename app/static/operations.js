@@ -99,6 +99,8 @@ function applyStopMinimum() {
 }
 function scheduleTradePreview(side) {
   if (side) previewSide = side;
+  // The pre-trade risk panel was removed from the order ticket; do nothing.
+  if (!document.getElementById('trade-preview')) return;
   clearTimeout(previewTimer);
   const generation = ++previewGeneration;
   const en = window.MT5I18n?.language?.() === 'en';

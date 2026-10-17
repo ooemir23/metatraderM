@@ -24,46 +24,29 @@ function harness(){
 (async()=>{
  {
   const h=harness(),c=h.c;c.updateOrderButtons();assert.equal(h.node('order-buy-btn').disabled,true);
-  c.renderPriceData(tick());assert.equal(h.node('order-buy-btn').disabled,true,'quote alone cannot authorize trading');
-  await c.refreshTradePreview();assert.equal(h.node('order-buy-btn').disabled,false);assert.equal(h.node('order-sell-btn').disabled,false);
+  c.renderPriceData(tick());assert.equal(h.node('order-buy-btn').disabled,false,'verified quote enables trading directly without pre-trade risk gate');
+  assert.equal(h.node('order-sell-btn').disabled,false);
   c.clearSymbolPrices();assert.equal(h.node('order-buy-btn').disabled,true,'clearing the quote immediately locks the button');c.renderPriceData(tick());
-  assert.deepEqual(h.requests.map(r=>r.payload.order_type),['BUY','SELL']);
-  assert.deepEqual(h.requests[0].payload.expected_account,[12345,'Broker-Demo','DEMO']);
-  await c.submitOrder('BUY');assert.equal(h.opens().length,1);assert.equal(h.requests.length,5,'click performs a fresh preview before submission');
+  await c.submitOrder('BUY');assert.equal(h.opens().length,1);assert.equal(h.requests.length,1,'click submits directly without preflight preview');
+  assert.deepEqual(h.opens()[0].payload.expected_account,[12345,'Broker-Demo','DEMO']);
   assert.equal(h.storage.has('order-intent:EURUSD'),false);
   h.advance(5000);c.updateQuoteStatus();assert.equal(h.node('order-buy-btn').disabled,true);
   await c.submitOrder('SELL');assert.equal(h.opens().length,1,'expired connection verification cannot send another order');
  }
  for(const bad of [tick({quote_status:null}),tick({bid:0}),tick({ask:1}),tick({bid:NaN}),tick({quote_status:{state:'stale',broker_connected:true,age_seconds:10}}),tick({quote_status:{state:'future',broker_connected:true,age_seconds:-1}}),tick({quote_status:{state:'fresh',broker_connected:false,age_seconds:0}}),tick({quote_status:{state:'fresh',broker_connected:true,age_seconds:'0'}}),tick({quote_status:{state:'fresh',broker_connected:true,age_seconds:11}})]){
-  const h=harness();h.c.renderPriceData(bad);await h.c.refreshTradePreview();assert.equal(h.node('order-buy-btn').disabled,true);
-  await h.c.submitOrder('BUY');await h.c.submitPendingOrder();assert.equal(h.opens().length,0);assert.equal([...h.storage.keys()].filter(k=>k.includes('intent:')).length,0,'failed preflight creates no durable trading intent');
-  assert.ok(h.requests.every(r=>r.url==='/api/trade/preview'),'invalid quotes must block pending orders too');
+  const h=harness();h.c.renderPriceData(bad);assert.equal(h.node('order-buy-btn').disabled,true);
+  await h.c.submitOrder('BUY');await h.c.submitPendingOrder();assert.equal(h.opens().length,0);assert.equal([...h.storage.keys()].filter(k=>k.includes('intent:')).length,0,'invalid quote creates no durable trading intent');
+  assert.equal(h.requests.length,0,'invalid quotes must block pending orders too');
  }
  {
-  const h=harness();h.c.renderPriceData(tick({quote_status:{state:'fresh',broker_connected:true,age_seconds:9}}));await h.c.refreshTradePreview();h.advance(2000);h.c.updateOrderButtons();assert.equal(h.node('order-buy-btn').disabled,true,'server quote age advances independently of broker timestamp');
+  const h=harness();h.c.renderPriceData(tick({quote_status:{state:'fresh',broker_connected:true,age_seconds:9}}));h.advance(2000);h.c.updateOrderButtons();assert.equal(h.node('order-buy-btn').disabled,true,'server quote age advances independently of broker timestamp');
  }
  {
-  const h=harness();h.c.renderPriceData(tick());h.preview(r=>response(r.payload.order_type==='BUY'?{success:false,error:'BUY margin unavailable'}:success));
-  await h.c.refreshTradePreview();assert.equal(h.node('order-buy-btn').disabled,true);assert.equal(h.node('order-sell-btn').disabled,false);
-  await h.c.submitOrder('BUY');assert.equal(h.opens().length,0);assert.equal([...h.storage.keys()].filter(k=>k.includes('intent:')).length,0);
-  await h.c.submitOrder('SELL');assert.equal(h.opens().length,1,'BUY failure must not block independently verified SELL');
- }
- for(const change of [h=>{h.node('lot-input').value='.02'},h=>{h.read('currentSymbol="BTCUSD"')},h=>{h.c.renderAccountData(account(54321))},h=>{h.bumpVersion()},h=>{h.advance(5000)}]){
-  const h=harness(),pending=[];h.c.renderPriceData(tick());h.preview(()=>new Promise(resolve=>pending.push(resolve)));
-  const first=h.c.submitOrder('BUY');assert.equal(h.requests.length,2);assert.equal([...h.storage.keys()].filter(k=>k.includes('intent:')).length,0);
-  await h.c.submitOrder('BUY');assert.equal(h.requests.length,2,'double-click during preflight cannot start a second submission');
-  change(h);pending.forEach(resolve=>resolve(response(success)));await first;assert.equal(h.opens().length,0);assert.equal([...h.storage.keys()].filter(k=>k.includes('intent:')).length,0);
- }
- {
-  const h=harness();h.c.renderPriceData(tick());let pending=[];h.preview(()=>new Promise(resolve=>pending.push(resolve)));
-  const first=h.c.submitOrder('BUY');h.c.scheduleTradePreview('SELL');pending.forEach(resolve=>resolve(response(success)));await first;
-  assert.equal(h.opens().length,0,'superseded preview cannot authorize a click');
- }
- {
-  const h=harness();h.c.renderPriceData(tick());h.preview(r=>new Promise((resolve,reject)=>r.signal.addEventListener('abort',()=>reject(Object.assign(new Error('timeout'),{name:'AbortError'})))));
-  const first=h.c.submitOrder('BUY');for(const t of [...h.timers.values()].filter(t=>t.delay===5000))t.fn();await first;
-  assert.equal(h.opens().length,0);assert.equal([...h.storage.keys()].filter(k=>k.includes('intent:')).length,0);assert.equal(h.read('orderPreflightPending'),false);
-  h.preview(()=>response(success));h.c.renderPriceData(tick());await h.c.refreshTradePreview();assert.equal(h.opens().length,0,'recovery never automatically sends an order');
+  const h=harness();h.c.renderPriceData(tick());
+  let release;h.order(()=>new Promise(resolve=>{release=resolve}));
+  const first=h.c.submitOrder('BUY');assert.equal(h.opens().length,1);
+  await h.c.submitOrder('BUY');assert.equal(h.opens().length,1,'double-click during order submission cannot start a second submission');
+  release(response({success:true,request_id:'confirmed-request',ticket:7}));await first;
  }
  {
   const h=harness();h.c.renderPriceData(tick());h.order(()=>({ok:false,json:async()=>({detail:'Origin rejected',reason_code:'untrusted_origin',not_submitted:true})}));
@@ -76,16 +59,7 @@ function harness(){
   await h.c.submitOrder('BUY');assert.equal(h.opens().length,1);
   const sent=h.opens()[0].payload;
   assert.equal(sent.sl_price,1.099);assert.equal(sent.tp_price,1.102);assert.equal(sent.sl_points,0);assert.equal(sent.deviation_points,37);
-  for(const r of h.requests.filter(r=>r.url==='/api/trade/preview')){
-   assert.equal(r.payload.sl_price,sent.sl_price);assert.equal(r.payload.tp_price,sent.tp_price);assert.equal(r.payload.deviation_points,37);
-  }
   h.c.changeOrderStopMode();assert.equal(h.node('sl-input').value,'0');assert.equal(h.node('tp-input').value,'0');
- }
- for(const change of [h=>{h.node('sl-input').value='1.098'},h=>{h.node('order-stop-mode').value='points'},h=>{h.node('order-deviation').value='50'}]){
-  const h=harness(),pending=[];h.c.renderPriceData(tick());h.node('order-stop-mode').value='price';
-  h.node('sl-input').value='1.099';h.node('tp-input').value='1.102';h.node('order-deviation').value='20';
-  h.preview(()=>new Promise(resolve=>pending.push(resolve)));const attempt=h.c.submitOrder('BUY');
-  change(h);pending.forEach(resolve=>resolve(response(success)));await attempt;assert.equal(h.opens().length,0,'changed price/mode/deviation must invalidate preflight');
  }
  {
   const h=harness();h.c.window.MT5Markets.getSymbol=()=>({digits:5,volume_min:.001,volume_max:50,volume_step:.001});

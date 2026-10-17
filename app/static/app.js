@@ -238,8 +238,7 @@ function updateOrderButtons() {
     if (button) {
       const side = id === 'order-buy-btn' ? 'BUY' : 'SELL';
       const catalogueBlocked = window.MT5Markets?.isSelectionVerified(currentSymbol, side) === false;
-      const riskIssue = window.MT5TradePreview?.issue(side) ?? 'İşlem öncesi risk doğrulanıyor.';
-      const issue = quoteIssue || riskIssue;
+      const issue = quoteIssue;
       button.disabled = chartSelectionBlocked || catalogueBlocked || orderPending || orderPreflightPending || accountSwitching || (accountVerificationKnown && !currentAccountIdentity)
         || !!issue
         || window.MT5Permissions?.can?.('submitOrder') === false;
@@ -1681,14 +1680,10 @@ function updateBrokerTicketChoices() {
 }
 
 function manualOrderMode() {
-  const value = document.getElementById('order-rule-mode')?.value;
-  return value === 'MT5' ? 'MT5' : 'PANEL';
+  return document.getElementById('order-rule-mode')?.value === 'PANEL' ? 'PANEL' : 'MT5';
 }
 function changeOrderRules() {
   saveOrderTicketPreferences();
-  const note = document.getElementById('order-rule-note');
-  const native = manualOrderMode() === 'MT5';
-  if (note) note.textContent = native ? 'Manuel işlemlerde broker kuralları geçerli. SL/TP isteğe bağlı; panel lot, günlük zarar ve stop riski sınırları uygulanmaz. Hesap doğrulaması ve acil kilit geçerlidir.' : 'Manuel işlemlerde broker kuralları ve panel risk sınırları birlikte uygulanır.';
   if (typeof scheduleTradePreview === 'function') scheduleTradePreview();
 }
 
@@ -1762,21 +1757,6 @@ async function submitOrder(type) {
   if (quoteIssue) {
     setOrderNotice(symbol, 'Emir girişi bekliyor', quoteIssue + ' Emir gönderilmedi.', 'warning');
     updateOrderButtons();
-    return;
-  }
-  const selection = JSON.stringify([symbol,volume,protection,tradingAccountPayload(),accountSessionGeneration,window.MT5Markets?.version?.()]);
-  orderPreflightPending = true;
-  updateOrderButtons();
-  let verified = false;
-  try { verified = await window.MT5TradePreview?.verify(type); }
-  catch (_) { verified = false; }
-  finally { orderPreflightPending = false; updateOrderButtons(); }
-  const currentSelection = JSON.stringify([currentSymbol,Number(document.getElementById('lot-input').value),
-    readOrderProtection(),tradingAccountPayload(),accountSessionGeneration,window.MT5Markets?.version?.()]);
-  if (!verified || selection !== currentSelection || quoteOrderIssue() || accountSwitching || chartSelectionBlocked
-      || window.MT5Markets?.isSelectionVerified(symbol, type) === false) {
-    setOrderNotice(symbol, 'İşlem öncesi kontrol', quoteOrderIssue() || window.MT5TradePreview?.issue(type)
-      || 'Emir bilgileri değişti veya risk doğrulanamadı. Emir gönderilmedi.', 'warning');
     return;
   }
   let intent;
@@ -1886,12 +1866,10 @@ async function refreshTradingStatus() {
     }
     const warning = document.getElementById('trading-halt-message');
     if (warning) {
-      warning.classList.toggle('hidden', false);
+      warning.classList.toggle('hidden', !state.new_orders_halted);
       warning.textContent = state.new_orders_halted
         ? (en ? 'New orders are locked. Click to manage the lock and daily limit.' : 'Yeni emirler kilitli. Kilidi açmak veya günlük limiti yönetmek için tıklayın.')
-        : state.daily_limit_enabled
-          ? (en ? 'Daily loss protection is on. Click to manage the lock and limit.' : 'Günlük zarar koruması açık. Kilidi ve limiti yönetmek için tıklayın.')
-          : (en ? 'Free trading is on: the daily loss limit is not applied. Click to manage the lock.' : 'Serbest işlem modu açık: günlük zarar sınırı uygulanmıyor. Kilidi yönetmek için tıklayın.');
+        : '';
     }
   } catch (_) {}
 }
