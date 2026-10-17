@@ -2326,16 +2326,16 @@ function renderBotSignalHistory(rows) {
 function renderBotLotHint(bot) {
   const node = document.getElementById('bot-lot-hint');
   if (!node || !bot) return;
-  const cap = Number(bot.max_order_lots);
+  const cap = bot.max_order_lots == null ? NaN : Number(bot.max_order_lots);
   if (bot.lot_mode === 'RISK') {
     node.textContent = `Lot risk modunda (%${bot.risk_pct}) stopa göre hesaplanır; bu kutu kullanılmaz.`;
     node.dataset.tone = '';
-  } else if (Number.isFinite(cap) && bot.lot_size > cap + 1e-9) {
+  } else if (cap > 0 && bot.lot_size > cap + 1e-9) {
     node.innerHTML = `"Bota Gönder" ${escapeHtml(String(bot.lot_size))} lot açar. Otomatik bot en fazla ${escapeHtml(String(cap))} lot açabilir; bu lotla bot başlatılamaz. `
       + `<button type="button" class="bot-lot-raise" onclick="raiseBotLotLimit()">Sınırı ${escapeHtml(String(bot.lot_size))} lot yap</button>`;
     node.dataset.tone = 'warn';
   } else {
-    node.textContent = `"Bota Gönder" ve otomatik bot ${bot.lot_size} lot açar${Number.isFinite(cap) ? ` (otomatik bot sınırı ${cap} lot)` : ''}.`;
+    node.textContent = `"Bota Gönder" ve otomatik bot ${bot.lot_size} lot açar${cap > 0 ? ` (otomatik bot sınırı ${cap} lot)` : ''}.`;
     node.dataset.tone = '';
   }
   node.hidden = false;
@@ -2452,27 +2452,17 @@ async function clearBotSignalHistory() {
 
 // Toggle Bot
 let botTogglePending = false;
-// In-page confirmation (no blocking browser dialog). Resolves true when confirmed.
-function confirmAction(title, message, okLabel) {
-  const dialog = document.getElementById('app-confirm-dialog');
-  if (!dialog?.showModal) return Promise.resolve(false);
-  document.getElementById('app-confirm-title').textContent = title;
-  document.getElementById('app-confirm-message').textContent = message;
-  document.getElementById('app-confirm-ok').textContent = okLabel;
-  dialog.returnValue = '';
-  dialog.showModal();
-  document.getElementById('app-confirm-ok').focus();
-  return new Promise(resolve => dialog.addEventListener('close', () => resolve(dialog.returnValue === 'ok'), {once: true}));
-}
-
 // Starting with a fixed lot above the automation cap: offer to raise the cap instead of failing.
 async function ensureBotLotWithinLimit() {
   const bot = latestBotSettings;
-  const lot = Number(bot?.lot_size), cap = Number(bot?.max_order_lots);
-  if (!bot || bot.lot_mode === 'RISK' || !Number.isFinite(lot) || !Number.isFinite(cap) || lot <= cap + 1e-9) return true;
-  const ok = await confirmAction('Otomatik bot lot sınırı',
-    `Bot emir lotu ${lot} lot, otomatik bot için tek emir sınırı ${cap} lot. Sınırı ${lot} lot yapıp botu başlatayım mı? ` +
-    'Bot bundan sonra her sinyalde bu lotla işlem açabilir.', `Sınırı ${lot} lot yap ve başlat`);
+  const lot = Number(bot?.lot_size), cap = bot?.max_order_lots == null ? NaN : Number(bot.max_order_lots);
+  // Unknown cap (null/0 from an older server) never triggers the prompt; the server still checks.
+  if (!bot || bot.lot_mode === 'RISK' || !(lot > 0) || !(cap > 0) || lot <= cap + 1e-9) return true;
+  const ok = await confirmAction({title: 'Otomatik bot lot sınırı',
+    message: `Bot emir lotu ${lot} lot, otomatik bot için tek emir sınırı ${cap} lot. Sınırı ${lot} lot yapıp botu başlatayım mı? ` +
+      'Bot bundan sonra her sinyalde bu lotla işlem açabilir.',
+    confirmLabel: `Sınırı ${lot} lot yap ve başlat`,
+    details: [['Emir lotu', `${lot} lot`], ['Mevcut sınır', `${cap} lot`], ['Yeni sınır', `${lot} lot`]]});
   if (!ok) return false;
   try {
     await saveLotLimits({max_order_lots: lot, max_total_lots: Math.max(Number(bot.max_total_lots) || 0, lot)});
