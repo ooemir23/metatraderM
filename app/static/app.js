@@ -3056,6 +3056,31 @@ function applyScannedSignalToTicket(symbol, slPrice, tpPrice) {
   }
 }
 
+// Scanner mode: "SELECTED" (default) shows only the chart's symbol; "ALL" scans a watch list.
+const SCAN_MODE_KEY = 'hma.scanner.mode.v1';
+function applyScannerModeUi(mode) {
+  const addAll = document.getElementById('signal-scan-add-all-btn');
+  if (addAll) addAll.hidden = mode !== 'ALL';
+}
+function onScannerModeChange(mode) {
+  mode = mode === 'ALL' ? 'ALL' : 'SELECTED';
+  try { localStorage.setItem(SCAN_MODE_KEY, mode); } catch (_) { /* session-only */ }
+  applyScannerModeUi(mode);
+  refreshSignalScanner(true, true);
+}
+(function restoreScannerMode() {
+  const init = () => {
+    const select = document.getElementById('signal-scan-mode');
+    if (!select) return;
+    let mode = 'SELECTED';
+    try { mode = localStorage.getItem(SCAN_MODE_KEY) === 'ALL' ? 'ALL' : 'SELECTED'; } catch (_) {}
+    select.value = mode;
+    applyScannerModeUi(mode);
+  };
+  if (typeof document === 'undefined' || !document.addEventListener) return;
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+
 var latestScannedSignals = [];
 if (typeof window !== 'undefined') window.latestScannedSignals = latestScannedSignals;
 
@@ -3073,7 +3098,7 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
   try {
     const tfNode = document.getElementById('signal-scan-tf');
     const tf = Number(tfNode?.value || 15) || 15;
-    const mode = document.getElementById('signal-scan-mode')?.value || 'ALL';
+    const mode = document.getElementById('signal-scan-mode')?.value || 'SELECTED';
     const activeSym = currentSymbol || document.getElementById('order-symbol-select')?.value || 'EURUSD';
 
     let symbolsToScan = [];
@@ -3103,7 +3128,7 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
     const data = await res.json();
     // Drop results that belong to an older symbol / timeframe / mode selection.
     if (!isCurrent() || activeSym !== currentSymbol || Number(data.timeframe_minutes) !== tf
-        || (document.getElementById('signal-scan-mode')?.value || 'ALL') !== mode) return;
+        || (document.getElementById('signal-scan-mode')?.value || 'SELECTED') !== mode) return;
     let rows = Array.isArray(data.signals) ? data.signals : [];
     // Selected symbol always first so a symbol switch is visible at a glance.
     rows = [...rows.filter(r => r.symbol === activeSym), ...rows.filter(r => r.symbol !== activeSym)];

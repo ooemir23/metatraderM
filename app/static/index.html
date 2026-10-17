@@ -859,9 +859,9 @@
                   <h2 class="font-bold text-white text-sm uppercase tracking-wide whitespace-nowrap">Canlı Al / Sat Sinyal Tarayıcı</h2>
                 </div>
                 <div class="flex items-center gap-1.5">
-                  <select id="signal-scan-mode" onchange="refreshSignalScanner(true, true)" class="bg-[#181d2a] border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-200 font-semibold focus:border-cyan-500">
-                    <option value="ALL" selected>🌐 Çoklu Tarama</option>
-                    <option value="SELECTED">🎯 Seçili Sembol</option>
+                  <select id="signal-scan-mode" onchange="onScannerModeChange(this.value)" class="bg-[#181d2a] border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-200 font-semibold focus:border-cyan-500">
+                    <option value="SELECTED" selected>🎯 Seçili Sembol</option>
+                    <option value="ALL">🌐 Çoklu Tarama</option>
                   </select>
                   <select id="signal-scan-tf" onchange="onScannerTimeframeChange(this.value)" aria-label="Sinyal tarama periyodu" class="bg-[#181d2a] border border-gray-700 rounded-lg px-2 py-1 text-xs text-white font-mono font-semibold">
                     <option value="1">1 dk (M1)</option>

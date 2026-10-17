@@ -297,7 +297,7 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
                   expected_login, expected_server, tick_offset=0, daily_loss_limit=None,
                   enforce_daily_limit=True, max_order_lots=None, max_total_lots=None,
                   max_open_orders=None, tp_points=0, max_trade_risk_pct=2.0, sl_price=None, tp_price=None, deviation_points=20,
-                  stoplimit_price=None, time_type='GTC', expiration=0, manual_mode='PANEL', filling_policy='AUTO'):
+                  stoplimit_price=None, time_type='GTC', expiration=0, manual_mode='PANEL', filling_policy='AUTO', magic=None):
     """Broker-calculated figures only; unknown values remain unknown."""
     try:
         native = _ticket_mode(manual_mode)
@@ -314,12 +314,13 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
             raise ValueError('Günlük zarar sınırı: yeni emir engellendi.')
         if not native and max_order_lots is not None and (not math.isfinite(max_order_lots) or volume > max_order_lots + 1e-9):
             raise ValueError('Emir lotu yapılandırılan üst sınırı aşıyor.')
-        committed = _committed_volume(current, pending)
+        own_current, own_pending = _exposure_scope(current, pending, magic)
+        committed = _committed_volume(own_current, own_pending)
         if not native and max_open_orders is not None and (type(max_open_orders) is not int or max_open_orders < 1):
             raise ValueError('Geçersiz açık işlem sayısı sınırı.')
         if not native and ((max_total_lots is not None and (
                 not math.isfinite(max_total_lots) or committed + volume > max_total_lots + 1e-9)) or
-                (max_open_orders is not None and len(current) + len(pending) + 1 > max_open_orders)):
+                (max_open_orders is not None and len(own_current) + len(own_pending) + 1 > max_open_orders)):
             raise ValueError('Toplam açık/bekleyen işlem sınırı aşılıyor.')
         info, tick = _market(mt5, symbol, tick_offset, allow_stale=native)
         if not _volume_valid(info, volume):
@@ -494,7 +495,8 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
               sl_price=None, tp_price=None, deviation_points=20,
               stoplimit_price=None, time_type='GTC', expiration=0, manual_mode='PANEL', filling_policy='AUTO'):
     try:
-        native = _ticket_mode(manual_mode) and magic == MANUAL_MAGIC
+        # MT5 rules: the manual ticket and manually confirmed bot signals. The automatic bot loop always uses PANEL.
+        native = _ticket_mode(manual_mode) and magic in (MANUAL_MAGIC, HMA_MAGIC)
         if order_type not in ('BUY', 'SELL') or not isinstance(symbol, str) or not symbol.strip():
             raise ValueError('Geçersiz sembol veya emir yönü.')
         account, current, pending, realized, floating = risk(mt5, tick_offset, include_history=not native)
@@ -511,8 +513,9 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
         if not native and volume > max_order_lots + 1e-9:
             return {'success': False, 'error': 'Emir lotu yapılandırılan üst sınırı aşıyor.'}
         scope = (int(account.login), str(account.server))
-        committed = _committed_volume(current, pending)
-        if not native and (committed + volume > max_total_lots + 1e-9 or len(current) + len(pending) + 1 > max_open_orders):
+        own_current, own_pending = _exposure_scope(current, pending, magic)
+        committed = _committed_volume(own_current, own_pending)
+        if not native and (committed + volume > max_total_lots + 1e-9 or len(own_current) + len(own_pending) + 1 > max_open_orders):
             return {'success': False, 'error': 'Toplam açık/bekleyen işlem sınırı aşılıyor.'}
         if magic in (HMA_MAGIC, AI_MAGIC) and int(account.margin_mode) != 2:
             return {"success": False, "error": "Otomatik stratejiler için hedging hesabı gerekli; netting sahipliği birleştirir."}
@@ -689,6 +692,13 @@ def _symbol_rules(info):
     if (not all(math.isfinite(v) for v in values) or any(v <= 0 for v in values[:5])
             or values[2] < values[1] or any(v < 0 for v in values[5:])):
         raise ValueError('Broker sembol fiyat/lot kuralları doğrulanamadı.')
+
+
+def _exposure_scope(current, pending, magic):
+    """Automation caps count only that strategy's own positions/orders; manual trades must not block it."""
+    if magic in (HMA_MAGIC, AI_MAGIC):
+        return ([p for p in current if int(p.magic) == magic], [o for o in pending if int(o.magic) == magic])
+    return current, pending
 
 
 def _committed_volume(current, pending):

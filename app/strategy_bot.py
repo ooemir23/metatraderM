@@ -854,7 +854,9 @@ class StrategyBot:
         request_id = "sig-" + hashlib.sha256(repr(identity).encode()).hexdigest()
         res = self.mt5.open_order(symbol, side, lot, sl_points=sl_pts, tp_points=tp_pts,
                                   comment=f"HMA Sinyal {side}", magic=HMA_MAGIC,
-                                  request_id=request_id, expected_account=expected_account)
+                                  request_id=request_id, expected_account=expected_account,
+                                  # Manually confirmed: same broker-only rules as the MT5 order ticket.
+                                  manual_mode="MT5")
         if res.get("success"):
             self.log(f"🎯 Sinyal onaylandı ve açıldı: {symbol} {side} #{res.get('ticket')} @ {res.get('price')} (Lot: {lot})")
             with self._state_lock:

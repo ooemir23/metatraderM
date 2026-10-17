@@ -27,7 +27,7 @@ def test_signal_points_are_not_treated_as_prices_and_use_panel_risk_mode():
     assert args[:3] == ('EURUSD', 'BUY', bot.lot_size)
     assert (kwargs['sl_points'], kwargs['tp_points']) == (200, 400)
     assert kwargs['magic'] == HMA_MAGIC and kwargs['expected_account'] == ACCOUNT
-    assert 'manual_mode' not in kwargs  # defaults to PANEL: daily loss, lot and stop-risk limits apply
+    assert kwargs['manual_mode'] == 'MT5'  # manually confirmed: broker rules, like the MT5 order ticket
 
 
 def test_signal_prices_are_converted_and_wrong_side_stops_rejected():
@@ -152,3 +152,60 @@ def test_protection_ignores_foreign_positions_and_logs_failures():
     client.get_positions.side_effect = RuntimeError('offline')
     bot._apply_position_protection()
     assert any('okunamadı' in entry['message'] for entry in bot.logs)
+
+
+# --- Exposure caps: manual trades must not block automation; confirmed signals follow MT5 rules ---
+import time
+from types import SimpleNamespace as NS
+from app.mt5_client import MT5Client
+from app.mt5_bridge import MANUAL_MAGIC
+
+
+@pytest.fixture
+def broker(monkeypatch):
+    monkeypatch.setattr(MT5Client, 'load_credentials', lambda self: None)
+    c = MT5Client()
+    c.login_id, c.server, c.account_type = 1, 'test', 'DEMO'
+    c.is_connected = True
+    c.last_ping_time = time.time()
+    c.mt5 = Mock()
+    c.mt5.terminal_info.return_value = NS(connected=True)
+    c.mt5.account_info.return_value = NS(login=1, server='test', trade_mode=0, currency='EUR', margin_mode=2,
+        equity=10000., margin_free=8000.)
+    # Six manual 5-lot positions: far above the 0.50 total-lot / 10 order panel caps once automation adds.
+    c.mt5.positions_get.return_value = [NS(ticket=i, identifier=i, symbol='XAUUSD', type=1, volume=5., magic=MANUAL_MAGIC,
+        price_open=4156., price_current=4156., sl=0., tp=0., profit=0., swap=0., time=1, time_msc=1000, comment='')
+        for i in range(10, 20)]
+    c.mt5.orders_get.return_value = []
+    c.mt5.history_deals_get.return_value = []
+    c.mt5.symbol_info.return_value = NS(point=.00001, digits=5, volume_step=.01, volume_min=.01,
+        volume_max=10, trade_stops_level=10, filling_mode=3, trade_exemode=2)
+    c.mt5.symbol_info_tick.return_value = NS(ask=1.1, bid=1.0999, time=time.time())
+    c.mt5.order_send.return_value = NS(retcode=10009, order=123, price=1.1, volume=.01, comment='done')
+    c.mt5.order_check.return_value = NS(retcode=0, comment='checked')
+    c.mt5.order_calc_profit.return_value = -2.
+    c.mt5.order_calc_margin.return_value = 25.
+    return c
+
+
+def test_manual_positions_do_not_block_bot_caps(broker):
+    result = broker.open_order('EURUSD', 'BUY', .01, sl_points=200, magic=HMA_MAGIC, request_id='bot-cap-scope-1')
+    assert 'Toplam' not in str(result.get('error'))
+
+
+def test_manual_panel_caps_still_count_whole_account(broker):
+    result = broker.open_order('EURUSD', 'BUY', .01, sl_points=200, request_id='manual-panel-cap-1', manual_mode='PANEL')
+    assert not result['success'] and 'Toplam' in result['error']
+
+
+def test_confirmed_signal_uses_mt5_rules_without_panel_caps(broker):
+    result = broker.open_order('EURUSD', 'BUY', .5, sl_points=200, magic=HMA_MAGIC, request_id='sig-mt5-rules-1', manual_mode='MT5')
+    assert 'üst sınır' not in str(result.get('error')) and 'Toplam' not in str(result.get('error'))
+
+
+def test_bot_own_positions_still_capped(broker):
+    own = [NS(ticket=i, identifier=i, symbol=f'S{i}', type=0, volume=.05, magic=HMA_MAGIC, price_open=1., price_current=1.,
+              sl=0., tp=0., profit=0., swap=0., time=1, time_msc=1000, comment='') for i in range(30, 40)]
+    broker.mt5.positions_get.return_value = broker.mt5.positions_get.return_value + own
+    result = broker.open_order('EURUSD', 'BUY', .01, sl_points=200, magic=HMA_MAGIC, request_id='bot-cap-own-1')
+    assert not result['success'] and 'Toplam' in result['error']
