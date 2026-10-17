@@ -667,6 +667,7 @@ function switchSymbol(symbol, reloadChart = true) {
   updateOrderButtons();
   clearSymbolPrices();
   if (typeof startLiveFeed === "function") startLiveFeed();
+  renderOrderNotice();
   const curTf = window.MT5Chart?.getTimeframe?.() || 15;
   const curTfCode = {1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'}[curTf] || `M${curTf}`;
   const curTfText = {1:'1 dk',5:'5 dk',15:'15 dk',30:'30 dk',60:'1 sa',240:'4 sa',1440:'1 gün'}[curTf] || `${curTf}m`;
@@ -1544,6 +1545,23 @@ async function fetchBotStatus() {
     document.getElementById("bot-disp-ma2-t").innerText = bot.second_ma_type;
     document.getElementById("bot-disp-ma2-p").innerText = bot.second_ma_period;
     document.getElementById("bot-disp-ma2-val").innerText = bot.current_ma2 || "0.00000";
+
+    const symbolsBadges = document.getElementById("bot-symbols-badges");
+    const symbolsCount = document.getElementById("bot-symbols-count");
+    const activeSymbols = Array.isArray(bot.symbols) && bot.symbols.length > 0 ? bot.symbols : [bot.symbol || 'EURUSD'];
+    if (symbolsCount) symbolsCount.textContent = activeSymbols.length;
+    if (symbolsBadges) {
+      symbolsBadges.innerHTML = activeSymbols.map(sym => {
+        const canRemove = activeSymbols.length > 1;
+        const removeBtn = canRemove
+          ? `<button type="button" onclick="event.stopPropagation(); removeSymbolFromBot('${escapeHtml(sym)}')" class="hover:text-rose-400 text-gray-400 font-bold ml-1 px-1 transition" title="${escapeHtml(sym)} sembolünü bot takip listesinden kaldır">✕</button>`
+          : '';
+        return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-mono font-bold tracking-wide">
+          <span>${escapeHtml(sym)}</span>
+          ${removeBtn}
+        </span>`;
+      }).join('');
+    }
 
     document.getElementById("bot-atr-status").textContent = `ATR(${bot.atr_period || 14}): ${Number(bot.current_atr || 0).toFixed(5)} · ER: ${Number(bot.current_er || 0).toFixed(2)} · ${bot.use_atr_filter ? (bot.pending_confirmation ? 'Onay bekleniyor' : 'Filtre açık') : 'Filtre kapalı'} · ${bot.risk_mode === 'ATR' ? 'ATR stop/hedef' : 'Sabit puan stop/hedef'}`;
     const lastSigEl = document.getElementById("bot-last-signal");
@@ -3034,6 +3052,9 @@ function applyScannedSignalToTicket(symbol, slPrice, tpPrice) {
   }
 }
 
+var latestScannedSignals = [];
+if (typeof window !== 'undefined') window.latestScannedSignals = latestScannedSignals;
+
 async function refreshSignalScanner(manual = false, forceReplace = false) {
   if (signalScannerBusy && !forceReplace) return;
   const listNode = document.getElementById('signal-scanner-list');
@@ -3043,19 +3064,43 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
   try {
     const tfNode = document.getElementById('signal-scan-tf');
     const tf = Number(tfNode?.value || 15) || 15;
+    const mode = document.getElementById('signal-scan-mode')?.value || 'ALL';
     const activeSym = currentSymbol || document.getElementById('order-symbol-select')?.value || 'EURUSD';
-    if (manual && statusNode) statusNode.textContent = `${activeSym} sinyali taranıyor…`;
-    const res = await fetch(`/api/signals/scan?symbols=${encodeURIComponent(activeSym)}&timeframe_minutes=${tf}`);
+
+    let symbolsToScan = [];
+    if (mode === 'SELECTED') {
+      symbolsToScan = [activeSym];
+    } else {
+      const marketWatchSymbols = Array.isArray(window.MT5Markets?.all)
+        ? window.MT5Markets.all.map(s => (typeof s === 'string' ? s : s?.name)).filter(Boolean)
+        : [];
+      const botSymbols = Array.isArray(latestBotSettings?.symbols) ? latestBotSettings.symbols : [];
+      symbolsToScan = Array.from(new Set([
+        activeSym,
+        ...botSymbols,
+        'EURUSD', 'GBPUSD', 'XAUUSD', 'USDJPY', 'BTCUSD', 'ETHUSD',
+        ...marketWatchSymbols
+      ])).slice(0, 10);
+    }
+
+    if (manual && statusNode) statusNode.textContent = `${symbolsToScan.length} sembol taranıyor…`;
+    const res = await fetch(`/api/signals/scan?symbols=${encodeURIComponent(symbolsToScan.join(','))}&timeframe_minutes=${tf}`);
     if (!res.ok) throw new Error('Sinyal taraması alınamadı');
     const data = await res.json();
-    const rows = Array.isArray(data.signals) ? data.signals.filter(r => r.symbol === activeSym) : [];
+    let rows = Array.isArray(data.signals) ? data.signals : [];
+    if (mode === 'SELECTED') {
+      rows = rows.filter(r => r.symbol === activeSym);
+    }
+    latestScannedSignals = rows;
+    if (typeof window !== 'undefined') window.latestScannedSignals = rows;
+
     const tfText = {1:'1 dk',5:'5 dk',15:'15 dk',30:'30 dk',60:'1 sa',240:'4 sa',1440:'1 gün'}[tf] || `${tf} dk`;
     const tfCode = {1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'}[tf] || `M${tf}`;
     if (statusNode) {
-      statusNode.textContent = `${activeSym} (${tfText} mum) · HMA(${data.hma_period || 14}) / EMA(${data.ema_period || 34}) · Son: ${new Date().toLocaleTimeString('tr-TR')}`;
+      statusNode.textContent = `${rows.length} Sinyal (${tfText} mum) · HMA(${data.hma_period || 14}) / EMA(${data.ema_period || 34}) · Son: ${new Date().toLocaleTimeString('tr-TR')}`;
     }
     if (!rows.length) {
-      listNode.innerHTML = `<div class="text-gray-400 text-[11px] py-2 text-center">${escapeHtml(activeSym)} için MT5 mum verisi bekleniyor…</div>`;
+      listNode.innerHTML = `<div class="text-gray-400 text-xs sm:text-sm py-3 text-center">MT5 mum verisi bekleniyor…</div>`;
       return;
     }
     listNode.innerHTML = rows.map(item => {
@@ -3115,8 +3160,9 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
           <div class="text-gray-300">Önerilen TP: <span class="text-emerald-300 font-bold">${tpFmt}</span></div>
         </div>
         <div class="flex items-center gap-2 pt-0.5">
-          <button type="button" onclick="applyScannedSignalToTicket('${symEsc}', ${sl}, ${tp})" class="flex-1 py-2 px-3 rounded-lg bg-cyan-700/80 hover:bg-cyan-600 text-white text-xs sm:text-sm font-bold transition active:scale-95">🎯 SL / TP Emre Aktar</button>
-          <button type="button" onclick="assignScannerSymbolToBot('${symEsc}', ${tf})" class="flex-1 py-2 px-3 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs sm:text-sm font-bold transition active:scale-95">🤖 Sinyali Bota Ata</button>
+          <button type="button" onclick="applyScannedSignalToTicket('${symEsc}', ${sl}, ${tp})" class="flex-1 py-2 px-2.5 rounded-lg bg-cyan-700/80 hover:bg-cyan-600 text-white text-xs sm:text-sm font-bold transition active:scale-95" title="SL/TP değerlerini manuel emir formuna aktar">🎯 Emre Aktar</button>
+          <button type="button" onclick="assignScannerSymbolToBot('${symEsc}', ${tf})" class="flex-1 py-2 px-2.5 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs sm:text-sm font-bold transition active:scale-95" title="${symEsc} sembolünü botun çoklu takip listesine ekle">🤖 Bota Ekle</button>
+          <button type="button" onclick="sendSignalDirectToBot('${symEsc}', '${item.side}', ${item.price}, ${sl}, ${tp})" class="flex-1 py-2 px-2.5 rounded-lg bg-indigo-700/80 hover:bg-indigo-600 text-white text-xs sm:text-sm font-bold transition active:scale-95" title="Bu sinyali hemen HMA Botu ile işleme al">⚡ Bota Gönder</button>
         </div>
       </div>`;
     }).join('');
@@ -3170,15 +3216,38 @@ async function fetchBotLiveSignal() {
 
     const box = document.getElementById('bot-pending-signal-box');
     const text = document.getElementById('bot-pending-signal-text');
-    if (box && text) {
-      if (data.pending_signal_action && data.pending_signal_action.side) {
-        const p = data.pending_signal_action;
-        latestPendingBotSignal = p;
+    const list = document.getElementById('bot-pending-signals-list');
+    const allBtn = document.getElementById('bot-execute-all-signals-btn');
+    const pendingList = Array.isArray(data.pending_signal_actions) && data.pending_signal_actions.length > 0
+      ? data.pending_signal_actions
+      : (data.pending_signal_action && data.pending_signal_action.side ? [data.pending_signal_action] : []);
+
+    if (box) {
+      if (pendingList.length > 0) {
+        latestPendingBotSignal = pendingList[0];
         box.classList.remove('hidden');
-        text.textContent = `🔔 ${p.symbol} ${p.side === 'BUY' ? '▲ AL' : '▼ SAT'} Sinyali @ ${p.price} (Saat: ${p.time})`;
+        if (text) text.textContent = `🔔 ${pendingList.length} Sinyal Yakalandı (Onay Bekliyor)`;
+        if (allBtn) allBtn.classList.toggle('hidden', pendingList.length <= 1);
+        if (list) {
+          list.innerHTML = pendingList.map(p => {
+            const sym = escapeHtml(p.symbol);
+            const sideClass = p.side === 'BUY' ? 'text-emerald-300' : 'text-rose-300';
+            return `<div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-[#121620] border border-gray-800">
+              <div class="min-w-0">
+                <span class="font-bold text-white text-xs">${sym} <span class="${sideClass} font-black">${p.side === 'BUY' ? '▲ AL' : '▼ SAT'}</span></span>
+                <span class="text-[11px] text-gray-400 font-mono block">@ ${p.price} · Saat: ${p.time || '--:--'}</span>
+              </div>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <button type="button" onclick="sendSignalDirectToBot('${sym}', '${p.side}', ${p.price}, ${p.sl_points || 0}, ${p.tp_points || 0})" class="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition">Uygula</button>
+                <button type="button" onclick="dismissPendingBotSignal('${sym}')" class="px-2 py-1 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white font-bold text-xs transition" title="Kapat">✕</button>
+              </div>
+            </div>`;
+          }).join('');
+        }
       } else {
         latestPendingBotSignal = null;
         box.classList.add('hidden');
+        if (list) list.innerHTML = '';
       }
     }
   } catch (_) {}
@@ -3229,41 +3298,116 @@ async function saveBotSignalRules() {
 async function executePendingBotSignal() {
   if (!latestPendingBotSignal) return;
   const sig = latestPendingBotSignal;
-  if (sig.symbol && sig.symbol !== currentSymbol) {
-    switchSymbol(sig.symbol);
+  await sendSignalDirectToBot(sig.symbol, sig.side, sig.price, sig.sl_points || 0, sig.tp_points || 0);
+}
+
+async function executeAllPendingBotSignals() {
+  const res = await fetch('/api/bot/live-signal');
+  if (!res.ok) return;
+  const data = await res.json();
+  const list = Array.isArray(data.pending_signal_actions) && data.pending_signal_actions.length > 0
+    ? data.pending_signal_actions
+    : (data.pending_signal_action ? [data.pending_signal_action] : []);
+  for (const p of list) {
+    await sendSignalDirectToBot(p.symbol, p.side, p.price, p.sl_points || 0, p.tp_points || 0);
   }
-  await submitOrder(sig.side);
+}
+
+async function dismissPendingBotSignal(symbol) {
+  try {
+    await fetch('/api/bot/clear-pending-signal', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({symbol}),
+    });
+    fetchBotLiveSignal();
+  } catch (_) {}
 }
 
 async function assignScannerSymbolToBot(symbol, timeframeMinutes) {
   try {
-    if (typeof isBotRunning !== 'undefined' && isBotRunning) {
-      showToast('Sembolü bota aktarmadan önce çalışan botu durdurun.', 'warning');
-      return;
-    }
-    const tf = Number(timeframeMinutes) || 15;
-    const payload = {
-      symbol,
-      timeframe_minutes: tf,
-      hma_period: 14,
-      second_ma_type: 'EMA',
-      second_ma_period: 34,
-      use_atr_filter: false,
-      use_h4_filter: false,
-    };
-    if (Number(latestBotSettings?.lot_size) > 0.10) {
-      payload.lot_size = 0.01;
-    }
-    const res = await fetch('/api/bot/config', {
+    const sym = (symbol || currentSymbol || 'EURUSD').toUpperCase();
+    const res = await fetch('/api/bot/add-symbol', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload),
+      body: JSON.stringify({symbol: sym}),
     });
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err.detail || 'Bot sembolü güncellenemedi.');
+      throw new Error(err.detail || 'Sembol bota eklenemedi.');
     }
-    showToast(`🤖 HMA Algoritmik Bot hedefi ${symbol} (M${tf} · HMA14/EMA34) olarak ayarlandı!`, 'success');
+    const data = await res.json();
+    showToast(`🤖 ${sym} HMA Algoritmik Botuna eklendi! (Aktif: ${data.symbols.join(', ')})`, 'success');
+    fetchBotStatus();
+    fetchBotLiveSignal();
+  } catch (err) {
+    showToast(`❌ ${err.message}`, 'error');
+  }
+}
+
+async function removeSymbolFromBot(symbol) {
+  try {
+    const sym = symbol.toUpperCase();
+    const res = await fetch('/api/bot/remove-symbol', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({symbol: sym}),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Sembol bot listesinden kaldırılamadı.');
+    }
+    const data = await res.json();
+    showToast(`➖ ${sym} bot takip listesinden çıkarıldı. (Kalan: ${data.symbols.join(', ')})`, 'info');
+    fetchBotStatus();
+    fetchBotLiveSignal();
+  } catch (err) {
+    showToast(`❌ ${err.message}`, 'error');
+  }
+}
+
+async function assignAllSignalsToBot() {
+  if (!latestScannedSignals || latestScannedSignals.length === 0) {
+    showToast('Aktarılacak taranmış sinyal bulunamadı. Lütfen önce tarama yapın.', 'info');
+    return;
+  }
+  let addedCount = 0;
+  for (const s of latestScannedSignals) {
+    try {
+      await fetch('/api/bot/add-symbol', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({symbol: s.symbol}),
+      });
+      addedCount++;
+    } catch (_) {}
+  }
+  showToast(`🤖 ${addedCount} sembol HMA Algoritmik Botuna başarıyla eklendi!`, 'success');
+  fetchBotStatus();
+  fetchBotLiveSignal();
+}
+
+async function sendSignalDirectToBot(symbol, side, price, sl, tp) {
+  try {
+    const sym = (symbol || currentSymbol).toUpperCase();
+    showToast(`⚡ ${sym} ${side} sinyali bota gönderiliyor...`, 'info');
+    const res = await fetch('/api/bot/execute-signal', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        symbol: sym,
+        side: side,
+        price: Number(price) || undefined,
+        sl: Number(sl) || undefined,
+        tp: Number(tp) || undefined,
+      }),
+    });
+    const result = await res.json();
+    if (!res.ok || !result.success) {
+      throw new Error(result.error || result.detail || 'Emir iletilemedi.');
+    }
+    showToast(`✅ ${sym} ${side} emri HMA Bot ile açıldı! (Bilet: #${result.ticket})`, 'success');
+    if (typeof fetchPositions === 'function') fetchPositions();
     fetchBotStatus();
     fetchBotLiveSignal();
   } catch (err) {

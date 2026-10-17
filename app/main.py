@@ -268,6 +268,7 @@ class LoginRequest(BaseModel):
 
 class BotConfigRequest(BaseModel):
     symbol: Optional[str] = None
+    symbols: Optional[Union[List[str], str]] = None
     timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=43200)
     hma_period: Optional[int] = Field(default=None, ge=2, le=1000)
     second_ma_type: Optional[Literal["EMA", "SMA", "LWMA", "HMA", "KAMA"]] = None
@@ -1286,6 +1287,58 @@ async def get_bot_live_signal():
 @app.post("/api/bot/signal-rules")
 def update_bot_signal_rules(data: Dict[str, Any]):
     return bot.update_signal_rules(data)
+
+
+class BotSymbolActionRequest(BaseModel):
+    symbol: str
+
+@app.post("/api/bot/add-symbol")
+def add_bot_symbol(req: BotSymbolActionRequest):
+    try:
+        symbols = bot.add_symbol(req.symbol)
+        return {"success": True, "symbols": symbols, "symbol": bot.symbol}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+@app.post("/api/bot/remove-symbol")
+def remove_bot_symbol(req: BotSymbolActionRequest):
+    try:
+        symbols = bot.remove_symbol(req.symbol)
+        return {"success": True, "symbols": symbols, "symbol": bot.symbol}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+class BotExecuteSignalRequest(BaseModel):
+    symbol: str
+    side: Literal["BUY", "SELL"]
+    price: Optional[float] = None
+    sl: Optional[float] = None
+    tp: Optional[float] = None
+    lot_size: Optional[float] = None
+
+@app.post("/api/bot/execute-signal")
+def execute_bot_signal(req: BotExecuteSignalRequest):
+    try:
+        res = bot.execute_signal(
+            symbol=req.symbol,
+            side=req.side,
+            price=req.price,
+            sl_price=req.sl,
+            tp_price=req.tp,
+            lot_size=req.lot_size
+        )
+        return res
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+@app.post("/api/bot/clear-pending-signal")
+def clear_bot_pending_signal(data: Optional[Dict[str, Any]] = None):
+    try:
+        sym = (data or {}).get("symbol")
+        bot.clear_pending_signal(symbol=sym)
+        return {"success": True, "pending_signal_actions": bot.pending_signal_actions}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 # DeepSeek AI Advisor & Autopilot Endpoints
