@@ -163,8 +163,8 @@ class StrategyBot:
         with self._state_lock:
             if self.is_running or self._check_lock.locked() or (self.task is not None and not self.task.done()):
                 raise RuntimeError('Sembol listesini değiştirmeden önce botu durdurun; yeni semboller başlangıç kontrolünden geçmelidir.')
-            sym = sym.strip().upper()
-            if not re.fullmatch(r'[A-Z0-9_.#-]{1,32}', sym):
+            sym = sym.strip()
+            if not re.fullmatch(r'[A-Za-z0-9_.#-]{1,32}', sym):
                 raise ValueError("Geçersiz sembol.")
             if not hasattr(self, 'symbols') or not self.symbols:
                 self.symbols = [self.symbol]
@@ -178,7 +178,7 @@ class StrategyBot:
         with self._state_lock:
             if self.is_running or self._check_lock.locked() or (self.task is not None and not self.task.done()):
                 raise RuntimeError('Sembol listesini değiştirmeden önce botu durdurun; yeni semboller başlangıç kontrolünden geçmelidir.')
-            sym = sym.strip().upper()
+            sym = sym.strip()
             if hasattr(self, 'symbols') and sym in self.symbols:
                 if len(self.symbols) > 1:
                     self.symbols.remove(sym)
@@ -203,18 +203,19 @@ class StrategyBot:
             for key in ('symbol', 'second_ma_type', 'risk_mode'):
                 if not isinstance(candidate[key], str):
                     raise ValueError(f'Geçersiz bot ayarı: {key}')
-                candidate[key] = candidate[key].upper()
-            if not re.fullmatch(r'[A-Z0-9_.#-]{1,32}', candidate['symbol']):
+                # Broker symbol names are case-sensitive (EURUSD.a, BTCUSDm); only enums are normalised.
+                candidate[key] = candidate[key].strip() if key == 'symbol' else candidate[key].upper()
+            if not re.fullmatch(r'[A-Za-z0-9_.#-]{1,32}', candidate['symbol']):
                 raise ValueError('Geçersiz sembol.')
             if 'symbols' in candidate:
                 raw_syms = candidate['symbols']
                 if isinstance(raw_syms, str):
-                    sym_list = [s.strip().upper() for s in raw_syms.split(',') if s.strip()]
+                    sym_list = [s.strip() for s in raw_syms.split(',') if s.strip()]
                 elif isinstance(raw_syms, list):
-                    sym_list = [str(s).strip().upper() for s in raw_syms if str(s).strip()]
+                    sym_list = [str(s).strip() for s in raw_syms if str(s).strip()]
                 else:
                     sym_list = []
-                valid_syms = [s for s in sym_list if re.fullmatch(r'[A-Z0-9_.#-]{1,32}', s)]
+                valid_syms = [s for s in sym_list if re.fullmatch(r'[A-Za-z0-9_.#-]{1,32}', s)]
                 if valid_syms:
                     if candidate['symbol'] not in valid_syms:
                         valid_syms.insert(0, candidate['symbol'])
@@ -416,42 +417,65 @@ class StrategyBot:
             return {"available": False, "symbol": self.symbol, **self.get_signal_rules()}
 
     def _apply_position_protection(self, expected_account=None):
-        if not (self.use_breakeven or self.trailing_stop_points > 0):
+        """Breakeven / trailing stop for the bot's own positions (bridge keys: price_open, price_current)."""
+        with self._state_lock:
+            use_breakeven, trail_pts = self.use_breakeven, int(self.trailing_stop_points or 0)
+            active_symbols = set(getattr(self, 'symbols', [self.symbol]))
+            default_risk_pts = self.sl_points if self.use_stop_loss and self.sl_points > 0 else 100
+        if not (use_breakeven or trail_pts > 0):
             return
         try:
-            positions = self.mt5.get_positions(fresh=False)
-            active_symbols = set(getattr(self, 'symbols', [self.symbol]))
-            for p in positions:
-                sym = p.get("symbol")
-                if sym not in active_symbols or p.get("magic") != HMA_MAGIC:
-                    continue
+            positions = self.mt5.get_positions(fresh=True)
+        except Exception as exc:
+            self._protection_error(f'Pozisyon koruması: pozisyonlar okunamadı ({exc}).')
+            return
+        for p in positions:
+            sym = p.get("symbol")
+            if sym not in active_symbols or p.get("magic") != HMA_MAGIC or self._stop_event.is_set():
+                continue
+            try:
                 spec = self.mt5.get_symbol_spec(sym) or {}
                 point = float(spec.get("point") or 0)
-                digits = int(spec.get("digits") or 5)
-                if point <= 0:
-                    continue
+                digits = int(spec.get("digits") if spec.get("digits") is not None else 5)
                 side = p.get("type")
-                open_p = float(p.get("open_price") or 0)
-                curr_p = float(p.get("current_price") or 0)
+                open_p = float(p.get("price_open") or 0)
+                curr_p = float(p.get("price_current") or 0)
                 curr_sl = float(p.get("sl") or 0)
                 curr_tp = float(p.get("tp") or 0)
-                if open_p <= 0 or curr_p <= 0:
+                if point <= 0 or open_p <= 0 or curr_p <= 0 or side not in ("BUY", "SELL"):
                     continue
-                profit_pts = (curr_p - open_p) / point if side == "BUY" else (open_p - curr_p) / point
+                direction = 1 if side == "BUY" else -1
+                profit_pts = direction * (curr_p - open_p) / point
+                # 1R = the position's own initial stop distance; symbol-agnostic, unlike the primary symbol's ATR.
+                risk_pts = direction * (open_p - curr_sl) / point if curr_sl > 0 else 0
+                trigger_pts = risk_pts if risk_pts > 0 else default_risk_pts
                 new_sl = None
-                trigger_pts = max(50.0, (self.current_atr / point) if self.current_atr > 0 else 100.0)
-                if self.use_breakeven and profit_pts >= trigger_pts:
-                    be_price = round(open_p + (2 * point if side == "BUY" else -2 * point), digits)
-                    if (side == "BUY" and (curr_sl == 0 or curr_sl < open_p)) or (side == "SELL" and (curr_sl == 0 or curr_sl > open_p)):
-                        new_sl = be_price
-                if self.trailing_stop_points > 0 and profit_pts > self.trailing_stop_points:
-                    trail_sl = round(curr_p - self.trailing_stop_points * point if side == "BUY" else curr_p + self.trailing_stop_points * point, digits)
-                    if (side == "BUY" and trail_sl > curr_sl) or (side == "SELL" and (curr_sl == 0 or trail_sl < curr_sl)):
+                if use_breakeven and profit_pts >= trigger_pts and (curr_sl == 0 or direction * (curr_sl - open_p) < 0):
+                    new_sl = round(open_p + direction * 2 * point, digits)
+                if trail_pts > 0 and profit_pts > trail_pts:
+                    trail_sl = round(curr_p - direction * trail_pts * point, digits)
+                    base = new_sl if new_sl is not None else curr_sl
+                    if base == 0 or direction * (trail_sl - base) > 0:
                         new_sl = trail_sl
-                if new_sl is not None and abs(new_sl - curr_sl) >= point:
-                    self.mt5.manage_position(int(p["ticket"]), "stops", {"sl": new_sl, "tp": curr_tp, "manual_mode": "MT5"}, f"bot-prot-{p['ticket']}-{int(time.time())}")
-        except Exception:
-            pass
+                if new_sl is None or abs(new_sl - curr_sl) < point:
+                    continue
+                kwargs = {'expected_account': expected_account} if expected_account is not None else {}
+                # Same ticket + same target level = same request id: cached positions cannot resend it.
+                request_id = f"bot-prot-{int(p['ticket'])}-{new_sl:.{max(0, digits)}f}"
+                res = self.mt5.manage_position(int(p["ticket"]), "stops", {"sl": new_sl, "tp": curr_tp},
+                                               request_id, **kwargs)
+                if res.get("success"):
+                    self.log(f"🛡️ [{sym}] #{p['ticket']} stop {curr_sl or '—'} → {new_sl} taşındı.")
+                else:
+                    self._protection_error(f"[{sym}] #{p['ticket']} stop taşınamadı: {res.get('error') or 'broker reddetti'}")
+            except Exception as exc:
+                self._protection_error(f"[{sym}] pozisyon koruması hatası: {exc}")
+
+    def _protection_error(self, message):
+        # Log each distinct failure once instead of every 0.5 s loop.
+        if getattr(self, '_last_protection_error', None) != message:
+            self._last_protection_error = message
+            self.log(message, "ERROR")
 
     async def run_loop(self):
         symbols_str = ", ".join(getattr(self, 'symbols', [self.symbol]))
@@ -793,9 +817,9 @@ class StrategyBot:
                        price: Optional[float] = None, sl_price: Optional[float] = None, tp_price: Optional[float] = None,
                        sl_points: Optional[int] = None, tp_points: Optional[int] = None) -> Dict[str, Any]:
         """Manually confirmed signal: same panel risk rules, account binding and idempotency as the bot."""
-        symbol = symbol.strip().upper()
+        symbol = symbol.strip()
         side = side.strip().upper()
-        if side not in ("BUY", "SELL") or not re.fullmatch(r'[A-Z0-9_.#-]{1,32}', symbol):
+        if side not in ("BUY", "SELL") or not re.fullmatch(r'[A-Za-z0-9_.#-]{1,32}', symbol):
             raise ValueError("Geçersiz sembol veya yön.")
         if (sl_price is not None or tp_price is not None) and (sl_points is not None or tp_points is not None):
             raise ValueError("SL/TP fiyat veya puan olarak gönderilmeli; ikisi birlikte değil.")
@@ -844,7 +868,7 @@ class StrategyBot:
     def clear_pending_signal(self, symbol: Optional[str] = None):
         with self._state_lock:
             if symbol:
-                sym = symbol.strip().upper()
+                sym = symbol.strip()
                 self.pending_signal_actions = [a for a in getattr(self, 'pending_signal_actions', []) if a.get('symbol') != sym]
             else:
                 self.pending_signal_actions = []

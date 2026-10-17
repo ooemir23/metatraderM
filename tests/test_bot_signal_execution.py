@@ -21,7 +21,7 @@ def make_bot():
 
 def test_signal_points_are_not_treated_as_prices_and_use_panel_risk_mode():
     bot, client = make_bot()
-    bot.execute_signal('eurusd', 'BUY', signal_id='EURUSD-BUY-1', expected_account=ACCOUNT,
+    bot.execute_signal('EURUSD', 'BUY', signal_id='EURUSD-BUY-1', expected_account=ACCOUNT,
                        price=1.1, sl_points=200, tp_points=400)
     args, kwargs = client.open_order.call_args
     assert args[:3] == ('EURUSD', 'BUY', bot.lot_size)
@@ -96,3 +96,59 @@ def test_signal_execution_rejects_unknown_fields_and_bad_rules(monkeypatch):
     execute.assert_not_called()
     assert client.post('/api/bot/signal-rules', json={'rsi_buy_max': 'x'}).status_code == 422
     assert client.post('/api/bot/signal-rules', json={'execution_mode': 'YOLO'}).status_code == 422
+
+
+def test_broker_symbol_case_is_preserved():
+    bot, client = make_bot()
+    bot.add_symbol('BTCUSDm')
+    assert bot.symbols == ['EURUSD', 'BTCUSDm']
+    bot.update_config({'symbol': 'EURUSD.a', 'symbols': ['EURUSD.a', 'BTCUSDm']}, persist=False)
+    assert bot.symbol == 'EURUSD.a' and bot.symbols == ['EURUSD.a', 'BTCUSDm']
+    bot.execute_signal('BTCUSDm', 'BUY', signal_id='s1', expected_account=ACCOUNT, sl_points=200)
+    assert client.open_order.call_args.args[0] == 'BTCUSDm'
+
+
+def protection_bot(position, **spec):
+    bot, client = make_bot()
+    client.get_symbol_spec.return_value = {'point': .00001, 'digits': 5, **spec}
+    client.get_positions.return_value = [position]
+    client.manage_position.return_value = {'success': True}
+    return bot, client
+
+
+def test_breakeven_uses_bridge_position_fields():
+    pos = {'ticket': 9, 'symbol': 'EURUSD', 'magic': HMA_MAGIC, 'type': 'BUY',
+           'price_open': 1.10000, 'price_current': 1.10250, 'sl': 1.09800, 'tp': 0.0}
+    bot, client = protection_bot(pos)
+    bot.use_breakeven = True
+    bot._apply_position_protection(expected_account=ACCOUNT)
+    args, kwargs = client.manage_position.call_args
+    assert args[0] == 9 and args[1] == 'stops'
+    assert args[2]['sl'] == 1.10002  # entry + 2 points once profit >= 1R (200 points)
+    assert kwargs['expected_account'] == ACCOUNT
+
+
+def test_breakeven_waits_for_one_r_and_trailing_is_idempotent():
+    pos = {'ticket': 9, 'symbol': 'EURUSD', 'magic': HMA_MAGIC, 'type': 'SELL',
+           'price_open': 1.10000, 'price_current': 1.09900, 'sl': 1.10200, 'tp': 0.0}
+    bot, client = protection_bot(pos)
+    bot.use_breakeven = True
+    bot._apply_position_protection()
+    client.manage_position.assert_not_called()  # 100 points profit < 200 points risk
+    bot.use_breakeven, bot.trailing_stop_points = False, 50
+    bot._apply_position_protection()
+    bot._apply_position_protection()
+    first, second = client.manage_position.call_args_list
+    assert first.args[2]['sl'] == 1.0995 and first.args[3] == second.args[3]
+
+
+def test_protection_ignores_foreign_positions_and_logs_failures():
+    pos = {'ticket': 9, 'symbol': 'EURUSD', 'magic': 1, 'type': 'BUY',
+           'price_open': 1.1, 'price_current': 1.2, 'sl': 0, 'tp': 0}
+    bot, client = protection_bot(pos)
+    bot.trailing_stop_points = 50
+    bot._apply_position_protection()
+    client.manage_position.assert_not_called()
+    client.get_positions.side_effect = RuntimeError('offline')
+    bot._apply_position_protection()
+    assert any('okunamadı' in entry['message'] for entry in bot.logs)

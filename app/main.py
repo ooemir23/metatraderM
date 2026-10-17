@@ -363,13 +363,13 @@ class BacktestRequest(BaseModel):
 def run_backtest(req: BacktestRequest):
     if req.timeframe_minutes not in TIMEFRAME_NAMES:
         raise HTTPException(status_code=422, detail='Desteklenmeyen zaman dilimi.')
-    rates = mt5_client.get_rates(req.symbol.upper(), req.timeframe_minutes, req.candles + 1)
+    rates = mt5_client.get_rates(req.symbol, req.timeframe_minutes, req.candles + 1)
     if not rates or len(rates) < 2:
         raise HTTPException(status_code=503, detail='Mum verisi alınamadı.')
     # Last candle is still forming; never use it as historical evidence.
     rates = rates[:-1]
-    price = mt5_client.get_symbol_price(req.symbol.upper())
-    info = mt5_client.get_symbol_spec(req.symbol.upper())
+    price = mt5_client.get_symbol_price(req.symbol)
+    info = mt5_client.get_symbol_spec(req.symbol)
     if not info or not info.get('point') or not price.get('bid'):
         raise HTTPException(status_code=503, detail='Broker sembol özellikleri doğrulanamadı.')
     try:

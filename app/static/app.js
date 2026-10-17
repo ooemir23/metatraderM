@@ -2979,6 +2979,10 @@ async function saveAIAutopilot() {
 }
 
 let signalScannerBusy = false;
+// Every scan gets a sequence number; a slower, older scan must never repaint
+// the list after the user switched symbol, timeframe or scan mode.
+let signalScanSeq = 0;
+let signalScanController = null;
 let signalAutoAlertEnabled = true;
 let sharedSignalAudioCtx = null;
 const announcedSignalCrosses = new Map();
@@ -3056,10 +3060,15 @@ var latestScannedSignals = [];
 if (typeof window !== 'undefined') window.latestScannedSignals = latestScannedSignals;
 
 async function refreshSignalScanner(manual = false, forceReplace = false) {
-  if (signalScannerBusy && !forceReplace) return;
+  if (signalScannerBusy && !forceReplace && !manual) return;
   const listNode = document.getElementById('signal-scanner-list');
   const statusNode = document.getElementById('signal-scanner-status');
   if (!listNode) return;
+  const seq = ++signalScanSeq;
+  if (signalScanController) signalScanController.abort();
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  signalScanController = controller;
+  const isCurrent = () => seq === signalScanSeq;
   signalScannerBusy = true;
   try {
     const tfNode = document.getElementById('signal-scan-tf');
@@ -3083,11 +3092,21 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
       ])).slice(0, 10);
     }
 
-    if (manual && statusNode) statusNode.textContent = `${symbolsToScan.length} sembol taranıyor…`;
-    const res = await fetch(`/api/signals/scan?symbols=${encodeURIComponent(symbolsToScan.join(','))}&timeframe_minutes=${tf}`);
+    if (statusNode && (manual || forceReplace)) statusNode.textContent = mode === 'SELECTED'
+      ? `${activeSym} taranıyor…` : `${symbolsToScan.length} sembol taranıyor (seçili: ${activeSym})…`;
+    if (forceReplace && mode === 'SELECTED') {
+      listNode.innerHTML = `<div class="text-gray-400 text-xs sm:text-sm py-3 text-center">${escapeHtml(activeSym)} için sinyal hesaplanıyor…</div>`;
+    }
+    const res = await fetch(`/api/signals/scan?symbols=${encodeURIComponent(symbolsToScan.join(','))}&timeframe_minutes=${tf}`,
+      controller ? {signal: controller.signal} : undefined);
     if (!res.ok) throw new Error('Sinyal taraması alınamadı');
     const data = await res.json();
+    // Drop results that belong to an older symbol / timeframe / mode selection.
+    if (!isCurrent() || activeSym !== currentSymbol || Number(data.timeframe_minutes) !== tf
+        || (document.getElementById('signal-scan-mode')?.value || 'ALL') !== mode) return;
     let rows = Array.isArray(data.signals) ? data.signals : [];
+    // Selected symbol always first so a symbol switch is visible at a glance.
+    rows = [...rows.filter(r => r.symbol === activeSym), ...rows.filter(r => r.symbol !== activeSym)];
     if (mode === 'SELECTED') {
       rows = rows.filter(r => r.symbol === activeSym);
     }
@@ -3100,21 +3119,28 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
       statusNode.textContent = `${rows.length} Sinyal (${tfText} mum) · HMA(${data.hma_period || 14}) / EMA(${data.ema_period || 34}) · Son: ${new Date().toLocaleTimeString('tr-TR')}`;
     }
     if (!rows.length) {
-      listNode.innerHTML = `<div class="text-gray-400 text-xs sm:text-sm py-3 text-center">MT5 mum verisi bekleniyor…</div>`;
+      listNode.innerHTML = `<div class="text-gray-400 text-xs sm:text-sm py-3 text-center">${escapeHtml(activeSym)} için MT5 mum verisi bekleniyor…</div>`;
       return;
     }
     listNode.innerHTML = rows.map(item => {
       const isCrossBuy = item.signal === 'BUY_CROSS';
       const isCrossSell = item.signal === 'SELL_CROSS';
       const isBuy = item.side === 'BUY';
-      const badgeClass = isCrossBuy
+      const isSell = item.side === 'SELL';
+      const tradable = isBuy || isSell;
+      const isActive = item.symbol === activeSym;
+      const badgeClass = !tradable
+        ? 'bg-gray-800 text-gray-300 border border-gray-700'
+        : isCrossBuy
         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold'
         : isCrossSell
         ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold'
         : isBuy
         ? 'bg-emerald-950/50 text-emerald-400 border border-emerald-800/50'
         : 'bg-rose-950/50 text-rose-400 border border-rose-800/50';
-      const badgeText = isCrossBuy
+      const badgeText = !tradable
+        ? '• Nötr (yön yok)'
+        : isCrossBuy
         ? '▲ YENİ AL (Kesişim)'
         : isCrossSell
         ? '▼ YENİ SAT (Kesişim)'
@@ -3145,10 +3171,10 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
       const hmaFmt = fmtNum(item.hma);
       const emaFmt = fmtNum(item.ema);
       const priceFmt = fmtNum(item.price);
-      return `<div class="bg-[#181d2a] border border-gray-800/90 rounded-xl p-3 space-y-2.5">
+      return `<div class="bg-[#181d2a] border ${isActive ? 'border-cyan-500/70 ring-1 ring-cyan-500/30' : 'border-gray-800/90'} rounded-xl p-3 space-y-2.5" data-scan-symbol="${symEsc}">
         <div class="flex items-center justify-between gap-2">
           <div class="min-w-0">
-            <span class="font-extrabold text-white text-sm sm:text-base block tracking-wide">${symEsc} <span class="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono font-bold">${tfText} (${tfCode})</span></span>
+            <span class="font-extrabold text-white text-sm sm:text-base block tracking-wide">${symEsc}${isActive ? ' <span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-600 text-white font-bold align-middle">SEÇİLİ</span>' : ''} <span class="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono font-bold">${tfText} (${tfCode})</span></span>
             <span class="text-xs sm:text-sm text-gray-200 font-mono">Fiyat: <strong class="text-white">${priceFmt}</strong> · RSI(14): <strong>${Number(item.rsi || 50).toFixed(1)}</strong> · ATR: <strong>${item.atr}</strong></span>
           </div>
           <span class="px-2.5 py-1.5 rounded-lg text-xs font-bold ${badgeClass}">${badgeText}</span>
@@ -3162,17 +3188,18 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
         <div class="flex items-center gap-2 pt-0.5">
           <button type="button" onclick="applyScannedSignalToTicket('${symEsc}', ${sl}, ${tp})" class="flex-1 py-2 px-2.5 rounded-lg bg-cyan-700/80 hover:bg-cyan-600 text-white text-xs sm:text-sm font-bold transition active:scale-95" title="SL/TP değerlerini manuel emir formuna aktar">🎯 Emre Aktar</button>
           <button type="button" onclick="assignScannerSymbolToBot('${symEsc}', ${tf})" class="flex-1 py-2 px-2.5 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs sm:text-sm font-bold transition active:scale-95" title="${symEsc} sembolünü botun çoklu takip listesine ekle">🤖 Bota Ekle</button>
-          <button type="button" onclick="sendSignalDirectToBot('${symEsc}', '${item.side}', ${item.price}, {signalId: 'scan-${symEsc}-${tf}-${item.side}-${item.candle_time}', slPrice: ${sl}, tpPrice: ${tp}})" class="flex-1 py-2 px-2.5 rounded-lg bg-indigo-700/80 hover:bg-indigo-600 text-white text-xs sm:text-sm font-bold transition active:scale-95" title="Bu sinyali hemen HMA Botu ile işleme al">⚡ Bota Gönder</button>
+          <button type="button" ${tradable ? '' : 'disabled title="Nötr sinyal: yön yok, emir gönderilemez"'} onclick="sendSignalDirectToBot('${symEsc}', '${item.side}', ${item.price}, {signalId: 'scan-${symEsc}-${tf}-${item.side}-${item.candle_time}', slPrice: ${sl}, tpPrice: ${tp}})" class="disabled:opacity-40 disabled:cursor-not-allowed flex-1 py-2 px-2.5 rounded-lg bg-indigo-700/80 hover:bg-indigo-600 text-white text-xs sm:text-sm font-bold transition active:scale-95" title="Bu sinyali hemen HMA Botu ile işleme al">⚡ Bota Gönder</button>
         </div>
       </div>`;
     }).join('');
-  } catch (_) {
+  } catch (err) {
+    if (!isCurrent() || err?.name === 'AbortError') return;
     if (statusNode) statusNode.textContent = 'Sinyal taraması şu an yapılamadı.';
-    if (listNode && listNode.textContent.includes('yükleniyor')) {
+    if (listNode && /yükleniyor|hesaplanıyor/.test(listNode.textContent)) {
       listNode.innerHTML = '<div class="text-amber-300/80 text-xs sm:text-sm py-3 text-center font-medium">Sinyal servisine ulaşılamadı, yeniden deneniyor…</div>';
     }
   } finally {
-    signalScannerBusy = false;
+    if (isCurrent()) { signalScannerBusy = false; signalScanController = null; }
   }
 }
 
@@ -3270,9 +3297,14 @@ async function saveBotQuickLot() {
     });
     if (res.ok) {
       showToast(`✅ Bot emir lotu ${lot} olarak güncellendi.`, 'success');
-      fetchBotStatus();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`❌ Bot lotu kaydedilemedi: ${typeof err.detail === 'string' ? err.detail : 'sunucu reddetti'}`, 'error');
     }
-  } catch (_) {}
+    fetchBotStatus();
+  } catch (_) {
+    showToast('❌ Bot lotu kaydedilemedi: sunucuya ulaşılamadı.', 'error');
+  }
 }
 
 async function saveBotSignalRules() {
@@ -3288,11 +3320,17 @@ async function saveBotSignalRules() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload),
     });
-    if (res.ok && typeof showToast === 'function') {
+    if (res.ok) {
       showToast('✅ Bot sinyal ve koruma kuralları güncellendi.', 'success');
-      fetchBotLiveSignal();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`❌ Bot kuralları kaydedilemedi: ${typeof err.detail === 'string' ? err.detail : 'geçersiz değer'}`, 'error');
     }
-  } catch (_) {}
+    // Re-sync the controls with what the server actually holds.
+    fetchBotLiveSignal();
+  } catch (_) {
+    showToast('❌ Bot kuralları kaydedilemedi: sunucuya ulaşılamadı.', 'error');
+  }
 }
 
 async function executePendingBotSignal() {
@@ -3315,18 +3353,21 @@ async function executeAllPendingBotSignals() {
 
 async function dismissPendingBotSignal(symbol) {
   try {
-    await fetch('/api/bot/clear-pending-signal', {
+    const res = await fetch('/api/bot/clear-pending-signal', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({symbol}),
     });
-    fetchBotLiveSignal();
-  } catch (_) {}
+    if (!res.ok) showToast('❌ Sinyal kapatılamadı.', 'error');
+  } catch (_) {
+    showToast('❌ Sinyal kapatılamadı: sunucuya ulaşılamadı.', 'error');
+  }
+  fetchBotLiveSignal();
 }
 
 async function assignScannerSymbolToBot(symbol, timeframeMinutes) {
   try {
-    const sym = (symbol || currentSymbol || 'EURUSD').toUpperCase();
+    const sym = String(symbol || currentSymbol || 'EURUSD').trim();
     const res = await fetch('/api/bot/add-symbol', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -3347,7 +3388,7 @@ async function assignScannerSymbolToBot(symbol, timeframeMinutes) {
 
 async function removeSymbolFromBot(symbol) {
   try {
-    const sym = symbol.toUpperCase();
+    const sym = String(symbol || '').trim();
     const res = await fetch('/api/bot/remove-symbol', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -3392,7 +3433,7 @@ async function assignAllSignalsToBot() {
 
 async function sendSignalDirectToBot(symbol, side, price, opts = {}) {
   try {
-    const sym = (symbol || currentSymbol).toUpperCase();
+    const sym = String(symbol || currentSymbol || '').trim();
     if (!opts.signalId) throw new Error('Sinyal kimliği eksik; listeyi yenileyin.');
     showToast(`⚡ ${sym} ${side} sinyali bota gönderiliyor...`, 'info');
     // SL/TP is sent either as prices (scanner) or as points (bot signal), never mixed.
