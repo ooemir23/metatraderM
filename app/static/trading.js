@@ -409,6 +409,7 @@ window.addEventListener('beforeunload',()=>{if(liveSource)liveSource.close();});
 
 async function fetchExecutionHealth() {
   const label = document.getElementById('execution-health');
+  if (!label) return;
   try {
     const response = await fetch('/api/operations/latency');
     if (!response.ok) throw new Error('Ölçüm alınamadı.');
