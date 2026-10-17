@@ -758,7 +758,7 @@ function switchPositionTab(tab) {
   const reportsContainer = document.getElementById("reports-container");
   const aiContainer = document.getElementById("ai-container");
 
-  const defaultTabClass = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200";
+  const defaultTabClass = "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200";
   if (btnOpen) btnOpen.className = defaultTabClass;
   if (btnClosed) btnClosed.className = defaultTabClass;
   if (btnReports) btnReports.className = defaultTabClass;
@@ -774,12 +774,12 @@ function switchPositionTab(tab) {
   if (aiContainer) { aiContainer.classList.add("hidden"); aiContainer.classList.remove("flex"); }
 
   if (tab === "open") {
-    if (btnOpen) btnOpen.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-emerald-500/20 text-emerald-400 shadow-sm";
+    if (btnOpen) btnOpen.className = "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-2 bg-emerald-500/20 text-emerald-400 shadow-sm";
     if (openActions) openActions.classList.remove("hidden");
     if (openContainer) openContainer.classList.remove("hidden");
     fetchPositions();
   } else if (tab === "closed") {
-    if (btnClosed) btnClosed.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-cyan-500/20 text-cyan-400 shadow-sm";
+    if (btnClosed) btnClosed.className = "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-2 bg-cyan-500/20 text-cyan-400 shadow-sm";
     if (closedSummary) {
       closedSummary.classList.remove("hidden");
       closedSummary.classList.add("flex");
@@ -787,7 +787,7 @@ function switchPositionTab(tab) {
     if (closedContainer) closedContainer.classList.remove("hidden");
     fetchHistory();
   } else if (tab === "reports") {
-    if (btnReports) btnReports.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-indigo-500/20 text-indigo-400 shadow-sm";
+    if (btnReports) btnReports.className = "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-2 bg-indigo-500/20 text-indigo-400 shadow-sm";
     if (reportsActions) {
       reportsActions.classList.remove("hidden");
       reportsActions.classList.add("flex");
@@ -1026,18 +1026,18 @@ function tradeSourceBadge(item) {
   const effectiveMagic = magic || fillMagic;
   const comment = String(item?.comment || '');
   if (effectiveMagic === 123461 || /hma bot/i.test(comment)) {
-    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 text-[9px] font-sans font-semibold leading-tight" title="HMA Algoritmik Bot / Otomatik Sinyal Yakalama (Magic #123461)">🤖 Otomatik Sinyal (HMA Bot)</span>`;
+    return `<span class="inline-block mt-1 px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-xs font-sans font-bold leading-tight" title="HMA Algoritmik Bot / Otomatik Sinyal Yakalama (Magic #123461)">🤖 Otomatik Sinyal (HMA Bot)</span>`;
   }
   if (effectiveMagic === 123462 || /ai|deepseek|mevo/i.test(comment)) {
-    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 text-[9px] font-sans font-semibold leading-tight" title="MevO Yapay Zeka Sinyali (Magic #123462)">🧠 Otomatik Sinyal (MevO AI)</span>`;
+    return `<span class="inline-block mt-1 px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/40 text-xs font-sans font-bold leading-tight" title="MevO Yapay Zeka Sinyali (Magic #123462)">🧠 Otomatik Sinyal (MevO AI)</span>`;
   }
   if (effectiveMagic === 123460 || comment.startsWith('vm:') || /hma web|panel/i.test(comment)) {
-    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-sans font-semibold leading-tight" title="HMA Web Sitesinden Manuel Açıldı (Magic #123460)">🌐 HMA Sitesi (Manuel)</span>`;
+    return `<span class="inline-block mt-1 px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-sans font-bold leading-tight" title="HMA Web Sitesinden Manuel Açıldı (Magic #123460)">🌐 HMA Sitesi (Manuel)</span>`;
   }
   if (effectiveMagic === 0) {
-    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[9px] font-sans font-semibold leading-tight" title="Orijinal MetaTrader 5 Terminalinden Manuel Açıldı (Magic #0)">🖥️ Orijinal MT5 (Manuel)</span>`;
+    return `<span class="inline-block mt-1 px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-sans font-bold leading-tight" title="Orijinal MetaTrader 5 Terminalinden Manuel Açıldı (Magic #0)">🖥️ Orijinal MT5 (Manuel)</span>`;
   }
-  return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-gray-800 text-gray-300 border border-gray-700 text-[9px] font-sans font-semibold leading-tight" title="Harici Uzman Danışman / EA (Magic #${effectiveMagic})">⚙️ Harici Bot (#${effectiveMagic})</span>`;
+  return `<span class="inline-block mt-1 px-2 py-0.5 rounded-md bg-gray-800 text-gray-200 border border-gray-700 text-xs font-sans font-bold leading-tight" title="Harici Uzman Danışman / EA (Magic #${effectiveMagic})">⚙️ Harici Bot (#${effectiveMagic})</span>`;
 }
 
 function renderPositionsData(positions) {
@@ -1054,7 +1054,7 @@ function renderPositionsData(positions) {
     if (countBadge) countBadge.innerText = positions.length;
 
     if (!positions || positions.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="10" class="py-6 text-center text-gray-500 font-sans">Henüz açık pozisyon bulunmuyor.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10" class="py-8 text-center text-gray-400 font-sans text-sm">Henüz açık pozisyon bulunmuyor.</td></tr>`;
       return;
     }
 
@@ -1062,30 +1062,30 @@ function renderPositionsData(positions) {
     positions.forEach(p => {
       const isBuy = p.type === "BUY";
       const typeBadge = isBuy
-        ? `<span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">BUY</span>`
-        : `<span class="px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold">SELL</span>`;
+        ? `<span class="px-2.5 py-1 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-xs font-black tracking-wider">BUY</span>`
+        : `<span class="px-2.5 py-1 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/30 text-xs font-black tracking-wider">SELL</span>`;
 
       const profitColor = p.profit >= 0 ? "text-emerald-400" : "text-rose-400";
       const profitSign = p.profit >= 0 ? "+" : "";
 
       rowsHtml += `
-        <tr class="hover:bg-[#151a26]/60 transition border-b border-gray-800/40 group">
-          <td class="py-2 px-2 text-gray-400 whitespace-nowrap">
-            <span class="block font-mono text-gray-200">#${p.ticket}</span>
+        <tr class="hover:bg-[#151a26]/70 transition border-b border-gray-800/60 group">
+          <td class="py-3 px-3 whitespace-nowrap">
+            <span class="block font-mono font-bold text-sm sm:text-base text-white">#${p.ticket}</span>
             ${tradeSourceBadge(p)}
           </td>
-          <td class="py-2 px-2 font-bold text-white whitespace-nowrap">${escapeHtml(p.symbol)}</td>
-          <td class="py-2 px-2 whitespace-nowrap">${typeBadge}</td>
-          <td class="py-2 px-2 text-gray-200 font-semibold whitespace-nowrap">${p.volume}</td>
-          <td class="py-2 px-2 text-gray-400 whitespace-nowrap tabular-nums">${Number(p.price_open).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
-          <td class="py-2 px-2 text-white font-semibold whitespace-nowrap tabular-nums">${Number(p.price_current).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
-          <td class="py-2 px-2 text-gray-500 whitespace-nowrap tabular-nums">${p.sl ? Number(p.sl).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "-"} / ${p.tp ? Number(p.tp).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "-"}</td>
-          <td class="py-2 px-2 text-right text-amber-400 whitespace-nowrap">${p.commission == null ? "—" : `${p.commission > 0 ? "+" : ""}${accountCurrency} ${formatMoney(p.commission)}`}</td>
-          <td class="py-2 px-2 text-right font-bold whitespace-nowrap ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(p.profit)}</td>
-          <td class="py-2 px-2.5 text-center whitespace-nowrap sticky right-0 bg-[#121620] group-hover:bg-[#151a26] shadow-[-6px_0_12px_rgba(0,0,0,0.35)]">
-            <div class="inline-flex items-center gap-1.5">
-              <button onclick="showPositionEditor(${p.ticket})" class="px-2 py-1 rounded bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/20 text-xs font-medium transition" title="SL/TP veya kısmi kapatma yönet">Yönet</button>
-              <button onclick="closePosition(${p.ticket})" class="px-2.5 py-1 rounded bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-bold transition active:scale-95 flex items-center gap-1" title="Pozisyon #${p.ticket} kapat">
+          <td class="py-3 px-3 font-extrabold text-white text-sm sm:text-base whitespace-nowrap tracking-wide">${escapeHtml(p.symbol)}</td>
+          <td class="py-3 px-3 whitespace-nowrap">${typeBadge}</td>
+          <td class="py-3 px-3 text-white font-extrabold text-sm sm:text-base whitespace-nowrap">${p.volume}</td>
+          <td class="py-3 px-3 text-gray-300 font-mono text-sm sm:text-[15px] font-medium whitespace-nowrap tabular-nums">${Number(p.price_open).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
+          <td class="py-3 px-3 text-white font-mono text-sm sm:text-[15px] font-bold whitespace-nowrap tabular-nums">${Number(p.price_current).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
+          <td class="py-3 px-3 text-gray-300 font-mono text-xs sm:text-sm whitespace-nowrap tabular-nums">${p.sl ? Number(p.sl).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "—"} / ${p.tp ? Number(p.tp).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "—"}</td>
+          <td class="py-3 px-3 text-right font-mono font-bold text-sm sm:text-[15px] text-amber-400 whitespace-nowrap">${p.commission == null ? "—" : `${p.commission > 0 ? "+" : ""}${accountCurrency} ${formatMoney(p.commission)}`}</td>
+          <td class="py-3 px-3 text-right font-mono font-black text-sm sm:text-base whitespace-nowrap ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(p.profit)}</td>
+          <td class="py-3 px-3 text-center whitespace-nowrap sticky right-0 bg-[#121620] group-hover:bg-[#151a26] shadow-[-6px_0_12px_rgba(0,0,0,0.35)]">
+            <div class="inline-flex items-center gap-2">
+              <button onclick="showPositionEditor(${p.ticket})" class="px-3 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-xs sm:text-sm font-bold transition active:scale-95" title="SL/TP veya kısmi kapatma yönet">Yönet</button>
+              <button onclick="closePosition(${p.ticket})" class="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs sm:text-sm font-bold transition active:scale-95 flex items-center gap-1" title="Pozisyon #${p.ticket} kapat">
                 <span>✕</span>
                 <span>Kapat</span>
               </button>
@@ -1248,8 +1248,8 @@ async function fetchHistory() {
     history.forEach(d => {
       const isBuy = (d.position_type || d.type) === "BUY";
       const typeBadge = isBuy
-        ? `<span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold text-[10px]">BUY</span>`
-        : `<span class="px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold text-[10px]">SELL</span>`;
+        ? `<span class="px-2.5 py-1 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-xs font-black tracking-wider">BUY</span>`
+        : `<span class="px-2.5 py-1 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/30 text-xs font-black tracking-wider">SELL</span>`;
 
       const netProfit=(d.profit||0)+(d.commission||0)+(d.swap||0)+(d.fee||0);
       const profitColor = netProfit >= 0 ? "text-emerald-400" : "text-rose-400";
@@ -1263,21 +1263,21 @@ async function fetchHistory() {
       const ticket = Number(d.ticket);
 
       rowsHtml += `
-        <tr data-testid="history-deal-${ticket}" onclick="showHistoryDetails(${positionId}, ${ticket}, this)" class="cursor-pointer hover:bg-[#151a26]/60 transition border-b border-gray-800/40" title="Açılış ve kapanış detaylarını göster">
-          <td class="py-2.5 px-3 text-gray-400">
-            <button type="button" onclick="event.stopPropagation(); showHistoryDetails(${positionId}, ${ticket}, this)" class="text-left hover:text-cyan-400 focus:outline focus:outline-2 focus:outline-cyan-400 rounded" aria-label="İşlem #${ticket} detayları">
-              #${ticket} <span class="text-[10px] text-gray-500 block">Pos: #${positionId} · Detay</span>
+        <tr data-testid="history-deal-${ticket}" onclick="showHistoryDetails(${positionId}, ${ticket}, this)" class="cursor-pointer hover:bg-[#151a26]/70 transition border-b border-gray-800/60" title="Açılış ve kapanış detaylarını göster">
+          <td class="py-3 px-3">
+            <button type="button" onclick="event.stopPropagation(); showHistoryDetails(${positionId}, ${ticket}, this)" class="text-left font-mono font-bold text-sm sm:text-base text-white hover:text-cyan-400 focus:outline focus:outline-2 focus:outline-cyan-400 rounded" aria-label="İşlem #${ticket} detayları">
+              #${ticket} <span class="text-xs text-gray-400 block font-normal">Pos: #${positionId} · Detay</span>
             </button>
             <div>${tradeSourceBadge(d)}</div>
           </td>
-          <td class="py-2.5 px-3 font-bold text-white">${escapeHtml(d.symbol)}</td>
-          <td class="py-2.5 px-3">${typeBadge}</td>
-          <td class="py-2.5 px-3 text-gray-200 font-semibold">${d.volume}</td>
-          <td class="py-2.5 px-3 text-gray-300 font-mono">${d.price}</td>
-          <td class="py-2.5 px-3 text-right text-amber-400 whitespace-nowrap">${commissionText}</td>
-          <td class="py-2.5 px-3 text-right text-gray-500 text-[11px] whitespace-nowrap">${feeText}</td>
-          <td class="py-2.5 px-3 text-gray-400 text-[11px]">${d.time}</td>
-          <td class="py-2.5 px-3 text-right font-bold font-mono ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(netProfit)}</td>
+          <td class="py-3 px-3 font-extrabold text-white text-sm sm:text-base tracking-wide">${escapeHtml(d.symbol)}</td>
+          <td class="py-3 px-3">${typeBadge}</td>
+          <td class="py-3 px-3 text-white font-extrabold text-sm sm:text-base">${d.volume}</td>
+          <td class="py-3 px-3 text-gray-200 font-mono text-sm sm:text-[15px] font-medium">${d.price}</td>
+          <td class="py-3 px-3 text-right font-mono font-bold text-sm sm:text-[15px] text-amber-400 whitespace-nowrap">${commissionText}</td>
+          <td class="py-3 px-3 text-right font-mono text-xs sm:text-sm text-gray-300 whitespace-nowrap">${feeText}</td>
+          <td class="py-3 px-3 font-mono text-xs sm:text-sm text-gray-300 whitespace-nowrap">${d.time}</td>
+          <td class="py-3 px-3 text-right font-bold font-mono text-sm sm:text-base whitespace-nowrap ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(netProfit)}</td>
         </tr>
       `;
     });
@@ -3091,32 +3091,39 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
         }
       }
       const symEsc = escapeHtml(item.symbol);
+      const digits = Number.isInteger(item.digits) ? item.digits : 5;
+      const fmtNum = (val) => (val != null && !isNaN(Number(val))) ? Number(val).toFixed(digits) : '—';
       const sl = Number(item.suggested_sl || 0);
       const tp = Number(item.suggested_tp || 0);
-      return `<div class="bg-[#181d2a] border border-gray-800/90 rounded-xl p-2.5 space-y-2">
+      const slFmt = sl ? fmtNum(sl) : '—';
+      const tpFmt = tp ? fmtNum(tp) : '—';
+      const hmaFmt = fmtNum(item.hma);
+      const emaFmt = fmtNum(item.ema);
+      const priceFmt = fmtNum(item.price);
+      return `<div class="bg-[#181d2a] border border-gray-800/90 rounded-xl p-3 space-y-2.5">
         <div class="flex items-center justify-between gap-2">
           <div class="min-w-0">
-            <span class="font-bold text-white text-sm block">${symEsc} <span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono font-semibold">${tfText} (${tfCode})</span></span>
-            <span class="text-[11px] text-gray-300 font-mono">Fiyat: <strong>${item.price}</strong> · RSI(14): <strong>${Number(item.rsi || 50).toFixed(1)}</strong> · ATR: ${item.atr}</span>
+            <span class="font-extrabold text-white text-sm sm:text-base block tracking-wide">${symEsc} <span class="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono font-bold">${tfText} (${tfCode})</span></span>
+            <span class="text-xs sm:text-sm text-gray-200 font-mono">Fiyat: <strong class="text-white">${priceFmt}</strong> · RSI(14): <strong>${Number(item.rsi || 50).toFixed(1)}</strong> · ATR: <strong>${item.atr}</strong></span>
           </div>
-          <span class="px-2 py-1 rounded-lg text-[11px] ${badgeClass}">${badgeText}</span>
+          <span class="px-2.5 py-1.5 rounded-lg text-xs font-bold ${badgeClass}">${badgeText}</span>
         </div>
-        <div class="grid grid-cols-2 gap-1.5 text-[10px] font-mono bg-[#121620] p-1.5 rounded-lg border border-gray-800/80">
-          <div class="text-gray-400">HMA(14): <span class="text-cyan-300 font-bold">${item.hma}</span></div>
-          <div class="text-gray-400">EMA(34): <span class="text-amber-300 font-bold">${item.ema}</span></div>
-          <div class="text-gray-400">Önerilen SL: <span class="text-rose-300 font-bold">${sl}</span></div>
-          <div class="text-gray-400">Önerilen TP: <span class="text-emerald-300 font-bold">${tp}</span></div>
+        <div class="grid grid-cols-2 gap-2 text-xs sm:text-sm font-mono bg-[#121620] p-2.5 rounded-lg border border-gray-800/80">
+          <div class="text-gray-300">HMA(14): <span class="text-cyan-300 font-bold">${hmaFmt}</span></div>
+          <div class="text-gray-300">EMA(34): <span class="text-amber-300 font-bold">${emaFmt}</span></div>
+          <div class="text-gray-300">Önerilen SL: <span class="text-rose-300 font-bold">${slFmt}</span></div>
+          <div class="text-gray-300">Önerilen TP: <span class="text-emerald-300 font-bold">${tpFmt}</span></div>
         </div>
-        <div class="flex items-center gap-1.5 pt-0.5">
-          <button type="button" onclick="applyScannedSignalToTicket('${symEsc}', ${sl}, ${tp})" class="flex-1 py-1.5 px-2 rounded-lg bg-cyan-700/80 hover:bg-cyan-600 text-white text-[11px] font-bold transition">🎯 SL / TP Emre Aktar</button>
-          <button type="button" onclick="assignScannerSymbolToBot('${symEsc}', ${tf})" class="flex-1 py-1.5 px-2 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-white text-[11px] font-bold transition">🤖 Sinyali Bota Ata</button>
+        <div class="flex items-center gap-2 pt-0.5">
+          <button type="button" onclick="applyScannedSignalToTicket('${symEsc}', ${sl}, ${tp})" class="flex-1 py-2 px-3 rounded-lg bg-cyan-700/80 hover:bg-cyan-600 text-white text-xs sm:text-sm font-bold transition active:scale-95">🎯 SL / TP Emre Aktar</button>
+          <button type="button" onclick="assignScannerSymbolToBot('${symEsc}', ${tf})" class="flex-1 py-2 px-3 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs sm:text-sm font-bold transition active:scale-95">🤖 Sinyali Bota Ata</button>
         </div>
       </div>`;
     }).join('');
   } catch (_) {
     if (statusNode) statusNode.textContent = 'Sinyal taraması şu an yapılamadı.';
     if (listNode && listNode.textContent.includes('yükleniyor')) {
-      listNode.innerHTML = '<div class="text-amber-300/80 text-[11px] py-2 text-center">Sinyal servisine ulaşılamadı, yeniden deneniyor…</div>';
+      listNode.innerHTML = '<div class="text-amber-300/80 text-xs sm:text-sm py-3 text-center font-medium">Sinyal servisine ulaşılamadı, yeniden deneniyor…</div>';
     }
   } finally {
     signalScannerBusy = false;
@@ -3157,7 +3164,7 @@ async function fetchBotLiveSignal() {
       if (trendNode) {
         const trendText = data.trend === 'BUY' ? '▲ AL Yönlü' : data.trend === 'SELL' ? '▼ SAT Yönlü' : 'Yatay';
         trendNode.textContent = `${data.symbol} (M${data.timeframe_minutes}) · RSI(14): ${Number(data.rsi || 50).toFixed(1)} · Trend: ${trendText} · Fark: ${data.gap}`;
-        trendNode.className = 'mb-2 text-[10px] font-mono ' + (data.trend === 'BUY' ? 'text-emerald-300' : data.trend === 'SELL' ? 'text-rose-300' : 'text-cyan-300');
+        trendNode.className = 'mb-2.5 text-xs sm:text-sm font-mono font-semibold ' + (data.trend === 'BUY' ? 'text-emerald-300' : data.trend === 'SELL' ? 'text-rose-300' : 'text-cyan-300');
       }
     }
 

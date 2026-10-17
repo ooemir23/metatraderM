@@ -173,83 +173,83 @@
         <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
           <!-- TABS -->
           <div class="flex items-center bg-[#151a26] p-1 rounded-xl border border-gray-800/80">
-            <button id="tab-btn-open" onclick="switchPositionTab('open')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-emerald-500/20 text-emerald-400 shadow-sm">
-              <i class="ph-bold ph-briefcase"></i>
+            <button id="tab-btn-open" onclick="switchPositionTab('open')" class="px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-2 bg-emerald-500/20 text-emerald-400 shadow-sm">
+              <i class="ph-bold ph-briefcase text-sm"></i>
               <span>Açık Pozisyonlar</span>
-              <span id="pos-count-badge" class="px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono">0</span>
+              <span id="pos-count-badge" class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-mono font-bold">0</span>
             </button>
-            <button id="tab-btn-closed" onclick="switchPositionTab('closed')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200">
-              <i class="ph-bold ph-clock-counter-clockwise"></i>
+            <button id="tab-btn-closed" onclick="switchPositionTab('closed')" class="px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200">
+              <i class="ph-bold ph-clock-counter-clockwise text-sm"></i>
               <span>Kapanış Hareketleri</span>
-              <span id="history-count-badge" class="px-1.5 py-0.5 rounded-full bg-gray-800 text-gray-400 text-[10px] font-mono">0</span>
+              <span id="history-count-badge" class="px-2 py-0.5 rounded-full bg-gray-800 text-gray-300 text-xs font-mono font-bold">0</span>
             </button>
-            <button id="tab-btn-reports" onclick="switchPositionTab('reports')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200">
-              <i class="ph-bold ph-chart-polar"></i>
+            <button id="tab-btn-reports" onclick="switchPositionTab('reports')" class="px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-2 text-gray-400 hover:text-gray-200">
+              <i class="ph-bold ph-chart-polar text-sm"></i>
               <span>Günlük Rapor & Analiz</span>
             </button>
-            <a href="/ai" target="_blank" id="tab-btn-ai" class="ai-logo-animated px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-[#181528] border border-purple-500/50 text-purple-300 hover:text-white shadow-md shadow-purple-950/40 active:scale-95" title="MevO AI Danışmanı ve Otopilot">
-              <i class="ph-bold ph-brain text-purple-400 animate-pulse"></i>
-              <span class="ai-gradient-text font-black text-xs">MevO</span>
+            <a href="/ai" target="_blank" id="tab-btn-ai" class="ai-logo-animated px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-1.5 bg-[#181528] border border-purple-500/50 text-purple-300 hover:text-white shadow-md shadow-purple-950/40 active:scale-95" title="MevO AI Danışmanı ve Otopilot">
+              <i class="ph-bold ph-brain text-purple-400 animate-pulse text-sm"></i>
+              <span class="ai-gradient-text font-black text-xs sm:text-sm">MevO</span>
             </a>
           </div>
 
           <!-- OPEN POSITIONS ACTIONS (Visible when open tab active) -->
           <div id="open-actions-bar" class="flex items-center gap-2 flex-wrap">
-            <button onclick="closeFilteredPositions('profit')" class="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-xs font-semibold flex items-center gap-1 transition active:scale-95" title="Sadece kârda olan pozisyonları kapat">
-              <i class="ph-bold ph-trend-up"></i>
+            <button onclick="closeFilteredPositions('profit')" class="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-xs sm:text-sm font-bold flex items-center gap-1.5 transition active:scale-95" title="Sadece kârda olan pozisyonları kapat">
+              <i class="ph-bold ph-trend-up text-sm"></i>
               <span>Kârda Olanları Kapat</span>
             </button>
-            <button onclick="closeFilteredPositions('loss')" class="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold flex items-center gap-1 transition active:scale-95" title="Sadece zararda olan pozisyonları kapat">
-              <i class="ph-bold ph-trend-down"></i>
+            <button onclick="closeFilteredPositions('loss')" class="px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs sm:text-sm font-bold flex items-center gap-1.5 transition active:scale-95" title="Sadece zararda olan pozisyonları kapat">
+              <i class="ph-bold ph-trend-down text-sm"></i>
               <span>Zararda Olanları Kapat</span>
             </button>
-            <button onclick="closeFilteredPositions('all')" class="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 text-xs font-semibold flex items-center gap-1 transition active:scale-95" title="Otomasyonu durdur, bekleyen emirleri iptal et ve tüm açık pozisyonları kapat">
-              <i class="ph-bold ph-x-circle"></i>
+            <button onclick="closeFilteredPositions('all')" class="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 text-xs sm:text-sm font-bold flex items-center gap-1.5 transition active:scale-95" title="Otomasyonu durdur, bekleyen emirleri iptal et ve tüm açık pozisyonları kapat">
+              <i class="ph-bold ph-x-circle text-sm"></i>
               <span>Tümünü Kapat / İptal</span>
             </button>
-            <button id="resume-trading-btn" onclick="openTradingRiskDialog()" class="hidden px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/20 text-xs font-semibold" title="Günlük risk ve yeni emir kilidini yönet">
+            <button id="resume-trading-btn" onclick="openTradingRiskDialog()" class="hidden px-3 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/20 text-xs sm:text-sm font-bold" title="Günlük risk ve yeni emir kilidini yönet">
               İşlem Riskini Yönet
             </button>
           </div>
 
           <!-- CLOSED POSITIONS SUMMARY (Visible when closed tab active) -->
-          <div id="closed-summary-bar" class="hidden flex flex-wrap items-center gap-3 text-xs font-mono">
-            <span class="text-gray-400">Gösterilen kapanışlar net: <strong id="history-total-profit" class="text-white">$0.00</strong></span>
-            <span class="text-gray-400">Kapanış komisyonları: <strong id="history-total-commission" class="text-amber-400">$0.00</strong></span>
-            <button onclick="fetchHistory()" class="px-2 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs flex items-center gap-1 transition" title="Yenile">
+          <div id="closed-summary-bar" class="hidden flex flex-wrap items-center gap-3 text-xs sm:text-sm font-mono">
+            <span class="text-gray-300">Gösterilen kapanışlar net: <strong id="history-total-profit" class="text-white font-bold">$0.00</strong></span>
+            <span class="text-gray-300">Kapanış komisyonları: <strong id="history-total-commission" class="text-amber-400 font-bold">$0.00</strong></span>
+            <button onclick="fetchHistory()" class="px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs sm:text-sm font-semibold flex items-center gap-1 transition" title="Yenile">
               <i class="ph-bold ph-arrows-clockwise"></i>
               <span class="font-sans">Yenile</span>
             </button>
           </div>
 
           <!-- REPORTS SUMMARY & ACTIONS (Visible when reports tab active) -->
-          <div id="reports-actions-bar" class="hidden flex items-center gap-2 text-xs">
-            <select id="reports-days-select" onchange="fetchReports()" class="bg-[#151a26] border border-gray-700 text-gray-200 text-xs rounded-lg px-2.5 py-1 focus:outline-none focus:border-cyan-500 font-sans">
+          <div id="reports-actions-bar" class="hidden flex items-center gap-2 text-xs sm:text-sm">
+            <select id="reports-days-select" onchange="fetchReports()" class="bg-[#151a26] border border-gray-700 text-gray-200 text-xs sm:text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-cyan-500 font-sans font-medium">
               <option value="7">Son 7 Gün</option>
               <option value="30" selected>Son 30 Gün</option>
               <option value="90">Son 90 Gün</option>
               <option value="365">Tüm Geçmiş</option>
             </select>
-            <button onclick="fetchReports()" class="px-2 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs flex items-center gap-1 transition" title="Raporu Yenile">
+            <button onclick="fetchReports()" class="px-2.5 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs sm:text-sm font-semibold flex items-center gap-1 transition" title="Raporu Yenile">
               <i class="ph-bold ph-arrows-clockwise"></i>
               <span class="font-sans">Yenile</span>
             </button>
           </div>
 
           <!-- AI ACTIONS (Visible when AI tab active) -->
-          <div id="ai-actions-bar" class="hidden flex items-center gap-2 flex-wrap text-xs">
-            <button onclick="triggerAILearn()" id="ai-learn-btn" class="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold flex items-center gap-1.5 shadow-md shadow-purple-600/20 active:scale-95 transition" title="Geçmiş işlemlerinizi DeepSeek'e analiz ettirip tarzınızı öğrenmesini sağlayın">
+          <div id="ai-actions-bar" class="hidden flex items-center gap-2 flex-wrap text-xs sm:text-sm">
+            <button onclick="triggerAILearn()" id="ai-learn-btn" class="px-3 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold flex items-center gap-1.5 shadow-md shadow-purple-600/20 active:scale-95 transition" title="Geçmiş işlemlerinizi DeepSeek'e analiz ettirip tarzınızı öğrenmesini sağlayın">
               <i class="ph-bold ph-sparkle text-amber-300"></i>
               <span>İşlemlerimi Analiz Et & Öğren</span>
             </button>
-            <button onclick="triggerAIAdvice()" id="ai-advice-btn" class="px-2.5 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-cyan-400 border border-cyan-500/30 font-semibold flex items-center gap-1.5 active:scale-95 transition" title="Mevcut sembol ve grafik için anlık yapay zeka tavsiyesi üret">
+            <button onclick="triggerAIAdvice()" id="ai-advice-btn" class="px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-cyan-400 border border-cyan-500/30 font-bold flex items-center gap-1.5 active:scale-95 transition" title="Mevcut sembol ve grafik için anlık yapay zeka tavsiyesi üret">
               <i class="ph-bold ph-target"></i>
               <span>Canlı Piyasa Tavsiyesi Al</span>
             </button>
-            <button onclick="toggleAIAutopilotModal()" class="px-2.5 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold flex items-center gap-1.5 border border-gray-700 active:scale-95 transition">
+            <button onclick="toggleAIAutopilotModal()" class="px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold flex items-center gap-1.5 border border-gray-700 active:scale-95 transition">
               <i class="ph-bold ph-robot text-purple-400"></i>
               <span>Otopilot Ayarları</span>
-              <span id="ai-autopilot-pill" class="text-[9px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400 font-mono">KAPALI</span>
+              <span id="ai-autopilot-pill" class="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-300 font-mono font-bold">KAPALI</span>
             </button>
           </div>
         </div>
@@ -257,51 +257,51 @@
 
         <!-- OPEN POSITIONS TABLE -->
         <div id="open-positions-container" class="overflow-x-auto overflow-y-auto flex-1">
-          <table class="w-full text-left text-xs text-gray-300">
-            <thead class="text-[11px] text-gray-400 uppercase bg-[#151a26] border-b border-gray-800 sticky top-0 z-10">
+          <table class="w-full text-left text-sm text-gray-200">
+            <thead class="text-xs sm:text-[13px] font-bold text-gray-300 uppercase bg-[#151a26] border-b border-gray-800 sticky top-0 z-10 tracking-wider">
               <tr>
-                <th class="py-2 px-2">Bilet</th>
-                <th class="py-2 px-2">Sembol</th>
-                <th class="py-2 px-2">Yön</th>
-                <th class="py-2 px-2">Hacim</th>
-                <th class="py-2 px-2">Açılış</th>
-                <th class="py-2 px-2">Güncel</th>
-                <th class="py-2 px-2">SL / TP</th>
-                <th class="py-2 px-2 text-right" title="Pozisyona ait açılış ve kısmi kapanışlarda şimdiye kadar tahsil edilen komisyon">Komisyon</th>
-                <th class="py-2 px-2 text-right">Kâr / Zarar</th>
-                <th class="py-2 px-2.5 text-center sticky right-0 bg-[#151a26] shadow-[-6px_0_12px_rgba(0,0,0,0.35)]">İşlem</th>
+                <th class="py-3 px-3">Bilet</th>
+                <th class="py-3 px-3">Sembol</th>
+                <th class="py-3 px-3">Yön</th>
+                <th class="py-3 px-3">Hacim</th>
+                <th class="py-3 px-3">Açılış</th>
+                <th class="py-3 px-3">Güncel</th>
+                <th class="py-3 px-3">SL / TP</th>
+                <th class="py-3 px-3 text-right" title="Pozisyona ait açılış ve kısmi kapanışlarda şimdiye kadar tahsil edilen komisyon">Komisyon</th>
+                <th class="py-3 px-3 text-right">Kâr / Zarar</th>
+                <th class="py-3 px-3 text-center sticky right-0 bg-[#151a26] shadow-[-6px_0_12px_rgba(0,0,0,0.35)]">İşlem</th>
               </tr>
             </thead>
-            <tbody id="positions-table-body" class="divide-y divide-gray-800/50 font-mono">
+            <tbody id="positions-table-body" class="divide-y divide-gray-800/50 font-mono text-sm">
               <tr>
-                <td colspan="10" class="py-6 text-center text-gray-500 font-sans">Henüz açık pozisyon bulunmuyor.</td>
+                <td colspan="10" class="py-8 text-center text-gray-400 font-sans text-sm">Henüz açık pozisyon bulunmuyor.</td>
               </tr>
             </tbody>
           </table>
-          <div class="mt-3 pt-2 border-t border-gray-800/80 text-xs">
-            <div id="pending-orders-list" class="font-mono text-xs px-1" aria-live="polite">Emirler yükleniyor…</div>
+          <div class="mt-3 pt-2.5 border-t border-gray-800/80">
+            <div id="pending-orders-list" class="font-mono text-sm px-2 text-gray-400 font-medium" aria-live="polite">Emirler yükleniyor…</div>
           </div>
         </div>
 
         <!-- CLOSED POSITIONS TABLE -->
         <div id="closed-positions-container" class="overflow-x-auto overflow-y-auto flex-1 hidden">
-          <table class="w-full text-left text-xs text-gray-300">
-            <thead class="text-[11px] text-gray-400 uppercase bg-[#151a26] border-b border-gray-800 sticky top-0 z-10">
+          <table class="w-full text-left text-sm text-gray-200">
+            <thead class="text-xs sm:text-[13px] font-bold text-gray-300 uppercase bg-[#151a26] border-b border-gray-800 sticky top-0 z-10 tracking-wider">
               <tr>
-                <th class="py-2.5 px-3">Bilet / Poz.</th>
-                <th class="py-2.5 px-3">Sembol</th>
-                <th class="py-2.5 px-3">Yön</th>
-                <th class="py-2.5 px-3">Hacim</th>
-                <th class="py-2.5 px-3">Kapanış Fiyatı</th>
-                <th class="py-2.5 px-3 text-right">Kapanış Komisyonu</th>
-                <th class="py-2.5 px-3 text-right">Swap / Diğer Ücret</th>
-                <th class="py-2.5 px-3">Kapanış Zamanı</th>
-                <th class="py-2.5 px-3 text-right">Net Kâr / Zarar</th>
+                <th class="py-3 px-3">Bilet / Poz.</th>
+                <th class="py-3 px-3">Sembol</th>
+                <th class="py-3 px-3">Yön</th>
+                <th class="py-3 px-3">Hacim</th>
+                <th class="py-3 px-3">Kapanış Fiyatı</th>
+                <th class="py-3 px-3 text-right">Kapanış Komisyonu</th>
+                <th class="py-3 px-3 text-right">Swap / Diğer Ücret</th>
+                <th class="py-3 px-3">Kapanış Zamanı</th>
+                <th class="py-3 px-3 text-right">Net Kâr / Zarar</th>
               </tr>
             </thead>
-            <tbody id="history-table-body" class="divide-y divide-gray-800/50 font-mono">
+            <tbody id="history-table-body" class="divide-y divide-gray-800/50 font-mono text-sm">
               <tr>
-                <td colspan="9" class="py-6 text-center text-gray-500 font-sans">Henüz kapalı işlem geçmişi bulunmuyor.</td>
+                <td colspan="9" class="py-8 text-center text-gray-400 font-sans text-sm">Henüz kapalı işlem geçmişi bulunmuyor.</td>
               </tr>
             </tbody>
           </table>
@@ -868,14 +868,14 @@
         </details>
 
         <!-- LIVE MULTI-SYMBOL BUY/SELL SIGNAL SCANNER -->
-        <div id="signal-scanner-card" class="bg-[#121620] p-3 sm:p-4 rounded-2xl border border-gray-800/80 shadow-xl text-xs">
+        <div id="signal-scanner-card" class="bg-[#121620] p-3.5 sm:p-4 rounded-2xl border border-gray-800/80 shadow-xl text-sm">
           <div class="flex items-center justify-between gap-2 mb-2 pb-1.5 border-b border-gray-800">
             <div class="flex items-center gap-1.5">
-              <i class="ph-bold ph-radar text-emerald-400 text-base"></i>
-              <h2 class="font-bold text-white text-xs sm:text-sm uppercase tracking-wider">Canlı Al / Sat Sinyal Tarayıcı</h2>
+              <i class="ph-bold ph-radar text-emerald-400 text-lg"></i>
+              <h2 class="font-bold text-white text-sm sm:text-base uppercase tracking-wider">Canlı Al / Sat Sinyal Tarayıcı</h2>
             </div>
             <div class="flex items-center gap-1.5">
-              <select id="signal-scan-tf" onchange="onScannerTimeframeChange(this.value)" aria-label="Sinyal tarama periyodu" class="bg-[#181d2a] border border-gray-700 rounded px-1.5 py-0.5 text-[11px] text-white font-mono">
+              <select id="signal-scan-tf" onchange="onScannerTimeframeChange(this.value)" aria-label="Sinyal tarama periyodu" class="bg-[#181d2a] border border-gray-700 rounded-lg px-2 py-1 text-xs sm:text-sm text-white font-mono font-semibold">
                 <option value="1">1 dk (M1)</option>
                 <option value="5">5 dk (M5)</option>
                 <option value="15" selected>15 dk (M15)</option>
@@ -884,100 +884,100 @@
                 <option value="240">4 sa (H4)</option>
                 <option value="1440">1 gün (D1)</option>
               </select>
-              <button type="button" onclick="refreshSignalScanner(true)" class="px-2 py-0.5 rounded bg-cyan-700 hover:bg-cyan-600 text-white font-semibold text-[11px]">Tara</button>
+              <button type="button" onclick="refreshSignalScanner(true)" class="px-3 py-1 rounded-lg bg-cyan-700 hover:bg-cyan-600 text-white font-bold text-xs sm:text-sm transition shadow">Tara</button>
             </div>
           </div>
-          <div class="flex items-center justify-between text-[11px] text-gray-400 mb-2">
-            <span id="signal-scanner-status">HMA(14) / EMA(34) + RSI(14) + ATR(14) taranıyor…</span>
+          <div class="flex items-center justify-between text-xs sm:text-sm text-gray-300 mb-2">
+            <span id="signal-scanner-status" class="font-medium">HMA(14) / EMA(34) + RSI(14) + ATR(14) taranıyor…</span>
             <div class="flex items-center gap-2">
-              <label class="flex items-center gap-1 cursor-pointer select-none">
-                <input id="signal-auto-alert" type="checkbox" checked onchange="toggleSignalAutoAlert(this.checked)" class="rounded bg-gray-800 border-gray-700">
+              <label class="flex items-center gap-1.5 cursor-pointer select-none font-medium">
+                <input id="signal-auto-alert" type="checkbox" checked onchange="toggleSignalAutoAlert(this.checked)" class="rounded bg-gray-800 border-gray-700 w-4 h-4 text-cyan-500">
                 <span>Sesli uyarı</span>
               </label>
-              <button type="button" onclick="playSignalBeep(true, true)" title="Sesli sinyal bildirimini test et" class="px-1.5 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-cyan-300 text-[10px] font-semibold">🔔 Ses</button>
+              <button type="button" onclick="playSignalBeep(true, true)" title="Sesli sinyal bildirimini test et" class="px-2 py-0.5 rounded-md bg-gray-800 hover:bg-gray-700 text-cyan-300 text-xs font-semibold border border-gray-700">🔔 Ses</button>
             </div>
           </div>
-          <div id="signal-scanner-list" class="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
-            <div class="text-gray-400 text-[11px] py-2 text-center">Sinyaller yükleniyor…</div>
+          <div id="signal-scanner-list" class="space-y-2 max-h-60 overflow-y-auto pr-0.5">
+            <div class="text-gray-400 text-xs sm:text-sm py-3 text-center">Sinyaller yükleniyor…</div>
           </div>
         </div>
 
         <!-- CARD 2: HMA CROSSOVER STRATEGY BOT -->
-        <div class="bg-[#121620] p-3 sm:p-4 rounded-2xl border border-gray-800/80 shadow-xl flex-1 flex flex-col justify-between">
+        <div class="bg-[#121620] p-3.5 sm:p-4 rounded-2xl border border-gray-800/80 shadow-xl flex-1 flex flex-col justify-between">
           <div>
-            <div class="flex items-center justify-between mb-2 pb-1.5 border-b border-gray-800">
+            <div class="flex items-center justify-between mb-2.5 pb-1.5 border-b border-gray-800">
               <div class="flex items-center gap-1.5">
-                <i class="ph-bold ph-robot text-cyan-400 text-base"></i>
-                <h2 class="font-bold text-white text-xs sm:text-sm uppercase tracking-wider">HMA Algoritmik Bot</h2>
+                <i class="ph-bold ph-robot text-cyan-400 text-lg"></i>
+                <h2 class="font-bold text-white text-sm sm:text-base uppercase tracking-wider">HMA Algoritmik Bot</h2>
               </div>
-              <span id="bot-status-badge" class="text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded bg-gray-800 text-gray-400">DURDURULDU</span>
+              <span id="bot-status-badge" class="text-xs font-bold px-2.5 py-1 rounded-md bg-gray-800 text-gray-300">DURDURULDU</span>
             </div>
 
             <!-- Bot Live Status Indicators -->
-            <div class="grid grid-cols-2 gap-2 mb-2 bg-[#181d2a] p-2 rounded-xl border border-gray-800/80 text-xs">
+            <div class="grid grid-cols-2 gap-2 mb-2.5 bg-[#181d2a] p-3 rounded-xl border border-gray-800/80">
               <div>
-                <span class="text-gray-400 block text-[10px]">HMA (<span id="bot-disp-hma-p">14</span>):</span>
-                <span id="bot-disp-hma-val" class="font-mono font-bold text-cyan-400">0.00000</span>
+                <span class="text-gray-300 block text-xs font-semibold mb-0.5">HMA (<span id="bot-disp-hma-p">14</span>):</span>
+                <span id="bot-disp-hma-val" class="font-mono font-extrabold text-base sm:text-lg text-cyan-400">0.00000</span>
               </div>
               <div>
-                <span class="text-gray-400 block text-[10px]"><span id="bot-disp-ma2-t">EMA</span> (<span id="bot-disp-ma2-p">34</span>):</span>
-                <span id="bot-disp-ma2-val" class="font-mono font-bold text-amber-400">0.00000</span>
+                <span class="text-gray-300 block text-xs font-semibold mb-0.5"><span id="bot-disp-ma2-t">EMA</span> (<span id="bot-disp-ma2-p">34</span>):</span>
+                <span id="bot-disp-ma2-val" class="font-mono font-extrabold text-base sm:text-lg text-amber-400">0.00000</span>
               </div>
             </div>
 
-            <p id="bot-runtime-status" role="status" class="mb-2 text-[11px] text-gray-300">Bot durumu doğrulanıyor…</p>
-            <p id="bot-atr-status" class="mb-1.5 text-[10px] text-gray-400">ATR: — · ER: —</p>
-            <p id="bot-live-trend-status" class="mb-2 text-[10px] font-mono text-cyan-300">RSI(14): — · Trend: —</p>
+            <p id="bot-runtime-status" role="status" class="mb-1.5 text-xs sm:text-sm text-gray-200 font-medium">Bot durumu doğrulanıyor…</p>
+            <p id="bot-atr-status" class="mb-1.5 text-xs text-gray-300 font-mono">ATR: — · ER: —</p>
+            <p id="bot-live-trend-status" class="mb-2.5 text-xs sm:text-sm font-mono font-semibold text-cyan-300">RSI(14): — · Trend: —</p>
 
             <!-- Bot Signal & Protection Quick Rules -->
-            <div class="bg-[#181d2a] p-2 rounded-xl border border-gray-800/80 mb-2 space-y-1.5 text-[11px]">
+            <div class="bg-[#181d2a] p-3 rounded-xl border border-gray-800/80 mb-2.5 space-y-2 text-xs sm:text-sm">
               <div class="flex items-center justify-between gap-2">
-                <label for="bot-exec-mode" class="text-gray-400">Çalışma modu</label>
-                <select id="bot-exec-mode" onchange="saveBotSignalRules()" class="bg-[#121620] border border-gray-700 rounded px-2 py-0.5 text-[11px] text-white font-semibold">
+                <label for="bot-exec-mode" class="text-gray-300 font-medium">Çalışma modu</label>
+                <select id="bot-exec-mode" onchange="saveBotSignalRules()" class="bg-[#121620] border border-gray-700 rounded-lg px-2.5 py-1 text-xs sm:text-sm text-white font-semibold">
                   <option value="AUTO_TRADE">Otomatik Al / Sat</option>
                   <option value="SIGNAL_ONLY">Sadece Sinyal Yakala</option>
                 </select>
               </div>
-              <div class="grid grid-cols-2 gap-1.5 pt-0.5">
-                <label class="flex items-center gap-1.5 text-gray-300 cursor-pointer select-none">
-                  <input id="bot-rsi-filter" type="checkbox" onchange="saveBotSignalRules()" class="rounded bg-gray-800 border-gray-700">
+              <div class="grid grid-cols-2 gap-2 pt-0.5">
+                <label class="flex items-center gap-2 text-gray-200 font-medium cursor-pointer select-none">
+                  <input id="bot-rsi-filter" type="checkbox" onchange="saveBotSignalRules()" class="rounded bg-gray-800 border-gray-700 w-4 h-4 text-cyan-500">
                   <span>RSI(14) filtresi</span>
                 </label>
-                <label class="flex items-center gap-1.5 text-gray-300 cursor-pointer select-none">
-                  <input id="bot-be-toggle" type="checkbox" onchange="saveBotSignalRules()" class="rounded bg-gray-800 border-gray-700">
+                <label class="flex items-center gap-2 text-gray-200 font-medium cursor-pointer select-none">
+                  <input id="bot-be-toggle" type="checkbox" onchange="saveBotSignalRules()" class="rounded bg-gray-800 border-gray-700 w-4 h-4 text-cyan-500">
                   <span>Başabaş stop</span>
                 </label>
               </div>
               <div class="grid grid-cols-2 gap-2 pt-0.5">
                 <div class="flex items-center justify-between gap-1.5">
-                  <label for="bot-quick-lot" class="text-gray-400">Emir lotu</label>
-                  <input id="bot-quick-lot" type="number" min="0.01" max="100" step="0.01" value="0.01" onchange="saveBotQuickLot()" class="w-16 bg-[#121620] border border-gray-700 rounded px-1.5 py-0.5 text-right text-white font-mono text-[11px]">
+                  <label for="bot-quick-lot" class="text-gray-300 font-medium">Emir lotu</label>
+                  <input id="bot-quick-lot" type="number" min="0.01" max="100" step="0.01" value="0.01" onchange="saveBotQuickLot()" class="w-20 bg-[#121620] border border-gray-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs sm:text-sm font-bold">
                 </div>
                 <div class="flex items-center justify-between gap-1.5">
-                  <label for="bot-trail-input" class="text-gray-400">İz süren (p)</label>
-                  <input id="bot-trail-input" type="number" min="0" max="100000" step="10" value="0" onchange="saveBotSignalRules()" class="w-16 bg-[#121620] border border-gray-700 rounded px-1.5 py-0.5 text-right text-white font-mono text-[11px]">
+                  <label for="bot-trail-input" class="text-gray-300 font-medium">İz süren (p)</label>
+                  <input id="bot-trail-input" type="number" min="0" max="100000" step="10" value="0" onchange="saveBotSignalRules()" class="w-20 bg-[#121620] border border-gray-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs sm:text-sm font-bold">
                 </div>
               </div>
             </div>
 
-            <div id="bot-pending-signal-box" class="hidden mb-2 p-2 rounded-xl border border-emerald-500/40 bg-emerald-950/30 text-xs">
-              <div id="bot-pending-signal-text" class="font-bold text-emerald-300 mb-1.5">Sinyal yakalandı</div>
-              <button type="button" onclick="executePendingBotSignal()" class="w-full py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition">Sinyali Şimdi Uygula</button>
+            <div id="bot-pending-signal-box" class="hidden mb-2.5 p-2.5 rounded-xl border border-emerald-500/40 bg-emerald-950/30 text-xs sm:text-sm">
+              <div id="bot-pending-signal-text" class="font-bold text-emerald-300 mb-2">Sinyal yakalandı</div>
+              <button type="button" onclick="executePendingBotSignal()" class="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm transition">Sinyali Şimdi Uygula</button>
             </div>
 
-            <div class="flex items-center justify-between text-xs text-gray-400 mb-2 px-0.5">
-              <span>Son Sinyal: <strong id="bot-last-signal" class="text-gray-200">YOK</strong></span>
-              <span id="bot-last-signal-time" class="font-mono text-[11px]">--:--:--</span>
+            <div class="flex items-center justify-between text-xs sm:text-sm text-gray-300 font-medium mb-2.5 px-0.5">
+              <span>Son Sinyal: <strong id="bot-last-signal" class="text-white font-bold">YOK</strong></span>
+              <span id="bot-last-signal-time" class="font-mono text-xs text-gray-400">--:--:--</span>
             </div>
           </div>
 
           <!-- Bot Actions -->
-          <div class="flex items-center gap-2 pt-1.5">
-            <button id="bot-toggle-btn" onclick="toggleBot()" class="flex-1 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-bold text-xs shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-1.5 transition">
-              <i class="ph-bold ph-play"></i>
+          <div class="flex items-center gap-2 pt-2">
+            <button id="bot-toggle-btn" onclick="toggleBot()" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-bold text-xs sm:text-sm shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 transition active:scale-95">
+              <i class="ph-bold ph-play text-base"></i>
               <span>Botu Başlat</span>
             </button>
-            <button onclick="toggleBotSettingsModal()" class="px-2.5 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white text-xs font-semibold flex items-center gap-1">
+            <button onclick="toggleBotSettingsModal()" class="px-3.5 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 hover:text-white text-xs sm:text-sm font-bold flex items-center gap-1.5 transition active:scale-95 border border-gray-700">
               <i class="ph-bold ph-gear text-base"></i>
               <span>Ayarlar</span>
             </button>
