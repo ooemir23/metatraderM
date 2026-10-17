@@ -1118,6 +1118,15 @@
         <button type="button" class="signal-settings-x" onclick="HMASignalSettings.close()" aria-label="Kapat"><i class="ph-bold ph-x"></i></button>
       </div>
       <div class="signal-settings-body">
+        <fieldset class="signal-presets">
+          <legend>Hazır ayarlar</legend>
+          <label>Ayar seti<select id="signal-preset-select" onchange="HMASignalSettings.applyPreset(this.value)"></select></label>
+          <label>Yeni ayar seti adı<input id="signal-preset-name" type="text" maxlength="32" placeholder="ör. Altın H1"></label>
+          <div class="signal-preset-actions">
+            <button type="button" onclick="HMASignalSettings.savePreset()" class="signal-btn-ghost">Seti kaydet</button>
+            <button type="button" id="signal-preset-delete" onclick="HMASignalSettings.deletePreset()" class="signal-btn-ghost">Seti sil</button>
+          </div>
+        </fieldset>
         <fieldset>
           <legend>Kesişim</legend>
           <label>Hızlı ortalama: HMA periyodu<input name="hma_period" type="number" min="2" max="200" step="1" required></label>
@@ -1138,6 +1147,38 @@
           <label>ATR periyodu<input name="atr_period" type="number" min="2" max="100" step="1" required></label>
           <label>SL = ATR × (0 = kapalı)<input name="sl_atr" type="number" min="0" max="20" step="0.1" required></label>
           <label>TP = ATR × (0 = kapalı)<input name="tp_atr" type="number" min="0" max="50" step="0.1" required></label>
+        </fieldset>
+        <fieldset>
+          <legend>Trend ve yatay piyasa</legend>
+          <label class="signal-check"><input name="htf_filter" type="checkbox"> Üst zaman dilimi trendi aynı yönde olsun</label>
+          <label>Üst zaman dilimi<select name="htf_minutes"><option value="0">Otomatik</option><option value="15">M15</option><option value="30">M30</option><option value="60">H1</option><option value="240">H4</option><option value="1440">D1</option></select></label>
+          <label class="signal-check"><input name="adx_filter" type="checkbox"> ADX filtresi (yatay piyasada sinyal verme)</label>
+          <label>ADX periyodu<input name="adx_period" type="number" min="2" max="100" step="1"></label>
+          <label>En düşük ADX<input name="adx_min" type="number" min="0" max="100" step="1"></label>
+        </fieldset>
+        <fieldset>
+          <legend>Giriş kalitesi</legend>
+          <label>En yüksek spread, puan (0 = kapalı)<input name="max_spread_points" type="number" min="0" max="100000" step="1"></label>
+          <label>En düşük risk/ödül 1:X (0 = kapalı)<input name="min_rr" type="number" min="0" max="20" step="0.1"></label>
+          <label>Kesişim sonrası bekleme, mum (0 = kapalı)<input name="cooldown_bars" type="number" min="0" max="200" step="1"></label>
+          <label class="signal-check"><input name="volume_filter" type="checkbox"> Hacim teyidi (kesişim mumunun tick hacmi ortalamanın üstünde)</label>
+          <label>Hacim çarpanı (20 mum ortalamasının katı)<input name="volume_mult" type="number" min="0.1" max="10" step="0.1"></label>
+        </fieldset>
+        <fieldset>
+          <legend>Seans (UTC)</legend>
+          <label class="signal-check"><input name="session_ASIA" type="checkbox"> Asya 00:00–09:00</label>
+          <label class="signal-check"><input name="session_LONDON" type="checkbox"> Londra 07:00–16:00</label>
+          <label class="signal-check"><input name="session_NEWYORK" type="checkbox"> New York 12:00–21:00</label>
+          <p class="signal-settings-note signal-span">Hiçbiri seçili değilse her saatte sinyal verilir.</p>
+        </fieldset>
+        <fieldset>
+          <legend>Geçmiş testi</legend>
+          <label class="signal-check"><input name="show_stats" type="checkbox"> Tarayıcıda her sembolün geçmiş sonucunu göster</label>
+          <label>Test edilecek mum sayısı<input name="stats_bars" type="number" min="100" max="3000" step="50"></label>
+          <div class="signal-span signal-test-row">
+            <button type="button" onclick="HMASignalSettings.testHistory()" class="signal-btn-ghost"><i class="ph-bold ph-flask"></i> Bu ayarları geçmişte test et</button>
+            <div id="signal-test-result" class="signal-test-result" role="status" aria-live="polite"></div>
+          </div>
         </fieldset>
         <div class="signal-settings-preview-box">
           <p class="signal-settings-preview-title">Bu ayarlarla sinyal:</p>

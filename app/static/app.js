@@ -3500,8 +3500,10 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
         : isBuy
         ? 'bg-emerald-950/50 text-emerald-400 border border-emerald-800/50'
         : 'bg-rose-950/50 text-rose-400 border border-rose-800/50';
+      const filterNames = window.HMASignalSettings?.filterNames || {};
+      const filterText = (item.filters || []).map(k => filterNames[k] || k).join(', ');
       const badgeText = item.signal === 'FILTERED'
-        ? '⛔ RSI filtresi'
+        ? `⛔ Filtrelendi${filterText ? ' · ' + filterText : ''}`
         : !tradable
         ? '• Nötr (yön yok)'
         : isCrossBuy
@@ -3550,10 +3552,11 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
           <div class="text-gray-300">Önerilen TP: <span class="text-emerald-300 font-bold">${tpFmt}</span></div>
         </div>
         ${item.reason ? `<p class="signal-reason"><i class="ph-bold ph-info"></i> <span>${escapeHtml(item.reason)}</span></p>` : ''}
+        ${item.stats ? `<p class="signal-stats"><i class="ph-bold ph-flask"></i> ${window.HMASignalSettings?.statsHtml?.(item.stats) || ''}</p>` : ''}
         <div class="flex items-center gap-2 pt-0.5">
           <button type="button" onclick="applyScannedSignalToTicket('${symEsc}', ${sl}, ${tp})" class="flex-1 py-2 px-2.5 rounded-lg bg-cyan-700/80 hover:bg-cyan-600 text-white text-xs font-bold transition active:scale-95" title="SL/TP değerlerini manuel emir formuna aktar">🎯 Emre Aktar</button>
           <button type="button" onclick="assignScannerSymbolToBot('${symEsc}', ${tf})" class="flex-1 py-2 px-2.5 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs font-bold transition active:scale-95" title="${symEsc} sembolünü botun çoklu takip listesine ekle">🤖 Bota Ekle</button>
-          <button type="button" ${tradable ? '' : `disabled title="${item.signal === 'FILTERED' ? 'RSI filtresi bu sinyali engelledi' : 'Nötr sinyal: yön yok, emir gönderilemez'}"`} onclick="sendSignalDirectToBot('${symEsc}', '${item.side}', ${item.price}, {signalId: 'scan-${symEsc}-${tf}-${item.side}-${item.candle_time}', slPrice: ${sl}, tpPrice: ${tp}})" class="disabled:opacity-40 disabled:cursor-not-allowed flex-1 py-2 px-2.5 rounded-lg bg-indigo-700/80 hover:bg-indigo-600 text-white text-xs font-bold transition active:scale-95" title="Bu sinyali hemen HMA Botu ile işleme al">⚡ Bota Gönder</button>
+          <button type="button" ${tradable ? '' : `disabled title="${item.signal === 'FILTERED' ? escapeHtml('Filtre bu sinyali engelledi: ' + (filterText || 'filtre')) : 'Nötr sinyal: yön yok, emir gönderilemez'}"`} onclick="sendSignalDirectToBot('${symEsc}', '${item.side}', ${item.price}, {signalId: 'scan-${symEsc}-${tf}-${item.side}-${item.candle_time}', slPrice: ${sl}, tpPrice: ${tp}})" class="disabled:opacity-40 disabled:cursor-not-allowed flex-1 py-2 px-2.5 rounded-lg bg-indigo-700/80 hover:bg-indigo-600 text-white text-xs font-bold transition active:scale-95" title="Bu sinyali hemen HMA Botu ile işleme al">⚡ Bota Gönder</button>
         </div>
       </div>`;
     }).join('');

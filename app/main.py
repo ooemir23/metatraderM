@@ -466,88 +466,41 @@ MA_LABELS = {'EMA': 'EMA', 'SMA': 'SMA', 'LWMA': 'LWMA', 'HMA': 'HMA'}
 
 def _scan_symbols_sync(symbol_list, timeframe_minutes, hma_period, ema_period, ma_type='EMA', rsi_period=14,
                        atr_period=14, sl_atr=2.0, tp_atr=3.0, confirm_close=True, rsi_filter=False,
-                       rsi_buy_max=70.0, rsi_sell_min=30.0):
-    """HMA(fast) x MA(slow) crossover scan. With confirm_close only closed candles can create a signal
-    (no repaint, same as the bot and the MT5 EA); otherwise the forming candle is also checked."""
+                       rsi_buy_max=70.0, rsi_sell_min=30.0, *, stats=False, stats_bars=500, **filters):
+    """HMA(fast) x MA(slow) crossover scan with optional filters (app.signal_engine).
+    With confirm_close only closed candles can create a signal (no repaint, same as the bot and the
+    MT5 EA); otherwise the forming candle is also checked."""
+    from app import signal_engine
+    settings = {**signal_engine.DEFAULTS, **filters, 'hma_period': hma_period, 'ema_period': ema_period,
+                'ma_type': ma_type, 'rsi_period': rsi_period, 'atr_period': atr_period, 'sl_atr': sl_atr,
+                'tp_atr': tp_atr, 'confirm_close': confirm_close, 'rsi_filter': rsi_filter,
+                'rsi_buy_max': rsi_buy_max, 'rsi_sell_min': rsi_sell_min}
+    need = signal_engine.required_bars(settings)
+    count = max(120, need + 30, (stats_bars + need + 2) if stats else 0)
+    htf = signal_engine.htf_minutes_for(timeframe_minutes, settings['htf_minutes']) if settings['htf_filter'] else None
+    wants_spread = bool(settings['max_spread_points'] or settings['min_rr'] or stats)
     items = []
-    slow_label = f"{MA_LABELS.get(ma_type, 'EMA')}({ema_period})"
-    fast_label = f"HMA({hma_period})"
-    first = 1 if confirm_close else 0
-    need = max(hma_period, ema_period, rsi_period + 1, atr_period + 1) + 15
     for sym in symbol_list:
         try:
-            rates = mt5_client.get_rates(sym, timeframe_minutes, max(120, need + 30))
+            rates = mt5_client.get_rates(sym, timeframe_minutes, count)
             if not rates or len(rates) < need:
                 continue
-            rev_closes = [float(r['close']) for r in reversed(rates)]
-            fast = lambda shift: StrategyBot.calc_hma(rev_closes, hma_period, shift=shift)
-            slow = lambda shift: StrategyBot.calc_second_ma(rev_closes, ma_type, ema_period, shift=shift)
-            values = {shift: (fast(shift), slow(shift)) for shift in range(0, 3)}
-            if not all(math.isfinite(v) and v > 0 for pair in values.values() for v in pair):
-                continue
-            (h_now, s_now), (h_prev, s_prev) = values[first], values[first + 1]
-            # Last crossover within 25 candles (for "trend since N candles").
-            bars_ago, cross_side = None, None
-            for shift in range(first, min(first + 25, len(rev_closes) - max(hma_period, ema_period) - 6)):
-                hc, sc, hp, sp = fast(shift), slow(shift), fast(shift + 1), slow(shift + 1)
-                if hp <= sp and hc > sc:
-                    bars_ago, cross_side = shift, 'BUY'
-                    break
-                if hp >= sp and hc < sc:
-                    bars_ago, cross_side = shift, 'SELL'
-                    break
-            if h_prev <= s_prev and h_now > s_now:
-                signal, side = 'BUY_CROSS', 'BUY'
-            elif h_prev >= s_prev and h_now < s_now:
-                signal, side = 'SELL_CROSS', 'SELL'
-            elif h_now > s_now:
-                signal, side = 'BUY_TREND', 'BUY'
-            elif h_now < s_now:
-                signal, side = 'SELL_TREND', 'SELL'
-            else:
-                signal, side = 'NEUTRAL', 'HOLD'
-            closed = rates[:-1]
-            rsi = _calc_rsi([float(r['close']) for r in closed], rsi_period)
-            atr = _calc_atr(closed, atr_period)
-            price = float(rates[-1]['close'])
-            sample_decimals = max((len(str(r['close']).split('.')[1]) if '.' in str(r['close']) else 2) for r in rates[-10:])
-            digits = min(8, max(2, sample_decimals))
-            candle = 'kapanmış mum' if confirm_close else 'oluşan mum'
-            relation = 'üstünde' if h_now > s_now else 'altında' if h_now < s_now else 'eşit'
-            reason = f"{fast_label} {h_now:.{digits}f}, {slow_label} {s_now:.{digits}f} {relation} ({candle})"
-            if signal.endswith('_CROSS'):
-                reason += f" · {fast_label} {slow_label}'ü {'aşağıdan yukarı' if side == 'BUY' else 'yukarıdan aşağı'} kesti"
-            elif bars_ago is not None:
-                reason += f" · son kesişim {bars_ago} mum önce ({'AL' if cross_side == 'BUY' else 'SAT'})"
-            filtered = None
-            if rsi_filter and side == 'BUY' and rsi > rsi_buy_max:
-                filtered = f"RSI({rsi_period}) {rsi:.1f} > {rsi_buy_max:g}: AL filtrelendi (aşırı alım)"
-            elif rsi_filter and side == 'SELL' and rsi < rsi_sell_min:
-                filtered = f"RSI({rsi_period}) {rsi:.1f} < {rsi_sell_min:g}: SAT filtrelendi (aşırı satım)"
-            if filtered:
-                reason += ' · ' + filtered
-                signal, side = 'FILTERED', 'HOLD'
-            sl = round(price - sl_atr * atr if side == 'BUY' else price + sl_atr * atr, digits) if atr > 0 and sl_atr > 0 and side in ('BUY', 'SELL') else 0.0
-            tp = round(price + tp_atr * atr if side == 'BUY' else price - tp_atr * atr, digits) if atr > 0 and tp_atr > 0 and side in ('BUY', 'SELL') else 0.0
-            items.append({
-                'symbol': sym,
-                'signal': signal,
-                'side': side,
-                'bars_ago': bars_ago if bars_ago is not None else 0,
-                'cross_side': cross_side or side,
-                'price': round(price, digits),
-                'hma': round(h_now, digits),
-                'ema': round(s_now, digits),
-                'rsi': rsi,
-                'atr': round(atr, digits),
-                'suggested_sl': max(0.0, sl),
-                'suggested_tp': max(0.0, tp),
-                'digits': digits,
-                'candle_time': int(rates[-2]['time']) if confirm_close else int(rates[-1]['time']),
-                'reason': reason,
-                'filtered': filtered,
-            })
+            htf_rates = None
+            if htf:
+                htf_count = need + 10 + (count * timeframe_minutes) // htf
+                htf_rates = mt5_client.get_rates(sym, htf, htf_count) if htf in TIMEFRAME_NAMES else None
+            spread = point = None
+            if wants_spread:
+                quote = mt5_client.get_symbol_price(sym) or {}
+                if quote.get('point') and (quote.get('bid') or 0) > 0:
+                    spread, point = quote.get('spread'), quote.get('point')
+            item = signal_engine.analyze(rates, settings, timeframe_minutes, htf_rates=htf_rates,
+                                         utc_offset=mt5_client.tick_clock_offset, spread_points=spread,
+                                         point=point, stats=stats, stats_bars=stats_bars)
+            if item:
+                items.append({'symbol': sym, **item})
         except Exception:
+            logger.exception('Signal scan failed for %s', sym)
             continue
     return items
 
@@ -565,9 +518,28 @@ async def scan_signals(symbols: str = Query(default='EURUSD,GBPUSD,XAUUSD,USDJPY
                        confirm_close: bool = Query(default=True),
                        rsi_filter: bool = Query(default=False),
                        rsi_buy_max: float = Query(default=70.0, ge=50, le=100),
-                       rsi_sell_min: float = Query(default=30.0, ge=0, le=50)):
+                       rsi_sell_min: float = Query(default=30.0, ge=0, le=50),
+                       htf_filter: bool = Query(default=False),
+                       htf_minutes: int = Query(default=0),
+                       adx_filter: bool = Query(default=False),
+                       adx_period: int = Query(default=14, ge=2, le=100),
+                       adx_min: float = Query(default=20.0, ge=0, le=100),
+                       max_spread_points: int = Query(default=0, ge=0, le=100000),
+                       cooldown_bars: int = Query(default=0, ge=0, le=200),
+                       min_rr: float = Query(default=0.0, ge=0, le=20),
+                       volume_filter: bool = Query(default=False),
+                       volume_mult: float = Query(default=1.0, ge=0.1, le=10),
+                       sessions: str = Query(default='', max_length=40),
+                       stats: bool = Query(default=False),
+                       stats_bars: int = Query(default=500, ge=100, le=3000)):
     if timeframe_minutes not in TIMEFRAME_NAMES:
         raise HTTPException(status_code=422, detail='Desteklenmeyen zaman dilimi.')
+    if htf_minutes and (htf_minutes not in TIMEFRAME_NAMES or htf_minutes <= timeframe_minutes):
+        raise HTTPException(status_code=422, detail='Üst zaman dilimi, grafik zaman diliminden büyük olmalı.')
+    from app.signal_engine import SESSIONS
+    session_list = tuple(dict.fromkeys(x.strip().upper() for x in sessions.split(',') if x.strip()))
+    if any(x not in SESSIONS for x in session_list):
+        raise HTTPException(status_code=422, detail='Geçersiz seans; ASIA, LONDON, NEWYORK kullanın.')
     raw_list = [s.strip() for s in symbols.split(',') if s.strip()]
     symbol_list = []
     for s in raw_list:
@@ -579,8 +551,12 @@ async def scan_signals(symbols: str = Query(default='EURUSD,GBPUSD,XAUUSD,USDJPY
         symbol_list = ['EURUSD', 'GBPUSD', 'XAUUSD', 'USDJPY']
     settings = dict(hma_period=hma_period, ema_period=ema_period, ma_type=ma_type, rsi_period=rsi_period,
                     atr_period=atr_period, sl_atr=sl_atr, tp_atr=tp_atr, confirm_close=confirm_close,
-                    rsi_filter=rsi_filter, rsi_buy_max=rsi_buy_max, rsi_sell_min=rsi_sell_min)
-    items = await asyncio.to_thread(_scan_symbols_sync, symbol_list, timeframe_minutes, **settings)
+                    rsi_filter=rsi_filter, rsi_buy_max=rsi_buy_max, rsi_sell_min=rsi_sell_min,
+                    htf_filter=htf_filter, htf_minutes=htf_minutes, adx_filter=adx_filter, adx_period=adx_period,
+                    adx_min=adx_min, max_spread_points=max_spread_points, cooldown_bars=cooldown_bars,
+                    min_rr=min_rr, volume_filter=volume_filter, volume_mult=volume_mult, sessions=list(session_list))
+    items = await asyncio.to_thread(_scan_symbols_sync, symbol_list, timeframe_minutes,
+                                    **{**settings, 'sessions': session_list}, stats=stats, stats_bars=stats_bars)
     return {'timeframe_minutes': timeframe_minutes, 'hma_period': hma_period, 'ema_period': ema_period,
             'settings': settings, 'signals': items, 'checked_at': int(time.time())}
 

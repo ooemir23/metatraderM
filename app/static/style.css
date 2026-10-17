@@ -482,6 +482,14 @@ html { background: #0b0e14; }
 .signal-settings-body input:disabled { opacity:.45; }
 .signal-settings-body .signal-check { grid-column:1 / -1; display:flex; align-items:center; gap:8px; }
 .signal-settings-body .signal-check input { width:16px; height:16px; }
+.signal-settings-body .signal-span { grid-column:1 / -1; }
+.signal-settings-body input[type=text] { width:100%; padding:6px 8px; border-radius:8px; border:1px solid #374151; background:#181d2a; color:#f9fafb; font-size:13px; }
+.signal-preset-actions { display:flex; gap:8px; align-items:end; flex-wrap:wrap; }
+.signal-test-row { display:grid; gap:8px; }
+.signal-test-result { font-size:12px; color:#cbd5e1; line-height:1.45; }
+.signal-test-result b { color:#f9fafb; }
+.signal-stats { margin:0; padding:6px 8px; border-radius:8px; background:#111827; border:1px dashed #334155; color:#cbd5e1; font-size:11.5px; line-height:1.4; }
+.signal-stats .good { color:#6ee7b7; font-weight:700; } .signal-stats .bad { color:#fda4af; font-weight:700; }
 .signal-settings-preview-box { padding:10px 12px; border-radius:12px; background:#0f172a; border:1px solid #1e293b; font-size:12px; }
 .signal-settings-preview-title { margin:0 0 6px; font-weight:700; color:#e5e7eb; }
 .signal-settings-note { margin:8px 0 0; color:#94a3b8; font-size:11.5px; }
