@@ -272,8 +272,47 @@ def test_bot_start_refuses_lot_above_automation_cap_instead_of_shrinking(monkeyp
     web = TestClient(main.app, headers={'Authorization': 'Basic ' + token})
     assert web.post('/api/bot/config', json={'lot_size': 1.0, 'lot_mode': 'FIXED'}).status_code == 200
     res = web.post('/api/bot/toggle')
-    assert res.status_code == 409 and 'MAX_ORDER_LOTS' in res.json()['detail']
+    assert res.status_code == 409 and 'Lot ve risk' in res.json()['detail']
     assert main.bot.lot_size == 1.0 and not main.bot.is_running, 'lot is never silently reduced'
     readiness.assert_not_called()
     assert main.bot.get_status()['max_order_lots'] == .1
     web.post('/api/bot/config', json={'lot_size': .01})
+
+
+def test_lot_limits_can_be_changed_from_the_panel_and_persist(monkeypatch, tmp_path):
+    import base64
+    from fastapi.testclient import TestClient
+    from app import main
+    from app.mt5_client import MT5Client
+    monkeypatch.setattr(main.mt5_client, 'account_type', 'DEMO')
+    original = main.mt5_client.lot_limits()
+    token = base64.b64encode(b'test:test-panel-password').decode()
+    web = TestClient(main.app, headers={'Authorization': 'Basic ' + token})
+    try:
+        res = web.post('/api/risk/lot-limits', json={'max_order_lots': 1.0, 'max_total_lots': 3.0})
+        assert res.status_code == 200 and res.json()['max_order_lots'] == 1.0
+        assert main.mt5_client.max_order_lots == 1.0 and main.bot.get_status()['max_total_lots'] == 3.0
+        assert web.get('/api/risk/lot-limits').json()['max_open_orders'] == original['max_open_orders']
+        # Persisted: a fresh client (restart) loads the panel values instead of the env defaults.
+        monkeypatch.setattr(MT5Client, 'load_credentials', lambda self: None)
+        assert MT5Client().max_order_lots == 1.0
+        # Validation: total below per-order, out of range, unknown field, nothing to change.
+        assert web.post('/api/risk/lot-limits', json={'max_total_lots': .5}).status_code == 422
+        assert web.post('/api/risk/lot-limits', json={'max_order_lots': 500}).status_code == 422
+        assert web.post('/api/risk/lot-limits', json={'max_lots': 1}).status_code == 422
+        assert web.post('/api/risk/lot-limits', json={}).status_code == 422
+        assert main.mt5_client.max_total_lots == 3.0, 'rejected change leaves limits unchanged'
+    finally:
+        main.mt5_client.set_lot_limits(original)
+
+
+def test_lot_limits_need_second_factor_on_real_account(monkeypatch):
+    import base64
+    from fastapi.testclient import TestClient
+    from app import main
+    monkeypatch.setattr(main.mt5_client, 'account_type', 'REAL')
+    before = main.mt5_client.max_order_lots
+    token = base64.b64encode(b'test:test-panel-password').decode()
+    web = TestClient(main.app, headers={'Authorization': 'Basic ' + token})
+    assert web.post('/api/risk/lot-limits', json={'max_order_lots': 2.0, 'max_total_lots': 5.0}).status_code == 403
+    assert main.mt5_client.max_order_lots == before

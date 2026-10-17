@@ -567,3 +567,5 @@ html { background: #0b0e14; }
 
 .bot-lot-hint { grid-column:1 / -1; margin:2px 0 0; font-size:11px; color:#94a3b8; line-height:1.4; }
 .bot-lot-hint[data-tone="warn"] { color:#fbbf24; }
+.bot-lot-raise { margin-left:4px; padding:1px 8px; border-radius:7px; border:1px solid #f59e0b80; background:#f59e0b26; color:#fde68a; font-size:11px; font-weight:700; }
+.bot-lot-raise:hover { background:#f59e0b40; color:#fff; }

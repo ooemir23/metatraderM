@@ -219,6 +219,10 @@ class MT5Client:
         self.max_order_lots = float(os.getenv("MAX_ORDER_LOTS", "0.10"))
         self.max_total_lots = float(os.getenv("MAX_TOTAL_OPEN_LOTS", "0.50"))
         self.max_open_orders = int(os.getenv("MAX_OPEN_ORDERS", "10"))
+        # Panel-set overrides (admin, TOTP on real accounts) survive restarts; env values are the defaults.
+        self.lot_limits_defaults = {'max_order_lots': self.max_order_lots, 'max_total_lots': self.max_total_lots,
+                                    'max_open_orders': self.max_open_orders}
+        self._load_lot_limits()
         self.ai_max_trade_risk_pct = float(os.getenv("AI_MAX_TRADE_RISK_PCT", "1"))
         self.max_trade_risk_pct = float(os.getenv("MAX_TRADE_RISK_PCT", "2"))
         if not math.isfinite(self.max_trade_risk_pct) or not 0 < self.max_trade_risk_pct <= 100:
@@ -707,6 +711,58 @@ class MT5Client:
     def effective_daily_loss_limit(self, login, server, magic=mt5_bridge.MANUAL_MAGIC):
         account_limit = self.journal.daily_loss_limit(login, server) or self.daily_loss_limit
         return min(account_limit, self.ai_daily_loss_limit) if magic == mt5_bridge.AI_MAGIC else account_limit
+
+    LOT_LIMIT_BOUNDS = {'max_order_lots': (0.01, 100.0), 'max_total_lots': (0.01, 1000.0), 'max_open_orders': (1, 200)}
+
+    def _lot_limits_file(self):
+        from app.order_journal import state_path
+        return Path(state_path('lot_limits.json'))
+
+    def _load_lot_limits(self):
+        try:
+            path = self._lot_limits_file()
+            if path.exists():
+                self._apply_lot_limits(json.loads(path.read_text()))
+        except Exception:
+            logger.error('Saved lot limits could not be read; environment defaults are used.')
+
+    def _apply_lot_limits(self, values):
+        clean = {}
+        for key, (low, high) in self.LOT_LIMIT_BOUNDS.items():
+            if key not in values:
+                continue
+            value = values[key]
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not low <= value <= high:
+                raise MT5DataError(f'Geçersiz sınır: {key}')
+            if key == 'max_open_orders' and int(value) != value:
+                raise MT5DataError('İşlem sayısı sınırı tam sayı olmalı.')
+            clean[key] = int(value) if key == 'max_open_orders' else float(value)
+        merged = {**self.lot_limits(), **clean}
+        if merged['max_total_lots'] + 1e-9 < merged['max_order_lots']:
+            raise MT5DataError('Toplam lot sınırı tek emir sınırından küçük olamaz.')
+        self.max_order_lots, self.max_total_lots, self.max_open_orders = (
+            merged['max_order_lots'], merged['max_total_lots'], merged['max_open_orders'])
+        return merged
+
+    def lot_limits(self):
+        return {'max_order_lots': self.max_order_lots, 'max_total_lots': self.max_total_lots,
+                'max_open_orders': self.max_open_orders}
+
+    def set_lot_limits(self, values):
+        """Panel risk limits for automation (and PANEL-mode manual orders); persisted atomically."""
+        with self._lock.order():
+            previous = self.lot_limits()
+            merged = self._apply_lot_limits(values)
+            try:
+                path = self._lot_limits_file()
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = path.with_suffix('.tmp')
+                tmp.write_text(json.dumps(merged))
+                os.replace(tmp, path)
+            except Exception as exc:
+                self._apply_lot_limits(previous)
+                raise MT5DataError('Sınırlar kaydedilemedi; önceki değerler korundu.') from exc
+            return {**merged, 'defaults': dict(self.lot_limits_defaults)}
 
     def set_daily_loss_limit(self, value, acknowledge_risk=False, *, expected_account=None):
         with self._lock.order():

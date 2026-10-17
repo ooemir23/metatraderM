@@ -2330,7 +2330,8 @@ function renderBotLotHint(bot) {
     node.textContent = `Lot risk modunda (%${bot.risk_pct}) stopa göre hesaplanır; bu kutu kullanılmaz.`;
     node.dataset.tone = '';
   } else if (Number.isFinite(cap) && bot.lot_size > cap + 1e-9) {
-    node.textContent = `"Bota Gönder" ${bot.lot_size} lot açar. Otomatik bot en fazla ${cap} lot açabilir (MAX_ORDER_LOTS); bu lotla bot başlatılamaz.`;
+    node.innerHTML = `"Bota Gönder" ${escapeHtml(String(bot.lot_size))} lot açar. Otomatik bot en fazla ${escapeHtml(String(cap))} lot açabilir; bu lotla bot başlatılamaz. `
+      + `<button type="button" class="bot-lot-raise" onclick="raiseBotLotLimit()">Sınırı ${escapeHtml(String(bot.lot_size))} lot yap</button>`;
     node.dataset.tone = 'warn';
   } else {
     node.textContent = `"Bota Gönder" ve otomatik bot ${bot.lot_size} lot açar${Number.isFinite(cap) ? ` (otomatik bot sınırı ${cap} lot)` : ''}.`;
@@ -2491,6 +2492,36 @@ const botSettingInputs = {
 const botSettingChecks = {'cfg-close-opp': 'close_opposite', 'cfg-atr-filter': 'use_atr_filter',
   'cfg-use-sl': 'use_stop_loss', 'cfg-use-tp': 'use_take_profit', 'cfg-h4-filter':'use_h4_filter', 'cfg-single-position':'single_position',
   'cfg-hours-enabled': 'trade_hours_enabled'};
+// Automation lot limits (MAX_ORDER_LOTS / MAX_TOTAL_OPEN_LOTS / MAX_OPEN_ORDERS), editable from the panel.
+let loadedLotLimits = null;
+async function loadLotLimitsIntoForm() {
+  try {
+    const res = await fetch('/api/risk/lot-limits');
+    if (!res.ok) throw new Error();
+    loadedLotLimits = await res.json();
+    document.getElementById('cfg-max-order-lots').value = loadedLotLimits.max_order_lots;
+    document.getElementById('cfg-max-total-lots').value = loadedLotLimits.max_total_lots;
+    document.getElementById('cfg-max-open-orders').value = loadedLotLimits.max_open_orders;
+  } catch (_) { loadedLotLimits = null; }
+}
+async function saveLotLimits(values) {
+  const res = await fetch('/api/risk/lot-limits', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(values)});
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail
+    : res.status === 403 ? 'Sınırları değiştirmek için yönetici yetkisi ve gerçek hesapta İşlem Güvenliği (TOTP) gerekli.' : 'Sınırlar kaydedilemedi.');
+  loadedLotLimits = data;
+  return data;
+}
+async function raiseBotLotLimit() {
+  const bot = latestBotSettings;
+  if (!bot) return;
+  const lot = Number(bot.lot_size);
+  try {
+    await saveLotLimits({max_order_lots: lot, max_total_lots: Math.max(Number(bot.max_total_lots) || 0, lot)});
+    showToast(`✅ Otomatik bot tek emir sınırı ${lot} lot yapıldı.`, 'success');
+    fetchBotStatus();
+  } catch (err) { showToast(`❌ ${err.message}`, 'error'); }
+}
 function fillBotProtection(settings) {
   const days = Array.isArray(settings.trade_days) ? settings.trade_days : [0,1,2,3,4,5,6];
   for (let i = 0; i < 7; i++) { const box = document.getElementById(`cfg-day-${i}`); if (box) box.checked = days.includes(i); }
@@ -2525,6 +2556,7 @@ async function toggleBotSettingsModal() {
   for (const [id, key] of Object.entries(botSettingChecks)) document.getElementById(id).checked = !!latestBotSettings[key];
   document.getElementById('cfg-single-position').checked = true;
   fillBotProtection(latestBotSettings);
+  await loadLotLimitsIntoForm();
   modal.classList.remove('hidden');
 }
 
@@ -2579,6 +2611,16 @@ async function saveBotSettings() {
     ...readBotProtection(),
   };
   if (!cfg.trade_days.length) { showToast('❌ En az bir işlem günü seçin.', 'error'); return; }
+  const limits = {
+    max_order_lots: Number(document.getElementById('cfg-max-order-lots').value),
+    max_total_lots: Number(document.getElementById('cfg-max-total-lots').value),
+    max_open_orders: parseInt(document.getElementById('cfg-max-open-orders').value, 10),
+  };
+  const limitsChanged = loadedLotLimits && Object.entries(limits).some(([k, val]) => Number.isFinite(val) && val !== loadedLotLimits[k]);
+  if (limitsChanged) {
+    try { await saveLotLimits(limits); }
+    catch (err) { showToast(`❌ ${err.message}`, 'error'); return; }
+  }
 
   try {
     const res = await fetch("/api/bot/config", {

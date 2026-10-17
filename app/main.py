@@ -934,6 +934,30 @@ def operation_events(after: int = Query(default=0, ge=0)):
 def account_risk_status():
     return mt5_client.get_risk_status()
 
+class LotLimitsRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    max_order_lots: Optional[float] = Field(default=None, ge=0.01, le=100, allow_inf_nan=False)
+    max_total_lots: Optional[float] = Field(default=None, ge=0.01, le=1000, allow_inf_nan=False)
+    max_open_orders: Optional[int] = Field(default=None, ge=1, le=200)
+
+
+@app.get('/api/risk/lot-limits')
+def get_lot_limits():
+    return {**mt5_client.lot_limits(), 'defaults': dict(mt5_client.lot_limits_defaults)}
+
+
+@app.post('/api/risk/lot-limits')
+def change_lot_limits(req: LotLimitsRequest, account=Depends(require_real_unlock)):
+    """Admin only (role middleware); real accounts need the TOTP session like other risk changes."""
+    values = req.model_dump(exclude_none=True)
+    if not values:
+        raise HTTPException(status_code=422, detail='Değiştirilecek sınır yok.')
+    try:
+        return mt5_client.set_lot_limits(values)
+    except MT5DataError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.post('/api/risk/daily-limit')
 def change_daily_loss_limit(req: DailyLimitRequest, account=Depends(require_real_unlock)):
     try:
@@ -1256,8 +1280,8 @@ async def toggle_bot(request: Request):
             # Never shrink the lot silently: a fixed lot above the automation cap is refused with a reason.
             if bot.lot_mode != 'RISK' and bot.lot_size > mt5_client.max_order_lots + 1e-9:
                 raise HTTPException(status_code=409, detail=(
-                    f'Bot emir lotu {bot.lot_size:g}, otomatik bot için tek emir sınırı {mt5_client.max_order_lots:g} lot '
-                    '(MAX_ORDER_LOTS). Lotu düşürün ya da sunucu ayarlarında MAX_ORDER_LOTS değerini artırın. '
+                    f'Bot emir lotu {bot.lot_size:g}, otomatik bot için tek emir sınırı {mt5_client.max_order_lots:g} lot. '
+                    'Lotu düşürün ya da Bot Ayarları > Lot ve risk bölümünden sınırı artırın. '
                     '"Bota Gönder" ile elle onaylanan sinyallerde bu sınır uygulanmaz.'))
             config = bot.config_snapshot()
             ready = await asyncio.to_thread(mt5_client.bot_readiness, config)
