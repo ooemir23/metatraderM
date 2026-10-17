@@ -10,7 +10,7 @@
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
   <!-- TradingView Widget -->
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=ui-scale-1">
+  <link rel="stylesheet" href="/static/style.css?v=workspace-1">
   <script src="/static/ui-scale.js?v=1"></script>
   <script src="/static/vendor/lightweight-charts.js"></script>
 </head>
@@ -176,6 +176,16 @@
             <div class="w-12 h-1 rounded-full bg-gray-600 group-hover:bg-cyan-400 transition-colors"></div>
           </div>
 
+        <div id="workspace-split" class="workspace-split" data-view="positions">
+          <!-- Collapsed positions strip (visible in signals view) -->
+          <button id="positions-strip" type="button" class="positions-strip" onclick="setWorkspaceView('positions')" aria-controls="positions-pane" title="Açık pozisyonları göster">
+            <i class="ph-bold ph-caret-double-left"></i>
+            <span class="positions-strip-label">Pozisyonlar</span>
+            <span id="positions-strip-count" class="positions-strip-count">0</span>
+            <span id="positions-strip-pnl" class="positions-strip-pnl"></span>
+          </button>
+
+          <div id="positions-pane" class="positions-pane">
         <!-- HEADER WITH TABS & ACTION BUTTONS -->
         <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
           <!-- TABS -->
@@ -199,6 +209,10 @@
               <span class="ai-gradient-text font-black text-xs">MevO</span>
             </a>
           </div>
+          <!-- Accordion toggle: hide positions to the left, show signal scanner + bot -->
+          <button id="signals-toggle" type="button" class="signals-toggle" onclick="setWorkspaceView('signals')" aria-controls="signals-pane" aria-expanded="false" title="Pozisyonları sola gizle, Sinyal Tarayıcı ve HMA Botu göster">
+            <i class="ph-bold ph-radar"></i><span>Sinyal &amp; Bot</span><span id="signals-toggle-dot" class="signals-dot" hidden></span><i class="ph-bold ph-caret-double-right"></i>
+          </button>
 
           <!-- OPEN POSITIONS ACTIONS (Visible when open tab active) -->
           <div id="open-actions-bar" class="flex items-center gap-2 flex-wrap">
@@ -640,6 +654,164 @@
           </div>
         </div>
 
+          </div>
+
+          <!-- SIGNAL SCANNER + HMA BOT (side by side) -->
+          <section id="signals-pane" class="signals-pane" aria-label="Sinyal tarayıcı ve HMA botu" inert>
+            <div class="signals-pane-head">
+              <button type="button" class="signals-back" onclick="setWorkspaceView('positions')"><i class="ph-bold ph-caret-left"></i><span>Pozisyonlara dön</span></button>
+              <span class="signals-pane-title"><i class="ph-bold ph-radar text-emerald-400"></i> Sinyal Tarayıcı &amp; HMA Bot</span>
+            </div>
+            <div class="signals-grid">
+            <!-- LIVE MULTI-SYMBOL BUY/SELL SIGNAL SCANNER -->
+            <div id="signal-scanner-card" class="bg-[#121620] p-3.5 sm:p-4 rounded-2xl border border-gray-800/80 shadow-xl text-sm flex flex-col min-h-0">
+              <div class="flex items-center justify-between flex-wrap gap-2 mb-2 pb-1.5 border-b border-gray-800">
+                <div class="flex items-center gap-1.5">
+                  <i class="ph-bold ph-radar text-emerald-400 text-lg"></i>
+                  <h2 class="font-bold text-white text-sm uppercase tracking-wide whitespace-nowrap">Canlı Al / Sat Sinyal Tarayıcı</h2>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <select id="signal-scan-mode" onchange="refreshSignalScanner(true, true)" class="bg-[#181d2a] border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-200 font-semibold focus:border-cyan-500">
+                    <option value="ALL" selected>🌐 Çoklu Tarama</option>
+                    <option value="SELECTED">🎯 Seçili Sembol</option>
+                  </select>
+                  <select id="signal-scan-tf" onchange="onScannerTimeframeChange(this.value)" aria-label="Sinyal tarama periyodu" class="bg-[#181d2a] border border-gray-700 rounded-lg px-2 py-1 text-xs text-white font-mono font-semibold">
+                    <option value="1">1 dk (M1)</option>
+                    <option value="5">5 dk (M5)</option>
+                    <option value="15" selected>15 dk (M15)</option>
+                    <option value="30">30 dk (M30)</option>
+                    <option value="60">1 sa (H1)</option>
+                    <option value="240">4 sa (H4)</option>
+                    <option value="1440">1 gün (D1)</option>
+                  </select>
+                  <button type="button" onclick="refreshSignalScanner(true)" class="px-3 py-1 rounded-lg bg-cyan-700 hover:bg-cyan-600 text-white font-bold text-xs transition shadow">Tara</button>
+                </div>
+              </div>
+              <div class="flex items-center justify-between flex-wrap gap-2 text-xs text-gray-300 mb-2">
+                <span id="signal-scanner-status" class="font-medium">HMA(14) / EMA(34) + RSI(14) + ATR(14) taranıyor…</span>
+                <div class="flex items-center gap-2">
+                  <button type="button" id="signal-scan-add-all-btn" onclick="assignAllSignalsToBot()" title="Tarayıcıdaki tüm sembolleri çalışan bota aktar" class="px-2.5 py-0.5 rounded-md bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs font-bold transition flex items-center gap-1 border border-emerald-600/50">
+                    <i class="ph-bold ph-plus-circle"></i>
+                    <span>Tümünü Bota Aktar</span>
+                  </button>
+                  <label class="flex items-center gap-1.5 cursor-pointer select-none font-medium">
+                    <input id="signal-auto-alert" type="checkbox" checked onchange="toggleSignalAutoAlert(this.checked)" class="rounded bg-gray-800 border-gray-700 w-4 h-4 text-cyan-500">
+                    <span>Sesli uyarı</span>
+                  </label>
+                  <button type="button" onclick="playSignalBeep(true, true)" title="Sesli sinyal bildirimini test et" class="px-2 py-0.5 rounded-md bg-gray-800 hover:bg-gray-700 text-cyan-300 text-xs font-semibold border border-gray-700">🔔 Ses</button>
+                </div>
+              </div>
+              <div id="signal-scanner-list" class="space-y-2 overflow-y-auto pr-0.5 signals-scroll">
+                <div class="text-gray-400 text-xs py-3 text-center">Sinyaller yükleniyor…</div>
+              </div>
+            </div>
+
+            <!-- CARD 2: HMA CROSSOVER STRATEGY BOT -->
+            <div id="bot-card" class="bg-[#121620] p-3.5 sm:p-4 rounded-2xl border border-gray-800/80 shadow-xl flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between mb-2.5 pb-1.5 border-b border-gray-800">
+                  <div class="flex items-center gap-1.5">
+                    <i class="ph-bold ph-robot text-cyan-400 text-lg"></i>
+                    <h2 class="font-bold text-white text-[13px] uppercase tracking-wider">HMA Algoritmik Bot</h2>
+                  </div>
+                  <span id="bot-status-badge" class="text-xs font-bold px-2.5 py-1 rounded-md bg-gray-800 text-gray-300">DURDURULDU</span>
+                </div>
+
+                <!-- Bot Active Tracked Symbols Badges -->
+                <div class="mb-2.5 p-2.5 rounded-xl bg-[#181d2a] border border-gray-800/80">
+                  <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-xs text-gray-300 font-bold flex items-center gap-1.5">
+                      <i class="ph-bold ph-list-bullets text-cyan-400"></i>
+                      <span>Aktif Takip Edilen Semboller (<strong id="bot-symbols-count" class="text-white">1</strong>):</span>
+                    </span>
+                    <span class="text-[11px] text-emerald-400 font-mono font-semibold">● Çoklu Takip Aktif</span>
+                  </div>
+                  <div id="bot-symbols-badges" class="flex flex-wrap gap-1.5 items-center">
+                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-mono font-bold">
+                      <span>EURUSD</span>
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Bot Live Status Indicators -->
+                <div class="grid grid-cols-2 gap-2 mb-2.5 bg-[#181d2a] p-3 rounded-xl border border-gray-800/80">
+                  <div>
+                    <span class="text-gray-300 block text-xs font-semibold mb-0.5">HMA (<span id="bot-disp-hma-p">14</span>):</span>
+                    <span id="bot-disp-hma-val" class="font-mono font-extrabold text-[15px] text-cyan-400">0.00000</span>
+                  </div>
+                  <div>
+                    <span class="text-gray-300 block text-xs font-semibold mb-0.5"><span id="bot-disp-ma2-t">EMA</span> (<span id="bot-disp-ma2-p">34</span>):</span>
+                    <span id="bot-disp-ma2-val" class="font-mono font-extrabold text-[15px] text-amber-400">0.00000</span>
+                  </div>
+                </div>
+
+                <p id="bot-runtime-status" role="status" class="mb-1.5 text-xs text-gray-200 font-medium">Bot durumu doğrulanıyor…</p>
+                <p id="bot-atr-status" class="mb-1.5 text-xs text-gray-300 font-mono">ATR: — · ER: —</p>
+                <p id="bot-live-trend-status" class="mb-2.5 text-xs font-mono font-semibold text-cyan-300">RSI(14): — · Trend: —</p>
+
+                <!-- Bot Signal & Protection Quick Rules -->
+                <div class="bg-[#181d2a] p-3 rounded-xl border border-gray-800/80 mb-2.5 space-y-2 text-xs">
+                  <div class="flex items-center justify-between gap-2">
+                    <label for="bot-exec-mode" class="text-gray-300 font-medium">Çalışma modu</label>
+                    <select id="bot-exec-mode" onchange="saveBotSignalRules()" class="bg-[#121620] border border-gray-700 rounded-lg px-2.5 py-1 text-xs text-white font-semibold">
+                      <option value="AUTO_TRADE">Otomatik Al / Sat</option>
+                      <option value="SIGNAL_ONLY">Sadece Sinyal Yakala</option>
+                    </select>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2 pt-0.5">
+                    <label class="flex items-center gap-2 text-gray-200 font-medium cursor-pointer select-none">
+                      <input id="bot-rsi-filter" type="checkbox" onchange="saveBotSignalRules()" class="rounded bg-gray-800 border-gray-700 w-4 h-4 text-cyan-500">
+                      <span>RSI(14) filtresi</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-gray-200 font-medium cursor-pointer select-none">
+                      <input id="bot-be-toggle" type="checkbox" onchange="saveBotSignalRules()" class="rounded bg-gray-800 border-gray-700 w-4 h-4 text-cyan-500">
+                      <span>Başabaş stop</span>
+                    </label>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2 pt-0.5">
+                    <div class="flex items-center justify-between gap-1.5">
+                      <label for="bot-quick-lot" class="text-gray-300 font-medium">Emir lotu</label>
+                      <input id="bot-quick-lot" type="number" min="0.01" max="0.10" step="0.01" value="0.01" onchange="saveBotQuickLot()" class="w-20 bg-[#121620] border border-gray-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs font-bold">
+                    </div>
+                    <div class="flex items-center justify-between gap-1.5">
+                      <label for="bot-trail-input" class="text-gray-300 font-medium">İz süren (p)</label>
+                      <input id="bot-trail-input" type="number" min="0" max="100000" step="10" value="0" onchange="saveBotSignalRules()" class="w-20 bg-[#121620] border border-gray-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs font-bold">
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Bot Pending Signals Box (Sadece Sinyal Modu) -->
+                <div id="bot-pending-signal-box" class="hidden mb-2.5 p-2.5 rounded-xl border border-emerald-500/40 bg-emerald-950/30 text-xs">
+                  <div class="flex items-center justify-between mb-2">
+                    <div id="bot-pending-signal-text" class="font-bold text-emerald-300">Sinyal yakalandı</div>
+                    <button type="button" id="bot-execute-all-signals-btn" onclick="executeAllPendingBotSignals()" class="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition">Tümünü Uygula</button>
+                  </div>
+                  <div id="bot-pending-signals-list" class="space-y-1.5 mb-2 max-h-48 overflow-y-auto"></div>
+                  <button type="button" onclick="executePendingBotSignal()" class="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition">Son Sinyali Şimdi Uygula</button>
+                </div>
+
+                <div class="flex items-center justify-between text-xs text-gray-300 font-medium mb-2.5 px-0.5">
+                  <span>Son Sinyal: <strong id="bot-last-signal" class="text-white font-bold">YOK</strong></span>
+                  <span id="bot-last-signal-time" class="font-mono text-xs text-gray-400">--:--:--</span>
+                </div>
+              </div>
+
+              <!-- Bot Actions -->
+              <div class="flex items-center gap-2 pt-2">
+                <button id="bot-toggle-btn" onclick="toggleBot()" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-bold text-xs shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 transition active:scale-95">
+                  <i class="ph-bold ph-play text-base"></i>
+                  <span>Botu Başlat</span>
+                </button>
+                <button onclick="toggleBotSettingsModal()" class="px-3.5 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 hover:text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border border-gray-700">
+                  <i class="ph-bold ph-gear text-base"></i>
+                  <span>Ayarlar</span>
+                </button>
+              </div>
+            </div>
+            </div>
+          </section>
+        </div>
+
         <!-- RESIZE HANDLE AT THE BOTTOM OF POSITIONS CARD -->
         <div id="positions-resizer" class="h-3.5 -mx-3 sm:-mx-4 -mb-3 sm:-mb-4 mt-3 bg-[#121620] hover:bg-cyan-500/20 active:bg-cyan-500/30 cursor-ns-resize flex items-center justify-center transition border-t border-gray-800/80 group select-none rounded-b-2xl shrink-0" title="Pozisyonlar & Rapor panelinin yüksekliğini ayarlamak için basılı tutup yukarı/aşağı sürükleyin (Çift tıklama: Sıfırla)">
           <div class="w-12 h-1 rounded-full bg-gray-600 group-hover:bg-cyan-400 transition-colors"></div>
@@ -873,152 +1045,6 @@
           <p id="market-depth-status" role="status" class="text-gray-400"></p>
           <div id="market-depth-levels" class="max-h-64 overflow-y-auto"></div>
         </details>
-
-        <!-- LIVE MULTI-SYMBOL BUY/SELL SIGNAL SCANNER -->
-        <div id="signal-scanner-card" class="bg-[#121620] p-3.5 sm:p-4 rounded-2xl border border-gray-800/80 shadow-xl text-sm">
-          <div class="flex items-center justify-between gap-2 mb-2 pb-1.5 border-b border-gray-800">
-            <div class="flex items-center gap-1.5">
-              <i class="ph-bold ph-radar text-emerald-400 text-lg"></i>
-              <h2 class="font-bold text-white text-[13px] uppercase tracking-wider">Canlı Al / Sat Sinyal Tarayıcı</h2>
-            </div>
-            <div class="flex items-center gap-1.5">
-              <select id="signal-scan-mode" onchange="refreshSignalScanner(true, true)" class="bg-[#181d2a] border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-200 font-semibold focus:border-cyan-500">
-                <option value="ALL" selected>🌐 Çoklu Tarama</option>
-                <option value="SELECTED">🎯 Seçili Sembol</option>
-              </select>
-              <select id="signal-scan-tf" onchange="onScannerTimeframeChange(this.value)" aria-label="Sinyal tarama periyodu" class="bg-[#181d2a] border border-gray-700 rounded-lg px-2 py-1 text-xs text-white font-mono font-semibold">
-                <option value="1">1 dk (M1)</option>
-                <option value="5">5 dk (M5)</option>
-                <option value="15" selected>15 dk (M15)</option>
-                <option value="30">30 dk (M30)</option>
-                <option value="60">1 sa (H1)</option>
-                <option value="240">4 sa (H4)</option>
-                <option value="1440">1 gün (D1)</option>
-              </select>
-              <button type="button" onclick="refreshSignalScanner(true)" class="px-3 py-1 rounded-lg bg-cyan-700 hover:bg-cyan-600 text-white font-bold text-xs transition shadow">Tara</button>
-            </div>
-          </div>
-          <div class="flex items-center justify-between text-xs text-gray-300 mb-2">
-            <span id="signal-scanner-status" class="font-medium">HMA(14) / EMA(34) + RSI(14) + ATR(14) taranıyor…</span>
-            <div class="flex items-center gap-2">
-              <button type="button" id="signal-scan-add-all-btn" onclick="assignAllSignalsToBot()" title="Tarayıcıdaki tüm sembolleri çalışan bota aktar" class="px-2.5 py-0.5 rounded-md bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs font-bold transition flex items-center gap-1 border border-emerald-600/50">
-                <i class="ph-bold ph-plus-circle"></i>
-                <span>Tümünü Bota Aktar</span>
-              </button>
-              <label class="flex items-center gap-1.5 cursor-pointer select-none font-medium">
-                <input id="signal-auto-alert" type="checkbox" checked onchange="toggleSignalAutoAlert(this.checked)" class="rounded bg-gray-800 border-gray-700 w-4 h-4 text-cyan-500">
-                <span>Sesli uyarı</span>
-              </label>
-              <button type="button" onclick="playSignalBeep(true, true)" title="Sesli sinyal bildirimini test et" class="px-2 py-0.5 rounded-md bg-gray-800 hover:bg-gray-700 text-cyan-300 text-xs font-semibold border border-gray-700">🔔 Ses</button>
-            </div>
-          </div>
-          <div id="signal-scanner-list" class="space-y-2 max-h-72 overflow-y-auto pr-0.5">
-            <div class="text-gray-400 text-xs py-3 text-center">Sinyaller yükleniyor…</div>
-          </div>
-        </div>
-
-        <!-- CARD 2: HMA CROSSOVER STRATEGY BOT -->
-        <div class="bg-[#121620] p-3.5 sm:p-4 rounded-2xl border border-gray-800/80 shadow-xl flex-1 flex flex-col justify-between">
-          <div>
-            <div class="flex items-center justify-between mb-2.5 pb-1.5 border-b border-gray-800">
-              <div class="flex items-center gap-1.5">
-                <i class="ph-bold ph-robot text-cyan-400 text-lg"></i>
-                <h2 class="font-bold text-white text-[13px] uppercase tracking-wider">HMA Algoritmik Bot</h2>
-              </div>
-              <span id="bot-status-badge" class="text-xs font-bold px-2.5 py-1 rounded-md bg-gray-800 text-gray-300">DURDURULDU</span>
-            </div>
-
-            <!-- Bot Active Tracked Symbols Badges -->
-            <div class="mb-2.5 p-2.5 rounded-xl bg-[#181d2a] border border-gray-800/80">
-              <div class="flex items-center justify-between mb-1.5">
-                <span class="text-xs text-gray-300 font-bold flex items-center gap-1.5">
-                  <i class="ph-bold ph-list-bullets text-cyan-400"></i>
-                  <span>Aktif Takip Edilen Semboller (<strong id="bot-symbols-count" class="text-white">1</strong>):</span>
-                </span>
-                <span class="text-[11px] text-emerald-400 font-mono font-semibold">● Çoklu Takip Aktif</span>
-              </div>
-              <div id="bot-symbols-badges" class="flex flex-wrap gap-1.5 items-center">
-                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-mono font-bold">
-                  <span>EURUSD</span>
-                </span>
-              </div>
-            </div>
-
-            <!-- Bot Live Status Indicators -->
-            <div class="grid grid-cols-2 gap-2 mb-2.5 bg-[#181d2a] p-3 rounded-xl border border-gray-800/80">
-              <div>
-                <span class="text-gray-300 block text-xs font-semibold mb-0.5">HMA (<span id="bot-disp-hma-p">14</span>):</span>
-                <span id="bot-disp-hma-val" class="font-mono font-extrabold text-[15px] text-cyan-400">0.00000</span>
-              </div>
-              <div>
-                <span class="text-gray-300 block text-xs font-semibold mb-0.5"><span id="bot-disp-ma2-t">EMA</span> (<span id="bot-disp-ma2-p">34</span>):</span>
-                <span id="bot-disp-ma2-val" class="font-mono font-extrabold text-[15px] text-amber-400">0.00000</span>
-              </div>
-            </div>
-
-            <p id="bot-runtime-status" role="status" class="mb-1.5 text-xs text-gray-200 font-medium">Bot durumu doğrulanıyor…</p>
-            <p id="bot-atr-status" class="mb-1.5 text-xs text-gray-300 font-mono">ATR: — · ER: —</p>
-            <p id="bot-live-trend-status" class="mb-2.5 text-xs font-mono font-semibold text-cyan-300">RSI(14): — · Trend: —</p>
-
-            <!-- Bot Signal & Protection Quick Rules -->
-            <div class="bg-[#181d2a] p-3 rounded-xl border border-gray-800/80 mb-2.5 space-y-2 text-xs">
-              <div class="flex items-center justify-between gap-2">
-                <label for="bot-exec-mode" class="text-gray-300 font-medium">Çalışma modu</label>
-                <select id="bot-exec-mode" onchange="saveBotSignalRules()" class="bg-[#121620] border border-gray-700 rounded-lg px-2.5 py-1 text-xs text-white font-semibold">
-                  <option value="AUTO_TRADE">Otomatik Al / Sat</option>
-                  <option value="SIGNAL_ONLY">Sadece Sinyal Yakala</option>
-                </select>
-              </div>
-              <div class="grid grid-cols-2 gap-2 pt-0.5">
-                <label class="flex items-center gap-2 text-gray-200 font-medium cursor-pointer select-none">
-                  <input id="bot-rsi-filter" type="checkbox" onchange="saveBotSignalRules()" class="rounded bg-gray-800 border-gray-700 w-4 h-4 text-cyan-500">
-                  <span>RSI(14) filtresi</span>
-                </label>
-                <label class="flex items-center gap-2 text-gray-200 font-medium cursor-pointer select-none">
-                  <input id="bot-be-toggle" type="checkbox" onchange="saveBotSignalRules()" class="rounded bg-gray-800 border-gray-700 w-4 h-4 text-cyan-500">
-                  <span>Başabaş stop</span>
-                </label>
-              </div>
-              <div class="grid grid-cols-2 gap-2 pt-0.5">
-                <div class="flex items-center justify-between gap-1.5">
-                  <label for="bot-quick-lot" class="text-gray-300 font-medium">Emir lotu</label>
-                  <input id="bot-quick-lot" type="number" min="0.01" max="0.10" step="0.01" value="0.01" onchange="saveBotQuickLot()" class="w-20 bg-[#121620] border border-gray-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs font-bold">
-                </div>
-                <div class="flex items-center justify-between gap-1.5">
-                  <label for="bot-trail-input" class="text-gray-300 font-medium">İz süren (p)</label>
-                  <input id="bot-trail-input" type="number" min="0" max="100000" step="10" value="0" onchange="saveBotSignalRules()" class="w-20 bg-[#121620] border border-gray-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs font-bold">
-                </div>
-              </div>
-            </div>
-
-            <!-- Bot Pending Signals Box (Sadece Sinyal Modu) -->
-            <div id="bot-pending-signal-box" class="hidden mb-2.5 p-2.5 rounded-xl border border-emerald-500/40 bg-emerald-950/30 text-xs">
-              <div class="flex items-center justify-between mb-2">
-                <div id="bot-pending-signal-text" class="font-bold text-emerald-300">Sinyal yakalandı</div>
-                <button type="button" id="bot-execute-all-signals-btn" onclick="executeAllPendingBotSignals()" class="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition">Tümünü Uygula</button>
-              </div>
-              <div id="bot-pending-signals-list" class="space-y-1.5 mb-2 max-h-48 overflow-y-auto"></div>
-              <button type="button" onclick="executePendingBotSignal()" class="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition">Son Sinyali Şimdi Uygula</button>
-            </div>
-
-            <div class="flex items-center justify-between text-xs text-gray-300 font-medium mb-2.5 px-0.5">
-              <span>Son Sinyal: <strong id="bot-last-signal" class="text-white font-bold">YOK</strong></span>
-              <span id="bot-last-signal-time" class="font-mono text-xs text-gray-400">--:--:--</span>
-            </div>
-          </div>
-
-          <!-- Bot Actions -->
-          <div class="flex items-center gap-2 pt-2">
-            <button id="bot-toggle-btn" onclick="toggleBot()" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-bold text-xs shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 transition active:scale-95">
-              <i class="ph-bold ph-play text-base"></i>
-              <span>Botu Başlat</span>
-            </button>
-            <button onclick="toggleBotSettingsModal()" class="px-3.5 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 hover:text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border border-gray-700">
-              <i class="ph-bold ph-gear text-base"></i>
-              <span>Ayarlar</span>
-            </button>
-          </div>
-        </div>
 
         <!-- CARD 3: BOT LOGS & SIGNALS -->
         <div class="w-full bg-[#121620] rounded-2xl border border-gray-800/80 p-4 shadow-xl flex flex-col h-[280px]">
@@ -1369,5 +1395,6 @@
   <script src="/static/operations.js"></script>
   <script src="/static/permissions.js"></script>
   <script src="/static/research.js"></script>
+  <script src="/static/workspace.js?v=1"></script>
 </body>
 </html>

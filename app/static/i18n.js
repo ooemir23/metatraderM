@@ -3,6 +3,17 @@
   const STORAGE_KEY = "hma_ui_language";
   const en = Object.fromEntries([
     ["Canlı Al / Sat Sinyal Tarayıcı", "Live Buy / Sell Signal Scanner"],
+    ["Pozisyonlara dön", "Back to positions"],
+    ["Sinyal Tarayıcı & HMA Bot", "Signal Scanner & HMA Bot"],
+    ["Sinyal & Bot", "Signals & Bot"],
+    ["Pozisyonlar", "Positions"],
+    ["Açık pozisyonları göster", "Show open positions"],
+    ["Pozisyonları sola gizle, Sinyal Tarayıcı ve HMA Botu göster", "Hide positions to the left and show the Signal Scanner and HMA Bot"],
+    ["Sinyal tarayıcı ve HMA botu", "Signal scanner and HMA bot"],
+    ["Küçült", "Smaller"],
+    ["Büyüt", "Larger"],
+    ["Varsayılan boyuta dön", "Reset to default size"],
+    ["Arayüz boyutu", "Interface size"],
     ["Sinyal tarama periyodu", "Signal scan timeframe"],
     ["Tara", "Scan"],
     ["HMA(14) / EMA(34) + RSI(14) + ATR(14) taranıyor…", "Scanning HMA(14) / EMA(34) + RSI(14) + ATR(14)…"],
