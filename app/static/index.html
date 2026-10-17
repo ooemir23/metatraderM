@@ -119,8 +119,20 @@
         <div class="px-3.5 py-2 border-b border-gray-800 flex items-center justify-between bg-[#151a26] flex-wrap gap-2">
           <div class="flex items-center gap-2">
             <i class="ph-bold ph-chart-line text-emerald-400"></i>
-            <span id="current-symbol-title" class="font-bold text-white text-xs sm:text-sm">EURUSD • M15</span>
+            <span id="current-symbol-title" class="font-bold text-white text-xs sm:text-sm">EURUSD • 15 dk (M15)</span>
           </div>
+
+          <!-- QUICK CANDLE TIMEFRAME SELECTOR BAR -->
+          <div id="chart-timeframe-toolbar" class="flex items-center bg-[#10141e] p-1 rounded-xl border border-gray-800 text-xs font-mono select-none" role="toolbar" aria-label="Grafik Mum Zaman Dilimi">
+            <button type="button" data-tf="1" onclick="setChartTimeframe(1)" class="chart-tf-btn px-2.5 py-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 transition font-medium text-xs" title="1 Dakikalık Mumlar (M1)">1 dk</button>
+            <button type="button" data-tf="5" onclick="setChartTimeframe(5)" class="chart-tf-btn px-2.5 py-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 transition font-medium text-xs" title="5 Dakikalık Mumlar (M5)">5 dk</button>
+            <button type="button" data-tf="15" onclick="setChartTimeframe(15)" class="chart-tf-btn px-2.5 py-1 rounded-lg bg-cyan-500/25 text-cyan-300 font-bold border border-cyan-500/40 shadow-sm transition text-xs" title="15 Dakikalık Mumlar (M15)">15 dk</button>
+            <button type="button" data-tf="30" onclick="setChartTimeframe(30)" class="chart-tf-btn px-2.5 py-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 transition font-medium text-xs" title="30 Dakikalık Mumlar (M30)">30 dk</button>
+            <button type="button" data-tf="60" onclick="setChartTimeframe(60)" class="chart-tf-btn px-2.5 py-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 transition font-medium text-xs" title="1 Saatlik Mumlar (H1)">1 sa</button>
+            <button type="button" data-tf="240" onclick="setChartTimeframe(240)" class="chart-tf-btn px-2.5 py-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 transition font-medium text-xs" title="4 Saatlik Mumlar (H4)">4 sa</button>
+            <button type="button" data-tf="1440" onclick="setChartTimeframe(1440)" class="chart-tf-btn px-2.5 py-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 transition font-medium text-xs" title="1 Günlük Mumlar (D1)">1 gün</button>
+          </div>
+
           <div class="flex items-center gap-2 sm:gap-3 text-xs">
             <span class="text-gray-400 hidden sm:inline">Bid: <strong id="header-bid" class="text-white font-mono">--</strong></span>
             <span class="text-gray-400 hidden sm:inline">Ask: <strong id="header-ask" class="text-white font-mono">--</strong></span>
@@ -863,11 +875,14 @@
               <h2 class="font-bold text-white text-xs sm:text-sm uppercase tracking-wider">Canlı Al / Sat Sinyal Tarayıcı</h2>
             </div>
             <div class="flex items-center gap-1.5">
-              <select id="signal-scan-tf" onchange="refreshSignalScanner(true)" aria-label="Sinyal tarama periyodu" class="bg-[#181d2a] border border-gray-700 rounded px-1.5 py-0.5 text-[11px] text-white font-mono">
-                <option value="5">M5</option>
-                <option value="15" selected>M15</option>
-                <option value="60">H1</option>
-                <option value="240">H4</option>
+              <select id="signal-scan-tf" onchange="onScannerTimeframeChange(this.value)" aria-label="Sinyal tarama periyodu" class="bg-[#181d2a] border border-gray-700 rounded px-1.5 py-0.5 text-[11px] text-white font-mono">
+                <option value="1">1 dk (M1)</option>
+                <option value="5">5 dk (M5)</option>
+                <option value="15" selected>15 dk (M15)</option>
+                <option value="30">30 dk (M30)</option>
+                <option value="60">1 sa (H1)</option>
+                <option value="240">4 sa (H4)</option>
+                <option value="1440">1 gün (D1)</option>
               </select>
               <button type="button" onclick="refreshSignalScanner(true)" class="px-2 py-0.5 rounded bg-cyan-700 hover:bg-cyan-600 text-white font-semibold text-[11px]">Tara</button>
             </div>

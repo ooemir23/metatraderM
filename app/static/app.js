@@ -26,12 +26,52 @@ document.addEventListener("DOMContentLoaded", () => {
   for(const id of ['sl-input','tp-input'])document.getElementById(id)?.addEventListener('input',()=>{ticketProtectionEdited=true;});
   window.MT5Markets?.init({onSelect:switchSymbol, onChange:marketCatalogueChanged});
   window.MT5Markets?.setActive(currentSymbol);
+  updateChartTimeframeButtons(window.MT5Chart?.getTimeframe?.() || 15);
   initTradingView(currentSymbol);
   initChartResizer();
   initPositionsResizer();
   initPositionsTopResizer();
   startPolling();
 });
+
+function updateChartTimeframeButtons(activeTf) {
+  const num = Number(activeTf) || 15;
+  document.querySelectorAll('.chart-tf-btn').forEach(btn => {
+    const btnTf = Number(btn.dataset.tf);
+    if (btnTf === num) {
+      btn.className = 'chart-tf-btn px-2.5 py-1 rounded-lg bg-cyan-500/25 text-cyan-300 font-bold border border-cyan-500/40 shadow-sm transition text-xs';
+    } else {
+      btn.className = 'chart-tf-btn px-2.5 py-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 border border-transparent transition font-medium text-xs';
+    }
+  });
+  const scanTf = document.getElementById('signal-scan-tf');
+  if (scanTf && Number(scanTf.value) !== num) {
+    scanTf.value = String(num);
+  }
+}
+
+function setChartTimeframe(tf) {
+  const num = Number(tf);
+  if (!num) return;
+  if (window.MT5Chart) {
+    window.MT5Chart.setTimeframe(num);
+  }
+  updateChartTimeframeButtons(num);
+  const scanTf = document.getElementById('signal-scan-tf');
+  if (scanTf && Number(scanTf.value) !== num) {
+    scanTf.value = String(num);
+    if (typeof refreshSignalScanner === 'function') refreshSignalScanner(true);
+  }
+  const botTf = document.getElementById('cfg-timeframe');
+  if (botTf && [1,5,15,30,60,240,1440].includes(num)) {
+    botTf.value = String(num);
+  }
+}
+
+function onScannerTimeframeChange(tf) {
+  const num = Number(tf);
+  setChartTimeframe(num);
+}
 
 // Initialize / Reload TradingView Widget
 function initTradingView(symbol) {
@@ -627,8 +667,12 @@ function switchSymbol(symbol, reloadChart = true) {
   updateOrderButtons();
   clearSymbolPrices();
   if (typeof startLiveFeed === "function") startLiveFeed();
-  renderOrderNotice();
-  document.getElementById("current-symbol-title").innerText = `${symbol} • M15`;
+  const curTf = window.MT5Chart?.getTimeframe?.() || 15;
+  const curTfCode = {1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'}[curTf] || `M${curTf}`;
+  const curTfText = {1:'1 dk',5:'5 dk',15:'15 dk',30:'30 dk',60:'1 sa',240:'4 sa',1440:'1 gün'}[curTf] || `${curTf}m`;
+  const symbolTitleNode = document.getElementById("current-symbol-title");
+  if (symbolTitleNode) symbolTitleNode.innerText = `${symbol} • ${curTfText} (${curTfCode})`;
+  updateChartTimeframeButtons(curTf);
   document.getElementById("order-symbol-tag").innerText = symbol;
 
   if (reloadChart) initTradingView(symbol);
@@ -3005,8 +3049,10 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
     if (!res.ok) throw new Error('Sinyal taraması alınamadı');
     const data = await res.json();
     const rows = Array.isArray(data.signals) ? data.signals.filter(r => r.symbol === activeSym) : [];
+    const tfText = {1:'1 dk',5:'5 dk',15:'15 dk',30:'30 dk',60:'1 sa',240:'4 sa',1440:'1 gün'}[tf] || `${tf} dk`;
+    const tfCode = {1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'}[tf] || `M${tf}`;
     if (statusNode) {
-      statusNode.textContent = `${activeSym} · HMA(${data.hma_period || 14}) / EMA(${data.ema_period || 34}) · Son: ${new Date().toLocaleTimeString('tr-TR')}`;
+      statusNode.textContent = `${activeSym} (${tfText} mum) · HMA(${data.hma_period || 14}) / EMA(${data.ema_period || 34}) · Son: ${new Date().toLocaleTimeString('tr-TR')}`;
     }
     if (!rows.length) {
       listNode.innerHTML = `<div class="text-gray-400 text-[11px] py-2 text-center">${escapeHtml(activeSym)} için MT5 mum verisi bekleniyor…</div>`;
@@ -3038,7 +3084,7 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
           announcedSignalCrosses.set(`${item.symbol}:${tf}`, key);
           playSignalBeep(isCrossBuy, false);
           if (typeof showToast === 'function') {
-            showToast(`${isCrossBuy ? '🟢 YENİ AL SİNYALİ' : '🔴 YENİ SAT SİNYALİ'}: ${item.symbol} (${tf}dk) @ ${item.price}`, isCrossBuy ? 'success' : 'info');
+            showToast(`${isCrossBuy ? '🟢 YENİ AL SİNYALİ' : '🔴 YENİ SAT SİNYALİ'}: ${item.symbol} (${tfText}) @ ${item.price}`, isCrossBuy ? 'success' : 'info');
           }
         } else if (!prevKey) {
           announcedSignalCrosses.set(`${item.symbol}:${tf}`, key);
@@ -3050,7 +3096,7 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
       return `<div class="bg-[#181d2a] border border-gray-800/90 rounded-xl p-2.5 space-y-2">
         <div class="flex items-center justify-between gap-2">
           <div class="min-w-0">
-            <span class="font-bold text-white text-sm block">${symEsc} <span class="text-[10px] text-cyan-400 font-mono">M${tf}</span></span>
+            <span class="font-bold text-white text-sm block">${symEsc} <span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono font-semibold">${tfText} (${tfCode})</span></span>
             <span class="text-[11px] text-gray-300 font-mono">Fiyat: <strong>${item.price}</strong> · RSI(14): <strong>${Number(item.rsi || 50).toFixed(1)}</strong> · ATR: ${item.atr}</span>
           </div>
           <span class="px-2 py-1 rounded-lg text-[11px] ${badgeClass}">${badgeText}</span>

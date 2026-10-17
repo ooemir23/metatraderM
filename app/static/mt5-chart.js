@@ -4,6 +4,7 @@
     log:false, scale:0, invert:false, crosshair:true, priceLine:true,
     sma:false, ema:true, hma:true, signals:true, period:20, emaPeriod:34, hmaPeriod:14, up:'#10b981', down:'#ef4444'};
   const frames = {1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'};
+  const frameLabels = {1:'1 dk',5:'5 dk',15:'15 dk',30:'30 dk',60:'1 sa',240:'4 sa',1440:'1 gün'};
   const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch (_) { return fallback; } };
   const write = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (_) { return false; } };
   function settings() {
@@ -87,13 +88,24 @@
     }
     if (state.signalBadge) {
       const lastMarker = markers.at(-1);
+      const tfCode = frames[state.timeframe] || `M${state.timeframe}`;
+      const tfText = frameLabels[state.timeframe] || `${state.timeframe}m`;
       if (lastMarker) {
         const isBuy = lastMarker.shape === 'arrowUp';
-        state.signalBadge.textContent = `${isBuy ? '▲ AL Sinyali' : '▼ SAT Sinyali'} (${ lastMarker.text })`;
+        const isRecent = rows.length >= 2 && lastMarker.time >= rows[rows.length - 2].time;
+        state.signalBadge.textContent = `${isBuy ? '▲ AL Sinyali' : '▼ SAT Sinyali'} (${tfText} · ${tfCode}${isRecent ? ' · Taze' : ''})`;
         state.signalBadge.style.color = isBuy ? '#10b981' : '#ef4444';
         state.signalBadge.hidden = false;
       } else {
-        state.signalBadge.hidden = true;
+        const hmaLatest = hma.at(-1)?.value, emaLatest = ema.at(-1)?.value;
+        if (Number.isFinite(hmaLatest) && Number.isFinite(emaLatest)) {
+          const isBuy = hmaLatest > emaLatest;
+          state.signalBadge.textContent = `${isBuy ? '▲ AL Trendi' : '▼ SAT Trendi'} (${tfText} · ${tfCode})`;
+          state.signalBadge.style.color = isBuy ? '#10b981' : '#ef4444';
+          state.signalBadge.hidden = false;
+        } else {
+          state.signalBadge.hidden = true;
+        }
       }
     }
     if (fit) { state.chart.timeScale().fitContent(); state.chart.timeScale().setVisibleLogicalRange({from:Math.max(0,rows.length-120),to:rows.length+4}); }
@@ -193,7 +205,9 @@
       state.rows = normalize(full ? rows : [...state.rows,...rows]).slice(-1000);
       renderData(state, !state.loaded);
       state.loaded=true;
-      status(state,`${state.symbol} · ${frames[state.timeframe]} · MT5 · Broker saati · Güncellendi ${new Date().toLocaleTimeString('tr-TR')}`);
+      const tfCode = frames[state.timeframe] || `M${state.timeframe}`;
+      const tfText = frameLabels[state.timeframe] || `${state.timeframe}m`;
+      status(state,`${state.symbol} · ${tfCode} (${tfText}) · MT5 · Broker saati · Güncellendi ${new Date().toLocaleTimeString('tr-TR')}`);
     } catch (error) {
       if (state === active && token === generation) status(state,`Veri güncellenemedi · ${error.name === 'AbortError' ? 'Bağlantı zaman aşımı' : error.message} · Yeniden deneniyor`);
     } finally {
@@ -228,9 +242,19 @@
     status(state, write('mt5.chart.settings.v1', prefs) ? 'Ayarlar bu tarayıcıda kaydedildi · Broker saati' : 'Ayar uygulandı; tarayıcı kaydetmeye izin vermedi.');
   }
   function change(key, value) {
-    const state = active; if (!state) return;
-    prefs[key] = value; saveSettings(state);
-    if (key === 'timeframe') { mount(state.symbol); return; }
+    prefs[key] = value;
+    const state = active;
+    if (!state) {
+      write('mt5.chart.settings.v1', prefs);
+      if (key === 'timeframe' && typeof updateChartTimeframeButtons === 'function') updateChartTimeframeButtons(value);
+      return;
+    }
+    saveSettings(state);
+    if (key === 'timeframe') {
+      mount(state.symbol);
+      if (typeof updateChartTimeframeButtons === 'function') updateChartTimeframeButtons(value);
+      return;
+    }
     const range=state.chart.timeScale().getVisibleLogicalRange();
     if (key === 'type') rebuildPrice(state);
     applyStyle(state); renderData(state);
@@ -263,7 +287,7 @@
         <div class="mt5-menu-title">Grafik ayarları <button type="button" data-action="close" aria-label="Grafik ayarlarını kapat">✕</button></div>
         <label>Seçilen fiyat<input data-context-price readonly aria-label="Sağ tıklanan fiyat"></label>
         <button type="button" data-action="copy-price">Fiyatı kopyala</button>
-        <label>Zaman dilimi<select data-setting="timeframe" aria-label="Grafik zaman dilimi">${Object.entries(frames).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label>
+        <label>Zaman dilimi<select data-setting="timeframe" aria-label="Grafik zaman dilimi">${Object.entries(frames).map(([k,v])=>`<option value="${k}">${v} (${frameLabels[k] || k+'m'})</option>`).join('')}</select></label>
         <label>Grafik türü<select data-setting="type" aria-label="Grafik türü"><option value="candles">Mum</option><option value="bars">Çubuk</option><option value="line">Çizgi</option><option value="area">Alan</option></select></label>
         <label>Tema<select data-setting="theme" aria-label="Grafik teması"><option value="dark">Koyu</option><option value="light">Açık</option></select></label>
         <label>Yükseliş rengi<input type="color" data-setting="up" aria-label="Yükseliş rengi"></label>
@@ -312,7 +336,11 @@
     state.exponential=state.chart.addSeries(LightweightCharts.LineSeries,{color:'#a78bfa',lineWidth:2,priceLineVisible:false,lastValueVisible:false,title:'EMA'});
     state.hma=state.chart.addSeries(LightweightCharts.LineSeries,{color:'#06b6d4',lineWidth:2,priceLineVisible:false,lastValueVisible:false,title:'HMA'});
     applyStyle(state);
-    document.getElementById('current-symbol-title').textContent=`${symbol} · ${frames[prefs.timeframe]} · MT5`;
+    const tfCode = frames[prefs.timeframe] || `M${prefs.timeframe}`;
+    const tfText = frameLabels[prefs.timeframe] || `${prefs.timeframe}m`;
+    const titleNode = document.getElementById('current-symbol-title');
+    if (titleNode) titleNode.textContent = `${symbol} • ${tfText} (${tfCode})`;
+    if (typeof updateChartTimeframeButtons === 'function') updateChartTimeframeButtons(prefs.timeframe);
     const on=(target,name,fn)=>{target.addEventListener(name,fn);state.cleanup.push(()=>target.removeEventListener(name,fn));};
     on(canvas,'contextmenu',event=>{
       const bounds=canvas.getBoundingClientRect();state.selectedPrice=state.price.coordinateToPrice(event.clientY-bounds.top);
@@ -364,5 +392,11 @@
     // Manual broker selection remains the source of order identity.
     switchSymbol(currentSymbol);
   }
-  window.MT5Chart={mode,setMode,mount,dispose,normalize,emaValues,hmaValues,signalMarkers,csvData,tick};
+  function getTimeframe() { return prefs.timeframe; }
+  function setTimeframe(tf) {
+    const num = Number(tf);
+    if (!frames[num]) return;
+    change('timeframe', num);
+  }
+  window.MT5Chart={mode,setMode,mount,dispose,normalize,emaValues,hmaValues,signalMarkers,csvData,tick,getTimeframe,setTimeframe,frames,frameLabels};
 })();
