@@ -297,12 +297,8 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
                   expected_login, expected_server, tick_offset=0, daily_loss_limit=None,
                   enforce_daily_limit=True, max_order_lots=None, max_total_lots=None,
                   max_open_orders=None, tp_points=0, max_trade_risk_pct=2.0, sl_price=None, tp_price=None, deviation_points=20,
-                  stoplimit_price=None, time_type='GTC', expiration=0, manual_mode='PANEL', filling_policy='AUTO', magic=None,
-                  quote_max_age=None):
-    """Broker-calculated figures only; unknown values remain unknown.
-
-    quote_max_age widens the quote freshness window for read-only startup checks only;
-    every order is still checked against the 10 second window before it is sent."""
+                  stoplimit_price=None, time_type='GTC', expiration=0, manual_mode='PANEL', filling_policy='AUTO', magic=None):
+    """Broker-calculated figures only; unknown values remain unknown."""
     try:
         native = _ticket_mode(manual_mode)
         account, current, pending, realized, floating = risk(mt5, tick_offset, include_history=not native)
@@ -326,7 +322,7 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
                 not math.isfinite(max_total_lots) or committed + volume > max_total_lots + 1e-9)) or
                 (max_open_orders is not None and len(own_current) + len(own_pending) + 1 > max_open_orders)):
             raise ValueError('Toplam açık/bekleyen işlem sınırı aşılıyor.')
-        info, tick = _market(mt5, symbol, tick_offset, allow_stale=native, max_tick_age=quote_max_age or 10)
+        info, tick = _market(mt5, symbol, tick_offset, allow_stale=native)
         if not _volume_valid(info, volume):
             raise ValueError('Lot miktarı broker sınırlarına uymuyor.')
         config = _pending_configuration(info, tick, order_type, pending_type, entry_price,
@@ -678,12 +674,12 @@ def price(mt5, symbol, tick_offset=0):
                 quote_status=status)
 
 
-def _market(mt5, symbol, tick_offset=0, allow_stale=False, max_tick_age=10):
+def _market(mt5, symbol, tick_offset=0, allow_stale=False):
     info, tick = mt5.symbol_info(symbol), mt5.symbol_info_tick(symbol)
     if info is None:
         raise ValueError('Sembol bilgisi alınamadı.')
     _symbol_rules(info)
-    quote_error = _quote_error(tick, tick_offset, max_tick_age, mt5=mt5, allow_stale=allow_stale)
+    quote_error = _quote_error(tick, tick_offset, mt5=mt5, allow_stale=allow_stale)
     if quote_error:
         raise ValueError(quote_error)
     return info, tick

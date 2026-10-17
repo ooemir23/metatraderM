@@ -546,7 +546,7 @@ class MT5Client:
             raise MT5DataError('İstek hazırlanırken seçilen hesap değişti; işlem gönderilmedi. Hesabı kontrol edip yeni istek oluşturun.')
         return account
 
-    def trade_preview(self, symbol, order_type, volume, sl_points=0, pending_type=None, entry_price=None, tp_points=0, *, expected_account=None, sl_price=None, tp_price=None, deviation_points=20, stoplimit_price=None, time_type='GTC', expiration=0, manual_mode='PANEL', filling_policy='AUTO', magic=None, quote_max_age=None):
+    def trade_preview(self, symbol, order_type, volume, sl_points=0, pending_type=None, entry_price=None, tp_points=0, *, expected_account=None, sl_price=None, tp_price=None, deviation_points=20, stoplimit_price=None, time_type='GTC', expiration=0, manual_mode='PANEL', filling_policy='AUTO', magic=None):
         with self._lock:
             if self.journal.trading_halted():
                 return {'success': False, 'error': 'Yeni emirler güvenlik kilidi nedeniyle durduruldu.'}
@@ -560,8 +560,7 @@ class MT5Client:
                                     self.journal.daily_limit_enabled(login, server), self.max_order_lots,
                                     self.max_total_lots, self.max_open_orders, tp_points, self.max_trade_risk_pct,
                                     sl_price, tp_price, deviation_points, stoplimit_price, time_type, expiration, manual_mode, filling_policy,
-                                    *((magic,) if magic is not None or quote_max_age is not None else ()),
-                                    *((quote_max_age,) if quote_max_age is not None else ()))
+                                    *((magic,) if magic is not None else ()))
             except (MT5DataError, Exception) as exc:
                 return {'success': False, 'error': str(exc)}
 
@@ -619,8 +618,6 @@ class MT5Client:
             account = self._selected_account()
             return self.journal.has_unresolved_open(account, symbol, mt5_bridge.HMA_MAGIC)
 
-    READINESS_QUOTE_MAX_AGE = 300
-
     def bot_readiness(self, config):
         """Read-only startup checks against the same account used for execution."""
         with self._lock:
@@ -676,10 +673,7 @@ class MT5Client:
                             if not h4 or len(h4) < max(config['hma_period'], config['second_ma_period'], config['atr_period']) + 15:
                                 raise MT5DataError('H4 filtresi için yeterli kapanmış mum verisi yok.')
                         for side in ('BUY', 'SELL'):
-                            # A quiet market (e.g. BTCUSD at the weekend) can go >10 s without a tick; startup only needs a
-                            # recent quote. Orders themselves are still sent only on a quote at most 10 s old.
-                            preview = self.trade_preview(symbol, side, config['lot_size'], sl, tp_points=tp,
-                                                         magic=mt5_bridge.HMA_MAGIC, quote_max_age=self.READINESS_QUOTE_MAX_AGE)
+                            preview = self.trade_preview(symbol, side, config['lot_size'], sl, tp_points=tp, magic=mt5_bridge.HMA_MAGIC)
                             if not preview.get('success'):
                                 raise MT5DataError(preview.get('error', 'İşlem risk kontrolü başarısız.'))
                             margin, free = preview.get('margin_required'), preview.get('free_margin')

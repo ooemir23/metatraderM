@@ -7,7 +7,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
-from app import mt5_bridge
 from app.mt5_bridge import MANUAL_MAGIC
 from app.strategy_bot import StrategyBot
 from test_trade_safety import client, pos
@@ -106,7 +105,7 @@ def test_bot_readiness_rejects_an_unusable_trading_state(ready_client, failure):
     if failure == 'netting':
         ready_client.mt5.account_info.return_value.margin_mode = 0
     elif failure == 'stale':
-        ready_client.mt5.symbol_info_tick.return_value.time = time.time() - 3600
+        ready_client.mt5.symbol_info_tick.return_value.time = time.time() - 60
     elif failure == 'history':
         ready_client.get_rates.return_value = []
     elif failure == 'risk':
@@ -306,17 +305,3 @@ def test_start_warnings_are_logged_and_exposed():
     bot.set_start_warnings(['EURUSD: Son fiyat 18 saat önce alındı.'])
     assert bot.get_status()['start_warnings'] == ['EURUSD: Son fiyat 18 saat önce alındı.']
     assert 'Başlangıçta atlandı' in bot.logs[0]['message']
-
-
-def test_briefly_quiet_symbol_still_passes_startup_checks(ready_client):
-    """BTCUSD without a tick for 11-60 s is a quiet market, not a closed one: the bot can start."""
-    ready_client.mt5.symbol_info_tick.return_value.time = time.time() - 45
-    config = {**StrategyBot(ready_client).config_snapshot(), 'symbols': ['BTCUSD']}
-    result = ready_client.bot_readiness(config)
-    assert result['success'] and result['ready_symbols'] == ['BTCUSD'] and not result['warnings']
-
-
-def test_order_preview_keeps_the_ten_second_quote_window(ready_client):
-    ready_client.mt5.symbol_info_tick.return_value.time = time.time() - 45
-    result = ready_client.trade_preview('BTCUSD', 'BUY', .01, 100, magic=mt5_bridge.HMA_MAGIC)
-    assert not result['success']
