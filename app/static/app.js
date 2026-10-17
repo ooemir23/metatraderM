@@ -1010,7 +1010,7 @@ function renderPositionsData(positions) {
     if (countBadge) countBadge.innerText = positions.length;
 
     if (!positions || positions.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="11" class="py-6 text-center text-gray-500 font-sans">Henüz açık pozisyon bulunmuyor.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10" class="py-6 text-center text-gray-500 font-sans">Henüz açık pozisyon bulunmuyor.</td></tr>`;
       return;
     }
 
@@ -1023,8 +1023,6 @@ function renderPositionsData(positions) {
 
       const profitColor = p.profit >= 0 ? "text-emerald-400" : "text-rose-400";
       const profitSign = p.profit >= 0 ? "+" : "";
-      const quality = p.execution_quality || {};
-      const quoteFresh = p.quote?.quote_status?.state === 'fresh';
 
       rowsHtml += `
         <tr class="hover:bg-[#151a26]/60 transition border-b border-gray-800/40 group">
@@ -1037,7 +1035,6 @@ function renderPositionsData(positions) {
           <td class="py-2 px-2 text-gray-200 font-semibold whitespace-nowrap">${p.volume}</td>
           <td class="py-2 px-2 text-gray-400 whitespace-nowrap tabular-nums">${Number(p.price_open).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
           <td class="py-2 px-2 text-white font-semibold whitespace-nowrap tabular-nums">${Number(p.price_current).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
-          <td class="py-2 px-2"><button type="button" data-testid="position-execution-${p.ticket}" onclick="showPositionExecution(${p.ticket})" class="text-left text-[10px] leading-4 hover:text-cyan-300 focus:outline focus:outline-2 focus:outline-cyan-400 rounded" aria-label="Pozisyon #${p.ticket} spread ve slippage detayları"><span class="block text-gray-300">Açılış: ${executionPoints(quality.opening_spread_points)}</span><span class="block ${quoteFresh ? 'text-cyan-400' : 'text-amber-300'}">${quoteFresh ? 'Güncel' : 'Son'}: ${executionPoints(quality.current_spread_points)}</span><span class="block ${quality.slippage_points > 0 ? 'text-rose-400' : quality.slippage_points < 0 ? 'text-emerald-400' : 'text-gray-400'}">Kayma: ${slippageText(quality.slippage_points)}</span><span class="block text-cyan-400">Fiyat detayı ›</span></button></td>
           <td class="py-2 px-2 text-gray-500 whitespace-nowrap tabular-nums">${p.sl ? Number(p.sl).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "-"} / ${p.tp ? Number(p.tp).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "-"}</td>
           <td class="py-2 px-2 text-right text-amber-400 whitespace-nowrap">${p.commission == null ? "—" : `${p.commission > 0 ? "+" : ""}${accountCurrency} ${formatMoney(p.commission)}`}</td>
           <td class="py-2 px-2 text-right font-bold whitespace-nowrap ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(p.profit)}</td>
