@@ -1004,22 +1004,25 @@ function renderPositionsData(positions) {
       const quoteFresh = p.quote?.quote_status?.state === 'fresh';
 
       rowsHtml += `
-        <tr class="hover:bg-[#151a26]/60 transition border-b border-gray-800/40">
-          <td class="py-2.5 px-3 text-gray-400">#${p.ticket}</td>
-          <td class="py-2.5 px-3 font-bold text-white">${escapeHtml(p.symbol)}</td>
-          <td class="py-2.5 px-3">${typeBadge}</td>
-          <td class="py-2.5 px-3 text-gray-200 font-semibold">${p.volume}</td>
-          <td class="py-2.5 px-3 text-gray-400 whitespace-nowrap tabular-nums">${Number(p.price_open).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
-          <td class="py-2.5 px-3 text-white font-semibold whitespace-nowrap tabular-nums">${Number(p.price_current).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
-          <td class="py-2.5 px-3"><button type="button" data-testid="position-execution-${p.ticket}" onclick="showPositionExecution(${p.ticket})" class="text-left text-[10px] leading-5 hover:text-cyan-300 focus:outline focus:outline-2 focus:outline-cyan-400 rounded" aria-label="Pozisyon #${p.ticket} spread ve slippage detayları"><span class="block text-gray-300">Açılış: ${executionPoints(quality.opening_spread_points)}</span><span class="block ${quoteFresh ? 'text-cyan-400' : 'text-amber-300'}">${quoteFresh ? 'Güncel' : 'Son'}: ${executionPoints(quality.current_spread_points)}</span><span class="block ${quality.slippage_points > 0 ? 'text-rose-400' : quality.slippage_points < 0 ? 'text-emerald-400' : 'text-gray-400'}">Kayma: ${slippageText(quality.slippage_points)}</span><span class="block text-cyan-400">Fiyat detayı ›</span></button></td>
-          <td class="py-2.5 px-3 text-gray-500 whitespace-nowrap tabular-nums">${p.sl ? Number(p.sl).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "-"} / ${p.tp ? Number(p.tp).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "-"}</td>
-          <td class="py-2.5 px-3 text-right text-amber-400 whitespace-nowrap">${p.commission == null ? "—" : `${p.commission > 0 ? "+" : ""}${accountCurrency} ${formatMoney(p.commission)}`}</td>
-          <td class="py-2.5 px-3 text-right font-bold whitespace-nowrap ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(p.profit)}</td>
-          <td class="py-2.5 px-3 text-center whitespace-nowrap">
-            <button onclick="showPositionEditor(${p.ticket})" class="px-2 py-1 rounded bg-cyan-500/10 text-cyan-300 text-xs">Yönet</button>
-            <button onclick="closePosition(${p.ticket})" class="px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition active:scale-95" title="Kapat">
-              Kapat
-            </button>
+        <tr class="hover:bg-[#151a26]/60 transition border-b border-gray-800/40 group">
+          <td class="py-2 px-2 text-gray-400 whitespace-nowrap">#${p.ticket}</td>
+          <td class="py-2 px-2 font-bold text-white whitespace-nowrap">${escapeHtml(p.symbol)}</td>
+          <td class="py-2 px-2 whitespace-nowrap">${typeBadge}</td>
+          <td class="py-2 px-2 text-gray-200 font-semibold whitespace-nowrap">${p.volume}</td>
+          <td class="py-2 px-2 text-gray-400 whitespace-nowrap tabular-nums">${Number(p.price_open).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
+          <td class="py-2 px-2 text-white font-semibold whitespace-nowrap tabular-nums">${Number(p.price_current).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
+          <td class="py-2 px-2"><button type="button" data-testid="position-execution-${p.ticket}" onclick="showPositionExecution(${p.ticket})" class="text-left text-[10px] leading-4 hover:text-cyan-300 focus:outline focus:outline-2 focus:outline-cyan-400 rounded" aria-label="Pozisyon #${p.ticket} spread ve slippage detayları"><span class="block text-gray-300">Açılış: ${executionPoints(quality.opening_spread_points)}</span><span class="block ${quoteFresh ? 'text-cyan-400' : 'text-amber-300'}">${quoteFresh ? 'Güncel' : 'Son'}: ${executionPoints(quality.current_spread_points)}</span><span class="block ${quality.slippage_points > 0 ? 'text-rose-400' : quality.slippage_points < 0 ? 'text-emerald-400' : 'text-gray-400'}">Kayma: ${slippageText(quality.slippage_points)}</span><span class="block text-cyan-400">Fiyat detayı ›</span></button></td>
+          <td class="py-2 px-2 text-gray-500 whitespace-nowrap tabular-nums">${p.sl ? Number(p.sl).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "-"} / ${p.tp ? Number(p.tp).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "-"}</td>
+          <td class="py-2 px-2 text-right text-amber-400 whitespace-nowrap">${p.commission == null ? "—" : `${p.commission > 0 ? "+" : ""}${accountCurrency} ${formatMoney(p.commission)}`}</td>
+          <td class="py-2 px-2 text-right font-bold whitespace-nowrap ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(p.profit)}</td>
+          <td class="py-2 px-2.5 text-center whitespace-nowrap sticky right-0 bg-[#121620] group-hover:bg-[#151a26] shadow-[-6px_0_12px_rgba(0,0,0,0.35)]">
+            <div class="inline-flex items-center gap-1.5">
+              <button onclick="showPositionEditor(${p.ticket})" class="px-2 py-1 rounded bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/20 text-xs font-medium transition" title="SL/TP veya kısmi kapatma yönet">Yönet</button>
+              <button onclick="closePosition(${p.ticket})" class="px-2.5 py-1 rounded bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-bold transition active:scale-95 flex items-center gap-1" title="Pozisyon #${p.ticket} kapat">
+                <span>✕</span>
+                <span>Kapat</span>
+              </button>
+            </div>
           </td>
         </tr>
       `;
