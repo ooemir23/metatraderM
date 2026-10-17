@@ -5,6 +5,7 @@
     ["Canlı Al / Sat Sinyal Tarayıcı", "Live Buy / Sell Signal Scanner"],
     ["Pozisyonlara dön", "Back to positions"],
     ["Araçlar", "Tools"],
+    ["Bot ayarları", "Bot settings"],
     ["Araçları kapat", "Close tools"],
     ["Strateji testi, araştırma, piyasa derinliği ve sistem günlüğü", "Strategy test, research, market depth and system log"],
     ["Sinyal Tarayıcı & HMA Bot", "Signal Scanner & HMA Bot"],

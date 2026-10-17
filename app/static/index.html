@@ -902,7 +902,16 @@
                     <i class="ph-bold ph-robot text-cyan-400 text-lg"></i>
                     <h2 class="font-bold text-white text-[13px] uppercase tracking-wider">HMA Algoritmik Bot</h2>
                   </div>
-                  <span id="bot-status-badge" class="text-xs font-bold px-2.5 py-1 rounded-md bg-gray-800 text-gray-300">DURDURULDU</span>
+                  <div class="flex items-center gap-1.5">
+                    <span id="bot-status-badge" class="text-xs font-bold px-2.5 py-1 rounded-md bg-gray-800 text-gray-300">DURDURULDU</span>
+                    <!-- Bot actions (header) -->
+                    <button id="bot-toggle-btn" onclick="toggleBot()" class="bot-head-btn bot-head-start">
+                      <i class="ph-bold ph-play"></i><span>Botu Başlat</span>
+                    </button>
+                    <button onclick="toggleBotSettingsModal()" class="bot-head-btn bot-head-settings" title="Bot ayarları" aria-label="Bot ayarları">
+                      <i class="ph-bold ph-gear"></i><span>Ayarlar</span>
+                    </button>
+                  </div>
                 </div>
 
                 <!-- Bot Active Tracked Symbols Badges -->
@@ -984,17 +993,6 @@
                 </div>
               </div>
 
-              <!-- Bot Actions -->
-              <div class="flex items-center gap-2 pt-2">
-                <button id="bot-toggle-btn" onclick="toggleBot()" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-bold text-xs shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 transition active:scale-95">
-                  <i class="ph-bold ph-play text-base"></i>
-                  <span>Botu Başlat</span>
-                </button>
-                <button onclick="toggleBotSettingsModal()" class="px-3.5 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 hover:text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border border-gray-700">
-                  <i class="ph-bold ph-gear text-base"></i>
-                  <span>Ayarlar</span>
-                </button>
-              </div>
             </div>
             </div>
           </section>
