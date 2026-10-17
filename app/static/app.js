@@ -634,6 +634,7 @@ function switchSymbol(symbol, reloadChart = true) {
   if (reloadChart) initTradingView(symbol);
   fetchPrice();
   if (typeof scheduleTradePreview === 'function') scheduleTradePreview();
+  if (typeof refreshSignalScanner === 'function') refreshSignalScanner(true, true);
 }
 
 let currentPositionTab = "open";
@@ -2920,27 +2921,70 @@ async function saveAIAutopilot() {
 
 let signalScannerBusy = false;
 let signalAutoAlertEnabled = true;
+let sharedSignalAudioCtx = null;
 const announcedSignalCrosses = new Map();
+
+function ensureSignalAudioCtx() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return null;
+    if (!sharedSignalAudioCtx || sharedSignalAudioCtx.state === 'closed') {
+      sharedSignalAudioCtx = new AudioCtx();
+    }
+    if (sharedSignalAudioCtx.state === 'suspended') {
+      sharedSignalAudioCtx.resume().catch(() => {});
+    }
+    return sharedSignalAudioCtx;
+  } catch (_) {
+    return null;
+  }
+}
+
+if (typeof window !== 'undefined') {
+  const unlockAudio = () => {
+    ensureSignalAudioCtx();
+  };
+  window.addEventListener('pointerdown', unlockAudio, {passive: true});
+  window.addEventListener('keydown', unlockAudio, {passive: true});
+}
 
 function toggleSignalAutoAlert(enabled) {
   signalAutoAlertEnabled = Boolean(enabled);
+  if (signalAutoAlertEnabled) {
+    playSignalBeep(true, true);
+  }
 }
 
-function playSignalBeep(isBuy) {
+function playSignalBeep(isBuy = true, isTest = false, spokenText = '') {
   try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(isBuy ? 880 : 520, ctx.currentTime);
-    gain.gain.setValueAtTime(0.08, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.25);
+    const ctx = ensureSignalAudioCtx();
+    if (ctx) {
+      const now = ctx.currentTime;
+      const freqs = isBuy ? [660, 880, 1100] : [780, 580, 440];
+      freqs.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        const start = now + idx * 0.13;
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.28, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.12);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.12);
+      });
+    }
+    if ('speechSynthesis' in window && (spokenText || isTest)) {
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(
+        spokenText || (isTest ? 'Sesli sinyal bildirimi aktif.' : (isBuy ? 'Al sinyali yakalandı' : 'Sat sinyali yakalandı'))
+      );
+      utter.lang = 'tr-TR';
+      utter.rate = 1.05;
+      utter.volume = 1.0;
+      window.speechSynthesis.speak(utter);
+    }
   } catch (_) {}
 }
 
@@ -2960,8 +3004,8 @@ function applyScannedSignalToTicket(symbol, slPrice, tpPrice) {
   }
 }
 
-async function refreshSignalScanner(manual = false) {
-  if (signalScannerBusy) return;
+async function refreshSignalScanner(manual = false, forceReplace = false) {
+  if (signalScannerBusy && !forceReplace) return;
   const listNode = document.getElementById('signal-scanner-list');
   const statusNode = document.getElementById('signal-scanner-status');
   if (!listNode) return;
@@ -2969,20 +3013,17 @@ async function refreshSignalScanner(manual = false) {
   try {
     const tfNode = document.getElementById('signal-scan-tf');
     const tf = Number(tfNode?.value || 15) || 15;
-    const marketWatchSymbols = Array.isArray(window.MT5Markets?.all)
-      ? window.MT5Markets.all.map(s => (typeof s === 'string' ? s : s?.name)).filter(Boolean).slice(0, 6)
-      : [];
-    const symbols = Array.from(new Set([currentSymbol || 'EURUSD', ...marketWatchSymbols, 'EURUSD', 'XAUUSD', 'GBPUSD', 'USDJPY', 'BTCUSD'])).slice(0, 6);
-    if (manual && statusNode) statusNode.textContent = 'Sinyaller taranıyor…';
-    const res = await fetch(`/api/signals/scan?symbols=${encodeURIComponent(symbols.join(','))}&timeframe_minutes=${tf}`);
+    const activeSym = currentSymbol || document.getElementById('order-symbol-select')?.value || 'EURUSD';
+    if (manual && statusNode) statusNode.textContent = `${activeSym} sinyali taranıyor…`;
+    const res = await fetch(`/api/signals/scan?symbols=${encodeURIComponent(activeSym)}&timeframe_minutes=${tf}`);
     if (!res.ok) throw new Error('Sinyal taraması alınamadı');
     const data = await res.json();
-    const rows = Array.isArray(data.signals) ? data.signals : [];
+    const rows = Array.isArray(data.signals) ? data.signals.filter(r => r.symbol === activeSym) : [];
     if (statusNode) {
-      statusNode.textContent = `HMA(${data.hma_period || 14}) / EMA(${data.ema_period || 34}) · Son tarama: ${new Date().toLocaleTimeString('tr-TR')}`;
+      statusNode.textContent = `${activeSym} · HMA(${data.hma_period || 14}) / EMA(${data.ema_period || 34}) · Son: ${new Date().toLocaleTimeString('tr-TR')}`;
     }
     if (!rows.length) {
-      listNode.innerHTML = '<div class="text-gray-400 text-[11px] py-2 text-center">MT5 mum verisi bekleniyor…</div>';
+      listNode.innerHTML = `<div class="text-gray-400 text-[11px] py-2 text-center">${escapeHtml(activeSym)} için MT5 mum verisi bekleniyor…</div>`;
       return;
     }
     listNode.innerHTML = rows.map(item => {
@@ -3003,14 +3044,19 @@ async function refreshSignalScanner(manual = false) {
         : isBuy
         ? `↗ AL Trend (${item.bars_ago} mum)`
         : `↘ SAT Trend (${item.bars_ago} mum)`;
-      const key = `${item.symbol}:${tf}`;
-      if ((isCrossBuy || isCrossSell) && item.candle_time) {
-        const prevCandle = announcedSignalCrosses.get(key);
-        if (prevCandle !== item.candle_time) {
-          announcedSignalCrosses.set(key, item.candle_time);
-          if (signalAutoAlertEnabled && prevCandle !== undefined) {
-            playSignalBeep(isCrossBuy);
-            if (typeof showToast === 'function') {
+      const key = `${item.symbol}:${tf}:${item.signal}:${item.candle_time}`;
+      if (signalAutoAlertEnabled) {
+        const alreadyAnnounced = announcedSignalCrosses.get(`${item.symbol}:${tf}`) === key;
+        if (!alreadyAnnounced || manual) {
+          announcedSignalCrosses.set(`${item.symbol}:${tf}`, key);
+          if (isCrossBuy || isCrossSell || manual) {
+            const speech = isCrossBuy
+              ? `${item.symbol} yeni al sinyali yakalandı.`
+              : isCrossSell
+              ? `${item.symbol} yeni sat sinyali yakalandı.`
+              : `${item.symbol} ${isBuy ? 'al yönlü trend' : 'sat yönlü trend'}.`;
+            playSignalBeep(isBuy, false, speech);
+            if ((isCrossBuy || isCrossSell) && typeof showToast === 'function') {
               showToast(`${isCrossBuy ? '🟢 YENİ AL SİNYALİ' : '🔴 YENİ SAT SİNYALİ'}: ${item.symbol} (${tf}dk) @ ${item.price}`, isCrossBuy ? 'success' : 'info');
             }
           }
@@ -3019,15 +3065,23 @@ async function refreshSignalScanner(manual = false) {
       const symEsc = escapeHtml(item.symbol);
       const sl = Number(item.suggested_sl || 0);
       const tp = Number(item.suggested_tp || 0);
-      return `<div class="flex items-center justify-between gap-1.5 bg-[#181d2a] border border-gray-800/90 rounded-lg px-2 py-1.5">
-        <button type="button" onclick="switchSymbol('${symEsc}')" class="text-left min-w-0">
-          <span class="font-bold text-white block text-xs">${symEsc}</span>
-          <span class="text-[10px] text-gray-400 font-mono">RSI: ${Number(item.rsi || 50).toFixed(1)} · Fiyat: ${item.price}</span>
-        </button>
-        <div class="flex items-center gap-1 shrink-0">
-          <span class="px-1.5 py-0.5 rounded text-[10px] ${badgeClass}">${badgeText}</span>
-          <button type="button" onclick="applyScannedSignalToTicket('${symEsc}', ${sl}, ${tp})" title="SL ve TP seviyelerini emir penceresine aktar" class="px-1.5 py-1 rounded bg-gray-800 hover:bg-cyan-700 text-gray-200 hover:text-white text-[10px] font-semibold transition">Emre</button>
-          <button type="button" onclick="assignScannerSymbolToBot('${symEsc}', ${tf})" title="Bu sembol ve periyodu HMA Algoritmik Bota ata" class="px-1.5 py-1 rounded bg-gray-800 hover:bg-emerald-700 text-gray-200 hover:text-white text-[10px] font-semibold transition">Bota</button>
+      return `<div class="bg-[#181d2a] border border-gray-800/90 rounded-xl p-2.5 space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <div class="min-w-0">
+            <span class="font-bold text-white text-sm block">${symEsc} <span class="text-[10px] text-cyan-400 font-mono">M${tf}</span></span>
+            <span class="text-[11px] text-gray-300 font-mono">Fiyat: <strong>${item.price}</strong> · RSI(14): <strong>${Number(item.rsi || 50).toFixed(1)}</strong> · ATR: ${item.atr}</span>
+          </div>
+          <span class="px-2 py-1 rounded-lg text-[11px] ${badgeClass}">${badgeText}</span>
+        </div>
+        <div class="grid grid-cols-2 gap-1.5 text-[10px] font-mono bg-[#121620] p-1.5 rounded-lg border border-gray-800/80">
+          <div class="text-gray-400">HMA(14): <span class="text-cyan-300 font-bold">${item.hma}</span></div>
+          <div class="text-gray-400">EMA(34): <span class="text-amber-300 font-bold">${item.ema}</span></div>
+          <div class="text-gray-400">Önerilen SL: <span class="text-rose-300 font-bold">${sl}</span></div>
+          <div class="text-gray-400">Önerilen TP: <span class="text-emerald-300 font-bold">${tp}</span></div>
+        </div>
+        <div class="flex items-center gap-1.5 pt-0.5">
+          <button type="button" onclick="applyScannedSignalToTicket('${symEsc}', ${sl}, ${tp})" class="flex-1 py-1.5 px-2 rounded-lg bg-cyan-700/80 hover:bg-cyan-600 text-white text-[11px] font-bold transition">🎯 SL / TP Emre Aktar</button>
+          <button type="button" onclick="assignScannerSymbolToBot('${symEsc}', ${tf})" class="flex-1 py-1.5 px-2 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-white text-[11px] font-bold transition">🤖 Sinyali Bota Ata</button>
         </div>
       </div>`;
     }).join('');

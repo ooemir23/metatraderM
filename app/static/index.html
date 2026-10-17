@@ -875,10 +875,13 @@
           </div>
           <div class="flex items-center justify-between text-[11px] text-gray-400 mb-2">
             <span id="signal-scanner-status">HMA(14) / EMA(34) + RSI(14) + ATR(14) taranıyor…</span>
-            <label class="flex items-center gap-1 cursor-pointer select-none">
-              <input id="signal-auto-alert" type="checkbox" checked onchange="toggleSignalAutoAlert(this.checked)" class="rounded bg-gray-800 border-gray-700">
-              <span>Sesli uyarı</span>
-            </label>
+            <div class="flex items-center gap-2">
+              <label class="flex items-center gap-1 cursor-pointer select-none">
+                <input id="signal-auto-alert" type="checkbox" checked onchange="toggleSignalAutoAlert(this.checked)" class="rounded bg-gray-800 border-gray-700">
+                <span>Sesli uyarı</span>
+              </label>
+              <button type="button" onclick="playSignalBeep(true, true)" title="Sesli sinyal bildirimini test et" class="px-1.5 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-cyan-300 text-[10px] font-semibold">🔔 Ses</button>
+            </div>
           </div>
           <div id="signal-scanner-list" class="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
             <div class="text-gray-400 text-[11px] py-2 text-center">Sinyaller yükleniyor…</div>
