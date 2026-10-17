@@ -3122,7 +3122,9 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
     if (forceReplace && mode === 'SELECTED') {
       listNode.innerHTML = `<div class="text-gray-400 text-xs py-3 text-center">${escapeHtml(activeSym)} için sinyal hesaplanıyor…</div>`;
     }
-    const res = await fetch(`/api/signals/scan?symbols=${encodeURIComponent(symbolsToScan.join(','))}&timeframe_minutes=${tf}`,
+    const settingsQuery = window.HMASignalSettings?.query?.() || '';
+    const sigSettings = window.HMASignalSettings?.get?.() || {};
+    const res = await fetch(`/api/signals/scan?symbols=${encodeURIComponent(symbolsToScan.join(','))}&timeframe_minutes=${tf}${settingsQuery ? '&' + settingsQuery : ''}`,
       controller ? {signal: controller.signal} : undefined);
     if (!res.ok) throw new Error('Sinyal taraması alınamadı');
     const data = await res.json();
@@ -3135,6 +3137,8 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
     if (mode === 'SELECTED') {
       rows = rows.filter(r => r.symbol === activeSym);
     }
+    const allRows = rows;
+    if (sigSettings.only_crosses) rows = rows.filter(r => r.signal === 'BUY_CROSS' || r.signal === 'SELL_CROSS');
     latestScannedSignals = rows;
     if (typeof window !== 'undefined') window.latestScannedSignals = rows;
     // Header badge on the "Sinyal & Bot" toggle: directional signals and fresh crossovers.
@@ -3147,11 +3151,17 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
 
     const tfText = {1:'1 dk',5:'5 dk',15:'15 dk',30:'30 dk',60:'1 sa',240:'4 sa',1440:'1 gün'}[tf] || `${tf} dk`;
     const tfCode = {1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'}[tf] || `M${tf}`;
+    const used = data.settings || {};
+    const fastLabel = `HMA(${used.hma_period || data.hma_period || 14})`;
+    const slowLabel = `${used.ma_type || 'EMA'}(${used.ema_period || data.ema_period || 34})`;
+    const rsiLabel = `RSI(${used.rsi_period || 14})`;
     if (statusNode) {
-      statusNode.textContent = `${rows.length} Sinyal (${tfText} mum) · HMA(${data.hma_period || 14}) / EMA(${data.ema_period || 34}) · Son: ${new Date().toLocaleTimeString('tr-TR')}`;
+      statusNode.textContent = `${rows.length} Sinyal (${tfText} mum) · ${fastLabel} × ${slowLabel} · Son: ${new Date().toLocaleTimeString('tr-TR')}`;
     }
     if (!rows.length) {
-      listNode.innerHTML = `<div class="text-gray-400 text-xs py-3 text-center">${escapeHtml(activeSym)} için MT5 mum verisi bekleniyor…</div>`;
+      listNode.innerHTML = allRows.length && sigSettings.only_crosses
+        ? `<div class="text-gray-400 text-xs py-3 text-center">${escapeHtml(activeSym)} için yeni kesişim yok (yalnız kesişimler gösteriliyor).</div>`
+        : `<div class="text-gray-400 text-xs py-3 text-center">${escapeHtml(activeSym)} için MT5 mum verisi bekleniyor…</div>`;
       return;
     }
     listNode.innerHTML = rows.map(item => {
@@ -3170,7 +3180,9 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
         : isBuy
         ? 'bg-emerald-950/50 text-emerald-400 border border-emerald-800/50'
         : 'bg-rose-950/50 text-rose-400 border border-rose-800/50';
-      const badgeText = !tradable
+      const badgeText = item.signal === 'FILTERED'
+        ? '⛔ RSI filtresi'
+        : !tradable
         ? '• Nötr (yön yok)'
         : isCrossBuy
         ? '▲ YENİ AL (Kesişim)'
@@ -3207,20 +3219,21 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
         <div class="flex items-center justify-between gap-2">
           <div class="min-w-0">
             <span class="font-bold text-white text-[13px] block tracking-wide">${symEsc}${isActive ? ' <span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-600 text-white font-bold align-middle">SEÇİLİ</span>' : ''} <span class="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono font-bold">${tfText} (${tfCode})</span></span>
-            <span class="text-xs text-gray-200 font-mono">Fiyat: <strong class="text-white">${priceFmt}</strong> · RSI(14): <strong>${Number(item.rsi || 50).toFixed(1)}</strong> · ATR: <strong>${item.atr}</strong></span>
+            <span class="text-xs text-gray-200 font-mono">Fiyat: <strong class="text-white">${priceFmt}</strong> · ${rsiLabel}: <strong>${Number(item.rsi || 50).toFixed(1)}</strong> · ATR: <strong>${item.atr}</strong></span>
           </div>
           <span class="px-2.5 py-1.5 rounded-lg text-xs font-bold ${badgeClass}">${badgeText}</span>
         </div>
         <div class="grid grid-cols-2 gap-2 text-xs font-mono bg-[#121620] p-2.5 rounded-lg border border-gray-800/80">
-          <div class="text-gray-300">HMA(14): <span class="text-cyan-300 font-bold">${hmaFmt}</span></div>
-          <div class="text-gray-300">EMA(34): <span class="text-amber-300 font-bold">${emaFmt}</span></div>
+          <div class="text-gray-300">${fastLabel}: <span class="text-cyan-300 font-bold">${hmaFmt}</span></div>
+          <div class="text-gray-300">${slowLabel}: <span class="text-amber-300 font-bold">${emaFmt}</span></div>
           <div class="text-gray-300">Önerilen SL: <span class="text-rose-300 font-bold">${slFmt}</span></div>
           <div class="text-gray-300">Önerilen TP: <span class="text-emerald-300 font-bold">${tpFmt}</span></div>
         </div>
+        ${item.reason ? `<p class="signal-reason"><i class="ph-bold ph-info"></i> <span>${escapeHtml(item.reason)}</span></p>` : ''}
         <div class="flex items-center gap-2 pt-0.5">
           <button type="button" onclick="applyScannedSignalToTicket('${symEsc}', ${sl}, ${tp})" class="flex-1 py-2 px-2.5 rounded-lg bg-cyan-700/80 hover:bg-cyan-600 text-white text-xs font-bold transition active:scale-95" title="SL/TP değerlerini manuel emir formuna aktar">🎯 Emre Aktar</button>
           <button type="button" onclick="assignScannerSymbolToBot('${symEsc}', ${tf})" class="flex-1 py-2 px-2.5 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs font-bold transition active:scale-95" title="${symEsc} sembolünü botun çoklu takip listesine ekle">🤖 Bota Ekle</button>
-          <button type="button" ${tradable ? '' : 'disabled title="Nötr sinyal: yön yok, emir gönderilemez"'} onclick="sendSignalDirectToBot('${symEsc}', '${item.side}', ${item.price}, {signalId: 'scan-${symEsc}-${tf}-${item.side}-${item.candle_time}', slPrice: ${sl}, tpPrice: ${tp}})" class="disabled:opacity-40 disabled:cursor-not-allowed flex-1 py-2 px-2.5 rounded-lg bg-indigo-700/80 hover:bg-indigo-600 text-white text-xs font-bold transition active:scale-95" title="Bu sinyali hemen HMA Botu ile işleme al">⚡ Bota Gönder</button>
+          <button type="button" ${tradable ? '' : `disabled title="${item.signal === 'FILTERED' ? 'RSI filtresi bu sinyali engelledi' : 'Nötr sinyal: yön yok, emir gönderilemez'}"`} onclick="sendSignalDirectToBot('${symEsc}', '${item.side}', ${item.price}, {signalId: 'scan-${symEsc}-${tf}-${item.side}-${item.candle_time}', slPrice: ${sl}, tpPrice: ${tp}})" class="disabled:opacity-40 disabled:cursor-not-allowed flex-1 py-2 px-2.5 rounded-lg bg-indigo-700/80 hover:bg-indigo-600 text-white text-xs font-bold transition active:scale-95" title="Bu sinyali hemen HMA Botu ile işleme al">⚡ Bota Gönder</button>
         </div>
       </div>`;
     }).join('');

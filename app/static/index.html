@@ -10,7 +10,7 @@
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
   <!-- TradingView Widget -->
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=workspace-2">
+  <link rel="stylesheet" href="/static/style.css?v=signals-1">
   <script src="/static/ui-scale.js?v=1"></script>
   <script src="/static/vendor/lightweight-charts.js"></script>
 </head>
@@ -873,10 +873,15 @@
                     <option value="1440">1 gün (D1)</option>
                   </select>
                   <button type="button" onclick="refreshSignalScanner(true)" class="px-3 py-1 rounded-lg bg-cyan-700 hover:bg-cyan-600 text-white font-bold text-xs transition shadow">Tara</button>
+                  <button type="button" onclick="HMASignalSettings.open()" class="signal-settings-btn" title="Al / sat sinyali ayarları" aria-haspopup="dialog" aria-controls="signal-settings-dialog"><i class="ph-bold ph-sliders-horizontal"></i><span>Ayarlar</span></button>
                 </div>
               </div>
+              <details class="signal-howto">
+                <summary><i class="ph-bold ph-info"></i> <span>Bu sinyal nasıl hesaplanıyor?</span> <span id="signal-settings-summary" class="signal-howto-summary"></span></summary>
+                <div id="signal-settings-explain"></div>
+              </details>
               <div class="flex items-center justify-between flex-wrap gap-2 text-xs text-gray-300 mb-2">
-                <span id="signal-scanner-status" class="font-medium">HMA(14) / EMA(34) + RSI(14) + ATR(14) taranıyor…</span>
+                <span id="signal-scanner-status" class="font-medium">Sinyaller taranıyor…</span>
                 <div class="flex items-center gap-2">
                   <button type="button" id="signal-scan-add-all-btn" onclick="assignAllSignalsToBot()" title="Tarayıcıdaki tüm sembolleri çalışan bota aktar" class="px-2.5 py-0.5 rounded-md bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs font-bold transition flex items-center gap-1 border border-emerald-600/50">
                     <i class="ph-bold ph-plus-circle"></i>
@@ -1078,6 +1083,51 @@
         </div>
     </div>
   </aside>
+
+  <dialog id="signal-settings-dialog" aria-labelledby="signal-settings-title" class="signal-settings-dialog backdrop:bg-black/70">
+    <form id="signal-settings-form" method="dialog" novalidate>
+      <div class="signal-settings-head">
+        <h2 id="signal-settings-title"><i class="ph-bold ph-sliders-horizontal text-emerald-400"></i> Al / Sat Sinyali Ayarları</h2>
+        <button type="button" class="signal-settings-x" onclick="HMASignalSettings.close()" aria-label="Kapat"><i class="ph-bold ph-x"></i></button>
+      </div>
+      <div class="signal-settings-body">
+        <fieldset>
+          <legend>Kesişim</legend>
+          <label>Hızlı ortalama: HMA periyodu<input name="hma_period" type="number" min="2" max="200" step="1" required></label>
+          <label>Yavaş ortalama türü<select name="ma_type"><option value="EMA">EMA</option><option value="SMA">SMA</option><option value="LWMA">LWMA</option><option value="HMA">HMA</option></select></label>
+          <label>Yavaş ortalama periyodu<input name="ema_period" type="number" min="2" max="200" step="1" required></label>
+          <label class="signal-check"><input name="confirm_close" type="checkbox"> Sinyali mum kapanışında onayla (önerilen)</label>
+          <label class="signal-check"><input name="only_crosses" type="checkbox"> Yalnız yeni kesişimleri göster (trendleri gizle)</label>
+        </fieldset>
+        <fieldset>
+          <legend>RSI</legend>
+          <label>RSI periyodu<input name="rsi_period" type="number" min="2" max="100" step="1" required></label>
+          <label class="signal-check"><input name="rsi_filter" type="checkbox"> RSI filtresi (aşırı alımda AL, aşırı satımda SAT verme)</label>
+          <label>AL için en yüksek RSI<input name="rsi_buy_max" type="number" min="50" max="100" step="1"></label>
+          <label>SAT için en düşük RSI<input name="rsi_sell_min" type="number" min="0" max="50" step="1"></label>
+        </fieldset>
+        <fieldset>
+          <legend>Önerilen SL / TP</legend>
+          <label>ATR periyodu<input name="atr_period" type="number" min="2" max="100" step="1" required></label>
+          <label>SL = ATR × (0 = kapalı)<input name="sl_atr" type="number" min="0" max="20" step="0.1" required></label>
+          <label>TP = ATR × (0 = kapalı)<input name="tp_atr" type="number" min="0" max="50" step="0.1" required></label>
+        </fieldset>
+        <div class="signal-settings-preview-box">
+          <p class="signal-settings-preview-title">Bu ayarlarla sinyal:</p>
+          <div id="signal-settings-preview"></div>
+          <p class="signal-settings-note">Bu ayarlar tarayıcıyı ve grafikteki AL/SAT işaretlerini etkiler. HMA botu kendi ayarlarını kullanır; aynı olmasını istersen "Bota uygula"ya bas (bot durdurulmuş olmalı).</p>
+        </div>
+        <p id="signal-settings-status" role="status" aria-live="polite" class="signal-settings-status"></p>
+      </div>
+      <div class="signal-settings-actions">
+        <button type="button" onclick="HMASignalSettings.reset()" class="signal-btn-ghost">Varsayılanlar</button>
+        <button type="button" onclick="HMASignalSettings.applyToBot()" class="signal-btn-ghost">Bota uygula</button>
+        <span class="flex-1"></span>
+        <button type="button" onclick="HMASignalSettings.close()" class="signal-btn-ghost">Vazgeç</button>
+        <button type="submit" class="signal-btn-primary">Kaydet ve tara</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="position-execution-modal" aria-labelledby="position-execution-title"
     onkeydown="if (event.key === 'Escape') { event.preventDefault(); this.close(); }"
@@ -1404,9 +1454,10 @@
 
   <script src="/static/i18n.js"></script>
   <script src="/static/notifications.js"></script>
-  <script src="/static/mt5-chart.js?v=2"></script>
+  <script src="/static/mt5-chart.js?v=3"></script>
   <script src="/static/market-watch.js"></script>
-  <script src="/static/app.js?v=ui-scale-1"></script>
+  <script src="/static/signal-settings.js?v=1"></script>
+  <script src="/static/app.js?v=signals-1"></script>
   <script src="/static/trading.js"></script>
   <script src="/static/operations.js"></script>
   <script src="/static/permissions.js"></script>

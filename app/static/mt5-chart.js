@@ -398,5 +398,11 @@
     if (!frames[num]) return;
     change('timeframe', num);
   }
-  window.MT5Chart={mode,setMode,mount,dispose,normalize,emaValues,hmaValues,signalMarkers,csvData,tick,getTimeframe,setTimeframe,frames,frameLabels};
+  // Keep the chart's HMA / EMA lines and AL/SAT markers on the scanner's signal settings.
+  function setSignalPeriods(hma, slow) {
+    const valid = n => Number.isInteger(n) && n >= 2 && n <= 200;
+    if (valid(hma) && prefs.hmaPeriod !== hma) change('hmaPeriod', hma);
+    if (valid(slow) && prefs.emaPeriod !== slow) change('emaPeriod', slow);
+  }
+  window.MT5Chart={mode,setMode,mount,dispose,normalize,emaValues,hmaValues,signalMarkers,csvData,tick,getTimeframe,setTimeframe,setSignalPeriods,frames,frameLabels};
 })();

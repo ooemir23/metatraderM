@@ -452,78 +452,91 @@ def _calc_atr(rates_chronological, period=14):
     return sum(trs[-period:]) / period if len(trs) >= period else 0.0
 
 
-def _scan_symbols_sync(symbol_list, timeframe_minutes, hma_period, ema_period):
+MA_LABELS = {'EMA': 'EMA', 'SMA': 'SMA', 'LWMA': 'LWMA', 'HMA': 'HMA'}
+
+
+def _scan_symbols_sync(symbol_list, timeframe_minutes, hma_period, ema_period, ma_type='EMA', rsi_period=14,
+                       atr_period=14, sl_atr=2.0, tp_atr=3.0, confirm_close=True, rsi_filter=False,
+                       rsi_buy_max=70.0, rsi_sell_min=30.0):
+    """HMA(fast) x MA(slow) crossover scan. With confirm_close only closed candles can create a signal
+    (no repaint, same as the bot and the MT5 EA); otherwise the forming candle is also checked."""
     items = []
+    slow_label = f"{MA_LABELS.get(ma_type, 'EMA')}({ema_period})"
+    fast_label = f"HMA({hma_period})"
+    first = 1 if confirm_close else 0
+    need = max(hma_period, ema_period, rsi_period + 1, atr_period + 1) + 15
     for sym in symbol_list:
         try:
-            rates = mt5_client.get_rates(sym, timeframe_minutes, 120)
-            if not rates or len(rates) < max(hma_period, ema_period) + 15:
+            rates = mt5_client.get_rates(sym, timeframe_minutes, max(120, need + 30))
+            if not rates or len(rates) < need:
                 continue
             rev_closes = [float(r['close']) for r in reversed(rates)]
-            hma0 = StrategyBot.calc_hma(rev_closes, hma_period, shift=0)
-            ema0 = StrategyBot.calc_second_ma(rev_closes, 'EMA', ema_period, shift=0)
-            hma1 = StrategyBot.calc_hma(rev_closes, hma_period, shift=1)
-            ema1 = StrategyBot.calc_second_ma(rev_closes, 'EMA', ema_period, shift=1)
-            hma2 = StrategyBot.calc_hma(rev_closes, hma_period, shift=2)
-            ema2 = StrategyBot.calc_second_ma(rev_closes, 'EMA', ema_period, shift=2)
-            if not all(math.isfinite(v) and v > 0 for v in (hma0, ema0, hma1, ema1, hma2, ema2)):
+            fast = lambda shift: StrategyBot.calc_hma(rev_closes, hma_period, shift=shift)
+            slow = lambda shift: StrategyBot.calc_second_ma(rev_closes, ma_type, ema_period, shift=shift)
+            values = {shift: (fast(shift), slow(shift)) for shift in range(0, 3)}
+            if not all(math.isfinite(v) and v > 0 for pair in values.values() for v in pair):
                 continue
-            bars_ago = 0
-            cross_side = None
-            for shift in range(0, min(25, len(rev_closes) - max(hma_period, ema_period) - 6)):
-                h_curr = StrategyBot.calc_hma(rev_closes, hma_period, shift=shift)
-                e_curr = StrategyBot.calc_second_ma(rev_closes, 'EMA', ema_period, shift=shift)
-                h_prev = StrategyBot.calc_hma(rev_closes, hma_period, shift=shift + 1)
-                e_prev = StrategyBot.calc_second_ma(rev_closes, 'EMA', ema_period, shift=shift + 1)
-                if h_prev <= e_prev and h_curr > e_curr:
-                    bars_ago = shift
-                    cross_side = 'BUY'
+            (h_now, s_now), (h_prev, s_prev) = values[first], values[first + 1]
+            # Last crossover within 25 candles (for "trend since N candles").
+            bars_ago, cross_side = None, None
+            for shift in range(first, min(first + 25, len(rev_closes) - max(hma_period, ema_period) - 6)):
+                hc, sc, hp, sp = fast(shift), slow(shift), fast(shift + 1), slow(shift + 1)
+                if hp <= sp and hc > sc:
+                    bars_ago, cross_side = shift, 'BUY'
                     break
-                if h_prev >= e_prev and h_curr < e_curr:
-                    bars_ago = shift
-                    cross_side = 'SELL'
+                if hp >= sp and hc < sc:
+                    bars_ago, cross_side = shift, 'SELL'
                     break
-            if hma2 <= ema2 and hma1 > ema1:
+            if h_prev <= s_prev and h_now > s_now:
                 signal, side = 'BUY_CROSS', 'BUY'
-                bars_ago = 1
-            elif hma2 >= ema2 and hma1 < ema1:
+            elif h_prev >= s_prev and h_now < s_now:
                 signal, side = 'SELL_CROSS', 'SELL'
-                bars_ago = 1
-            elif hma1 <= ema1 and hma0 > ema0:
-                signal, side = 'BUY_CROSS', 'BUY'
-                bars_ago = 0
-            elif hma1 >= ema1 and hma0 < ema0:
-                signal, side = 'SELL_CROSS', 'SELL'
-                bars_ago = 0
-            elif hma1 > ema1:
+            elif h_now > s_now:
                 signal, side = 'BUY_TREND', 'BUY'
-            elif hma1 < ema1:
+            elif h_now < s_now:
                 signal, side = 'SELL_TREND', 'SELL'
             else:
                 signal, side = 'NEUTRAL', 'HOLD'
-            closes_chrono = [float(r['close']) for r in rates[:-1]]
-            rsi = _calc_rsi(closes_chrono, 14)
-            atr = _calc_atr(rates[:-1], 14)
+            closed = rates[:-1]
+            rsi = _calc_rsi([float(r['close']) for r in closed], rsi_period)
+            atr = _calc_atr(closed, atr_period)
             price = float(rates[-1]['close'])
             sample_decimals = max((len(str(r['close']).split('.')[1]) if '.' in str(r['close']) else 2) for r in rates[-10:])
             digits = min(8, max(2, sample_decimals))
-            sl = round(price - 2.0 * atr if side == 'BUY' else price + 2.0 * atr, digits) if atr > 0 and side in ('BUY', 'SELL') else 0.0
-            tp = round(price + 3.0 * atr if side == 'BUY' else price - 3.0 * atr, digits) if atr > 0 and side in ('BUY', 'SELL') else 0.0
+            candle = 'kapanmış mum' if confirm_close else 'oluşan mum'
+            relation = 'üstünde' if h_now > s_now else 'altında' if h_now < s_now else 'eşit'
+            reason = f"{fast_label} {h_now:.{digits}f}, {slow_label} {s_now:.{digits}f} {relation} ({candle})"
+            if signal.endswith('_CROSS'):
+                reason += f" · {fast_label} {slow_label}'ü {'aşağıdan yukarı' if side == 'BUY' else 'yukarıdan aşağı'} kesti"
+            elif bars_ago is not None:
+                reason += f" · son kesişim {bars_ago} mum önce ({'AL' if cross_side == 'BUY' else 'SAT'})"
+            filtered = None
+            if rsi_filter and side == 'BUY' and rsi > rsi_buy_max:
+                filtered = f"RSI({rsi_period}) {rsi:.1f} > {rsi_buy_max:g}: AL filtrelendi (aşırı alım)"
+            elif rsi_filter and side == 'SELL' and rsi < rsi_sell_min:
+                filtered = f"RSI({rsi_period}) {rsi:.1f} < {rsi_sell_min:g}: SAT filtrelendi (aşırı satım)"
+            if filtered:
+                reason += ' · ' + filtered
+                signal, side = 'FILTERED', 'HOLD'
+            sl = round(price - sl_atr * atr if side == 'BUY' else price + sl_atr * atr, digits) if atr > 0 and sl_atr > 0 and side in ('BUY', 'SELL') else 0.0
+            tp = round(price + tp_atr * atr if side == 'BUY' else price - tp_atr * atr, digits) if atr > 0 and tp_atr > 0 and side in ('BUY', 'SELL') else 0.0
             items.append({
                 'symbol': sym,
                 'signal': signal,
                 'side': side,
-                'bars_ago': bars_ago,
+                'bars_ago': bars_ago if bars_ago is not None else 0,
                 'cross_side': cross_side or side,
                 'price': round(price, digits),
-                'hma': round(hma1, digits),
-                'ema': round(ema1, digits),
+                'hma': round(h_now, digits),
+                'ema': round(s_now, digits),
                 'rsi': rsi,
                 'atr': round(atr, digits),
                 'suggested_sl': max(0.0, sl),
                 'suggested_tp': max(0.0, tp),
                 'digits': digits,
-                'candle_time': int(rates[-2]['time']) if len(rates) >= 2 else int(rates[-1]['time']),
+                'candle_time': int(rates[-2]['time']) if confirm_close else int(rates[-1]['time']),
+                'reason': reason,
+                'filtered': filtered,
             })
         except Exception:
             continue
@@ -534,7 +547,16 @@ def _scan_symbols_sync(symbol_list, timeframe_minutes, hma_period, ema_period):
 async def scan_signals(symbols: str = Query(default='EURUSD,GBPUSD,XAUUSD,USDJPY,BTCUSD', max_length=320),
                        timeframe_minutes: int = Query(default=15),
                        hma_period: int = Query(default=14, ge=2, le=200),
-                       ema_period: int = Query(default=34, ge=2, le=200)):
+                       ema_period: int = Query(default=34, ge=2, le=200),
+                       ma_type: Literal['EMA', 'SMA', 'LWMA', 'HMA'] = Query(default='EMA'),
+                       rsi_period: int = Query(default=14, ge=2, le=100),
+                       atr_period: int = Query(default=14, ge=2, le=100),
+                       sl_atr: float = Query(default=2.0, ge=0, le=20),
+                       tp_atr: float = Query(default=3.0, ge=0, le=50),
+                       confirm_close: bool = Query(default=True),
+                       rsi_filter: bool = Query(default=False),
+                       rsi_buy_max: float = Query(default=70.0, ge=50, le=100),
+                       rsi_sell_min: float = Query(default=30.0, ge=0, le=50)):
     if timeframe_minutes not in TIMEFRAME_NAMES:
         raise HTTPException(status_code=422, detail='Desteklenmeyen zaman dilimi.')
     raw_list = [s.strip() for s in symbols.split(',') if s.strip()]
@@ -546,9 +568,12 @@ async def scan_signals(symbols: str = Query(default='EURUSD,GBPUSD,XAUUSD,USDJPY
             break
     if not symbol_list:
         symbol_list = ['EURUSD', 'GBPUSD', 'XAUUSD', 'USDJPY']
-    items = await asyncio.to_thread(_scan_symbols_sync, symbol_list, timeframe_minutes, hma_period, ema_period)
+    settings = dict(hma_period=hma_period, ema_period=ema_period, ma_type=ma_type, rsi_period=rsi_period,
+                    atr_period=atr_period, sl_atr=sl_atr, tp_atr=tp_atr, confirm_close=confirm_close,
+                    rsi_filter=rsi_filter, rsi_buy_max=rsi_buy_max, rsi_sell_min=rsi_sell_min)
+    items = await asyncio.to_thread(_scan_symbols_sync, symbol_list, timeframe_minutes, **settings)
     return {'timeframe_minutes': timeframe_minutes, 'hma_period': hma_period, 'ema_period': ema_period,
-            'signals': items, 'checked_at': int(time.time())}
+            'settings': settings, 'signals': items, 'checked_at': int(time.time())}
 
 
 
