@@ -454,10 +454,20 @@ class StrategyBot:
 
         latest_closed_candle_time = rev_rates[1]["time"]
         if self.is_running and not self.last_candle_time:
-            # Starting/restarting seeds the current bar; do not trade an old crossover.
-            self.last_candle_time = latest_closed_candle_time
-            self.runtime_state, self.runtime_detail = 'WAITING_SIGNAL', 'Yeni kapanmış mumdaki sinyal bekleniyor.'
-            return
+            hma1_init = self.calc_hma(closes, self.hma_period, shift=1)
+            hma2_init = self.calc_hma(closes, self.hma_period, shift=2)
+            ma2_1_init = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=1)
+            ma2_2_init = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=2)
+            fresh_cross_on_last_bar = (
+                self.second_ma_type != "KAMA"
+                and not self.use_atr_filter
+                and ((hma2_init <= ma2_2_init and hma1_init > ma2_1_init) or (hma2_init >= ma2_2_init and hma1_init < ma2_1_init))
+            )
+            if not fresh_cross_on_last_bar:
+                # Starting/restarting seeds the current bar; do not trade an old crossover.
+                self.last_candle_time = latest_closed_candle_time
+                self.runtime_state, self.runtime_detail = 'WAITING_SIGNAL', 'Yeni kapanmış mumdaki sinyal bekleniyor.'
+                return
         if latest_closed_candle_time <= self.last_candle_time:
             return
 

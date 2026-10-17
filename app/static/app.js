@@ -3123,10 +3123,15 @@ async function assignScannerSymbolToBot(symbol, timeframeMinutes) {
       return;
     }
     const tf = Number(timeframeMinutes) || 15;
-    const payload = {symbol, timeframe_minutes: tf};
-    if (tf !== 60 || latestBotSettings?.second_ma_type !== 'KAMA' || !latestBotSettings?.use_atr_filter) {
-      payload.use_h4_filter = false;
-    }
+    const payload = {
+      symbol,
+      timeframe_minutes: tf,
+      hma_period: 14,
+      second_ma_type: 'EMA',
+      second_ma_period: 34,
+      use_atr_filter: false,
+      use_h4_filter: false,
+    };
     if (Number(latestBotSettings?.lot_size) > 0.10) {
       payload.lot_size = 0.01;
     }
@@ -3139,7 +3144,7 @@ async function assignScannerSymbolToBot(symbol, timeframeMinutes) {
       const err = await res.json();
       throw new Error(err.detail || 'Bot sembolü güncellenemedi.');
     }
-    showToast(`🤖 HMA Algoritmik Bot hedefi ${symbol} (M${tf}) olarak ayarlandı!`, 'success');
+    showToast(`🤖 HMA Algoritmik Bot hedefi ${symbol} (M${tf} · HMA14/EMA34) olarak ayarlandı!`, 'success');
     fetchBotStatus();
     fetchBotLiveSignal();
   } catch (err) {
