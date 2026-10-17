@@ -10,7 +10,7 @@
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
   <!-- TradingView Widget -->
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=ticket-flash-1">
+  <link rel="stylesheet" href="/static/style.css?v=bot-cap-1">
   <script src="/static/ui-scale.js?v=1"></script>
   <script src="/static/vendor/lightweight-charts.js"></script>
 </head>
@@ -1111,6 +1111,17 @@
     </div>
   </aside>
 
+  <dialog id="app-confirm-dialog" aria-labelledby="app-confirm-title" class="app-confirm-dialog backdrop:bg-black/70">
+    <form method="dialog">
+      <h2 id="app-confirm-title"></h2>
+      <p id="app-confirm-message"></p>
+      <div class="app-confirm-actions">
+        <button value="cancel" class="signal-btn-ghost">Vazgeç</button>
+        <button value="ok" id="app-confirm-ok" class="signal-btn-primary"></button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="signal-settings-dialog" aria-labelledby="signal-settings-title" class="signal-settings-dialog backdrop:bg-black/70">
     <form id="signal-settings-form" method="dialog" novalidate>
       <div class="signal-settings-head">
@@ -1512,7 +1523,7 @@
   <script src="/static/mt5-chart.js?v=4"></script>
   <script src="/static/market-watch.js"></script>
   <script src="/static/signal-settings.js?v=1"></script>
-  <script src="/static/app.js?v=ticket-flash-1"></script>
+  <script src="/static/app.js?v=bot-cap-1"></script>
   <script src="/static/trading.js?v=2"></script>
   <script src="/static/operations.js"></script>
   <script src="/static/permissions.js"></script>

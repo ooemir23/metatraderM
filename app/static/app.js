@@ -2452,8 +2452,42 @@ async function clearBotSignalHistory() {
 
 // Toggle Bot
 let botTogglePending = false;
+// In-page confirmation (no blocking browser dialog). Resolves true when confirmed.
+function confirmAction(title, message, okLabel) {
+  const dialog = document.getElementById('app-confirm-dialog');
+  if (!dialog?.showModal) return Promise.resolve(false);
+  document.getElementById('app-confirm-title').textContent = title;
+  document.getElementById('app-confirm-message').textContent = message;
+  document.getElementById('app-confirm-ok').textContent = okLabel;
+  dialog.returnValue = '';
+  dialog.showModal();
+  document.getElementById('app-confirm-ok').focus();
+  return new Promise(resolve => dialog.addEventListener('close', () => resolve(dialog.returnValue === 'ok'), {once: true}));
+}
+
+// Starting with a fixed lot above the automation cap: offer to raise the cap instead of failing.
+async function ensureBotLotWithinLimit() {
+  const bot = latestBotSettings;
+  const lot = Number(bot?.lot_size), cap = Number(bot?.max_order_lots);
+  if (!bot || bot.lot_mode === 'RISK' || !Number.isFinite(lot) || !Number.isFinite(cap) || lot <= cap + 1e-9) return true;
+  const ok = await confirmAction('Otomatik bot lot sınırı',
+    `Bot emir lotu ${lot} lot, otomatik bot için tek emir sınırı ${cap} lot. Sınırı ${lot} lot yapıp botu başlatayım mı? ` +
+    'Bot bundan sonra her sinyalde bu lotla işlem açabilir.', `Sınırı ${lot} lot yap ve başlat`);
+  if (!ok) return false;
+  try {
+    await saveLotLimits({max_order_lots: lot, max_total_lots: Math.max(Number(bot.max_total_lots) || 0, lot)});
+    showToast(`✅ Otomatik bot tek emir sınırı ${lot} lot yapıldı.`, 'success');
+    await fetchBotStatus();
+    return true;
+  } catch (err) {
+    showToast(`❌ ${err.message}`, 'error');
+    return false;
+  }
+}
+
 async function toggleBot() {
   if (botTogglePending || accountSwitching) return;
+  if (!isBotRunning && !(latestBotSettings?.is_running) && !(await ensureBotLotWithinLimit())) return;
   botTogglePending = true;
   const button = document.getElementById('bot-toggle-btn');
   if (button) button.disabled = true;
