@@ -575,3 +575,13 @@ html { background: #0b0e14; }
   background:#0b0e14e6; border:1px solid #334155; color:#e5e7eb; font-size:12px; font-weight:600; pointer-events:none; white-space:nowrap; }
 .chart-wheel-shield { position:absolute; inset:0; z-index:5; cursor:pointer; background:transparent; }
 .chart-wheel-shield[hidden] { display:none; }
+
+/* "Emre Aktar": order window scrolls into view and changed fields flash */
+#order-card { scroll-margin-top:136px; }
+@keyframes field-flash {
+  0%, 100% { box-shadow:0 0 0 0 transparent; }
+  15%, 50% { box-shadow:0 0 0 3px #22d3eecc, 0 0 14px #22d3ee66; }
+  32%, 68% { box-shadow:0 0 0 1px #22d3ee40; }
+}
+.field-flash { animation:field-flash 1.8s ease-in-out 1; border-color:#22d3ee !important; }
+@media (prefers-reduced-motion: reduce) { .field-flash { animation:none; box-shadow:0 0 0 2px #22d3ee99; } }

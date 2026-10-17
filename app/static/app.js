@@ -3310,19 +3310,49 @@ function playSignalBeep(isBuy = true, isTest = false) {
   } catch (_) {}
 }
 
-function applyScannedSignalToTicket(symbol, slPrice, tpPrice) {
-  if (symbol && symbol !== currentSymbol) {
-    switchSymbol(symbol);
+// Briefly flash fields that were changed programmatically so the eye finds them.
+function flashFields(nodes) {
+  for (const node of nodes) {
+    if (!node) continue;
+    node.classList.remove('field-flash');
+    void node.offsetWidth;                       // restart the animation if it is already running
+    node.classList.add('field-flash');
+    clearTimeout(node._flashTimer);
+    node._flashTimer = setTimeout(() => node.classList.remove('field-flash'), 1900);   // also covers reduced motion
   }
+}
+
+function applyScannedSignalToTicket(symbol, slPrice, tpPrice) {
+  const symbolChanged = !!symbol && symbol !== currentSymbol;
+  if (symbolChanged) switchSymbol(symbol);
   const stopMode = document.getElementById('order-stop-mode');
+  const modeChanged = !!stopMode && stopMode.value !== 'price';
   if (stopMode) stopMode.value = 'price';
   const slInput = document.getElementById('sl-input');
   const tpInput = document.getElementById('tp-input');
-  if (slInput && Number.isFinite(slPrice) && slPrice > 0) slInput.value = String(slPrice);
-  if (tpInput && Number.isFinite(tpPrice) && tpPrice > 0) tpInput.value = String(tpPrice);
+  const changed = [];
+  for (const [input, value] of [[slInput, slPrice], [tpInput, tpPrice]]) {
+    if (!input || !Number.isFinite(value) || value <= 0) continue;
+    input.step = 'any';
+    if (input.value !== String(value)) changed.push(input);
+    input.value = String(value);
+  }
   ticketProtectionEdited = true;
+  if (typeof saveOrderTicketPreferences === 'function' && modeChanged) saveOrderTicketPreferences();
+  if (typeof scheduleTradePreview === 'function') scheduleTradePreview();
+
+  // Bring the order window into view, focus the volume and flash what changed.
+  const card = document.getElementById('order-card');
+  const lot = document.getElementById('lot-input');
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  card?.scrollIntoView({behavior: reduce ? 'auto' : 'smooth', block: 'start'});
+  setTimeout(() => {
+    if (lot) { lot.focus({preventScroll: true}); lot.select?.(); }
+    flashFields([card, ...(symbolChanged ? [document.getElementById('order-symbol-select'), document.getElementById('order-symbol-tag')] : []),
+      ...changed, lot]);
+  }, reduce ? 0 : 350);
   if (typeof showToast === 'function') {
-    showToast(`🎯 ${symbol} sinyal SL (${slPrice}) ve TP (${tpPrice}) seviyeleri emir penceresine aktarıldı.`, 'info');
+    showToast(`🎯 ${symbol} SL ${slPrice || '—'} / TP ${tpPrice || '—'} emir penceresine aktarıldı. Hacmi kontrol edip Sell / Buy'a basın.`, 'info');
   }
 }
 
