@@ -569,3 +569,9 @@ html { background: #0b0e14; }
 .bot-lot-hint[data-tone="warn"] { color:#fbbf24; }
 .bot-lot-raise { margin-left:4px; padding:1px 8px; border-radius:7px; border:1px solid #f59e0b80; background:#f59e0b26; color:#fde68a; font-size:11px; font-weight:700; }
 .bot-lot-raise:hover { background:#f59e0b40; color:#fff; }
+
+/* Wheel zoom only after clicking the chart (chart-wheel-guard.js) */
+.chart-wheel-hint { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:20; padding:8px 14px; border-radius:10px;
+  background:#0b0e14e6; border:1px solid #334155; color:#e5e7eb; font-size:12px; font-weight:600; pointer-events:none; white-space:nowrap; }
+.chart-wheel-shield { position:absolute; inset:0; z-index:5; cursor:pointer; background:transparent; }
+.chart-wheel-shield[hidden] { display:none; }

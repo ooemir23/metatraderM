@@ -328,7 +328,14 @@
       menu:host.querySelector('.mt5-chart-menu'),status:host.querySelector('.mt5-chart-status'),
       signalBadge:host.querySelector('.mt5-chart-signal')};
     const canvas=host.querySelector('.mt5-chart-canvas');
-    state.chart=LightweightCharts.createChart(canvas,{autoSize:true});
+    state.chart=LightweightCharts.createChart(canvas,{autoSize:true,
+      handleScroll:{mouseWheel:false}, handleScale:{mouseWheel:false}});
+    // Wheel zooms/scrolls the chart only after a click on it; before that the page scrolls.
+    if (window.HMAChartWheel) state.cleanup.push(window.HMAChartWheel.attach(canvas.parentElement || canvas, {
+      armTarget: canvas,
+      onArm: () => state.chart?.applyOptions({handleScroll:{mouseWheel:true}, handleScale:{mouseWheel:true}}),
+      onDisarm: () => state.chart?.applyOptions({handleScroll:{mouseWheel:false}, handleScale:{mouseWheel:false}}),
+    }));
     rebuildPrice(state);
     state.volume=state.chart.addSeries(LightweightCharts.HistogramSeries,{priceFormat:{type:'volume'},priceScaleId:'volume',lastValueVisible:false,priceLineVisible:false});
     state.volume.priceScale().applyOptions({scaleMargins:{top:.8,bottom:0}});

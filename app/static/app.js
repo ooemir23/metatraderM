@@ -160,6 +160,7 @@ function initTradingView(symbol) {
       "container_id": "tradingview-container"
     });
     const widget = tvWidget;
+    window.HMAChartWheel?.guardFrame(container);
     widget.ready(() => {
       if (widget !== tvWidget) return;
       const frame = document.getElementById(widget.id);

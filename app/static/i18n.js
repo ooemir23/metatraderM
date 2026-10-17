@@ -5,6 +5,7 @@
     ["Canlı Al / Sat Sinyal Tarayıcı", "Live Buy / Sell Signal Scanner"],
     ["Pozisyonlara dön", "Back to positions"],
     ["Araçlar", "Tools"],
+    ["Yakınlaştırmak için önce grafiğe tıklayın", "Click the chart first to zoom with the mouse wheel"],
     ["Otomatik bot en fazla açık işlem", "Automatic bot max open trades"],
     ["Otomatik bot toplam lot sınırı", "Automatic bot total lot limit"],
     ["Otomatik bot tek emir sınırı (lot)", "Automatic bot per-order limit (lots)"],
