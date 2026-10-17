@@ -968,8 +968,9 @@
                   <div class="grid grid-cols-2 gap-2 pt-0.5">
                     <div class="flex items-center justify-between gap-1.5">
                       <label for="bot-quick-lot" class="text-gray-300 font-medium">Emir lotu</label>
-                      <input id="bot-quick-lot" type="number" min="0.01" max="0.10" step="0.01" value="0.01" onchange="saveBotQuickLot()" class="w-20 bg-[#121620] border border-gray-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs font-bold">
+                      <input id="bot-quick-lot" type="number" min="0.01" max="100" step="0.01" value="0.01" onchange="saveBotQuickLot()" class="w-20 bg-[#121620] border border-gray-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs font-bold">
                     </div>
+                    <p id="bot-lot-hint" class="bot-lot-hint" hidden></p>
                     <div class="flex items-center justify-between gap-1.5">
                       <label for="bot-trail-input" class="text-gray-300 font-medium">İz süren (p)</label>
                       <input id="bot-trail-input" type="number" min="0" max="100000" step="10" value="0" onchange="saveBotSignalRules()" class="w-20 bg-[#121620] border border-gray-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs font-bold">

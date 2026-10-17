@@ -519,6 +519,7 @@ class StrategyBot:
             "trading_window_issue": self._safe_window_issue(),
             "start_warnings": list(self.start_warnings) if self.is_running else [],
             "execution_mode": self.execution_mode,
+            "max_order_lots": (lambda cap: cap if isinstance(cap, (int, float)) and not isinstance(cap, bool) else None)(getattr(self.mt5, "max_order_lots", None)),
             "symbol_status": {sym: dict(self.symbol_status.get(sym, {})) for sym in getattr(self, "symbols", [self.symbol])},
             "last_signal": self.last_signal,
             "last_signal_time": self.last_signal_time,

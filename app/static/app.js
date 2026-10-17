@@ -1608,6 +1608,7 @@ async function fetchBotStatus() {
     renderBotSignalHistory(bot.signal_history);
     renderBotProtection(bot);
     renderBotSymbolStatus(bot);
+    renderBotLotHint(bot);
 
     // Render Logs
     if (bot.logs && bot.logs.length > 0) {
@@ -2320,6 +2321,24 @@ function renderBotSignalHistory(rows) {
     </div>`;
   }).join('');
 }
+// Which lot applies where: manual confirmations vs the automatic bot's per-order cap.
+function renderBotLotHint(bot) {
+  const node = document.getElementById('bot-lot-hint');
+  if (!node || !bot) return;
+  const cap = Number(bot.max_order_lots);
+  if (bot.lot_mode === 'RISK') {
+    node.textContent = `Lot risk modunda (%${bot.risk_pct}) stopa göre hesaplanır; bu kutu kullanılmaz.`;
+    node.dataset.tone = '';
+  } else if (Number.isFinite(cap) && bot.lot_size > cap + 1e-9) {
+    node.textContent = `"Bota Gönder" ${bot.lot_size} lot açar. Otomatik bot en fazla ${cap} lot açabilir (MAX_ORDER_LOTS); bu lotla bot başlatılamaz.`;
+    node.dataset.tone = 'warn';
+  } else {
+    node.textContent = `"Bota Gönder" ve otomatik bot ${bot.lot_size} lot açar${Number.isFinite(cap) ? ` (otomatik bot sınırı ${cap} lot)` : ''}.`;
+    node.dataset.tone = '';
+  }
+  node.hidden = false;
+}
+
 // Per-symbol bot decision status ("neden işlem açmadı?").
 const BOT_STATE_LABELS = {
   WAITING_CROSS: ['Kesişim bekleniyor', 'wait'], WAITING_CONFIRMATION: ['Onay bekleniyor', 'wait'],
@@ -3541,7 +3560,7 @@ async function saveBotQuickLot() {
       return;
     }
     const raw = parseFloat(document.getElementById('bot-quick-lot')?.value || '0.01');
-    const lot = Number.isFinite(raw) && raw > 0 ? Math.min(0.10, Math.max(0.01, Number(raw.toFixed(2)))) : 0.01;
+    const lot = Number.isFinite(raw) && raw > 0 ? Math.min(100, Math.max(0.01, Number(raw.toFixed(2)))) : 0.01;
     const input = document.getElementById('bot-quick-lot');
     if (input) input.value = String(lot);
     const res = await fetch('/api/bot/config', {

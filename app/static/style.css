@@ -564,3 +564,6 @@ html { background: #0b0e14; }
 .bot-symstat-row[data-tone="warn"] .bot-symstat-state { background:#f59e0b26; color:#fbbf24; }
 .bot-symstat-row[data-tone="error"] .bot-symstat-state { background:#e11d4833; color:#fda4af; }
 .bot-symstat-row[data-tone="ok"] .bot-symstat-state { background:#10b98133; color:#6ee7b7; }
+
+.bot-lot-hint { grid-column:1 / -1; margin:2px 0 0; font-size:11px; color:#94a3b8; line-height:1.4; }
+.bot-lot-hint[data-tone="warn"] { color:#fbbf24; }

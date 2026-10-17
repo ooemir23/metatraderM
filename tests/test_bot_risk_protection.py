@@ -257,3 +257,23 @@ def test_status_reports_opened_and_rejected_orders():
     bot._check_strategy()
     row = bot.get_status()['symbol_status']['EURUSD']
     assert row['state'] == 'REJECTED' and 'Piyasa kapalı' in row['detail']
+
+
+def test_bot_start_refuses_lot_above_automation_cap_instead_of_shrinking(monkeypatch):
+    import base64
+    from fastapi.testclient import TestClient
+    from app import main
+    monkeypatch.setattr(main.bot, 'persist_config', lambda data: None)
+    monkeypatch.setattr(main.mt5_client, 'account_type', 'DEMO')
+    readiness = Mock(return_value={'success': True, 'account': [main.mt5_client.login_id, main.mt5_client.server, 'DEMO']})
+    monkeypatch.setattr(main.mt5_client, 'bot_readiness', readiness)
+    monkeypatch.setattr(main.mt5_client, 'max_order_lots', .1)
+    token = base64.b64encode(b'test:test-panel-password').decode()
+    web = TestClient(main.app, headers={'Authorization': 'Basic ' + token})
+    assert web.post('/api/bot/config', json={'lot_size': 1.0, 'lot_mode': 'FIXED'}).status_code == 200
+    res = web.post('/api/bot/toggle')
+    assert res.status_code == 409 and 'MAX_ORDER_LOTS' in res.json()['detail']
+    assert main.bot.lot_size == 1.0 and not main.bot.is_running, 'lot is never silently reduced'
+    readiness.assert_not_called()
+    assert main.bot.get_status()['max_order_lots'] == .1
+    web.post('/api/bot/config', json={'lot_size': .01})
