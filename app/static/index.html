@@ -989,6 +989,8 @@
                   <span id="bot-last-signal-time" class="font-mono text-xs text-gray-400">--:--:--</span>
                 </div>
 
+                <p id="bot-protect-status" class="bot-protect-status" hidden></p>
+
                 <!-- SIGNALS SENT TO THE BOT (manual confirmations + automatic orders) -->
                 <div class="bot-history">
                   <div class="bot-history-head">
@@ -999,6 +1001,16 @@
                     <p class="bot-history-empty">Henüz bota sinyal gönderilmedi.</p>
                   </div>
                 </div>
+
+                <!-- BOT PERFORMANCE (closed HMA bot positions from MT5 history) -->
+                <details id="bot-performance" class="bot-perf" ontoggle="if(this.open)fetchBotPerformance()">
+                  <summary><i class="ph-bold ph-chart-bar text-emerald-300"></i> <span>Performans</span>
+                    <select id="bot-perf-days" onclick="event.stopPropagation()" onchange="fetchBotPerformance()" aria-label="Dönem">
+                      <option value="7">7 gün</option><option value="30" selected>30 gün</option><option value="90">90 gün</option>
+                    </select>
+                  </summary>
+                  <div id="bot-perf-body" class="bot-perf-body" aria-live="polite"><p class="bot-history-empty">Yükleniyor…</p></div>
+                </details>
               </div>
 
             </div>
@@ -1298,6 +1310,30 @@
           <input type="checkbox" id="cfg-close-opp" checked class="w-4 h-4 rounded bg-[#1c2233] text-cyan-500 focus:ring-0">
           <label for="cfg-close-opp" class="text-gray-300">Ters sinyalde açık pozisyonu otomatik kapat</label>
         </div>
+        <fieldset class="bot-protect">
+          <legend>Lot ve risk</legend>
+          <label>Lot hesabı<select id="cfg-lot-mode" class="block w-full rounded bg-gray-800 p-2">
+            <option value="FIXED">Sabit lot (yukarıdaki emir lotu)</option>
+            <option value="RISK">Özsermayenin %'si (stop mesafesine göre)</option>
+          </select></label>
+          <label>İşlem başına risk (%)<input id="cfg-risk-pct" type="number" min="0.05" max="5" step="0.05" value="0.5" class="block w-full rounded bg-gray-800 p-2"></label>
+          <p class="bot-protect-note">Risk modunda lot, stopa gelindiğinde özsermayenin bu yüzdesi kadar zarar edecek şekilde brokerın hesabıyla bulunur ve lot adımına aşağı yuvarlanır. En küçük lot bile riski aşıyorsa işlem atlanır. Stop açık olmalı. Otomatik botta panelin tek emir lot sınırı ayrıca uygulanır.</p>
+        </fieldset>
+        <fieldset class="bot-protect">
+          <legend>Koruma kuralları (otomatik bot)</legend>
+          <label>Art arda kayıpta botu durdur (0 = kapalı)<input id="cfg-max-losses" type="number" min="0" max="20" step="1" value="0" class="block w-full rounded bg-gray-800 p-2"></label>
+          <label class="flex items-center gap-2 bot-protect-wide"><input id="cfg-hours-enabled" type="checkbox"> Yalnız bu saatler arasında yeni işlem aç</label>
+          <label>Başlangıç<input id="cfg-trade-start" type="time" value="00:00" class="block w-full rounded bg-gray-800 p-2"></label>
+          <label>Bitiş<input id="cfg-trade-end" type="time" value="23:59" class="block w-full rounded bg-gray-800 p-2"></label>
+          <label>Saat dilimi<select id="cfg-utc-offset" class="block w-full rounded bg-gray-800 p-2">
+            <option value="180">Türkiye (UTC+3)</option><option value="0">UTC</option><option value="60">UTC+1 (Londra yaz / Avrupa kış)</option>
+            <option value="120">UTC+2 (Avrupa yaz)</option><option value="-240">UTC−4 (New York yaz)</option><option value="-300">UTC−5 (New York kış)</option>
+          </select></label>
+          <div class="bot-protect-wide"><span class="block text-gray-400 mb-1">İşlem günleri</span><div class="bot-days"><label class="bot-day"><input type="checkbox" id="cfg-day-0" value="0"><span>Pzt</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-1" value="1"><span>Sal</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-2" value="2"><span>Çar</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-3" value="3"><span>Per</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-4" value="4"><span>Cum</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-5" value="5"><span>Cmt</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-6" value="6"><span>Paz</span></label></div></div>
+          <label class="bot-protect-wide">Haber / engelli saatler (her satıra bir aralık)
+            <textarea id="cfg-blocked" rows="3" placeholder="15:25-15:45&#10;2026-11-06 15:20-15:50" class="block w-full rounded bg-gray-800 p-2 font-mono"></textarea></label>
+          <p class="bot-protect-note">"15:25-15:45" her gün, "2026-11-06 15:20-15:50" yalnız o gün geçerlidir; seçilen saat dilimine göre. Kurallar yalnız yeni otomatik girişleri engeller; açık pozisyonlar ve ters sinyalde kapatma etkilenmez. "Bota Gönder" ile elle onaylanan sinyallere uygulanmaz. Art arda kayıp sayımı bot başlatıldığında sıfırlanır.</p>
+        </fieldset>
         </div>
         </div>
       </div>

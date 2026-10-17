@@ -1357,6 +1357,47 @@ def position_details(mt5, position_id, account_scope):
                 currency=str(account.currency), deals=deals)
 
 
+def risk_lot(mt5, symbol, side, sl_points, risk_pct, expected_login=0, expected_server='', tick_offset=0):
+    """Lot size so that hitting the stop loses ~risk_pct of equity (broker profit calculation).
+    Rounds DOWN to the broker lot step; never rounds up to the minimum lot."""
+    try:
+        if side not in ('BUY', 'SELL'):
+            raise ValueError('Geçersiz yön.')
+        sl_points, risk_pct = float(sl_points), float(risk_pct)
+        if not math.isfinite(sl_points) or sl_points <= 0:
+            raise ValueError('Risk yüzdesiyle lot hesabı için Stop Loss mesafesi gerekli.')
+        if not math.isfinite(risk_pct) or not 0 < risk_pct <= 10:
+            raise ValueError('Risk yüzdesi 0 ile 10 arasında olmalı.')
+        account = _account(mt5, expected_login, expected_server)
+        equity = float(account.equity)
+        if not math.isfinite(equity) or equity <= 0:
+            raise ValueError('Özsermaye doğrulanamadı.')
+        info, tick = _market(mt5, symbol, tick_offset)
+        point = float(info.point)
+        buy = side == 'BUY'
+        price = float(tick.ask if buy else tick.bid)
+        stop = price - sl_points * point if buy else price + sl_points * point
+        outcome = mt5.order_calc_profit(0 if buy else 1, symbol, 1.0, price, stop)
+        loss_per_lot = -float(outcome) if outcome is not None else float('nan')
+        if not math.isfinite(loss_per_lot) or loss_per_lot <= 0:
+            raise ValueError('Broker stop zararını hesaplayamadı; lot belirlenemedi.')
+        budget = equity * risk_pct / 100
+        step, minimum, maximum = float(info.volume_step), float(info.volume_min), float(info.volume_max)
+        lots = math.floor((budget / loss_per_lot) / step + 1e-9) * step
+        lots = min(lots, maximum)
+        decimals = max(0, -int(math.floor(math.log10(step)))) if step < 1 else 0
+        lots = round(lots, decimals)
+        if lots < minimum - 1e-12:
+            return {'success': False, 'error': (f'%{risk_pct:g} risk ({budget:.2f} {account.currency}) en küçük lotu '
+                    f'({minimum:g} lot ≈ {minimum * loss_per_lot:.2f} {account.currency} risk) karşılamıyor; işlem atlandı.'),
+                    'loss_per_lot': round(loss_per_lot, 2), 'equity': round(equity, 2)}
+        return {'success': True, 'lot': lots, 'risk_money': round(lots * loss_per_lot, 2), 'budget': round(budget, 2),
+                'equity': round(equity, 2), 'loss_per_lot': round(loss_per_lot, 2), 'currency': str(account.currency),
+                'risk_pct': risk_pct}
+    except Exception as exc:
+        return {'success': False, 'error': str(exc)}
+
+
 def account_identity(mt5):
     account = _account(mt5)
     return [int(account.login), str(account.server)]

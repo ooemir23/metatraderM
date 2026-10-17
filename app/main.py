@@ -291,6 +291,15 @@ class BotConfigRequest(BaseModel):
     use_take_profit: Optional[bool] = None
     tp_points: Optional[int] = Field(default=None, ge=0)
     close_opposite: Optional[bool] = None
+    lot_mode: Optional[Literal["FIXED", "RISK"]] = None
+    risk_pct: Optional[float] = Field(default=None, ge=0.05, le=5, allow_inf_nan=False)
+    max_consecutive_losses: Optional[int] = Field(default=None, ge=0, le=20)
+    trade_hours_enabled: Optional[bool] = None
+    trade_start: Optional[str] = Field(default=None, pattern=r'^([01]\d|2[0-3]):[0-5]\d$')
+    trade_end: Optional[str] = Field(default=None, pattern=r'^([01]\d|2[0-3]):[0-5]\d$')
+    trade_utc_offset_min: Optional[int] = Field(default=None, ge=-720, le=840)
+    trade_days: Optional[List[int]] = Field(default=None, min_length=1, max_length=7)
+    blocked_windows: Optional[List[str]] = Field(default=None, max_length=20)
 
 class AIAdviceRequest(BaseModel):
     symbol: Optional[str] = "EURUSD"
@@ -1380,6 +1389,19 @@ def execute_bot_signal(req: BotExecuteSignalRequest, account=Depends(require_rea
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return trade_response(res)
+
+@app.get("/api/bot/performance")
+def bot_performance_report(days: int = Query(default=30, ge=1, le=365)):
+    """Closed HMA bot positions (automatic + confirmed signals): observed results, not a forecast."""
+    from app import bot_performance
+    try:
+        deals = mt5_client.get_history(days=days)
+        open_ids = [p.get('identifier', p.get('ticket')) for p in mt5_client.get_positions(fresh=True)]
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail='MT5 işlem geçmişi okunamadı.') from exc
+    rows = bot_performance.closed_positions(deals, bot.signal_history, open_ids)
+    return {'days': days, **bot_performance.summarize(rows, bot.trade_utc_offset_min)}
+
 
 @app.post("/api/bot/signal-history/clear")
 def clear_bot_signal_history():

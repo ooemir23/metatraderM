@@ -1109,6 +1109,17 @@ class MT5Client:
             except Exception as exc:
                 raise MT5DataError("Bekleyen emirler okunamadı.") from exc
 
+    def risk_lot(self, symbol, side, sl_points, risk_pct, *, expected_account=None):
+        """Lot for a percentage-of-equity risk at the given stop distance (no order is sent)."""
+        with self._lock:
+            if not self.ensure_connected():
+                return {'success': False, 'error': 'MT5 bağlı değil.'}
+            try:
+                login, server = self._bound_account(expected_account)
+                return self._bridge('risk_lot', symbol, side, sl_points, risk_pct, login, server, self.tick_clock_offset)
+            except Exception as exc:
+                return {'success': False, 'error': str(exc)}
+
     def get_live_snapshot(self, symbols):
         with self._lock:
             if not self.ensure_connected():

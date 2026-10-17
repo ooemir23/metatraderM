@@ -519,3 +519,34 @@ html { background: #0b0e14; }
 .bot-history-row[data-tone="pending"] .bot-history-status { color:#fbbf24; }
 .bot-history-row[data-tone="profit"] .bot-history-status { color:#34d399; font-weight:700; }
 .bot-history-row[data-tone="loss"] .bot-history-status { color:#fb7185; font-weight:700; }
+
+/* Bot settings: lot/risk and protection rules */
+.bot-protect { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:8px 10px; margin-top:10px; padding:10px 12px 12px; border:1px solid #1f2937; border-radius:12px; }
+.bot-protect legend { padding:0 6px; color:#67e8f9; font-weight:700; }
+.bot-protect label { color:#cbd5e1; }
+.bot-protect-wide { grid-column:1 / -1; }
+.bot-protect-note { grid-column:1 / -1; margin:0; color:#94a3b8; font-size:11px; line-height:1.45; }
+.bot-days { display:flex; flex-wrap:wrap; gap:6px; }
+.bot-day { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border:1px solid #334155; border-radius:8px; background:#181d2a; cursor:pointer; }
+.bot-day input { width:14px; height:14px; }
+
+/* Bot protection status + performance report */
+.bot-protect-status { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:0 0 6px; padding:6px 9px; border-radius:9px; background:#0f172a; color:#a5f3fc; font-size:11.5px; }
+.bot-protect-issue { padding:1px 7px; border-radius:6px; background:#f59e0b26; color:#fcd34d; font-weight:700; }
+.bot-perf { margin-top:8px; border:1px solid #1f2937; border-radius:12px; background:#151a26; }
+.bot-perf summary { display:flex; align-items:center; gap:6px; padding:8px 10px; cursor:pointer; font-size:12px; font-weight:700; color:#e5e7eb; list-style:none; }
+.bot-perf summary::-webkit-details-marker { display:none; }
+.bot-perf summary select { margin-left:auto; padding:2px 6px; border-radius:7px; border:1px solid #334155; background:#181d2a; color:#cbd5e1; font-size:11px; }
+.bot-perf-body { padding:0 10px 10px; display:grid; gap:10px; }
+.bot-perf-warn { margin:0; padding:6px 9px; border-radius:8px; background:#f59e0b1f; color:#fcd34d; font-size:11.5px; }
+.bot-kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(118px, 1fr)); gap:6px; }
+.bot-kpi { display:grid; gap:2px; padding:7px 9px; border-radius:9px; background:#0f172a; border:1px solid #1e293b; }
+.bot-kpi span { color:#94a3b8; font-size:10.5px; }
+.bot-kpi strong { color:#f3f4f6; font:700 13px ui-monospace, monospace; }
+.bot-kpi small { color:#94a3b8; font-weight:500; font-size:10.5px; }
+.is-pos { color:#34d399 !important; } .is-neg { color:#fb7185 !important; }
+.bot-perf-tables { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:8px; }
+.bot-perf-table p { margin:0 0 4px; color:#cbd5e1; font-size:11.5px; font-weight:700; }
+.bot-perf-table table { width:100%; border-collapse:collapse; font:500 11px ui-monospace, monospace; }
+.bot-perf-table th { text-align:left; color:#94a3b8; font-weight:600; padding:3px 4px; border-bottom:1px solid #1f2937; }
+.bot-perf-table td { padding:3px 4px; color:#e5e7eb; border-bottom:1px solid #1f293760; }

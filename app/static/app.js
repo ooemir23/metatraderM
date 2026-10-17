@@ -1577,6 +1577,7 @@ async function fetchBotStatus() {
     document.getElementById("bot-last-signal-time").innerText = bot.last_signal_time || "--:--:--";
 
     renderBotSignalHistory(bot.signal_history);
+    renderBotProtection(bot);
 
     // Render Logs
     if (bot.logs && bot.logs.length > 0) {
@@ -2289,6 +2290,71 @@ function renderBotSignalHistory(rows) {
     </div>`;
   }).join('');
 }
+// Protection / sizing summary line under the bot status.
+function renderBotProtection(bot) {
+  const node = document.getElementById('bot-protect-status');
+  if (!node || !bot) return;
+  const parts = [bot.lot_mode === 'RISK' ? `Lot: özsermayenin %${bot.risk_pct} riski` : `Lot: sabit ${bot.lot_size}`];
+  if (bot.max_consecutive_losses) parts.push(`${bot.max_consecutive_losses} kayıpta dur`);
+  if (bot.trade_hours_enabled) parts.push(`Saat ${bot.trade_start}–${bot.trade_end}`);
+  if (Array.isArray(bot.trade_days) && bot.trade_days.length < 7) parts.push(`${bot.trade_days.length} gün`);
+  if (bot.blocked_windows?.length) parts.push(`${bot.blocked_windows.length} engelli aralık`);
+  const issue = bot.trading_window_issue;
+  node.innerHTML = `<i class="ph-bold ph-shield-check"></i> ${escapeHtml(parts.join(' · '))}${issue ? ` <span class="bot-protect-issue">⏸ ${escapeHtml(issue)}</span>` : ''}`;
+  node.hidden = false;
+}
+
+// Bot performance report (observed results of closed bot positions).
+let botPerfRequest = 0;
+async function fetchBotPerformance() {
+  const body = document.getElementById('bot-perf-body');
+  if (!body) return;
+  const days = Number(document.getElementById('bot-perf-days')?.value || 30);
+  const request = ++botPerfRequest;
+  body.innerHTML = '<p class="bot-history-empty">Yükleniyor…</p>';
+  try {
+    const res = await fetch(`/api/bot/performance?days=${days}`);
+    const data = await res.json().catch(() => ({}));
+    if (request !== botPerfRequest) return;
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Performans okunamadı.');
+    body.innerHTML = renderBotPerformance(data);
+  } catch (err) {
+    if (request === botPerfRequest) body.innerHTML = `<p class="bot-history-empty">${escapeHtml(err.message)}</p>`;
+  }
+}
+function renderBotPerformance(d) {
+  if (!d.closed_positions) return `<p class="bot-history-empty">Son ${d.days} günde kapanmış bot pozisyonu yok.</p>`;
+  const m = (v) => v == null ? '—' : (typeof formatMoney === 'function' ? formatMoney(v) : Number(v).toFixed(2));
+  const signed = (v) => v == null ? '—' : `${v >= 0 ? '+' : ''}${m(v)}`;
+  const tone = (v) => v == null ? '' : v >= 0 ? 'is-pos' : 'is-neg';
+  const kpi = (label, value, cls = '', hint = '') => `<div class="bot-kpi" ${hint ? `title="${escapeHtml(hint)}"` : ''}><span>${label}</span><strong class="${cls}">${value}</strong></div>`;
+  const table = (title, groups, keyLabel) => {
+    const rows = Object.entries(groups || {});
+    if (!rows.length) return '';
+    return `<div class="bot-perf-table"><p>${title}</p><table><thead><tr><th>${keyLabel}</th><th>İşlem</th><th>Kazanma</th><th>Net</th></tr></thead><tbody>${
+      rows.map(([k, g]) => `<tr><td>${escapeHtml(k === 'AUTO' ? 'Otomatik' : k === 'MANUAL' ? 'Manuel' : k)}</td><td>${g.count}</td><td>%${g.win_rate_pct}</td><td class="${tone(g.net)}">${signed(g.net)}</td></tr>`).join('')
+    }</tbody></table></div>`;
+  };
+  return `${d.early_sample ? `<p class="bot-perf-warn">Örnek küçük (${d.closed_positions} işlem). 30 işlemden az sonuçlar tesadüf olabilir; karar için yetersiz.</p>` : ''}
+    <div class="bot-kpis">
+      ${kpi('Kapanan işlem', `${d.closed_positions} <small>(${d.wins}K / ${d.losses}Z)</small>`)}
+      ${kpi('Kazanma oranı', d.win_rate_pct == null ? '—' : `%${d.win_rate_pct}`)}
+      ${kpi('Net sonuç', signed(d.net), tone(d.net), 'Komisyon, swap ve ücretler dahil')}
+      ${kpi('Profit factor', d.profit_factor ?? '—', d.profit_factor == null ? '' : d.profit_factor >= 1 ? 'is-pos' : 'is-neg', 'Toplam kazanç / toplam kayıp. 1 altı zarar ettirir.')}
+      ${kpi('İşlem başı beklenen', signed(d.expectancy), tone(d.expectancy))}
+      ${kpi('Ortalama R', d.avg_r == null ? '—' : `${d.avg_r} <small>(${d.r_samples})</small>`, tone(d.avg_r), 'Sonuç / girişteki risk. Yalnız risk % lot modunda açılan işlemler için hesaplanır.')}
+      ${kpi('Ort. kazanç / kayıp', `${m(d.avg_win)} / ${m(d.avg_loss)}`)}
+      ${kpi('En büyük düşüş', m(d.max_drawdown), d.max_drawdown ? 'is-neg' : '', 'Kapanmış işlemlerin kümülatif sonucunda tepeden en büyük geri çekilme')}
+      ${kpi('Şu anki kayıp serisi', d.current_loss_streak)}
+    </div>
+    <div class="bot-perf-tables">
+      ${table('Sembole göre', d.by_symbol, 'Sembol')}
+      ${table(`Giriş saatine göre (UTC${d.utc_offset_min >= 0 ? '+' : ''}${d.utc_offset_min / 60})`, d.by_hour, 'Saat')}
+      ${table('Kaynağa göre', d.by_source, 'Kaynak')}
+    </div>
+    <p class="bot-protect-note">Geçmiş sonuçlardır, gelecek tahmini değildir. Sayılar MT5 geçmişindeki kapanmış HMA botu pozisyonlarından (otomatik ve "Bota Gönder") hesaplanır.</p>`;
+}
+
 async function clearBotSignalHistory() {
   try {
     const res = await fetch('/api/bot/signal-history/clear', {method: 'POST'});
@@ -2329,10 +2395,34 @@ const botSettingInputs = {
   'cfg-kama-fast': 'kama_fast', 'cfg-kama-slow': 'kama_slow', 'cfg-atr-period': 'atr_period',
   'cfg-er-min': 'er_min', 'cfg-confirmation-bars': 'confirmation_bars', 'cfg-distance-atr': 'min_distance_atr',
   'cfg-risk-mode': 'risk_mode', 'cfg-atr-stop': 'atr_stop_multiplier', 'cfg-atr-target': 'atr_target_multiplier',
-  'cfg-sl-points': 'sl_points', 'cfg-tp-points': 'tp_points'
+  'cfg-sl-points': 'sl_points', 'cfg-tp-points': 'tp_points',
+  'cfg-lot-mode': 'lot_mode', 'cfg-risk-pct': 'risk_pct', 'cfg-max-losses': 'max_consecutive_losses',
+  'cfg-trade-start': 'trade_start', 'cfg-trade-end': 'trade_end', 'cfg-utc-offset': 'trade_utc_offset_min'
 };
 const botSettingChecks = {'cfg-close-opp': 'close_opposite', 'cfg-atr-filter': 'use_atr_filter',
-  'cfg-use-sl': 'use_stop_loss', 'cfg-use-tp': 'use_take_profit', 'cfg-h4-filter':'use_h4_filter', 'cfg-single-position':'single_position'};
+  'cfg-use-sl': 'use_stop_loss', 'cfg-use-tp': 'use_take_profit', 'cfg-h4-filter':'use_h4_filter', 'cfg-single-position':'single_position',
+  'cfg-hours-enabled': 'trade_hours_enabled'};
+function fillBotProtection(settings) {
+  const days = Array.isArray(settings.trade_days) ? settings.trade_days : [0,1,2,3,4,5,6];
+  for (let i = 0; i < 7; i++) { const box = document.getElementById(`cfg-day-${i}`); if (box) box.checked = days.includes(i); }
+  const blocked = document.getElementById('cfg-blocked');
+  if (blocked) blocked.value = (settings.blocked_windows || []).join('\n');
+}
+function readBotProtection() {
+  const days = [];
+  for (let i = 0; i < 7; i++) if (document.getElementById(`cfg-day-${i}`)?.checked) days.push(i);
+  return {
+    lot_mode: document.getElementById('cfg-lot-mode').value,
+    risk_pct: Number(document.getElementById('cfg-risk-pct').value),
+    max_consecutive_losses: parseInt(document.getElementById('cfg-max-losses').value || '0', 10),
+    trade_hours_enabled: document.getElementById('cfg-hours-enabled').checked,
+    trade_start: document.getElementById('cfg-trade-start').value || '00:00',
+    trade_end: document.getElementById('cfg-trade-end').value || '23:59',
+    trade_utc_offset_min: parseInt(document.getElementById('cfg-utc-offset').value, 10),
+    trade_days: days,
+    blocked_windows: (document.getElementById('cfg-blocked').value || '').split('\n').map(s => s.trim()).filter(Boolean),
+  };
+}
 async function toggleBotSettingsModal() {
   const modal = document.getElementById("bot-settings-modal");
   if (!modal.classList.contains('hidden')) { modal.classList.add('hidden'); return; }
@@ -2345,6 +2435,7 @@ async function toggleBotSettingsModal() {
   }
   for (const [id, key] of Object.entries(botSettingChecks)) document.getElementById(id).checked = !!latestBotSettings[key];
   document.getElementById('cfg-single-position').checked = true;
+  fillBotProtection(latestBotSettings);
   modal.classList.remove('hidden');
 }
 
@@ -2396,7 +2487,9 @@ async function saveBotSettings() {
     second_ma_period: parseInt(document.getElementById("cfg-ma2-period").value),
     lot_size: parseFloat(document.getElementById("cfg-lot").value),
     close_opposite: document.getElementById("cfg-close-opp").checked,
+    ...readBotProtection(),
   };
+  if (!cfg.trade_days.length) { showToast('❌ En az bir işlem günü seçin.', 'error'); return; }
 
   try {
     const res = await fetch("/api/bot/config", {

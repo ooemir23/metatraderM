@@ -9,6 +9,7 @@ import json
 import os
 import re
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from app.mt5_bridge import HMA_MAGIC
 from app.mt5_client import MT5DataError, TIMEFRAME_NAMES
@@ -58,6 +59,19 @@ class StrategyBot:
         self.use_take_profit = False
         self.tp_points = 400
         self.close_opposite = True
+        # Position sizing: FIXED = lot_size; RISK = risk_pct of equity lost at the stop.
+        self.lot_mode = "FIXED"
+        self.risk_pct = 0.5
+        # Protection rules (automatic orders only).
+        self.max_consecutive_losses = 0          # 0 = off
+        self.trade_hours_enabled = False
+        self.trade_start = "00:00"
+        self.trade_end = "23:59"
+        self.trade_utc_offset_min = 180          # Türkiye (UTC+3)
+        self.trade_days = [0, 1, 2, 3, 4, 5, 6]  # Monday = 0
+        self.blocked_windows: List[str] = []     # "HH:MM-HH:MM" daily or "YYYY-MM-DD HH:MM-HH:MM"
+        self.started_at = 0
+        self._loss_check_at = 0.0
 
         # State tracking
         self.last_candle_time = 0
@@ -128,6 +142,120 @@ class StrategyBot:
         self.log(f"Sinyal kuralları güncellendi: Mod={self.execution_mode} | RSI Filtre={'Açık' if self.use_rsi_filter else 'Kapalı'} | Başabaş={'Açık' if self.use_breakeven else 'Kapalı'} | İz Süren={self.trailing_stop_points}p")
         return self.get_signal_rules()
 
+    @staticmethod
+    def _parse_hhmm(value):
+        if not isinstance(value, str) or not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', value.strip()):
+            raise ValueError(f'Geçersiz saat: {value!r} (SS:DD)')
+        hours, minutes = value.strip().split(':')
+        return int(hours) * 60 + int(minutes)
+
+    @classmethod
+    def _parse_window(cls, text):
+        """'HH:MM-HH:MM' (every day) or 'YYYY-MM-DD HH:MM-HH:MM' (that date) -> (date|None, start, end)."""
+        text = str(text).strip()
+        match = re.fullmatch(r'(?:(\d{4}-\d{2}-\d{2})\s+)?(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})', text)
+        if not match:
+            raise ValueError(f'Geçersiz engelli aralık: {text!r}. Örnek: 15:25-15:45 veya 2026-11-06 15:25-15:45')
+        day = match.group(1)
+        if day:
+            try:
+                datetime.strptime(day, '%Y-%m-%d')
+            except ValueError as exc:
+                raise ValueError(f'Geçersiz tarih: {day}') from exc
+        return day, cls._parse_hhmm(match.group(2)), cls._parse_hhmm(match.group(3))
+
+    def _validate_protection(self, c):
+        if c['lot_mode'] not in ('FIXED', 'RISK'):
+            raise ValueError('Lot modu FIXED veya RISK olmalı.')
+        if isinstance(c['risk_pct'], bool) or not isinstance(c['risk_pct'], (int, float)) or not math.isfinite(c['risk_pct']) or not 0.05 <= c['risk_pct'] <= 5:
+            raise ValueError('Risk yüzdesi 0.05 ile 5 arasında olmalı.')
+        if c['lot_mode'] == 'RISK' and not c['use_stop_loss']:
+            raise ValueError('Risk yüzdesiyle lot hesabı için Stop Loss açık olmalı.')
+        if isinstance(c['max_consecutive_losses'], bool) or not isinstance(c['max_consecutive_losses'], int) or not 0 <= c['max_consecutive_losses'] <= 20:
+            raise ValueError('Art arda kayıp sınırı 0 ile 20 arasında olmalı.')
+        if not isinstance(c['trade_hours_enabled'], bool):
+            raise ValueError('Geçersiz işlem saatleri ayarı.')
+        self._parse_hhmm(c['trade_start']); self._parse_hhmm(c['trade_end'])
+        if isinstance(c['trade_utc_offset_min'], bool) or not isinstance(c['trade_utc_offset_min'], int) or not -720 <= c['trade_utc_offset_min'] <= 840:
+            raise ValueError('Saat dilimi farkı -720 ile 840 dakika arasında olmalı.')
+        days = c['trade_days']
+        if not isinstance(days, list) or not days or any(isinstance(d, bool) or not isinstance(d, int) or not 0 <= d <= 6 for d in days):
+            raise ValueError('En az bir işlem günü seçilmeli.')
+        c['trade_days'] = sorted(set(days))
+        windows = c['blocked_windows']
+        if not isinstance(windows, list) or len(windows) > 20:
+            raise ValueError('En fazla 20 engelli aralık girilebilir.')
+        c['blocked_windows'] = [str(w).strip() for w in windows if str(w).strip()]
+        for window in c['blocked_windows']:
+            self._parse_window(window)
+
+    def trading_window_issue(self, now=None):
+        """Reason string when automatic entries are not allowed right now, else None."""
+        with self._state_lock:
+            offset, enabled = self.trade_utc_offset_min, self.trade_hours_enabled
+            start, end, days, windows = self.trade_start, self.trade_end, list(self.trade_days), list(self.blocked_windows)
+        local = (now or datetime.now(timezone.utc)).astimezone(timezone(timedelta(minutes=offset)))
+        minute = local.hour * 60 + local.minute
+        names = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
+        if local.weekday() not in days:
+            return f'{names[local.weekday()]} işlem günü değil.'
+        if enabled:
+            a, b = self._parse_hhmm(start), self._parse_hhmm(end)
+            inside = a <= minute <= b if a <= b else (minute >= a or minute <= b)
+            if not inside:
+                return f'İşlem saatleri dışında ({start}–{end}).'
+        today = local.strftime('%Y-%m-%d')
+        for window in windows:
+            day, a, b = self._parse_window(window)
+            if day and day != today:
+                continue
+            inside = a <= minute <= b if a <= b else (minute >= a or minute <= b)
+            if inside:
+                return f'Engelli zaman aralığında ({window}).'
+        return None
+
+    def order_lot(self, symbol, side, sl_points, expected_account=None, cap=None):
+        """(lot, risk_money, error). RISK mode sizes from the stop; FIXED uses lot_size."""
+        with self._state_lock:
+            mode, pct, fixed = self.lot_mode, self.risk_pct, self.lot_size
+        if mode != 'RISK':
+            return fixed, None, None
+        kwargs = {'expected_account': expected_account} if expected_account is not None else {}
+        result = self.mt5.risk_lot(symbol, side, sl_points, pct, **kwargs)
+        if not result.get('success'):
+            return None, None, result.get('error') or 'Risk lotu hesaplanamadı.'
+        lot, risk = float(result['lot']), result.get('risk_money')
+        if cap is not None and math.isfinite(cap) and lot > cap:
+            ratio = cap / lot
+            lot, risk = cap, (round(risk * ratio, 2) if isinstance(risk, (int, float)) else None)
+        return lot, risk, None
+
+    def check_loss_streak(self, force=False):
+        """Stop the bot after N consecutive losing positions since it was started."""
+        with self._state_lock:
+            limit, started, running = self.max_consecutive_losses, self.started_at, self.is_running
+        if not limit or not running or not started:
+            return None
+        now = time.monotonic()
+        if not force and now - self._loss_check_at < 30:
+            return None
+        self._loss_check_at = now
+        try:
+            from app import bot_performance
+            deals = self.mt5.get_history(days=7)
+            open_ids = [p.get('identifier', p.get('ticket')) for p in self.mt5.get_positions(fresh=True)]
+            rows = bot_performance.closed_positions(deals, self.signal_history, open_ids)
+            streak = bot_performance.loss_streak(rows, since=started)
+        except Exception as exc:
+            self.log(f'Art arda kayıp kontrolü yapılamadı: {exc}', 'ERROR')
+            return None
+        if streak >= limit:
+            self.log(f'🛑 Art arda {streak} kayıp (sınır {limit}); bot durduruldu. Piyasayı değerlendirip yeniden başlatın.', 'ERROR')
+            self.stop()
+            with self._state_lock:
+                self.runtime_state, self.runtime_detail = 'LOSS_STREAK', f'Art arda {streak} kayıp; bot durduruldu.'
+        return streak
+
     def load_config(self, data):
         self.update_config(data, persist=False)
 
@@ -135,9 +263,11 @@ class StrategyBot:
         keys = ('symbol','timeframe_minutes','hma_period','second_ma_type','second_ma_period',
                 'kama_fast','kama_slow','atr_period','use_atr_filter','use_h4_filter','single_position',
                 'er_min','confirmation_bars','min_distance_atr','risk_mode','atr_stop_multiplier',
-                'atr_target_multiplier','lot_size','use_stop_loss','sl_points','use_take_profit','tp_points','close_opposite')
+                'atr_target_multiplier','lot_size','use_stop_loss','sl_points','use_take_profit','tp_points','close_opposite',
+                'lot_mode','risk_pct','max_consecutive_losses','trade_hours_enabled','trade_start','trade_end',
+                'trade_utc_offset_min','trade_days','blocked_windows')
         with self._state_lock:
-            snap = {key: getattr(self, key) for key in keys}
+            snap = {key: (list(getattr(self, key)) if isinstance(getattr(self, key), list) else getattr(self, key)) for key in keys}
             snap['symbols'] = list(getattr(self, 'symbols', [self.symbol]))
             return snap
 
@@ -181,7 +311,7 @@ class StrategyBot:
         except Exception:
             logger.error('Bot signal history could not be saved.')
 
-    def record_signal(self, *, source, symbol, side, lot, result, sl_points=0, tp_points=0, signal_id=None):
+    def record_signal(self, *, source, symbol, side, lot, result, sl_points=0, tp_points=0, signal_id=None, risk_money=None):
         def number(value):
             try:
                 value = float(value)
@@ -193,6 +323,7 @@ class StrategyBot:
             'sl_points': int(sl_points or 0), 'tp_points': int(tp_points or 0), 'signal_id': signal_id,
             'success': bool(result.get('success')), 'ticket': result.get('ticket'), 'price': number(result.get('price')),
             'pending': bool(result.get('pending') or result.get('uncertain')),
+            'risk_money': number(risk_money),
             'error': None if result.get('success') else str(result.get('error') or 'Emir gönderilemedi.')[:240],
         }
         with self._state_lock:
@@ -307,6 +438,7 @@ class StrategyBot:
                 raise ValueError('Etkin stop/hedef mesafesi pozitif olmalı.')
             if candidate['risk_mode'] == 'ATR' and candidate['use_take_profit'] and candidate['atr_target_multiplier'] <= 0:
                 raise ValueError('Etkin ATR hedef çarpanı pozitif olmalı.')
+            self._validate_protection(candidate)
             if persist:
                 self.persist_config(candidate)
             for key, value in candidate.items():
@@ -316,6 +448,12 @@ class StrategyBot:
             self.last_candle_time = 0
             self.last_candle_times = {}
         self.log(f"Bot ayarları güncellendi: {', '.join(self.symbols)} | HMA: {self.hma_period} | 2.MA: {self.second_ma_type}({self.second_ma_period}) | Lot: {self.lot_size}")
+
+    def _safe_window_issue(self):
+        try:
+            return self.trading_window_issue()
+        except Exception:
+            return None
 
     def get_status(self) -> Dict[str, Any]:
         with self._state_lock:
@@ -343,6 +481,10 @@ class StrategyBot:
             "use_take_profit": self.use_take_profit,
             "tp_points": self.tp_points,
             "close_opposite": self.close_opposite,
+            **{key: (list(getattr(self, key)) if isinstance(getattr(self, key), list) else getattr(self, key)) for key in (
+                "lot_mode", "risk_pct", "max_consecutive_losses", "trade_hours_enabled", "trade_start", "trade_end",
+                "trade_utc_offset_min", "trade_days", "blocked_windows")},
+            "trading_window_issue": self._safe_window_issue(),
             "last_signal": self.last_signal,
             "last_signal_time": self.last_signal_time,
             "last_signal_price": self.last_signal_price,
@@ -539,6 +681,9 @@ class StrategyBot:
 
         while self.is_running:
             try:
+                await asyncio.to_thread(self.check_loss_streak)
+                if not self.is_running:
+                    break
                 await self.check_strategy()
             except Exception as e:
                 logger.error(f"Strategy error: {e}")
@@ -794,13 +939,29 @@ class StrategyBot:
                 self.log(f'Bot {sym} pozisyonu zaten açık; yeni giriş atlandı.')
                 return
 
+        issue = self.trading_window_issue()
+        if issue:
+            self.log(f'⏸️ [{sym} {side}] {issue} Yeni giriş yapılmadı.')
+            if sym == self.symbol:
+                self.runtime_state, self.runtime_detail = 'OUTSIDE_HOURS', issue
+            return
+
+        lot, risk_money, lot_error = self.order_lot(sym, side, sl, expected_account,
+                                                    cap=getattr(self.mt5, 'max_order_lots', None))
+        if lot is None:
+            self.log(f'⚠️ [{sym} {side}] {lot_error}', 'ERROR')
+            self.record_signal(source='AUTO', symbol=sym, side=side, lot=None, sl_points=sl, tp_points=tp,
+                               result={'success': False, 'error': lot_error})
+            return
+
         kwargs = {'expected_account': expected_account} if expected_account is not None else {}
         if sym == self.symbol:
             self.runtime_state, self.runtime_detail = 'SUBMITTING', f'{sym} emir sonucu bekleniyor.'
 
-        res = self.mt5.open_order(sym, side, self.lot_size, sl_points=sl, tp_points=tp,
+        res = self.mt5.open_order(sym, side, lot, sl_points=sl, tp_points=tp,
             comment=f"HMA Bot {side}", magic=HMA_MAGIC, request_id=self.order_id(side, sym=sym), stop_event=self._stop_event, **kwargs)
-        self.record_signal(source='AUTO', symbol=sym, side=side, lot=self.lot_size, result=res, sl_points=sl, tp_points=tp)
+        self.record_signal(source='AUTO', symbol=sym, side=side, lot=lot, result=res, sl_points=sl, tp_points=tp,
+                           risk_money=risk_money)
 
         if res.get("success"):
             if sym == self.symbol:
@@ -873,7 +1034,8 @@ class StrategyBot:
     def execute_signal(self, symbol: str, side: str, *, signal_id: str, expected_account,
                        price: Optional[float] = None, sl_price: Optional[float] = None, tp_price: Optional[float] = None,
                        sl_points: Optional[int] = None, tp_points: Optional[int] = None) -> Dict[str, Any]:
-        """Manually confirmed signal: same panel risk rules, account binding and idempotency as the bot."""
+        """Manually confirmed signal: MT5 broker rules (like the order ticket), the bot's lot mode,
+        account binding and one request id per signal."""
         symbol = symbol.strip()
         side = side.strip().upper()
         if side not in ("BUY", "SELL") or not re.fullmatch(r'[A-Za-z0-9_.#-]{1,32}', symbol):
@@ -881,7 +1043,6 @@ class StrategyBot:
         if (sl_price is not None or tp_price is not None) and (sl_points is not None or tp_points is not None):
             raise ValueError("SL/TP fiyat veya puan olarak gönderilmeli; ikisi birlikte değil.")
         with self._state_lock:
-            lot = self.lot_size
             default_sl = self.sl_points if self.use_stop_loss else 0
             default_tp = self.tp_points if self.use_take_profit else 0
             use_stop_loss = self.use_stop_loss
@@ -907,6 +1068,11 @@ class StrategyBot:
             raise ValueError("Bot ayarlarında Stop Loss açık; geçerli bir stop mesafesi gerekli.")
         if self.mt5.has_unresolved_bot_order(symbol):
             raise ValueError("Önceki bot emrinin sonucu belirsiz; MT5 mutabakatını bekleyin.")
+        lot, risk_money, lot_error = self.order_lot(symbol, side, sl_pts, expected_account)
+        if lot is None:
+            self.record_signal(source='MANUAL', symbol=symbol, side=side, lot=None, sl_points=sl_pts, tp_points=tp_pts,
+                               signal_id=signal_id, result={'success': False, 'error': lot_error})
+            raise ValueError(lot_error)
         identity = (tuple(expected_account), symbol, side, signal_id)
         request_id = "sig-" + hashlib.sha256(repr(identity).encode()).hexdigest()
         res = self.mt5.open_order(symbol, side, lot, sl_points=sl_pts, tp_points=tp_pts,
@@ -915,7 +1081,7 @@ class StrategyBot:
                                   # Manually confirmed: same broker-only rules as the MT5 order ticket.
                                   manual_mode="MT5")
         self.record_signal(source='MANUAL', symbol=symbol, side=side, lot=lot, result=res,
-                           sl_points=sl_pts, tp_points=tp_pts, signal_id=signal_id)
+                           sl_points=sl_pts, tp_points=tp_pts, signal_id=signal_id, risk_money=risk_money)
         if res.get("success"):
             self.log(f"🎯 Sinyal onaylandı ve açıldı: {symbol} {side} #{res.get('ticket')} @ {res.get('price')} (Lot: {lot})")
             with self._state_lock:
@@ -952,6 +1118,8 @@ class StrategyBot:
                 self.last_candle_time = 0
                 self.last_candle_times = {}
                 self._candidates = {}
+                self.started_at = int(time.time())
+                self._loss_check_at = 0.0
                 self.is_running = True
                 self.runtime_state, self.runtime_detail, self.last_error = 'WAITING_DATA', 'Yeni kapanmış mum verisi bekleniyor.', None
                 self.task = asyncio.create_task(self.run_loop())
