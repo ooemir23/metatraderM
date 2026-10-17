@@ -2936,7 +2936,10 @@ async function refreshSignalScanner(manual = false) {
   try {
     const tfNode = document.getElementById('signal-scan-tf');
     const tf = Number(tfNode?.value || 15) || 15;
-    const symbols = Array.from(new Set([currentSymbol || 'EURUSD', 'EURUSD', 'XAUUSD', 'GBPUSD', 'USDJPY', 'BTCUSD'])).slice(0, 6);
+    const marketWatchSymbols = Array.isArray(window.MT5Markets?.all)
+      ? window.MT5Markets.all.map(s => (typeof s === 'string' ? s : s?.name)).filter(Boolean).slice(0, 6)
+      : [];
+    const symbols = Array.from(new Set([currentSymbol || 'EURUSD', ...marketWatchSymbols, 'EURUSD', 'XAUUSD', 'GBPUSD', 'USDJPY', 'BTCUSD'])).slice(0, 6);
     if (manual && statusNode) statusNode.textContent = 'Sinyaller taranıyor…';
     const res = await fetch(`/api/signals/scan?symbols=${encodeURIComponent(symbols.join(','))}&timeframe_minutes=${tf}`);
     if (!res.ok) throw new Error('Sinyal taraması alınamadı');
@@ -2946,7 +2949,7 @@ async function refreshSignalScanner(manual = false) {
       statusNode.textContent = `HMA(${data.hma_period || 14}) / EMA(${data.ema_period || 34}) · Son tarama: ${new Date().toLocaleTimeString('tr-TR')}`;
     }
     if (!rows.length) {
-      listNode.innerHTML = '<div class="text-gray-400 text-[11px] py-2 text-center">Sembol verisi bekleniyor…</div>';
+      listNode.innerHTML = '<div class="text-gray-400 text-[11px] py-2 text-center">MT5 mum verisi bekleniyor…</div>';
       return;
     }
     listNode.innerHTML = rows.map(item => {
@@ -2996,7 +2999,10 @@ async function refreshSignalScanner(manual = false) {
       </div>`;
     }).join('');
   } catch (_) {
-    if (manual && statusNode) statusNode.textContent = 'Sinyal taraması şu an yapılamadı.';
+    if (statusNode) statusNode.textContent = 'Sinyal taraması şu an yapılamadı.';
+    if (listNode && listNode.textContent.includes('yükleniyor')) {
+      listNode.innerHTML = '<div class="text-amber-300/80 text-[11px] py-2 text-center">Sinyal servisine ulaşılamadı, yeniden deneniyor…</div>';
+    }
   } finally {
     signalScannerBusy = false;
   }

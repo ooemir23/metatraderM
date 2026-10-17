@@ -26,6 +26,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("HMATradingApp")
 
 import asyncio
+import math
+import re
 import time
 import threading
 
