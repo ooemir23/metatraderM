@@ -421,7 +421,7 @@ def analyze(rates, s, tf_minutes, *, htf_rates=None, utc_offset=0, spread_points
         if atr > 0 and s['tp_atr'] > 0 and side in ('BUY', 'SELL') else 0.0
     item = {
         'signal': signal, 'side': side,
-        'bars_ago': bars_ago if bars_ago is not None else 0, 'cross_side': cross_side or side,
+        'bars_ago': bars_ago,  # None: no crossover in the last 25 candles 'cross_side': cross_side or side,
         'price': round(price, digits), 'hma': round(h_now, digits), 'ema': round(s_now, digits),
         'rsi': round(rsi, 1) if rsi is not None else None, 'atr': round(atr, digits),
         'adx': round(ctx.adx[idx], 1) if ctx.adx is not None and ctx.adx[idx] is not None else None,

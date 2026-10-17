@@ -155,7 +155,11 @@ assert.ok(html.includes('id="bot-execute-all-signals-btn"'), 'Missing bot-execut
   const execBody = JSON.parse(execReq.opts.body);
   assert.equal(execBody.symbol, 'XAUUSD');
   assert.equal(execBody.side, 'SELL');
-  assert.equal(execBody.signal_id, 'scan-XAUUSD-15-SELL-1700000000');
+  assert.match(execBody.signal_id, /^scan-XAUUSD-15-SELL-1700000000-[a-z0-9]+$/, 'each click is a new order id (MT5 one-click)');
+  const firstId = execBody.signal_id;
+  await ctx.sendSignalDirectToBot('XAUUSD', 'SELL', 2650.5, {signalId: 'scan-XAUUSD-15-SELL-1700000000', slPrice: 2680.0, tpPrice: 2600.0});
+  const secondId = JSON.parse(sentRequests.filter(r => r.url === '/api/bot/execute-signal').at(-1).opts.body).signal_id;
+  assert.notEqual(secondId, firstId, 'a second click is not rejected as a reused id');
   assert.equal(execBody.sl_price, 2680.0, 'Scanner SL is sent as a price');
   assert.equal(execBody.sl_points, undefined, 'Prices and points are never mixed');
 

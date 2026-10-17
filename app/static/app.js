@@ -1601,6 +1601,7 @@ async function fetchBotStatus() {
     document.getElementById("bot-last-signal-time").innerText = bot.last_signal_time || "--:--:--";
 
     renderBotSignalHistory(bot.signal_history);
+    announceBotSignals(bot);
     renderBotProtection(bot);
     renderBotSymbolStatus(bot);
     renderBotLotHint(bot);
@@ -2286,6 +2287,12 @@ function closeAllPositions() {
 
 // Signals sent to the bot: newest first, live status from the open-positions feed.
 let latestBotSignalHistory = [];
+// Plain-language reason for a signal that did not open a trade.
+function botHistoryReason(error) {
+  const text = String(error || 'Emir gönderilemedi.');
+  if (/Aynı emir kimliği farklı işlem/.test(text)) return 'Aynı sinyal farklı ayarla tekrar gönderilmişti; artık her tıklama yeni emir olarak gönderiliyor.';
+  return text;
+}
 function renderBotSignalHistory(rows) {
   const list = document.getElementById('bot-history-list');
   if (!list) return;
@@ -2298,23 +2305,31 @@ function renderBotSignalHistory(rows) {
   if (!rows.length) { list.innerHTML = '<p class="bot-history-empty">Henüz bota sinyal gönderilmedi.</p>'; return; }
   const money = (v) => (typeof formatMoney === 'function' ? formatMoney(v) : Number(v).toFixed(2));
   list.innerHTML = rows.map(r => {
-    const time = Number.isFinite(r.time) ? new Date(r.time * 1000).toLocaleTimeString('tr-TR') : '--:--:--';
+    const when = Number.isFinite(r.time) ? new Date(r.time * 1000) : null;
+    const time = !when ? '--:--' : when.toDateString() === new Date().toDateString()
+      ? when.toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})
+      : when.toLocaleString('tr-TR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
     const buy = r.side === 'BUY';
     const open = r.success && r.ticket != null ? executionPositions.get(Number(r.ticket)) || executionPositions.get(r.ticket) : null;
-    let status, tone;
-    if (!r.success && !r.pending) { status = r.error || 'Gönderilemedi'; tone = 'error'; }
-    else if (r.pending) { status = 'Sonuç bekleniyor · MT5 kontrol edin'; tone = 'pending'; }
+    let status, tone, reason = '';
+    if (!r.success && !r.pending) { status = 'Açılmadı'; tone = 'error'; reason = botHistoryReason(r.error); }
+    else if (r.pending) { status = 'Sonuç bekleniyor'; tone = 'pending'; reason = 'MT5 işlem geçmişini kontrol edin.'; }
     else if (open) {
       const profit = Number(open.profit);
-      status = `Açık · ${profit >= 0 ? '+' : ''}${money(profit)}`; tone = profit >= 0 ? 'profit' : 'loss';
+      status = `Açık ${profit >= 0 ? '+' : ''}${money(profit)}`; tone = profit >= 0 ? 'profit' : 'loss';
     } else { status = 'Kapandı'; tone = 'closed'; }
+    const details = [
+      `${r.lot != null ? r.lot : '—'} lot${r.price != null ? ` @ ${r.price}` : ''}`,
+      r.sl_points ? `SL ${r.sl_points} p` : '',
+      r.tp_points ? `TP ${r.tp_points} p` : '',
+      r.ticket != null ? `#${r.ticket}` : '',
+    ].filter(Boolean).join(' · ');
     return `<div class="bot-history-row" data-tone="${tone}">
-      <span class="bot-history-time">${time}</span>
-      <span class="bot-history-source" data-source="${r.source === 'AUTO' ? 'auto' : 'manual'}">${r.source === 'AUTO' ? 'Otomatik' : 'Manuel'}</span>
-      <span class="bot-history-symbol">${escapeHtml(r.symbol || '')}</span>
       <span class="bot-history-side ${buy ? 'is-buy' : 'is-sell'}">${buy ? 'AL' : 'SAT'}</span>
-      <span class="bot-history-meta">${r.lot != null ? r.lot : '—'} lot${r.price != null ? ' @ ' + r.price : ''}${r.ticket != null ? ' · #' + escapeHtml(String(r.ticket)) : ''}</span>
-      <span class="bot-history-status" title="${escapeHtml(status)}">${escapeHtml(status)}</span>
+      <span class="bot-history-main"><b class="bot-history-symbol">${escapeHtml(r.symbol || '')}</b><span class="bot-history-meta">${escapeHtml(details)}</span></span>
+      <span class="bot-history-status">${escapeHtml(status)}</span>
+      <span class="bot-history-sub"><span class="bot-history-time">${time}</span><span class="bot-history-source" data-source="${r.source === 'AUTO' ? 'auto' : 'manual'}">${r.source === 'AUTO' ? 'Otomatik' : 'Manuel'}</span></span>
+      ${reason ? `<span class="bot-history-reason">${escapeHtml(reason)}</span>` : ''}
     </div>`;
   }).join('');
 }
@@ -3341,6 +3356,33 @@ if (typeof window !== 'undefined') {
   window.addEventListener('keydown', unlockAudio, {passive: true});
 }
 
+// Bot signals (automatic orders, or signals awaiting approval) also play the alert, like MT5's
+// Alert/PlaySound in the EA; the first status load only records what is already there.
+let lastAnnouncedBotHistory = null;
+const announcedBotPending = new Set();
+let botPendingPrimed = false;
+function announceBotSignals(bot) {
+  const rows = Array.isArray(bot?.signal_history) ? bot.signal_history : [];
+  const newest = rows[0] ? Number(rows[0].time) || 0 : 0;
+  if (lastAnnouncedBotHistory === null) { lastAnnouncedBotHistory = newest; return; }
+  const fresh = rows.filter(r => (Number(r.time) || 0) > lastAnnouncedBotHistory && r.source === 'AUTO');
+  lastAnnouncedBotHistory = Math.max(lastAnnouncedBotHistory, newest);
+  if (!fresh.length || !signalAutoAlertEnabled) return;
+  const r = fresh[0];
+  playSignalBeep(r.side === 'BUY', false);
+  if (typeof showToast === 'function') showToast(r.success
+    ? `🤖 Bot ${r.symbol} ${r.side === 'BUY' ? 'AL' : 'SAT'} ${r.lot} lot açtı${r.ticket != null ? ` (#${r.ticket})` : ''}`
+    : `🤖 Bot ${r.symbol} ${r.side === 'BUY' ? 'AL' : 'SAT'} sinyali açılamadı: ${botHistoryReason(r.error)}`, r.success ? 'success' : 'error');
+}
+function announceBotPending(list) {
+  const fresh = (list || []).filter(p => p && p.id && !announcedBotPending.has(p.id));
+  fresh.forEach(p => announcedBotPending.add(p.id));
+  if (!botPendingPrimed) { botPendingPrimed = true; return; }
+  if (!fresh.length || !signalAutoAlertEnabled) return;
+  playSignalBeep(fresh[0].side === 'BUY', false);
+  if (typeof showToast === 'function') showToast(`🔔 Bot sinyali: ${fresh[0].symbol} ${fresh[0].side === 'BUY' ? 'AL' : 'SAT'} · onayın bekleniyor`, 'info');
+}
+
 function toggleSignalAutoAlert(enabled) {
   signalAutoAlertEnabled = Boolean(enabled);
   if (signalAutoAlertEnabled) {
@@ -3348,10 +3390,16 @@ function toggleSignalAutoAlert(enabled) {
   }
 }
 
+let signalAudioHintShown = false;
 function playSignalBeep(isBuy = true, isTest = false) {
   try {
     const ctx = ensureSignalAudioCtx();
     if (!ctx) return;
+    // Browsers keep audio muted until the page has been clicked once after loading.
+    if (ctx.state !== 'running' && !isTest && !signalAudioHintShown && !navigator.userActivation?.hasBeenActive) {
+      signalAudioHintShown = true;
+      if (typeof showToast === 'function') showToast('🔇 Tarayıcı sesi engelledi. Sinyal sesleri için sayfada bir kez herhangi bir yere tıklayın.', 'info');
+    }
     const now = ctx.currentTime;
     const freqs = isBuy ? [587.33, 880, 1174.66] : [880, 659.25, 440];
     freqs.forEach((freq, idx) => {
@@ -3553,8 +3601,8 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
         : isCrossSell
         ? '▼ YENİ SAT (Kesişim)'
         : isBuy
-        ? `↗ AL Trend (${item.bars_ago} mum)`
-        : `↘ SAT Trend (${item.bars_ago} mum)`;
+        ? `↗ AL Trend (${item.bars_ago == null ? '25+' : item.bars_ago} mum)`
+        : `↘ SAT Trend (${item.bars_ago == null ? '25+' : item.bars_ago} mum)`;
       const key = `${item.symbol}:${tf}:${item.signal}:${item.candle_time}`;
       if (signalAutoAlertEnabled) {
         const prevKey = announcedSignalCrosses.get(`${item.symbol}:${tf}`);
@@ -3660,6 +3708,7 @@ async function fetchBotLiveSignal() {
       : (data.pending_signal_action && data.pending_signal_action.side ? [data.pending_signal_action] : []);
 
     try { window.dispatchEvent(new CustomEvent('hma:bot-pending', {detail: {count: pendingList.length}})); } catch (_) {}
+    announceBotPending(pendingList);
     if (box) {
       if (pendingList.length > 0) {
         latestPendingBotSignal = pendingList[0];
@@ -3867,13 +3916,20 @@ async function assignAllSignalsToBot() {
   fetchBotLiveSignal();
 }
 
+const signalSendsInFlight = new Set();
 async function sendSignalDirectToBot(symbol, side, price, opts = {}) {
+  const base = String(opts.signalId || '');
   try {
     const sym = String(symbol || currentSymbol || '').trim();
-    if (!opts.signalId) throw new Error('Sinyal kimliği eksik; listeyi yenileyin.');
+    if (!base) throw new Error('Sinyal kimliği eksik; listeyi yenileyin.');
+    // One request at a time per signal (double-click guard). Each completed click is a new order,
+    // like MT5 one-click trading, so it gets its own id.
+    if (signalSendsInFlight.has(base)) { showToast(`⏳ ${sym} ${side} emri zaten gönderiliyor.`, 'info'); return; }
+    signalSendsInFlight.add(base);
+    const signalId = `${base.slice(0, 80)}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     showToast(`⚡ ${sym} ${side} sinyali bota gönderiliyor...`, 'info');
     // SL/TP is sent either as prices (scanner) or as points (bot signal), never mixed.
-    const body = {symbol: sym, side, signal_id: String(opts.signalId), price: Number(price) || undefined};
+    const body = {symbol: sym, side, signal_id: signalId, price: Number(price) || undefined};
     if (Number(opts.slPrice) > 0 || Number(opts.tpPrice) > 0) {
       body.sl_price = Number(opts.slPrice) > 0 ? Number(opts.slPrice) : undefined;
       body.tp_price = Number(opts.tpPrice) > 0 ? Number(opts.tpPrice) : undefined;
@@ -3896,6 +3952,9 @@ async function sendSignalDirectToBot(symbol, side, price, opts = {}) {
     fetchBotLiveSignal();
   } catch (err) {
     showToast(`❌ ${err.message}`, 'error');
+    fetchBotStatus();
+  } finally {
+    signalSendsInFlight.delete(base);
   }
 }
 
