@@ -216,3 +216,44 @@ def test_bot_config_api_accepts_protection_fields(monkeypatch):
     assert web.post('/api/bot/config', json={'trade_start': '9am'}).status_code == 422
     assert web.post('/api/bot/config', json={'risk_pct': 20}).status_code == 422
     web.post('/api/bot/config', json={'max_consecutive_losses': 0, 'trade_hours_enabled': False, 'trade_days': [0, 1, 2, 3, 4, 5, 6], 'blocked_windows': []})
+
+
+# ---------------- per-symbol "why no trade" status ----------------
+def status_bot(cross):
+    client = Mock(login_id=7, server='demo', account_type='DEMO')
+    client.ensure_connected.return_value = True
+    client.get_rates.return_value = [{'time': i * 900, 'close': 1.0} for i in range(100)]
+    client.get_pending_orders.return_value = []
+    client.has_unresolved_bot_order.return_value = False
+    bot = StrategyBot(client)
+    bot.calc_hma = Mock(side_effect=lambda closes, period, shift=0: 2. if (cross and shift == 1) else 0.5)
+    bot.calc_second_ma = Mock(return_value=1.)
+    bot.last_candle_time = 1
+    return bot, client
+
+
+def test_status_explains_waiting_for_next_crossover():
+    bot, client = status_bot(cross=False)
+    bot._check_strategy()
+    row = bot.get_status()['symbol_status']['EURUSD']
+    assert row['state'] == 'WAITING_CROSS' and 'AL (yukarı)' in row['detail']
+    client.open_order.assert_not_called()
+
+
+def test_status_explains_existing_bot_position():
+    bot, client = status_bot(cross=True)
+    client.get_positions.return_value = [{'symbol': 'EURUSD', 'magic': HMA_MAGIC, 'type': 'BUY', 'ticket': 9}]
+    bot.close_opposite = False
+    bot._check_strategy()
+    row = bot.get_status()['symbol_status']['EURUSD']
+    assert row['state'] == 'SKIPPED' and 'zaten bir bot pozisyonu' in row['detail']
+    client.open_order.assert_not_called()
+
+
+def test_status_reports_opened_and_rejected_orders():
+    bot, client = status_bot(cross=True)
+    client.get_positions.return_value = []
+    client.open_order.return_value = {'success': False, 'error': 'Piyasa kapalı'}
+    bot._check_strategy()
+    row = bot.get_status()['symbol_status']['EURUSD']
+    assert row['state'] == 'REJECTED' and 'Piyasa kapalı' in row['detail']

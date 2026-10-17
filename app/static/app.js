@@ -1578,6 +1578,7 @@ async function fetchBotStatus() {
 
     renderBotSignalHistory(bot.signal_history);
     renderBotProtection(bot);
+    renderBotSymbolStatus(bot);
 
     // Render Logs
     if (bot.logs && bot.logs.length > 0) {
@@ -2290,6 +2291,40 @@ function renderBotSignalHistory(rows) {
     </div>`;
   }).join('');
 }
+// Per-symbol bot decision status ("neden işlem açmadı?").
+const BOT_STATE_LABELS = {
+  WAITING_CROSS: ['Kesişim bekleniyor', 'wait'], WAITING_CONFIRMATION: ['Onay bekleniyor', 'wait'],
+  WAITING_DATA: ['Veri bekleniyor', 'idle'], AWAITING_APPROVAL: ['Onayın bekleniyor', 'action'],
+  SKIPPED: ['Sinyal atlandı', 'warn'], REJECTED: ['Emir reddedildi', 'error'], ORDER_OPENED: ['Emir açıldı', 'ok'],
+};
+function renderBotSymbolStatus(bot) {
+  const node = document.getElementById('bot-symbol-status');
+  if (!node || !bot) return;
+  const symbols = Array.isArray(bot.symbols) && bot.symbols.length ? bot.symbols : [bot.symbol];
+  const status = bot.symbol_status || {};
+  const tfCode = (m) => ({1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'}[m] || `M${m}`);
+  const scanTf = Number(document.getElementById('signal-scan-tf')?.value || 0);
+  const notes = [];
+  if (!bot.is_running) notes.push('Bot durdurulmuş; işlem açmaz.');
+  else if (bot.execution_mode === 'SIGNAL_ONLY') notes.push('"Sadece Sinyal" modunda: bot işlem açmaz, sinyalleri onayına sunar.');
+  if (scanTf && bot.timeframe_minutes && scanTf !== bot.timeframe_minutes)
+    notes.push(`Bot ${tfCode(bot.timeframe_minutes)} ile çalışıyor, tarayıcı ${tfCode(scanTf)} gösteriyor; farklı zaman dilimleri farklı sinyal verir.`);
+  const rows = symbols.map(sym => {
+    const row = status[sym] || {};
+    const [label, tone] = BOT_STATE_LABELS[row.state] || (bot.is_running ? ['Kontrol ediliyor', 'idle'] : ['Bot durdu', 'idle']);
+    const candle = row.candle_time ? new Date(row.candle_time * 1000) : null;
+    const candleText = candle ? ` · son mum ${candle.toLocaleDateString('tr-TR') === new Date().toLocaleDateString('tr-TR')
+      ? candle.toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'}) : candle.toLocaleString('tr-TR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}` : '';
+    return `<div class="bot-symstat-row" data-tone="${tone}">
+      <span class="bot-symstat-sym">${escapeHtml(sym)} <small>${tfCode(row.timeframe_minutes || bot.timeframe_minutes)}${candleText}</small></span>
+      <span class="bot-symstat-state">${label}</span>
+      <span class="bot-symstat-detail">${escapeHtml(row.detail || (bot.is_running ? 'İlk kapanmış mum değerlendiriliyor…' : 'Botu başlatınca burada ne beklediği görünür.'))}</span>
+    </div>`;
+  }).join('');
+  node.innerHTML = `${notes.map(n => `<p class="bot-symstat-note">${escapeHtml(n)}</p>`).join('')}${rows}`;
+  node.hidden = false;
+}
+
 // Protection / sizing summary line under the bot status.
 function renderBotProtection(bot) {
   const node = document.getElementById('bot-protect-status');

@@ -72,6 +72,8 @@ class StrategyBot:
         self.blocked_windows: List[str] = []     # "HH:MM-HH:MM" daily or "YYYY-MM-DD HH:MM-HH:MM"
         self.started_at = 0
         self.start_warnings: List[str] = []
+        # Per-symbol "what is the bot waiting for / why no trade" (shown in the bot card).
+        self.symbol_status: Dict[str, Dict[str, Any]] = {}
         self._loss_check_at = 0.0
 
         # State tracking
@@ -450,6 +452,29 @@ class StrategyBot:
             self.last_candle_times = {}
         self.log(f"Bot ayarları güncellendi: {', '.join(self.symbols)} | HMA: {self.hma_period} | 2.MA: {self.second_ma_type}({self.second_ma_period}) | Lot: {self.lot_size}")
 
+    def _sym_status(self, sym, state, detail, **extra):
+        with self._state_lock:
+            row = self.symbol_status.setdefault(sym, {})
+            row.update(extra)
+            row.update(state=state, detail=detail, updated=int(time.time()), timeframe_minutes=self.timeframe_minutes)
+
+    def _bars_since_cross(self, closes, limit=60):
+        """(bars since last HMA x MA crossover on closed candles, direction 1/-1) or (None, 0)."""
+        try:
+            for shift in range(1, limit):
+                h1, h2 = self.calc_hma(closes, self.hma_period, shift=shift), self.calc_hma(closes, self.hma_period, shift=shift + 1)
+                m1 = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=shift)
+                m2 = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=shift + 1)
+                if not all(math.isfinite(v) and v > 0 for v in (h1, h2, m1, m2)):
+                    return None, 0
+                if h2 <= m2 and h1 > m1:
+                    return shift - 1, 1
+                if h2 >= m2 and h1 < m1:
+                    return shift - 1, -1
+        except Exception:
+            pass
+        return None, 0
+
     def set_start_warnings(self, warnings):
         with self._state_lock:
             self.start_warnings = [str(w)[:300] for w in warnings][:20]
@@ -493,6 +518,8 @@ class StrategyBot:
                 "trade_utc_offset_min", "trade_days", "blocked_windows")},
             "trading_window_issue": self._safe_window_issue(),
             "start_warnings": list(self.start_warnings) if self.is_running else [],
+            "execution_mode": self.execution_mode,
+            "symbol_status": {sym: dict(self.symbol_status.get(sym, {})) for sym in getattr(self, "symbols", [self.symbol])},
             "last_signal": self.last_signal,
             "last_signal_time": self.last_signal_time,
             "last_signal_price": self.last_signal_price,
@@ -745,6 +772,7 @@ class StrategyBot:
         required = max(self.hma_period + int(math.sqrt(self.hma_period)) + 1,
                        self.second_ma_period + (int(math.sqrt(self.second_ma_period)) + 1 if self.second_ma_type == 'HMA' else 2))
         if not rates or len(rates) < max(required, max(self.hma_period, self.second_ma_period) + 15):
+            self._sym_status(sym, 'WAITING_DATA', 'Yeterli kapanmış mum verisi yok (piyasa kapalı olabilir).')
             if sym == self.symbol:
                 self.runtime_state, self.runtime_detail = 'WAITING_DATA', f'{sym}: Yeterli kapanmış mum verisi bekleniyor.'
             return
@@ -776,6 +804,12 @@ class StrategyBot:
                 and ((hma2_init <= ma2_2_init and hma1_init > ma2_1_init) or (hma2_init >= ma2_2_init and hma1_init < ma2_1_init))
             )
             if not fresh_cross_on_last_bar:
+                bars, way = self._bars_since_cross(closes)
+                trend = 'AL' if hma1_init > ma2_1_init else 'SAT'
+                since = f'son kesişim {bars} mum önce' if bars is not None else 'yakın zamanda kesişim yok'
+                self._sym_status(sym, 'WAITING_CROSS',
+                    f"Mevcut {trend} trendine geç girilmez ({since}); bir sonraki kesişim bekleniyor: "
+                    f"{'SAT (aşağı)' if trend == 'AL' else 'AL (yukarı)'}.", candle_time=latest_closed_candle_time, trend=trend)
                 self.last_candle_times[sym] = latest_closed_candle_time
                 if sym == self.symbol:
                     self.last_candle_time = latest_closed_candle_time
@@ -825,6 +859,13 @@ class StrategyBot:
         cross = 1 if hma2 <= ma2_2 and hma1 > ma2_1 else -1 if hma2 >= ma2_2 and hma1 < ma2_1 else 0
         direction = cross
         closed_on_cross = False
+        if not cross:
+            trend = 'AL' if hma1 > ma2_1 else 'SAT'
+            bars, _ = self._bars_since_cross(closes)
+            since = f'son kesişim {bars} mum önce' if bars is not None else 'yakın zamanda kesişim yok'
+            self._sym_status(sym, 'WAITING_CROSS', f"Kesişim yok; {trend} trendi sürüyor ({since}). "
+                             f"Bot yeni kesişimde işlem açar: {'SAT (aşağı)' if trend == 'AL' else 'AL (yukarı)'} bekleniyor.",
+                             candle_time=latest_closed_candle_time, trend=trend)
 
         if self.use_atr_filter:
             direction = 0
@@ -852,6 +893,7 @@ class StrategyBot:
                 if valid and self.use_h4_filter:
                     valid = self.h4_confirmation(side, latest_closed_candle_time + self.timeframe_minutes * 60, sym=sym)
                 if age > self.confirmation_bars:
+                    self._sym_status(sym, 'SKIPPED', 'Kesişim oldu ama onay süresi doldu; sinyal iptal edildi (filtre).')
                     self.log(f"[{sym}] Onay süresi doldu; kesişim sinyali iptal edildi.")
                     self._candidates.pop(sym, None)
                     if sym == self.symbol:
@@ -862,11 +904,13 @@ class StrategyBot:
                     if sym == self.symbol:
                         self._candidate = None
                 elif age == self.confirmation_bars:
+                    self._sym_status(sym, 'SKIPPED', 'Kesişim oldu ama ER/eğim/ATR onayı gelmedi; sinyal iptal edildi (filtre).')
                     self.log(f"[{sym}] ER/eğim/ATR mesafesi onayı gelmedi; sinyal iptal edildi.")
                     self._candidates.pop(sym, None)
                     if sym == self.symbol:
                         self._candidate = None
                 else:
+                    self._sym_status(sym, 'WAITING_CONFIRMATION', f'Kesişim var; ER/eğim/ATR onayı bekleniyor ({age}/{self.confirmation_bars} mum).')
                     if sym == self.symbol:
                         self.runtime_state, self.runtime_detail = 'WAITING_CONFIRMATION', 'ER/eğim/ATR mesafesi onayı bekleniyor.'
                     self.log(f"[{sym}] Kesişim onayı bekleniyor: {age}/{self.confirmation_bars} mum.")
@@ -877,9 +921,11 @@ class StrategyBot:
         side = "BUY" if direction == 1 else "SELL"
         if self.use_rsi_filter:
             if side == "BUY" and rsi > self.rsi_buy_max:
+                self._sym_status(sym, 'SKIPPED', f'AL kesişimi RSI filtresine takıldı ({rsi:.1f} > {self.rsi_buy_max}).')
                 self.log(f"⚠️ [{sym}] RSI aşırı alımda ({rsi:.1f} > {self.rsi_buy_max}); AL sinyali filtrelendi.")
                 return
             if side == "SELL" and rsi < self.rsi_sell_min:
+                self._sym_status(sym, 'SKIPPED', f'SAT kesişimi RSI filtresine takıldı ({rsi:.1f} < {self.rsi_sell_min}).')
                 self.log(f"⚠️ [{sym}] RSI aşırı satımda ({rsi:.1f} < {self.rsi_sell_min}); SAT sinyali filtrelendi.")
                 return
 
@@ -888,6 +934,7 @@ class StrategyBot:
                 quote = self.mt5.get_symbol_price(sym) or {}
                 spread = float(quote.get("spread") or 0)
                 if spread > self.max_spread_points:
+                    self._sym_status(sym, 'SKIPPED', f'{side} kesişimi yüksek spread nedeniyle atlandı ({spread:.0f} > {self.max_spread_points} puan).')
                     self.log(f"⚠️ [{sym}] Spread yüksek ({spread:.0f} > {self.max_spread_points} puan); {side} sinyali atlandı.")
                     return
             except Exception:
@@ -895,6 +942,7 @@ class StrategyBot:
 
         sl, tp = self.order_distances(sym)
         if sl is None:
+            self._sym_status(sym, 'SKIPPED', f'{side} kesişimi: ATR stop/hedef mesafesi hesaplanamadı.')
             return
 
         if sym == self.symbol:
@@ -922,12 +970,14 @@ class StrategyBot:
             if len(self.pending_signal_actions) > 20:
                 self.pending_signal_actions.pop()
             self.pending_signal_action = action
+            self._sym_status(sym, 'AWAITING_APPROVAL', f'{side} sinyali yakalandı; "Sadece Sinyal" modunda onayınız bekleniyor.')
             if sym == self.symbol:
                 self.runtime_state, self.runtime_detail = 'WAITING_SIGNAL', f'{sym} {side} sinyali yakalandı; onayınız bekleniyor.'
             self.log(f"🔔 [{sym} {side} SİNYALİ YAKALANDI · ONAY BEKLİYOR] Fiyat: {closes[1]:.5f} (Sadece Sinyal Modu)", "SIGNAL")
             return
 
         if self.close_opposite and not closed_on_cross and not self.close_positions_by_type("SELL" if direction == 1 else "BUY", sym=sym, expected_account=expected_account):
+            self._sym_status(sym, 'SKIPPED', f'{side} kesişimi: ters bot pozisyonu kapatılamadı, yeni emir gönderilmedi.')
             self.log(f"[{sym}] Ters pozisyon kapatılamadı; yeni emir gönderilmedi.", "ERROR")
             return
 
@@ -944,11 +994,14 @@ class StrategyBot:
             owned = self.mt5.get_positions(fresh=True)
             pending = self.mt5.get_pending_orders()
             if any(p['symbol'] == sym and p.get('magic') == HMA_MAGIC for p in owned + pending):
+                self._sym_status(sym, 'SKIPPED', f'{side} kesişimi atlandı: bu sembolde zaten bir bot pozisyonu açık '
+                                 '("Bota Gönder" ile açılanlar dahil). Aynı sembolde tek bot pozisyonu tutulur.')
                 self.log(f'Bot {sym} pozisyonu zaten açık; yeni giriş atlandı.')
                 return
 
         issue = self.trading_window_issue()
         if issue:
+            self._sym_status(sym, 'SKIPPED', f'{side} kesişimi koruma kuralına takıldı: {issue}')
             self.log(f'⏸️ [{sym} {side}] {issue} Yeni giriş yapılmadı.')
             if sym == self.symbol:
                 self.runtime_state, self.runtime_detail = 'OUTSIDE_HOURS', issue
@@ -957,6 +1010,7 @@ class StrategyBot:
         lot, risk_money, lot_error = self.order_lot(sym, side, sl, expected_account,
                                                     cap=getattr(self.mt5, 'max_order_lots', None))
         if lot is None:
+            self._sym_status(sym, 'SKIPPED', f'{side} kesişimi: {lot_error}')
             self.log(f'⚠️ [{sym} {side}] {lot_error}', 'ERROR')
             self.record_signal(source='AUTO', symbol=sym, side=side, lot=None, sl_points=sl, tp_points=tp,
                                result={'success': False, 'error': lot_error})
@@ -972,10 +1026,12 @@ class StrategyBot:
                            risk_money=risk_money)
 
         if res.get("success"):
+            self._sym_status(sym, 'ORDER_OPENED', f"{side} emri açıldı: #{res.get('ticket')} @ {res.get('price')} ({lot} lot).")
             if sym == self.symbol:
                 self.runtime_state, self.runtime_detail = 'WAITING_SIGNAL', f'{sym} emir kabul edildi; yeni sinyal bekleniyor.'
             self.log(f"✅ {sym} {side} Emri Açıldı: #{res.get('ticket')} @ {res.get('price')}")
         else:
+            self._sym_status(sym, 'REJECTED', f"{side} emri reddedildi: {res.get('error')}")
             if sym == self.symbol:
                 self.runtime_state, self.runtime_detail, self.last_error = 'ORDER_REJECTED', res.get('error'), res.get('error')
             self.log(f"❌ {sym} {side} Emri Başarısız: {res.get('error')}", "ERROR")
@@ -1127,6 +1183,7 @@ class StrategyBot:
                 self.last_candle_times = {}
                 self._candidates = {}
                 self.started_at = int(time.time())
+                self.symbol_status = {}
                 self._loss_check_at = 0.0
                 self.is_running = True
                 self.runtime_state, self.runtime_detail, self.last_error = 'WAITING_DATA', 'Yeni kapanmış mum verisi bekleniyor.', None
