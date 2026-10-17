@@ -3024,6 +3024,11 @@ async function fetchBotLiveSignal() {
     if (beToggle && document.activeElement !== beToggle) beToggle.checked = Boolean(data.use_breakeven);
     if (trailInput && document.activeElement !== trailInput && data.trailing_stop_points != null) trailInput.value = String(data.trailing_stop_points);
 
+    const quickLot = document.getElementById('bot-quick-lot');
+    if (quickLot && document.activeElement !== quickLot && latestBotSettings?.lot_size != null) {
+      quickLot.value = String(latestBotSettings.lot_size);
+    }
+
     if (data.available) {
       const hmaNode = document.getElementById('bot-disp-hma-val');
       const ma2Node = document.getElementById('bot-disp-ma2-val');
@@ -3053,6 +3058,28 @@ async function fetchBotLiveSignal() {
         latestPendingBotSignal = null;
         box.classList.add('hidden');
       }
+    }
+  } catch (_) {}
+}
+
+async function saveBotQuickLot() {
+  try {
+    if (typeof isBotRunning !== 'undefined' && isBotRunning) {
+      showToast('Lot miktarını değiştirmeden önce çalışan botu durdurun.', 'warning');
+      return;
+    }
+    const raw = parseFloat(document.getElementById('bot-quick-lot')?.value || '0.01');
+    const lot = Number.isFinite(raw) && raw > 0 ? Math.min(0.10, Math.max(0.01, Number(raw.toFixed(2)))) : 0.01;
+    const input = document.getElementById('bot-quick-lot');
+    if (input) input.value = String(lot);
+    const res = await fetch('/api/bot/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({lot_size: lot}),
+    });
+    if (res.ok) {
+      showToast(`✅ Bot emir lotu ${lot} olarak güncellendi.`, 'success');
+      fetchBotStatus();
     }
   } catch (_) {}
 }
@@ -3096,6 +3123,9 @@ async function assignScannerSymbolToBot(symbol, timeframeMinutes) {
     const payload = {symbol, timeframe_minutes: tf};
     if (tf !== 60 || latestBotSettings?.second_ma_type !== 'KAMA' || !latestBotSettings?.use_atr_filter) {
       payload.use_h4_filter = false;
+    }
+    if (Number(latestBotSettings?.lot_size) > 0.10) {
+      payload.lot_size = 0.01;
     }
     const res = await fetch('/api/bot/config', {
       method: 'POST',

@@ -1218,6 +1218,8 @@ async def toggle_bot(request: Request):
             if bot.task is not None and not bot.task.done():
                 raise HTTPException(status_code=409, detail='Önceki bot döngüsü bitiyor; tamamlanmasını bekleyin.')
             account = require_real_unlock(request)
+            if bot.lot_size > mt5_client.max_order_lots:
+                bot.update_config({'lot_size': min(mt5_client.max_order_lots, 0.01)})
             config = bot.config_snapshot()
             ready = await asyncio.to_thread(mt5_client.bot_readiness, config)
             if not ready.get('success'):
