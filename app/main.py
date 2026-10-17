@@ -2,7 +2,7 @@ import os
 import json
 import logging
 from contextlib import asynccontextmanager, suppress
-from typing import Optional, Dict, Any, List, Literal
+from typing import Optional, Dict, Any, List, Literal, Union
 from fastapi import FastAPI, HTTPException, Query, Request, Depends, Path
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, Response
