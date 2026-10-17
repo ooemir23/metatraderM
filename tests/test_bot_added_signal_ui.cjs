@@ -47,3 +47,15 @@ assert.match(html, /bir sonraki kapanmış mumda yeni kesişim olursa 0\.05 lot 
 ctx.renderBotSymbolStatus({...bot, symbols: ['GBPUSD']});
 assert.doesNotMatch(node('bot-symbol-status').innerHTML, /Taranan sinyal/);
 console.log('bot added signal ui ok');
+
+// Candle times use the MT5 server clock: a server-time bar of 17/10 21:00 is never shown as 18/10 00:00.
+{
+  const bar = Date.UTC(2026, 9, 17, 21, 0) / 1000;
+  const realNow = Date.UTC(2026, 9, 17, 18, 24);           // 21:24 on a UTC+3 server
+  vm.runInContext(`globalThis.__savedNow = Date.now; Date.now = () => ${realNow};`, ctx);  // the app runs in its own realm
+  try {
+    assert.equal(ctx.brokerCandleText(bar, 10800), '21:00');
+    assert.match(ctx.brokerCandleText(Date.UTC(2026, 9, 16, 23, 30) / 1000, 10800), /16.10 23:30/);
+  } finally { vm.runInContext('Date.now = globalThis.__savedNow;', ctx); }
+}
+console.log('broker candle time ok');

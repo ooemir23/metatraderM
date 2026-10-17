@@ -2374,6 +2374,16 @@ function addedSignalHtml(sym, bot) {
       : `Bot durdu. Başlatınca mevcut sinyali açmaz, sonraki yeni kesişimde ${lot} açar (${botStops}). Hemen açmak için "Bota Gönder".`;
   return `<span class="bot-symstat-trade"><span class="bot-symstat-trade-title">Taranan sinyal</span>${head}<small>${escapeHtml(plan)}</small></span>`;
 }
+// MT5 shows bar times on the broker server clock. Bar timestamps already are server time,
+// so format them as UTC (no browser time zone shift); "today" is the server's today.
+function brokerCandleText(candleTime, clockOffsetSeconds = 0) {
+  const candle = new Date(Number(candleTime) * 1000);
+  const serverNow = new Date(Date.now() + (Number(clockOffsetSeconds) || 0) * 1000);
+  const day = d => d.toLocaleDateString('tr-TR', {timeZone: 'UTC'});
+  return day(candle) === day(serverNow)
+    ? candle.toLocaleTimeString('tr-TR', {timeZone: 'UTC', hour: '2-digit', minute: '2-digit'})
+    : candle.toLocaleString('tr-TR', {timeZone: 'UTC', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
+}
 function renderBotSymbolStatus(bot) {
   const node = document.getElementById('bot-symbol-status');
   if (!node || !bot) return;
@@ -2391,9 +2401,7 @@ function renderBotSymbolStatus(bot) {
   const rows = symbols.map(sym => {
     const row = status[sym] || {};
     const [label, tone] = BOT_STATE_LABELS[row.state] || (bot.is_running ? ['Kontrol ediliyor', 'idle'] : ['Bot durdu', 'idle']);
-    const candle = row.candle_time ? new Date(row.candle_time * 1000) : null;
-    const candleText = candle ? ` · son mum ${candle.toLocaleDateString('tr-TR') === new Date().toLocaleDateString('tr-TR')
-      ? candle.toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'}) : candle.toLocaleString('tr-TR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}` : '';
+    const candleText = row.candle_time ? ` · son mum ${brokerCandleText(row.candle_time, bot.clock_offset_seconds)}` : '';
     return `<div class="bot-symstat-row" data-tone="${tone}" data-bot-symbol="${escapeHtml(sym)}">
       <span class="bot-symstat-sym">${escapeHtml(sym)} <small>${tfCode(row.timeframe_minutes || bot.timeframe_minutes)}${candleText}</small></span>
       <span class="bot-symstat-state">${label}</span>

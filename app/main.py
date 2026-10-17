@@ -1242,7 +1242,8 @@ def _inspect():
 
 @app.get("/api/bot/status")
 def get_bot_status():
-    return bot.get_status()
+    # Candle times are MT5 server time; the UI shows them on the server clock, like MT5.
+    return {**bot.get_status(), 'clock_offset_seconds': mt5_client.tick_clock_offset}
 
 @app.post("/api/bot/toggle")
 async def toggle_bot(request: Request):
