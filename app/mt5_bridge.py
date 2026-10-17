@@ -494,7 +494,7 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
               sl_price=None, tp_price=None, deviation_points=20,
               stoplimit_price=None, time_type='GTC', expiration=0, manual_mode='PANEL', filling_policy='AUTO'):
     try:
-        native = _ticket_mode(manual_mode) and magic == MANUAL_MAGIC
+        native = _ticket_mode(manual_mode) and magic in (MANUAL_MAGIC, HMA_MAGIC)
         if order_type not in ('BUY', 'SELL') or not isinstance(symbol, str) or not symbol.strip():
             raise ValueError('Geçersiz sembol veya emir yönü.')
         account, current, pending, realized, floating = risk(mt5, tick_offset, include_history=not native)

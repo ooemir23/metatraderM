@@ -664,7 +664,7 @@ class MT5Client:
                     if not h4 or len(h4) < max(config['hma_period'], config['second_ma_period'], config['atr_period']) + 15:
                         raise MT5DataError('H4 filtresi için yeterli kapanmış mum verisi yok.')
                 for side in ('BUY', 'SELL'):
-                    preview = self.trade_preview(symbol, side, config['lot_size'], sl, tp_points=tp)
+                    preview = self.trade_preview(symbol, side, config['lot_size'], sl, tp_points=tp, manual_mode='MT5')
                     if not preview.get('success'):
                         raise MT5DataError(preview.get('error', 'İşlem risk kontrolü başarısız.'))
                     margin, free = preview.get('margin_required'), preview.get('free_margin')

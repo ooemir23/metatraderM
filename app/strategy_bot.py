@@ -580,7 +580,7 @@ class StrategyBot:
         kwargs = {'expected_account': expected_account} if expected_account is not None else {}
         self.runtime_state, self.runtime_detail = 'SUBMITTING', 'Emir sonucu bekleniyor.'
         res = self.mt5.open_order(self.symbol, side, self.lot_size, sl_points=sl, tp_points=tp,
-            comment=f"HMA Bot {side}", magic=HMA_MAGIC, request_id=self.order_id(side), stop_event=self._stop_event, **kwargs)
+            comment=f"HMA Bot {side}", magic=HMA_MAGIC, request_id=self.order_id(side), stop_event=self._stop_event, manual_mode="MT5", **kwargs)
         if res.get("success"):
             self.runtime_state, self.runtime_detail = 'WAITING_SIGNAL', 'Emir kabul edildi; yeni sinyal bekleniyor.'
             self.log(f"✅ {side} Emri Açıldı: #{res.get('ticket')} @ {res.get('price')}")

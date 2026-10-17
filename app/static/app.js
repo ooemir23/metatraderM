@@ -3069,7 +3069,7 @@ async function saveBotQuickLot() {
       return;
     }
     const raw = parseFloat(document.getElementById('bot-quick-lot')?.value || '0.01');
-    const lot = Number.isFinite(raw) && raw > 0 ? Math.min(0.10, Math.max(0.01, Number(raw.toFixed(2)))) : 0.01;
+    const lot = Number.isFinite(raw) && raw > 0 ? Math.min(100, Math.max(0.01, Number(raw.toFixed(2)))) : 0.01;
     const input = document.getElementById('bot-quick-lot');
     if (input) input.value = String(lot);
     const res = await fetch('/api/bot/config', {
