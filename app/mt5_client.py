@@ -1149,7 +1149,7 @@ class MT5Client:
             if not self.ensure_connected():
                 raise MT5DataError("MT5 bağlı değil.")
             try:
-                activity = self._bridge("report_activity", days)
+                activity = self._bridge("report_activity", days, self.tick_clock_offset)
             except Exception as exc:
                 raise MT5DataError("Rapor verisi okunamadı.") from exc
             key = (tuple(activity["account"]), days)

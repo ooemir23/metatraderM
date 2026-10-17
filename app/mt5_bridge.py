@@ -164,16 +164,21 @@ def research_rates(mt5, symbol, timeframe, start, end, clock_offset=0):
     return [result[t] for t in sorted(result)]
 
 
+def server_day_window(tick_offset=0, now=None):
+    """Today's MT5 server day as broker-time datetimes: [server 00:00, server now]."""
+    server_now = int(time.time() if now is None else now) + int(tick_offset)
+    return (datetime.fromtimestamp(server_now - server_now % 86400, timezone.utc),
+            datetime.fromtimestamp(server_now, timezone.utc))
+
+
 def risk(mt5, tick_offset=0, include_history=True):
     account = mt5.account_info()
     if account is None:
         raise RuntimeError('Hesap bilgisi okunamadı; yeni emir engellendi.')
-    now = datetime.now(timezone.utc)
-    # This terminal reports deal timestamps in broker time. Shift the UTC day
-    # window by the measured terminal offset, as with get_history().
-    offset = timedelta(seconds=tick_offset)
-    deals = (mt5.history_deals_get(now.replace(hour=0, minute=0, second=0, microsecond=0) + offset,
-                                   now + offset) if include_history else [])
+    # MT5 day = broker server day. Deal timestamps are broker time, so the window runs from
+    # broker 00:00 (today, server clock) to the current server time.
+    start, end = server_day_window(tick_offset)
+    deals = mt5.history_deals_get(start, end) if include_history else []
     current = mt5.positions_get()
     pending = mt5.orders_get()
     if deals is None or current is None or pending is None:
@@ -502,7 +507,7 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
         account, current, pending, realized, floating = risk(mt5, tick_offset, include_history=not native)
         if expected_login and (int(account.login) != expected_login or str(account.server) != expected_server):
             return {'success': False, 'error': 'Aktif MT5 hesabı seçilen hesapla uyuşmuyor.'}
-        # Open gains cannot mask realized losses. Amounts are in account currency, day is UTC.
+        # Open gains cannot mask realized losses. Amounts are in account currency, day is the MT5 server day.
         loss = max(0.0, -(realized + min(0.0, floating)))
         if not native and enforce_daily_limit and (not math.isfinite(daily_loss_limit) or daily_loss_limit <= 0 or loss >= daily_loss_limit):
             return {'success': False, 'error': 'Günlük zarar sınırı: yeni emir engellendi.',
@@ -1333,10 +1338,12 @@ def _deal_row(d):
                 profit=float(d.profit), commission=float(d.commission), swap=float(d.swap), fee=float(d.fee))
 
 
-def report_activity(mt5, days):
+def report_activity(mt5, days, tick_offset=0):
     from datetime import timedelta
     account = _account(mt5)
-    end = datetime.now(timezone.utc)
+    # Deal times are broker server time (as in MT5's History/Report); query in the same clock,
+    # otherwise the last tick_offset hours of deals are cut off.
+    end = datetime.now(timezone.utc) + timedelta(seconds=int(tick_offset))
     start = end - timedelta(days=days)
     deals, current = mt5.history_deals_get(start, end), mt5.positions_get()
     if deals is None or current is None:

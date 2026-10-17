@@ -43,7 +43,7 @@ input bool               InpAllowTrading     = false;           // Otomatik isle
 input bool               InpCloseOpposite    = true;            // Ters Sinyalde Mevcut Pozisyonu Kapat
 input ulong              InpMagicNumber      = 882211;          // EA Magic Number (Benzersiz Numara)
 input ulong              InpDeviation        = 10;              // Maksimum Slippage (Sapma)
-input double             InpDailyLossLimit   = 500.0;           // Hesap para biriminde UTC gunluk zarar siniri
+input double             InpDailyLossLimit   = 500.0;           // Hesap para biriminde sunucu gunu (MT5 gunu) zarar siniri
 input double             InpMaxOrderLots     = 0.10;            // Tek emir ust limiti
 input double             InpMaxTotalLots     = 0.50;            // Tum pozisyon ve bekleyen emirlerin toplam lotu
 input int                InpMaxOpenOrders    = 10;              // Pozisyon + bekleyen emir sayisi
@@ -355,10 +355,9 @@ bool CanOpenTrade()
       return false;
    }
 
-   int serverOffset = (int)(TimeTradeServer() - TimeGMT());
-   datetime utcNow = TimeGMT();
-   datetime utcStart = utcNow - utcNow % 86400;
-   if(!HistorySelect(utcStart + serverOffset, TimeTradeServer()))
+   datetime serverNow = TimeTradeServer();
+   datetime serverStart = serverNow - serverNow % 86400;   // MT5 day: broker server 00:00
+   if(!HistorySelect(serverStart, serverNow))
    {
       Print("Gunluk islem gecmisi okunamadi; yeni emir engellendi.");
       return false;

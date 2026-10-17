@@ -35,13 +35,13 @@ def test_indicator_prefix_does_not_read_future_and_er_bounds():
     assert all(a > 0 for a in whole['atr'] if a is not None)
 
 
-def test_kama_and_wilder_atr_hand_calculation():
+def test_kama_and_atr_match_mt5_iama_iatr():
     rows = [dict(time=i * 3600, open=100+i, high=102+i, low=99+i, close=100+i) for i in range(30)]
     s = Settings(kama_period=2, kama_fast=2, kama_slow=30, atr_period=2)
     data = indicators(rows, s)
     assert data['er'][2] == 1
-    assert data['kama'][1] == 100.5
-    assert data['kama'][2] == pytest.approx(100.5 + (2/3)**2 * 1.5)
+    assert data['kama'][1] == 101  # MT5 iAMA seed: price of bar period-1
+    assert data['kama'][2] == pytest.approx(101 + (2/3)**2 * 1)
     assert data['atr'][2] == 3
     flat = [dict(r, open=100, high=100, low=100, close=100) for r in rows]
     assert indicators(flat, s)['er'][2] == 0

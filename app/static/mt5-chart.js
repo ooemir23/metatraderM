@@ -2,7 +2,11 @@
 (() => {
   const defaults = {timeframe:15, type:'candles', theme:'dark', grid:true, volume:true,
     log:false, scale:0, invert:false, crosshair:true, priceLine:true,
-    sma:false, ema:true, hma:true, signals:true, period:20, emaPeriod:34, hmaPeriod:14, up:'#10b981', down:'#ef4444'};
+    sma:false, ema:true, hma:true, signals:true, period:20, emaPeriod:34, hmaPeriod:14, slowType:'EMA', confirmClose:true, up:'#10b981', down:'#ef4444'};
+  const SLOW_TYPES = ['EMA','SMA','LWMA','HMA'];
+  // MT5 recursive indicators (EMA) depend on the whole chart history; load enough bars that the
+  // seed no longer affects the value, like MT5's own long chart history.
+  const HISTORY_BARS = 5000;
   const frames = {1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'};
   const frameLabels = {1:'1 dk',5:'5 dk',15:'15 dk',30:'30 dk',60:'1 sa',240:'4 sa',1440:'1 gün'};
   const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch (_) { return fallback; } };
@@ -17,6 +21,8 @@
     if (Number.isInteger(raw.period) && raw.period >= 2 && raw.period <= 200) result.period = raw.period;
     if (Number.isInteger(raw.emaPeriod) && raw.emaPeriod >= 2 && raw.emaPeriod <= 200) result.emaPeriod = raw.emaPeriod;
     if (Number.isInteger(raw.hmaPeriod) && raw.hmaPeriod >= 2 && raw.hmaPeriod <= 200) result.hmaPeriod = raw.hmaPeriod;
+    if (SLOW_TYPES.includes(raw.slowType)) result.slowType = raw.slowType;
+    if (typeof raw.confirmClose === 'boolean') result.confirmClose = raw.confirmClose;
     for (const key of ['up','down']) if (/^#[0-9a-f]{6}$/i.test(raw[key])) result[key] = raw[key];
     return result;
   }
@@ -78,11 +84,12 @@
     let sum = 0; const avg=[];
     rows.forEach((r,i)=>{sum+=r.close;if(i>=prefs.period) sum-=rows[i-prefs.period].close;if(i>=prefs.period-1) avg.push({time:r.time,value:sum/prefs.period});});
     state.average.setData(avg);
-    const ema = emaValues(rows,prefs.emaPeriod);
+    const ema = slowValues(rows, prefs.slowType, prefs.emaPeriod);
     state.exponential.setData(ema);
+    state.exponential.applyOptions({title: prefs.slowType});
     const hma = hmaValues(rows,prefs.hmaPeriod);
     if (state.hma) state.hma.setData(hma);
-    const markers = prefs.signals ? signalMarkers(rows, prefs.hmaPeriod, prefs.emaPeriod) : [];
+    const markers = prefs.signals ? signalMarkers(rows, prefs.hmaPeriod, prefs.emaPeriod, prefs.slowType, prefs.confirmClose) : [];
     if (state.markersPlugin && typeof state.markersPlugin.setMarkers === 'function') {
       state.markersPlugin.setMarkers(markers);
     }
@@ -111,11 +118,35 @@
     if (fit) { state.chart.timeScale().fitContent(); state.chart.timeScale().setVisibleLogicalRange({from:Math.max(0,rows.length-120),to:rows.length+4}); }
   }
   function emaValues(rows, period) {
-    if (rows.length < period) return [];
-    let value=rows.slice(0,period).reduce((sum,r)=>sum+r.close,0)/period;
-    const result=[{time:rows[period-1].time,value}], alpha=2/(period+1);
-    for(let i=period;i<rows.length;i++) {value=alpha*rows[i].close+(1-alpha)*value;result.push({time:rows[i].time,value});}
+    // MT5 iMA MODE_EMA: seeded with the first bar's price, then price*k + prev*(1-k) on every bar.
+    if (rows.length < period || period <= 0) return [];
+    const k = 2 / (period + 1), result = [];
+    let value = rows[0].close;
+    for (let i = 0; i < rows.length; i++) {
+      if (i) value = rows[i].close * k + value * (1 - k);
+      if (i >= period - 1) result.push({time: rows[i].time, value});
+    }
     return result;
+  }
+  function smaValues(rows, period) {
+    const result = [];
+    for (let i = period - 1; i < rows.length; i++) {
+      let sum = 0;
+      for (let j = 0; j < period; j++) sum += rows[i - j].close;
+      result.push({time: rows[i].time, value: sum / period});
+    }
+    return result;
+  }
+  function lwmaValues(rows, period) {
+    const closes = rows.map(r => r.close), result = [];
+    for (let i = period - 1; i < rows.length; i++) result.push({time: rows[i].time, value: wmaAt(closes, i, period)});
+    return result;
+  }
+  function slowValues(rows, type, period) {
+    if (type === 'SMA') return smaValues(rows, period);
+    if (type === 'LWMA') return lwmaValues(rows, period);
+    if (type === 'HMA') return hmaValues(rows, period);
+    return emaValues(rows, period);
   }
   function wmaAt(values, idx, period) {
     if (idx < period - 1 || period <= 0) return null;
@@ -147,9 +178,12 @@
     }
     return result;
   }
-  function signalMarkers(rows, hmaPeriod = 14, emaPeriod = 34) {
+  function signalMarkers(rows, hmaPeriod = 14, emaPeriod = 34, slowType = 'EMA', confirmClose = true) {
+    // Same rule as the scanner/bot: HMA x selected slow MA; with confirmation only closed candles
+    // (the forming candle can still change, so an arrow there could disappear).
+    if (confirmClose) rows = rows.slice(0, -1);
     const hma = hmaValues(rows, hmaPeriod);
-    const ema = emaValues(rows, emaPeriod);
+    const ema = slowValues(rows, SLOW_TYPES.includes(slowType) ? slowType : 'EMA', emaPeriod);
     if (!hma.length || !ema.length) return [];
     const hMap = new Map(hma.map(x => [x.time, x.value]));
     const eMap = new Map(ema.map(x => [x.time, x.value]));
@@ -192,7 +226,7 @@
     const controller = new AbortController(); state.abort=controller;
     const timeout = setTimeout(()=>controller.abort(),12000);
     try {
-      const count = full || !state.rows.length ? 600 : 3;
+      const count = full || !state.rows.length ? HISTORY_BARS : 3;
       const res = await fetch(`/api/chart/candles?symbol=${encodeURIComponent(state.symbol)}&timeframe_minutes=${state.timeframe}&count=${count}`, {signal:controller.signal});
       const data = await res.json();
       if (token !== generation || state !== active) return;
@@ -202,7 +236,7 @@
       // Refill history after a long disconnect instead of drawing across missing bars.
       const gap = state.rows.length && rows[0].time > state.rows.at(-1).time + state.timeframe*60;
       if (gap && !full) { clearTimeout(timeout); return await load(state,true); }
-      state.rows = normalize(full ? rows : [...state.rows,...rows]).slice(-1000);
+      state.rows = normalize(full ? rows : [...state.rows,...rows]).slice(-HISTORY_BARS);
       renderData(state, !state.loaded);
       state.loaded=true;
       const tfCode = frames[state.timeframe] || `M${state.timeframe}`;
@@ -223,13 +257,13 @@
     const step = state.timeframe * 60;
     const barTime = Number.isInteger(time) && time >= last.time ? time - (time % step) : last.time;
     if (barTime > last.time) {
-      state.rows.push({time: barTime, open: bid, high: bid, low: bid, close: bid, tick_volume: 1});
-      if (state.rows.length > 1000) state.rows.shift();
+      // Tick volume comes only from MT5's own bars (2-second refresh), never from counting UI updates.
+      state.rows.push({time: barTime, open: bid, high: bid, low: bid, close: bid, tick_volume: 0});
+      if (state.rows.length > HISTORY_BARS) state.rows.shift();
     } else {
       last.close = bid;
       if (bid > last.high) last.high = bid;
       if (bid < last.low) last.low = bid;
-      last.tick_volume = (last.tick_volume || 0) + 1;
     }
     const current = state.rows[state.rows.length - 1];
     if (typeof state.price?.update === 'function') {
@@ -303,8 +337,8 @@
         <label>Al / Sat sinyal okları<input type="checkbox" data-setting="signals" aria-label="Al Sat sinyal okları"></label>
         <label>Hareketli ortalama (SMA)<input type="checkbox" data-setting="sma" aria-label="Hareketli ortalama"></label>
         <label>SMA periyodu<input type="number" min="2" max="200" data-setting="period" aria-label="SMA periyodu"></label>
-        <label>Üssel ortalama (EMA)<input type="checkbox" data-setting="ema" aria-label="Üssel ortalama"></label>
-        <label>EMA periyodu<input type="number" min="2" max="200" data-setting="emaPeriod" aria-label="EMA periyodu"></label>
+        <label>Yavaş ortalama (sinyal MA)<input type="checkbox" data-setting="ema" aria-label="Yavaş ortalama"></label>
+        <label>Yavaş MA periyodu<input type="number" min="2" max="200" data-setting="emaPeriod" aria-label="Yavaş MA periyodu"></label>
         <button type="button" data-action="level">Bu fiyata yatay çizgi ekle</button>
         <button type="button" data-action="clear-levels">Yatay çizgileri temizle</button>
         <button type="button" data-action="fit">Grafiği ekrana sığdır</button>
@@ -406,10 +440,12 @@
     change('timeframe', num);
   }
   // Keep the chart's HMA / EMA lines and AL/SAT markers on the scanner's signal settings.
-  function setSignalPeriods(hma, slow) {
+  function setSignalPeriods(hma, slow, type = 'EMA', confirmClose = true) {
     const valid = n => Number.isInteger(n) && n >= 2 && n <= 200;
     if (valid(hma) && prefs.hmaPeriod !== hma) change('hmaPeriod', hma);
     if (valid(slow) && prefs.emaPeriod !== slow) change('emaPeriod', slow);
+    if (SLOW_TYPES.includes(type) && prefs.slowType !== type) change('slowType', type);
+    if (typeof confirmClose === 'boolean' && prefs.confirmClose !== confirmClose) change('confirmClose', confirmClose);
   }
-  window.MT5Chart={mode,setMode,mount,dispose,normalize,emaValues,hmaValues,signalMarkers,csvData,tick,getTimeframe,setTimeframe,setSignalPeriods,frames,frameLabels};
+  window.MT5Chart={mode,setMode,mount,dispose,normalize,emaValues,smaValues,lwmaValues,slowValues,hmaValues,signalMarkers,csvData,tick,getTimeframe,setTimeframe,setSignalPeriods,frames,frameLabels};
 })();

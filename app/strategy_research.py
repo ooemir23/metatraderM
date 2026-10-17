@@ -107,7 +107,7 @@ def indicators(rows, settings):
     fast, slow = 2 / (settings.kama_fast + 1), 2 / (settings.kama_slow + 1)
     n = settings.kama_period
     if len(rows) > n:
-        kama[n - 1] = sum(closes[:n]) / n
+        kama[n - 1] = closes[n - 1]  # MT5 iAMA: first value is the price of bar period-1
     for i in range(n, len(rows)):
         path = sum(abs(closes[j] - closes[j - 1]) for j in range(i - n + 1, i + 1))
         er[i] = abs(closes[i] - closes[i - n]) / path if path else 0.0
@@ -117,10 +117,9 @@ def indicators(rows, settings):
               abs(float(r['high']) - closes[i - 1]), abs(float(r['low']) - closes[i - 1]))
           for i, r in enumerate(rows) if i > 0]
     n = settings.atr_period
-    if len(tr) >= n:
-        atr[n] = sum(tr[:n]) / n
-        for i in range(n + 1, len(rows)):
-            atr[i] = (atr[i - 1] * (n - 1) + tr[i - 1]) / n
+    # MT5 iATR: simple moving average of True Range (not Wilder smoothing).
+    for i in range(n, len(rows)):
+        atr[i] = sum(tr[i - n:i]) / n
     return {'hma': hma, 'kama': kama, 'er': er, 'atr': atr}
 
 

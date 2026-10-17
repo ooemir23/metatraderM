@@ -112,7 +112,7 @@ EA ilk yüklendiğinde geçmiş kesişimden emir açmaz; sonraki mum kapanışı
 | **İşlem & Risk** | `InpLotSize` | `0.01` | Açılacak işlem lot büyüklüğü |
 | | `InpAllowTrading` | `false` | `true` = Otomatik al/sat, `false` = Sadece sinyal |
 | | `InpCloseOpposite` | `true` | Ters sinyalde mevcut pozisyon kapatılsın mı? |
-| | `InpDailyLossLimit` | `500` | UTC günü için hesap para birimindeki EA zarar sınırı |
+| | `InpDailyLossLimit` | `500` | Broker sunucu günü (MT5 günü) için hesap para birimindeki EA zarar sınırı |
 | | `InpMaxOrderLots` | `0.10` | EA'nın tek emir üst sınırı |
 | | `InpMaxTotalLots` | `0.50` | Hesaptaki açık pozisyon ve bekleyen emir toplamı |
 | | `InpMaxOpenOrders` | `10` | Hesaptaki açık pozisyon ve bekleyen emir sayısı |

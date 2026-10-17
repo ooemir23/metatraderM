@@ -206,9 +206,8 @@
     settings = sanitize(raw);
     try { localStorage.setItem(KEY, JSON.stringify(settings)); } catch (_) { /* session-only */ }
     renderSummary();
-    // Chart lines/markers draw HMA × EMA; keep their periods in step (other MA types keep EMA on the chart).
-    if (settings.ma_type === 'EMA') window.MT5Chart?.setSignalPeriods?.(settings.hma_period, settings.ema_period);
-    else window.MT5Chart?.setSignalPeriods?.(settings.hma_period, null);
+    // Chart lines/markers use exactly the scanner rule: HMA × selected slow MA, closed candles if confirmed.
+    window.MT5Chart?.setSignalPeriods?.(settings.hma_period, settings.ema_period, settings.ma_type, settings.confirm_close !== false);
     close();
     if (typeof refreshSignalScanner === 'function') refreshSignalScanner(true, true);
     if (typeof showToast === 'function') showToast(`✅ Sinyal ayarları kaydedildi: ${fastLabel()} × ${slowLabel()}`, 'success');
@@ -328,8 +327,8 @@
       });
     }
     renderSummary();
-    // Chart AL/SAT markers follow the same HMA × EMA periods as the scanner.
-    window.MT5Chart?.setSignalPeriods?.(settings.hma_period, settings.ma_type === 'EMA' ? settings.ema_period : null);
+    // Chart AL/SAT markers follow the same HMA × slow MA rule as the scanner.
+    window.MT5Chart?.setSignalPeriods?.(settings.hma_period, settings.ema_period, settings.ma_type, settings.confirm_close !== false);
   }
 
   window.HMASignalSettings = {get: () => ({...settings, sessions: [...settings.sessions]}), query, open, close, save, reset, applyToBot,

@@ -15,7 +15,7 @@ def test_chart_history_validates_input_and_returns_broker_data(monkeypatch):
              'low': 81900, 'close': 82050, 'tick_volume': 25}]
     get_rates = Mock(return_value=rows)
     monkeypatch.setattr(main.mt5_client, 'get_rates', get_rates)
-    for params in ({'symbol':'BTCUSD', 'timeframe_minutes':7}, {'count':1001}, {'symbol':'BTCUSD/../../'}):
+    for params in ({'symbol':'BTCUSD', 'timeframe_minutes':7}, {'count':5001}, {'symbol':'BTCUSD/../../'}):
         assert client.get('/api/chart/candles', params=params).status_code == 422
     get_rates.assert_not_called()
     response = client.get('/api/chart/candles', params={'symbol':'btcusd', 'timeframe_minutes':60, 'count':3})

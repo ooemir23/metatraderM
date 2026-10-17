@@ -1,4 +1,4 @@
-"""Cash activity by UTC day; win statistics by fully closed position lifetime."""
+"""Cash activity by MT5 server day (deal times are broker time); win statistics by fully closed position lifetime."""
 from datetime import datetime, timezone
 import math
 

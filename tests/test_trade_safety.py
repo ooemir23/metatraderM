@@ -218,12 +218,20 @@ def test_broker_clock_offset_applies_to_daily_loss_gate(client):
     broker_now = datetime.now(timezone.utc).timestamp() + 10800
     def broker_deals(start, end):
         assert abs(end.timestamp() - broker_now) < 5
-        assert start.hour == 3 and start.minute == 0
+        assert start.hour == 0 and start.minute == 0  # MT5 day starts at broker server 00:00
         return [deal(-500)]
     client.mt5.history_deals_get.side_effect = broker_deals
     result = client.open_order('EURUSD', 'BUY', .01)
     assert not result['success'] and result['daily_loss'] == 500
     client.mt5.order_send.assert_not_called()
+
+
+def test_server_day_window_is_the_mt5_server_day():
+    from app.mt5_bridge import server_day_window
+    # 2026-10-17 22:30 UTC = 2026-10-18 01:30 server (UTC+3): the MT5 day is already the 18th.
+    start, end = server_day_window(10800, now=1792276200)
+    assert start.strftime('%Y-%m-%d %H:%M') == '2026-10-18 00:00'
+    assert end.strftime('%H:%M') == '01:30'
 
 
 def test_manual_close_remains_available_above_loss_limit(client):

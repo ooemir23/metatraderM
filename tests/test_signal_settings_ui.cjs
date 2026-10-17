@@ -22,7 +22,7 @@ function load(stored, {blockStorage = false} = {}) {
     document: {readyState: 'complete', getElementById: (id) => nodes[id] || null, addEventListener() {}},
     localStorage: {getItem: (k) => { if (blockStorage) throw new Error('blocked'); return store.get(k) ?? null; },
                    setItem: (k, v) => { if (blockStorage) throw new Error('blocked'); store.set(k, v); }},
-    window: {MT5Chart: {setSignalPeriods: (h, e) => chart.push([h, e])}},
+    window: {MT5Chart: {setSignalPeriods: (...a) => chart.push(a)}},
     refreshSignalScanner: (...a) => calls.push(a), showToast() {},
   });
   ctx.window.window = ctx.window;
@@ -36,7 +36,7 @@ assert.equal(s.api.get().confirm_close, true, 'closed-candle confirmation by def
 assert.match(s.api.query(), /hma_period=14&ema_period=34&ma_type=EMA/);
 assert.match(s.nodes['signal-settings-summary'].textContent, /HMA\(14\) × EMA\(34\)/);
 assert.match(s.nodes['signal-settings-explain'].innerHTML, /kapanmış mumda/);
-assert.deepEqual(s.chart.at(-1), [14, 34], 'chart markers synced on load');
+assert.deepEqual(s.chart.at(-1), [14, 34, 'EMA', true], 'chart markers synced on load');
 
 s.api.open();
 assert.equal(s.nodes['signal-settings-dialog'].open, true);
@@ -49,7 +49,7 @@ assert.equal(s.api.get().ma_type, 'SMA');
 assert.match(s.api.query(), /ma_type=SMA/);
 assert.match(s.api.query(), /rsi_filter=true&rsi_buy_max=65/);
 assert.equal(JSON.parse(s.store.get('hma.signal.settings.v1')).ema_period, 50, 'persisted');
-assert.deepEqual(s.chart.at(-1), [21, null], 'non-EMA slow MA keeps chart EMA period');
+assert.deepEqual(s.chart.at(-1), [21, 50, 'SMA', true], 'non-EMA slow MA is drawn and used by chart markers');
 assert.deepEqual(s.calls.at(-1), [true, true], 'saving rescans immediately');
 assert.equal(s.nodes['signal-settings-dialog'].open, false);
 

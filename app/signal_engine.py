@@ -1,11 +1,16 @@
 """Buy/sell signal engine for the scanner: HMA(fast) x MA(slow) crossover plus optional filters
 and a history test of the same rules.
 
-Indicator formulas follow MT5's built-in indicators so a value can be checked on the MT5 chart:
-- HMA / EMA / SMA / LWMA: the same calculation as StrategyBot (bot and MT5 EA);
+Indicator formulas follow MT5's built-in indicators exactly, so a value can be checked on the MT5 chart:
+- SMA / LWMA: iMA MODE_SMA / MODE_LWMA;
+- EMA: iMA MODE_EMA, seeded with the first bar's price (MT5 "Moving Average" source);
+- HMA: the MT5 EA (HMA_Crossover_EA.mq5) calculation;
 - ATR: simple average of True Range (iATR);
-- ADX: MT5 "Average Directional Movement Index" (iADX, exponential smoothing);
-- RSI: Wilder smoothing (iRSI);
+- ADX: iADX, exponential smoothing seeded with 0 on the first bar;
+- RSI: iRSI, Wilder smoothing, unrounded;
+Recursive indicators (EMA, RSI, ADX) depend on all earlier bars, like MT5 computing them over the
+whole chart history; history_bars() asks for enough bars that the seed no longer changes the value.
+
 - volume: tick volume of the candle (MT5 "Volumes", tick).
 All series are chronological (oldest first). Candle times are broker times; utc_offset converts
 them to UTC for the session filter.
@@ -59,16 +64,19 @@ def sma_series(closes, period):
 
 
 def ema_series(closes, period):
-    """Seeded with the SMA of the first `period` closes, like StrategyBot.calc_second_ma."""
+    """MT5 iMA MODE_EMA: seeded with the first price, then price*k + prev*(1-k) on every bar.
+
+    MT5 starts drawing at bar period-1; earlier bars are None here."""
     out = [None] * len(closes)
     if period <= 0 or len(closes) < period:
         return out
     k = 2.0 / (period + 1.0)
-    ema = sum(closes[:period]) / period
-    out[period - 1] = ema
-    for i in range(period, len(closes)):
-        ema = closes[i] * k + ema * (1.0 - k)
-        out[i] = ema
+    ema = float(closes[0])
+    for i in range(len(closes)):
+        if i:
+            ema = closes[i] * k + ema * (1.0 - k)
+        if i >= period - 1:
+            out[i] = ema
     return out
 
 
@@ -109,7 +117,8 @@ def rsi_series(closes, period):
     avg_gain, avg_loss = sum(gains) / period, sum(losses) / period
 
     def value():
-        return 100.0 if avg_loss == 0 else round(100.0 - 100.0 / (1.0 + avg_gain / avg_loss), 1)
+        # MT5 iRSI: no rounding (display code rounds).
+        return 100.0 if avg_loss == 0 else 100.0 - 100.0 / (1.0 + avg_gain / avg_loss)
     out[period] = value()
     for i in range(period + 1, len(closes)):
         diff = closes[i] - closes[i - 1]
@@ -119,16 +128,17 @@ def rsi_series(closes, period):
     return out
 
 
-def _mt5_ema(values, period):
-    alpha, prev, out = 2.0 / (period + 1.0), None, []
+def _mt5_ema(values, period, seed=0.0):
+    """MT5 ExponentialMA(position, period, prev_value, price): prev starts at the bar-0 value (0 in iADX)."""
+    alpha, prev, out = 2.0 / (period + 1.0), seed, []
     for v in values:
-        prev = v if prev is None else v * alpha + prev * (1.0 - alpha)
+        prev = v * alpha + prev * (1.0 - alpha)
         out.append(prev)
     return out
 
 
 def adx_series(rates, period):
-    """MT5 iADX: +DI/-DI and ADX smoothed with an exponential MA of `period`."""
+    """MT5 iADX: +DI/-DI and ADX smoothed with ExponentialMA of `period`; bar 0 is 0."""
     n = len(rates)
     if n < 2:
         return [None] * n
@@ -149,11 +159,7 @@ def adx_series(rates, period):
     pdi, ndi = _mt5_ema(pdi_raw, period), _mt5_ema(ndi_raw, period)
     dx = [100.0 * abs(a - b) / (a + b) if a + b else 0.0 for a, b in zip(pdi, ndi)]
     adx = _mt5_ema(dx, period)
-    out = [None] + adx
-    # Exponential smoothing needs a warm-up before values are meaningful.
-    for i in range(min(n, 2 * period)):
-        out[i] = None
-    return out
+    return [0.0] + adx
 
 
 # ---------------------------------------------------------------- helpers
@@ -417,7 +423,7 @@ def analyze(rates, s, tf_minutes, *, htf_rates=None, utc_offset=0, spread_points
         'signal': signal, 'side': side,
         'bars_ago': bars_ago if bars_ago is not None else 0, 'cross_side': cross_side or side,
         'price': round(price, digits), 'hma': round(h_now, digits), 'ema': round(s_now, digits),
-        'rsi': rsi, 'atr': round(atr, digits),
+        'rsi': round(rsi, 1) if rsi is not None else None, 'atr': round(atr, digits),
         'adx': round(ctx.adx[idx], 1) if ctx.adx is not None and ctx.adx[idx] is not None else None,
         'spread_points': spread_points,
         'reward_risk': round(ctx.reward_risk(atr), 2) if atr and s['sl_atr'] > 0 and s['tp_atr'] > 0 else None,
@@ -428,6 +434,29 @@ def analyze(rates, s, tf_minutes, *, htf_rates=None, utc_offset=0, spread_points
     if stats:
         item['stats'] = history_stats(ctx, stats_bars)
     return item
+
+
+def ema_warmup(period):
+    """Bars after which an EMA seed is below 1e-10 of its weight (MT5 has the whole chart history)."""
+    return int(math.ceil(23.0 * (period + 1) / 2.0)) + period
+
+
+def wilder_warmup(period):
+    return int(math.ceil(23.0 * period)) + period
+
+
+MAX_HISTORY_BARS = 5000
+
+
+def history_bars(s):
+    """Bars to request so recursive indicators equal MT5's values computed on the full chart."""
+    s = {**DEFAULTS, **s}
+    need = [required_bars(s), wilder_warmup(s['rsi_period'])]
+    if s['ma_type'] == 'EMA':
+        need.append(ema_warmup(s['ema_period']))
+    if s['adx_filter']:
+        need.append(2 * ema_warmup(s['adx_period']))
+    return min(MAX_HISTORY_BARS, max(need))
 
 
 def required_bars(s):

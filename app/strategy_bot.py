@@ -14,6 +14,7 @@ from pathlib import Path
 from app.mt5_bridge import HMA_MAGIC
 from app.mt5_client import MT5DataError, TIMEFRAME_NAMES
 from app.strategy_research import Settings as IndicatorSettings, indicators
+from app import signal_engine
 
 logger = logging.getLogger("StrategyBot")
 logger.setLevel(logging.INFO)
@@ -532,6 +533,17 @@ class StrategyBot:
             "signal_history": self.signal_history[:20]
         }
 
+    def history_bars(self) -> int:
+        """Bars to read so EMA/RSI/AMA (recursive in MT5) equal MT5's values on the full chart."""
+        need = [100, 5 * max(self.hma_period, self.second_ma_period, self.kama_slow, self.atr_period) + 20,
+                signal_engine.wilder_warmup(14)]
+        if self.second_ma_type == "EMA":
+            need.append(signal_engine.ema_warmup(self.second_ma_period))
+        if self.second_ma_type == "KAMA":
+            slow = 2.0 / (self.kama_slow + 1.0)
+            need.append(int(math.ceil(23.0 / (slow * slow))) + self.second_ma_period)
+        return min(signal_engine.MAX_HISTORY_BARS, max(need))
+
     # WMA (Weighted Moving Average)
     @staticmethod
     def calc_wma(prices: List[float], period: int, shift: int = 0) -> float:
@@ -577,15 +589,13 @@ class StrategyBot:
             return cls.calc_wma(close_prices, period, shift)
         elif ma_type == "HMA":
             return cls.calc_hma(close_prices, period, shift)
-        else: # Default: EMA
+        else: # Default: EMA, exactly MT5 iMA MODE_EMA (seeded with the first price)
             k = 2.0 / (period + 1.0)
-            # EMA over full history up to shift
-            history = close_prices[shift:]
-            history = list(reversed(history)) # chronological
+            history = list(reversed(close_prices[shift:]))  # chronological
             if len(history) < period:
                 return 0.0
-            ema = sum(history[:period]) / period
-            for price in history[period:]:
+            ema = float(history[0])
+            for price in history[1:]:
                 ema = (price * k) + (ema * (1.0 - k))
             return ema
 
@@ -607,12 +617,12 @@ class StrategyBot:
         if avg_loss == 0:
             return 100.0
         rs = avg_gain / avg_loss
-        return round(100.0 - (100.0 / (1.0 + rs)), 1)
+        return 100.0 - (100.0 / (1.0 + rs))  # MT5 iRSI: unrounded
 
     def live_preview(self) -> Dict[str, Any]:
         try:
             rates = self.mt5.get_rates(self.symbol, timeframe=self.timeframe_minutes,
-                                       count=max(100, 5 * max(self.hma_period, self.second_ma_period, self.kama_slow, self.atr_period) + 20))
+                                       count=self.history_bars())
             if not rates or len(rates) < max(self.hma_period, self.second_ma_period) + 15:
                 return {"available": False, "symbol": self.symbol, **self.get_signal_rules()}
             rev_closes = [float(r["close"]) for r in reversed(rates)]
@@ -768,7 +778,7 @@ class StrategyBot:
 
     def _check_strategy_for_symbol(self, sym: str, expected_account=None):
         rates = self.mt5.get_rates(sym, timeframe=self.timeframe_minutes,
-                                   count=max(100, 5 * max(self.hma_period, self.second_ma_period, self.kama_slow, self.atr_period) + 20))
+                                   count=self.history_bars())
         if self._stop_event.is_set():
             return
         required = max(self.hma_period + int(math.sqrt(self.hma_period)) + 1,

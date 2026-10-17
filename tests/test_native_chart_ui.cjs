@@ -20,7 +20,17 @@ const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:a
   const api=globals.window.MT5Chart;
   const good=(time,close)=>({time,open:close,high:close+1,low:close-1,close,tick_volume:10});
   const ema=api.emaValues([1,2,3,4,5].map(v=>good(v,v)),3);
-  assert.deepEqual(Array.from(ema,r=>[r.time,r.value]),[[3,2],[4,3],[5,4]],'EMA uses SMA seed and standard smoothing');
+  assert.deepEqual(Array.from(ema,r=>[r.time,r.value]),[[3,2.25],[4,3.125],[5,4.0625]],'EMA uses the MT5 iMA seed (first price) and standard smoothing');
+  {
+    // Markers follow the scanner rule: selected slow MA type, closed candles only when confirmed.
+    const rows=[...Array(40)].map((_,i)=>good(i+1, i<20 ? 100-i : 60+3*(i-20)));
+    const closedOnly=api.signalMarkers(rows,4,6,'SMA',true), live=api.signalMarkers(rows,4,6,'SMA',false);
+    assert.ok(closedOnly.every(m=>m.time!==rows.at(-1).time),'forming candle never gets an arrow when confirmation is on');
+    assert.ok(live.length>=closedOnly.length);
+    const sma=api.slowValues(rows,'SMA',6), expected=rows.slice(0,6).reduce((a,r)=>a+r.close,0)/6;
+    assert.equal(sma[0].value,expected,'SMA slow line equals MT5 MODE_SMA');
+    assert.equal(api.slowValues(rows,'LWMA',6).length,35);
+  }
   assert.equal(api.emaValues([good(1,1)],3).length,0,'insufficient bars never fabricate an indicator');
   const csv=api.csvData({symbol:'BTCUSD',timeframe:15,rows:[good(10,82000)]});
   assert.match(csv,/time_broker/);assert.match(csv,/BTCUSD,15,10,82000,82001,81999,82000,10/);

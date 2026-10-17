@@ -417,7 +417,7 @@ research_guard = threading.Lock()
 @app.get('/api/chart/candles')
 async def chart_candles(symbol: str = Query(default='EURUSD', pattern=r'^[A-Za-z0-9_.#-]+$', max_length=32),
                         timeframe_minutes: int = Query(default=15),
-                        count: int = Query(default=600, ge=2, le=1000)):
+                        count: int = Query(default=600, ge=2, le=5000)):
     if timeframe_minutes not in TIMEFRAME_NAMES:
         raise HTTPException(status_code=422, detail='Desteklenmeyen grafik zaman dilimi.')
     rows = await asyncio.to_thread(mt5_client.get_rates, symbol, timeframe_minutes, count)
@@ -445,7 +445,7 @@ def _calc_rsi(closes_chronological, period=14):
     if avg_loss == 0:
         return 100.0
     rs = avg_gain / avg_loss
-    return round(100.0 - (100.0 / (1.0 + rs)), 1)
+    return 100.0 - (100.0 / (1.0 + rs))  # MT5 iRSI: unrounded
 
 
 def _calc_atr(rates_chronological, period=14):
@@ -476,7 +476,7 @@ def _scan_symbols_sync(symbol_list, timeframe_minutes, hma_period, ema_period, m
                 'tp_atr': tp_atr, 'confirm_close': confirm_close, 'rsi_filter': rsi_filter,
                 'rsi_buy_max': rsi_buy_max, 'rsi_sell_min': rsi_sell_min}
     need = signal_engine.required_bars(settings)
-    count = max(120, need + 30, (stats_bars + need + 2) if stats else 0)
+    count = max(120, need + 30, signal_engine.history_bars(settings), (stats_bars + need + 2) if stats else 0)
     htf = signal_engine.htf_minutes_for(timeframe_minutes, settings['htf_minutes']) if settings['htf_filter'] else None
     wants_spread = bool(settings['max_spread_points'] or settings['min_rr'] or stats)
     items = []
@@ -487,7 +487,7 @@ def _scan_symbols_sync(symbol_list, timeframe_minutes, hma_period, ema_period, m
                 continue
             htf_rates = None
             if htf:
-                htf_count = need + 10 + (count * timeframe_minutes) // htf
+                htf_count = max(signal_engine.history_bars(settings), need + 10) + (count * timeframe_minutes) // htf
                 htf_rates = mt5_client.get_rates(sym, htf, htf_count) if htf in TIMEFRAME_NAMES else None
             spread = point = None
             if wants_spread:

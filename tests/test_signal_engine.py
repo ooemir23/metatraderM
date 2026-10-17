@@ -40,11 +40,28 @@ def test_rsi_and_atr_match_the_previous_scanner():
     assert se.atr_series(rows, 14)[-2] == pytest.approx(main._calc_atr(rows[:-1], 14))
 
 
+def test_ema_uses_the_mt5_seed():
+    """MT5 iMA MODE_EMA starts from the first price, not from an SMA."""
+    out = se.ema_series([1, 2, 3, 4, 5], 3)
+    assert out[:2] == [None, None] and out[2:] == [2.25, 3.125, 4.0625]
+
+
+def test_history_bars_make_recursive_indicators_equal_to_full_history():
+    """With history_bars() candles the value equals MT5's value computed on a much longer chart."""
+    import math as _m
+    closes = [100 + 5 * _m.sin(i / 7) + (i % 13) * .1 for i in range(6000)]
+    s = {**se.DEFAULTS, 'ema_period': 100, 'rsi_period': 14}
+    n = se.history_bars(s)
+    assert se.ema_series(closes[-n:], 100)[-1] == pytest.approx(se.ema_series(closes, 100)[-1], rel=1e-9, abs=1e-9)
+    assert se.rsi_series(closes[-n:], 14)[-1] == pytest.approx(se.rsi_series(closes, 14)[-1], rel=1e-9, abs=1e-9)
+    assert n <= se.MAX_HISTORY_BARS
+
+
 def test_adx_is_bounded_and_high_in_a_steady_trend():
     trend = [{'time': i, 'open': 100 + i, 'high': 101 + i, 'low': 99.5 + i, 'close': 100.8 + i} for i in range(120)]
     flat = [{'time': i, 'open': 100, 'high': 100.5 + (i % 2) * .1, 'low': 99.5 - (i % 2) * .1, 'close': 100} for i in range(120)]
     up, side = se.adx_series(trend, 14), se.adx_series(flat, 14)
-    assert up[0] is None and all(0 <= v <= 100 for v in up if v is not None)
+    assert up[0] == 0.0 and all(0 <= v <= 100 for v in up if v is not None)  # MT5 iADX bar 0 = 0
     assert up[-1] > 40 and side[-1] < 20
 
 

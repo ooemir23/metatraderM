@@ -429,7 +429,7 @@
     ["Tam otomatik modda AI periyodik olarak piyasayı tarar ve eşik üstü fırsatlarda bağımsız emir gönderir.", "In Fully Automatic mode, AI scans the market periodically and places orders when its criteria are met."],
     ["Maksimum İşlem Lotu", "Maximum Order Size (Lots)"],
     ["Min. Güven Eşiği (%)", "Minimum Confidence (%)"],
-    ["Günlük Zarar Limiti (hesap para birimi, UTC)", "Daily Loss Limit (account currency, UTC)"],
+    ["Günlük Zarar Limiti (hesap para birimi, broker sunucu günü)", "Daily Loss Limit (account currency, broker server day)"],
     ["Günün toplam zararı bu tutarı aşarsa AI otopilot otomatik durur.", "AI autopilot stops opening new trades when the daily loss reaches this amount."],
     ["Taranacak Semboller (Virgülle ayırın)", "Symbols to Scan (comma-separated)"],
     ["Güvenlik Koruması", "Risk Controls"],
