@@ -8,7 +8,7 @@ const html = fs.readFileSync('app/static/index.html', 'utf8');
 
 // 1. Verify HTML markup
 assert.ok(html.includes('id="signal-scan-mode"'), 'Missing signal-scan-mode select in index.html');
-assert.ok(html.includes('id="signal-scan-add-all-btn"'), 'Missing signal-scan-add-all-btn in index.html');
+assert.ok(!html.includes('id="signal-scan-add-all-btn"'), 'bot follows one symbol; no add-all button');
 assert.ok(html.includes('id="bot-symbols-badges"'), 'Missing bot-symbols-badges container in index.html');
 assert.ok(html.includes('id="bot-symbols-count"'), 'Missing bot-symbols-count in index.html');
 assert.ok(html.includes('id="bot-pending-signals-list"'), 'Missing bot-pending-signals-list in index.html');
@@ -81,7 +81,7 @@ assert.ok(html.includes('id="bot-execute-all-signals-btn"'), 'Missing bot-execut
     },
     window: {
       addEventListener() {},
-      MT5Markets: { all: [{ name: 'EURUSD' }, { name: 'GBPUSD' }, { name: 'XAUUSD' }] },
+      MT5Markets: { all: [{ name: 'EURUSD' }, { name: 'GBPUSD' }, { name: 'XAUUSD' }], getSymbol() { return null; }, setActive() {} },
       MT5I18n: { language: () => 'tr', translate: (t) => t },
     },
     setInterval() {},
@@ -126,27 +126,32 @@ assert.ok(html.includes('id="bot-execute-all-signals-btn"'), 'Missing bot-execut
   });
 
   vm.runInContext(fs.readFileSync('app/static/app.js', 'utf8'), ctx);
+  // The full symbol switch drives the chart/market UI; here only the selected symbol matters.
+  vm.runInContext('switchSymbol = function (s) { currentSymbol = s; };', ctx);
   ctx.showToast = (msg, type) => toasts.push({ msg, type });
 
-  // Test 1: fetchBotStatus renders multiple symbol badges
+  // Test 1: only the bot's (selected) symbol is shown, like an MT5 EA on one chart
   await ctx.fetchBotStatus();
-  assert.equal(node('bot-symbols-count').textContent, 3, 'Bot symbols count should be 3');
+  assert.equal(node('bot-symbols-count').textContent, 'EURUSD');
   assert.ok(node('bot-symbols-badges').innerHTML.includes('EURUSD'), 'Badge for EURUSD should exist');
-  assert.ok(node('bot-symbols-badges').innerHTML.includes('GBPUSD'), 'Badge for GBPUSD should exist');
-  assert.ok(node('bot-symbols-badges').innerHTML.includes('XAUUSD'), 'Badge for XAUUSD should exist');
+  assert.ok(!node('bot-symbols-badges').innerHTML.includes('GBPUSD'), 'other symbols are not listed');
 
-  // Test 2: assignScannerSymbolToBot calls /api/bot/add-symbol
+  // Test 2: "Bota Ekle" makes that symbol the bot symbol (bot stopped)
+  botStatusData.is_running = false;
+  await ctx.fetchBotStatus();
   await ctx.assignScannerSymbolToBot('BTCUSD', 15);
-  const addReq = sentRequests.find((r) => r.url === '/api/bot/add-symbol');
+  const addReq = sentRequests.filter((r) => r.url === '/api/bot/add-symbol').at(-1);
   assert.ok(addReq, 'Must call /api/bot/add-symbol');
   assert.equal(JSON.parse(addReq.opts.body).symbol, 'BTCUSD');
   assert.ok(toasts.some((t) => t.msg.includes('BTCUSD')), 'Toast message for added symbol');
 
-  // Test 3: removeSymbolFromBot calls /api/bot/remove-symbol
-  await ctx.removeSymbolFromBot('GBPUSD');
-  const remReq = sentRequests.find((r) => r.url === '/api/bot/remove-symbol');
-  assert.ok(remReq, 'Must call /api/bot/remove-symbol');
-  assert.equal(JSON.parse(remReq.opts.body).symbol, 'GBPUSD');
+  // Test 3: while running on another symbol, "Bota Ekle" does not change it
+  botStatusData.is_running = true;
+  await ctx.fetchBotStatus();
+  const beforeRunning = sentRequests.filter((r) => r.url === '/api/bot/add-symbol').length;
+  await ctx.assignScannerSymbolToBot('GBPUSD', 15);
+  assert.equal(sentRequests.filter((r) => r.url === '/api/bot/add-symbol').length, beforeRunning);
+  assert.ok(toasts.some((t) => /önce botu durdurun/.test(t.msg)));
 
   // Test 4: sendSignalDirectToBot calls /api/bot/execute-signal
   await ctx.sendSignalDirectToBot('XAUUSD', 'SELL', 2650.5, {signalId: 'scan-XAUUSD-15-SELL-1700000000', slPrice: 2680.0, tpPrice: 2600.0});
@@ -176,14 +181,11 @@ assert.ok(html.includes('id="bot-execute-all-signals-btn"'), 'Missing bot-execut
   assert.ok(!sentRequests.slice(mark).some((r) => r.url === '/api/bot/execute-signal'), 'Missing signal id blocks submission');
   assert.ok(toasts.some((t) => t.msg.includes('998877')), 'Toast shows execution success with ticket');
 
-  // Test 5: refreshSignalScanner in multi mode & assignAllSignalsToBot
+  // Test 5: refreshSignalScanner in multi mode
   node('signal-scan-mode').value = 'ALL';
   await ctx.refreshSignalScanner(true);
   const scannedList = ctx.window.latestScannedSignals || ctx.latestScannedSignals || [];
   assert.ok(scannedList.length >= 2, 'Should scan multiple signals');
-  await ctx.assignAllSignalsToBot();
-  const allAddReqs = sentRequests.filter((r) => r.url === '/api/bot/add-symbol');
-  assert.ok(allAddReqs.length >= 3, 'Should have batch added all scanned signals');
 
   // Test 6: fetchBotLiveSignal renders multiple pending signals
   await ctx.fetchBotLiveSignal();

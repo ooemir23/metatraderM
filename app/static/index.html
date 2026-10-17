@@ -875,10 +875,6 @@
               <div class="flex items-center justify-between flex-wrap gap-2 text-xs text-gray-300 mb-2">
                 <span id="signal-scanner-status" class="font-medium">Sinyaller taranıyor…</span>
                 <div class="flex items-center gap-2">
-                  <button type="button" id="signal-scan-add-all-btn" onclick="assignAllSignalsToBot()" title="Tarayıcıdaki tüm sembolleri çalışan bota aktar" class="px-2.5 py-0.5 rounded-md bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs font-bold transition flex items-center gap-1 border border-emerald-600/50">
-                    <i class="ph-bold ph-plus-circle"></i>
-                    <span>Tümünü Bota Aktar</span>
-                  </button>
                   <label class="flex items-center gap-1.5 cursor-pointer select-none font-medium">
                     <input id="signal-auto-alert" type="checkbox" checked onchange="toggleSignalAutoAlert(this.checked)" class="rounded bg-gray-800 border-gray-700 w-4 h-4 text-cyan-500">
                     <span>Sesli uyarı</span>
@@ -916,9 +912,9 @@
                   <div class="flex items-center justify-between mb-1.5">
                     <span class="text-xs text-gray-300 font-bold flex items-center gap-1.5">
                       <i class="ph-bold ph-list-bullets text-cyan-400"></i>
-                      <span>Aktif Takip Edilen Semboller (<strong id="bot-symbols-count" class="text-white">1</strong>):</span>
+                      <span>Bot sembolü: <strong id="bot-symbols-count" class="text-white">EURUSD</strong></span>
                     </span>
-                    <span class="text-[11px] text-emerald-400 font-mono font-semibold">● Çoklu Takip Aktif</span>
+                    <span class="text-[11px] text-gray-400">Seçili sembolü izler</span>
                   </div>
                   <div id="bot-symbols-badges" class="flex flex-wrap gap-1.5 items-center">
                     <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-mono font-bold">

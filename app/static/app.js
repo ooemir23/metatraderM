@@ -97,6 +97,32 @@ async function syncBotTimeframe(tf, {announce = true} = {}) {
   finally { if (botTimeframeSyncing === run) botTimeframeSyncing = null; }
 }
 
+// The bot follows the selected symbol (one symbol, like an MT5 EA attached to that chart).
+let botSymbolSyncing = null;
+async function syncBotSymbol(sym, {announce = true} = {}) {
+  sym = String(sym || '').trim();
+  const bot = latestBotSettings;
+  if (!sym || !bot || bot.is_running) return bot?.symbol === sym;
+  const symbols = Array.isArray(bot.symbols) ? bot.symbols : [bot.symbol];
+  if (bot.symbol === sym && symbols.length === 1 && symbols[0] === sym) return true;
+  if (botSymbolSyncing) return botSymbolSyncing;
+  botSymbolSyncing = (async () => {
+    try {
+      const res = await fetch('/api/bot/add-symbol', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({symbol: sym})});
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Bot sembolü güncellenemedi.');
+      if (latestBotSettings) latestBotSettings = {...latestBotSettings, symbol: sym, symbols: [sym], symbol_status: {}};
+      if (announce) showToast(`🎯 Bot sembolü: ${sym}`, 'info');
+      if (typeof renderBotSymbolStatus === 'function' && latestBotSettings) renderBotSymbolStatus(latestBotSettings);
+      return true;
+    } catch (err) {
+      if (announce) showToast(`❌ ${err.message}`, 'error');
+      return false;
+    } finally { botSymbolSyncing = null; }
+  })();
+  return botSymbolSyncing;
+}
+
 function onScannerTimeframeChange(tf) {
   const num = Number(tf);
   setChartTimeframe(num);
@@ -685,6 +711,7 @@ function switchSymbol(symbol, reloadChart = true) {
     if (entry) entry.value = '';
   }
   currentSymbol = symbol;
+  if (typeof syncBotSymbol === 'function' && latestBotSettings && !latestBotSettings.is_running) syncBotSymbol(symbol, {announce: false});
   if(document.getElementById('market-depth-panel')?.open&&typeof refreshMarketDepth==='function')refreshMarketDepth();
   updateLotRules();
   window.MT5Markets?.setActive(symbol);
@@ -1573,20 +1600,15 @@ async function fetchBotStatus() {
 
     const symbolsBadges = document.getElementById("bot-symbols-badges");
     const symbolsCount = document.getElementById("bot-symbols-count");
-    const activeSymbols = Array.isArray(bot.symbols) && bot.symbols.length > 0 ? bot.symbols : [bot.symbol || 'EURUSD'];
-    if (symbolsCount) symbolsCount.textContent = activeSymbols.length;
+    // Like an MT5 EA on its chart, the bot trades only the selected symbol.
+    const botSym = bot.symbol || 'EURUSD';
+    if (symbolsCount) symbolsCount.textContent = botSym;
     if (symbolsBadges) {
-      symbolsBadges.innerHTML = activeSymbols.map(sym => {
-        const canRemove = activeSymbols.length > 1;
-        const removeBtn = canRemove
-          ? `<button type="button" onclick="event.stopPropagation(); removeSymbolFromBot('${escapeHtml(sym)}')" class="hover:text-rose-400 text-gray-400 font-bold ml-1 px-1 transition" title="${escapeHtml(sym)} sembolünü bot takip listesinden kaldır">✕</button>`
-          : '';
-        return `<span data-bot-symbol="${escapeHtml(sym)}" class="inline-flex items-center px-2.5 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-mono font-bold tracking-wide">
-          <span>${escapeHtml(sym)}</span>
-          ${removeBtn}
-        </span>`;
-      }).join('');
+      const differs = bot.is_running && currentSymbol && currentSymbol !== botSym;
+      symbolsBadges.innerHTML = `<span data-bot-symbol="${escapeHtml(botSym)}" class="inline-flex items-center px-2.5 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-mono font-bold tracking-wide">${escapeHtml(botSym)}</span>`
+        + (differs ? `<span class="bot-symbol-differs">Seçili sembol ${escapeHtml(currentSymbol)}. Botu durdurunca ${escapeHtml(currentSymbol)}'a geçer.</span>` : '');
     }
+    if (!bot.is_running) syncBotSymbol(currentSymbol, {announce: false});
 
     document.getElementById("bot-atr-status").textContent = `ATR(${bot.atr_period || 14}): ${Number(bot.current_atr || 0).toFixed(5)} · ER: ${Number(bot.current_er || 0).toFixed(2)} · ${bot.use_atr_filter ? (bot.pending_confirmation ? 'Onay bekleniyor' : 'Filtre açık') : 'Filtre kapalı'} · ${bot.risk_mode === 'ATR' ? 'ATR stop/hedef' : 'Sabit puan stop/hedef'}`;
     const lastSigEl = document.getElementById("bot-last-signal");
@@ -2287,6 +2309,25 @@ function closeAllPositions() {
 
 // Signals sent to the bot: newest first, live status from the open-positions feed.
 let latestBotSignalHistory = [];
+function editBotHistoryEntry(ticket) {
+  if (typeof showPositionEditor !== 'function') return showToast('Pozisyon düzenleyici yüklenemedi.', 'error');
+  showPositionEditor(ticket);
+}
+async function deleteBotHistoryEntry(id) {
+  const row = (latestBotSignalHistory || []).find(r => r.id === id);
+  const open = row && row.success && row.ticket != null && (executionPositions.get(Number(row.ticket)) || executionPositions.get(row.ticket));
+  if (open && !confirm(`${row.symbol} pozisyonu hâlâ açık. Kayıt listeden silinir, pozisyon MT5'te açık kalır. Devam edilsin mi?`)) return;
+  try {
+    const res = await fetch('/api/bot/signal-history/delete', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id})});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Kayıt silinemedi.');
+    renderBotSignalHistory(data.signal_history || []);
+    showToast('🗑️ Kayıt listeden silindi.', 'info');
+  } catch (err) {
+    showToast(`❌ ${err.message}`, 'error');
+    fetchBotStatus();
+  }
+}
 // Plain-language reason for a signal that did not open a trade.
 function botHistoryReason(error) {
   const text = String(error || 'Emir gönderilemedi.');
@@ -2329,6 +2370,10 @@ function renderBotSignalHistory(rows) {
       <span class="bot-history-main"><b class="bot-history-symbol">${escapeHtml(r.symbol || '')}</b><span class="bot-history-meta">${escapeHtml(details)}</span></span>
       <span class="bot-history-status">${escapeHtml(status)}</span>
       <span class="bot-history-sub"><span class="bot-history-time">${time}</span><span class="bot-history-source" data-source="${r.source === 'AUTO' ? 'auto' : 'manual'}">${r.source === 'AUTO' ? 'Otomatik' : 'Manuel'}</span></span>
+      <span class="bot-history-actions">
+        ${open ? `<button type="button" class="bot-history-btn" onclick="editBotHistoryEntry(${Number(r.ticket)})" title="MT5'teki gibi açık pozisyonun SL/TP'sini değiştir veya kapat"><i class="ph-bold ph-pencil-simple"></i> Düzenle</button>` : ''}
+        ${r.id ? `<button type="button" class="bot-history-btn is-delete" onclick="deleteBotHistoryEntry('${escapeHtml(String(r.id))}')" title="Kaydı listeden sil (pozisyon kapanmaz)"><i class="ph-bold ph-trash"></i> Sil</button>` : ''}
+      </span>
       ${reason ? `<span class="bot-history-reason">${escapeHtml(reason)}</span>` : ''}
     </div>`;
   }).join('');
@@ -2534,7 +2579,10 @@ async function toggleBot() {
   if (button) button.disabled = true;
   try {
     // Starting: align the bot with the chart timeframe first.
-    if (!isBotRunning && !(latestBotSettings?.is_running)) await syncBotTimeframe(undefined);
+    if (!isBotRunning && !(latestBotSettings?.is_running)) {
+      await syncBotTimeframe(undefined);
+      await syncBotSymbol(currentSymbol, {announce: false});
+    }
     const res = await fetch("/api/bot/toggle", { method: "POST" });
     const data = await res.json();
     if (!res.ok || data.success === false) throw new Error(typeof data.detail === 'string' ? data.detail : data.error || 'Bot komutu doğrulanamadı.');
@@ -3467,8 +3515,6 @@ function applyScannedSignalToTicket(symbol, slPrice, tpPrice) {
 // Scanner mode: "SELECTED" (default) shows only the chart's symbol; "ALL" scans a watch list.
 const SCAN_MODE_KEY = 'hma.scanner.mode.v1';
 function applyScannerModeUi(mode) {
-  const addAll = document.getElementById('signal-scan-add-all-btn');
-  if (addAll) addAll.hidden = mode !== 'ALL';
 }
 function onScannerModeChange(mode) {
   mode = mode === 'ALL' ? 'ALL' : 'SELECTED';
@@ -3831,7 +3877,7 @@ function focusBotSymbol(sym, {flashToggle = false} = {}) {
   const anchor = document.getElementById('bot-symbols-badges');
   const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   (flashToggle ? document.getElementById('bot-card') : anchor?.parentElement)
-    ?.scrollIntoView({behavior: reduce ? 'auto' : 'smooth', block: flashToggle ? 'start' : 'center'});
+    ?.scrollIntoView?.({behavior: reduce ? 'auto' : 'smooth', block: flashToggle ? 'start' : 'center'});
   setTimeout(() => {
     const esc = window.CSS?.escape ? CSS.escape(sym) : sym;
     flashFields([
@@ -3844,8 +3890,13 @@ function focusBotSymbol(sym, {flashToggle = false} = {}) {
 
 async function assignScannerSymbolToBot(symbol, timeframeMinutes) {
   const sym = String(symbol || currentSymbol || 'EURUSD').trim();
-  const already = (latestBotSettings?.symbols || []).includes(sym);
   rememberAddedSignal(sym, timeframeMinutes);
+  if (latestBotSettings?.is_running && latestBotSettings.symbol !== sym) {
+    showToast(`❌ Bot ${latestBotSettings.symbol} üzerinde çalışıyor. ${sym} için önce botu durdurun.`, 'error');
+    focusBotSymbol(latestBotSettings.symbol, {flashToggle: true});
+    return;
+  }
+  if (sym !== currentSymbol) switchSymbol(sym);
   try {
     const res = await fetch('/api/bot/add-symbol', {
       method: 'POST',
@@ -3854,67 +3905,17 @@ async function assignScannerSymbolToBot(symbol, timeframeMinutes) {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      const error = new Error(typeof err.detail === 'string' ? err.detail : 'Sembol bota eklenemedi.');
-      error.botRunning = res.status === 409;
-      throw error;
+      throw new Error(typeof err.detail === 'string' ? err.detail : 'Sembol bota eklenemedi.');
     }
-    const data = await res.json();
-    showToast(already ? `🤖 ${sym} zaten botun takip listesinde.` : `🤖 ${sym} HMA Algoritmik Botuna eklendi (Aktif: ${data.symbols.join(', ')}).`, 'success');
-    await fetchBotStatus();        // re-render badges before flashing the new one
+    showToast(`🤖 Bot sembolü ${sym} oldu.`, 'success');
+    await fetchBotStatus();        // re-render before flashing the card
     focusBotSymbol(sym);
     fetchBotLiveSignal();
   } catch (err) {
     showToast(`❌ ${err.message}`, 'error');
-    // Bot running: show where to stop it.
-    if (err.botRunning) focusBotSymbol(sym, {flashToggle: true});
   }
 }
 
-async function removeSymbolFromBot(symbol) {
-  try {
-    const sym = String(symbol || '').trim();
-    const res = await fetch('/api/bot/remove-symbol', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({symbol: sym}),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Sembol bot listesinden kaldırılamadı.');
-    }
-    const data = await res.json();
-    delete botAddedSignals[sym];
-    showToast(`➖ ${sym} bot takip listesinden çıkarıldı. (Kalan: ${data.symbols.join(', ')})`, 'info');
-    fetchBotStatus();
-    fetchBotLiveSignal();
-  } catch (err) {
-    showToast(`❌ ${err.message}`, 'error');
-  }
-}
-
-async function assignAllSignalsToBot() {
-  if (!latestScannedSignals || latestScannedSignals.length === 0) {
-    showToast('Aktarılacak taranmış sinyal bulunamadı. Lütfen önce tarama yapın.', 'info');
-    return;
-  }
-  let addedCount = 0;
-  let lastError = '';
-  for (const s of latestScannedSignals) {
-    try {
-      const res = await fetch('/api/bot/add-symbol', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({symbol: s.symbol}),
-      });
-      if (res.ok) addedCount++;
-      else lastError = (await res.json().catch(() => ({}))).detail || 'Sembol eklenemedi.';
-    } catch (_) {}
-  }
-  if (lastError && !addedCount) showToast(`❌ ${lastError}`, 'error');
-  else showToast(`🤖 ${addedCount} sembol HMA Algoritmik Botuna eklendi.`, addedCount ? 'success' : 'info');
-  fetchBotStatus();
-  fetchBotLiveSignal();
-}
 
 const signalSendsInFlight = new Set();
 async function sendSignalDirectToBot(symbol, side, price, opts = {}) {

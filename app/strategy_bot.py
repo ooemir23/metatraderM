@@ -9,6 +9,7 @@ import json
 import os
 import re
 import tempfile
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from app.mt5_bridge import HMA_MAGIC
@@ -295,7 +296,10 @@ class StrategyBot:
             if self.history_path and self.history_path.exists():
                 rows = json.loads(self.history_path.read_text())
                 if isinstance(rows, list):
-                    return [r for r in rows if isinstance(r, dict)][:self.HISTORY_LIMIT]
+                    rows = [r for r in rows if isinstance(r, dict)][:self.HISTORY_LIMIT]
+                    for r in rows:   # older records had no id; one is needed to delete a single row
+                        r.setdefault('id', uuid.uuid4().hex)
+                    return rows
         except Exception:
             logger.error('Bot signal history could not be read; starting empty.')
         return []
@@ -323,7 +327,7 @@ class StrategyBot:
             except (TypeError, ValueError):
                 return None
         entry = {
-            'time': int(time.time()), 'source': source, 'symbol': symbol, 'side': side, 'lot': number(lot),
+            'id': uuid.uuid4().hex, 'time': int(time.time()), 'source': source, 'symbol': symbol, 'side': side, 'lot': number(lot),
             'sl_points': int(sl_points or 0), 'tp_points': int(tp_points or 0), 'signal_id': signal_id,
             'success': bool(result.get('success')), 'ticket': result.get('ticket'), 'price': number(result.get('price')),
             'pending': bool(result.get('pending') or result.get('uncertain')),
@@ -335,6 +339,16 @@ class StrategyBot:
             del self.signal_history[self.HISTORY_LIMIT:]
             self._persist_history()
         return entry
+
+    def delete_history_entry(self, entry_id: str) -> bool:
+        """Remove one row from the sent-signal list (the MT5 position itself is not touched)."""
+        with self._state_lock:
+            before = len(self.signal_history)
+            self.signal_history = [r for r in self.signal_history if r.get('id') != entry_id]
+            if len(self.signal_history) == before:
+                return False
+            self._persist_history()
+            return True
 
     def clear_history(self):
         with self._state_lock:
@@ -350,19 +364,19 @@ class StrategyBot:
         logger.info(f"[{level}] {message}")
 
     def add_symbol(self, sym: str) -> List[str]:
+        """Bot trades exactly one symbol: the selected one (like an MT5 EA on its chart)."""
         with self._state_lock:
             if self.is_running or self._check_lock.locked() or (self.task is not None and not self.task.done()):
-                raise RuntimeError('Sembol listesini değiştirmeden önce botu durdurun; yeni semboller başlangıç kontrolünden geçmelidir.')
+                raise RuntimeError('Bot sembolünü değiştirmeden önce botu durdurun.')
             sym = sym.strip()
             if not re.fullmatch(r'[A-Za-z0-9_.#-]{1,32}', sym):
                 raise ValueError("Geçersiz sembol.")
-            if not hasattr(self, 'symbols') or not self.symbols:
-                self.symbols = [self.symbol]
-            if sym not in self.symbols:
-                self.symbols.append(sym)
-                self.log(f"➕ Bot izleme listesine eklendi: {sym} (Aktif: {', '.join(self.symbols)})")
+            if self.symbol != sym or list(getattr(self, 'symbols', [])) != [sym]:
+                self.symbol, self.symbols = sym, [sym]
+                self.last_candle_time, self.last_candle_times = 0, {}
+                self.log(f"🎯 Bot sembolü: {sym}")
                 self.persist_config(self.config_snapshot())
-            return list(self.symbols)
+            return [sym]
 
     def remove_symbol(self, sym: str) -> List[str]:
         with self._state_lock:

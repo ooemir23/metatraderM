@@ -1409,6 +1409,18 @@ def bot_performance_report(days: int = Query(default=30, ge=1, le=365)):
     return {'days': days, **bot_performance.summarize(rows, bot.trade_utc_offset_min)}
 
 
+class BotHistoryDeleteRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    id: str = Field(min_length=1, max_length=64, pattern=r'^[A-Za-z0-9_-]+$')
+
+
+@app.post("/api/bot/signal-history/delete")
+def delete_bot_signal_history_entry(req: BotHistoryDeleteRequest):
+    if not bot.delete_history_entry(req.id):
+        raise HTTPException(status_code=404, detail='Kayıt bulunamadı; liste yenilendi.')
+    return {"success": True, "signal_history": bot.signal_history}
+
+
 @app.post("/api/bot/signal-history/clear")
 def clear_bot_signal_history():
     bot.clear_history()

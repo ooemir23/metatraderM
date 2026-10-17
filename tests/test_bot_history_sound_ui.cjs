@@ -68,3 +68,15 @@ const muted = beeps.length;
 ctx.announceBotPending([{id: 'c', symbol: 'XAUUSD', side: 'BUY'}]);
 assert.equal(beeps.length, muted);
 console.log('bot history and alert sound ok');
+
+// 5. Row actions: "Düzenle" only for an open position (MT5 Modify), "Sil" for every saved row.
+vm.runInContext('executionPositions.set(43, {profit: 1})', ctx);
+ctx.renderBotSignalHistory([
+  {id: 'aa1', time: now, source: 'AUTO', symbol: 'BTCUSD', side: 'BUY', lot: 0.1, success: true, ticket: 43},
+  {id: 'bb2', time: now, source: 'MANUAL', symbol: 'EURUSD', side: 'BUY', lot: 1, success: false, error: 'x'},
+]);
+const rowsHtml = node('bot-history-list').innerHTML;
+assert.equal((rowsHtml.match(/editBotHistoryEntry\(43\)/g) || []).length, 1);
+assert.match(rowsHtml, /deleteBotHistoryEntry\('aa1'\)/);
+assert.match(rowsHtml, /deleteBotHistoryEntry\('bb2'\)/);
+console.log('history row actions ok');

@@ -525,6 +525,12 @@ html { background: #0b0e14; }
 .bot-history-source { padding:0 6px; border-radius:5px; font-size:10px; font-weight:700; }
 .bot-history-source[data-source="manual"] { background:#4338ca33; color:#c7d2fe; }
 .bot-history-source[data-source="auto"] { background:#0891b233; color:#a5f3fc; }
+.bot-history-row { grid-template-areas:"side main status" "side sub actions" "reason reason reason"; }
+.bot-history-actions { grid-area:actions; justify-self:end; display:flex; gap:4px; }
+.bot-history-btn { display:inline-flex; align-items:center; gap:3px; padding:2px 7px; border-radius:6px; border:1px solid #334155; background:#181d2a; color:#cbd5e1; font-size:10.5px; font-weight:600; cursor:pointer; }
+.bot-history-btn:hover { background:#243044; color:#fff; }
+.bot-history-btn.is-delete:hover { border-color:#f43f5e66; background:#f43f5e1f; color:#fda4af; }
+.bot-symbol-differs { font-size:11px; color:#fcd34d; }
 .bot-history-reason { grid-area:reason; margin-top:4px; padding:5px 8px; border-radius:7px; font-size:11.5px; line-height:1.4; background:#f43f5e14; color:#fda4af; }
 .bot-history-row[data-tone="error"] { border-left-color:#f43f5e; }
 .bot-history-row[data-tone="error"] .bot-history-status { background:#f43f5e26; color:#fb7185; }

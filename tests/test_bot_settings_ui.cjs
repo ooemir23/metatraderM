@@ -6,7 +6,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  let reject=false;
  const ctx=vm.createContext({console,document:{getElementById:node,querySelectorAll:()=>[],addEventListener(){}},window:{addEventListener(){}},setInterval(){},setTimeout(){},fetch:async(url,opts)=>{
   if(url==='/api/bot/status')return {ok:true,json:async()=>status};
-  sent.push(JSON.parse(opts.body));return {ok:!reject,json:async()=>({detail:'Önce botu durdurun.'})};
+  if(url==='/api/bot/config')sent.push(JSON.parse(opts.body));return {ok:!reject,json:async()=>({detail:'Önce botu durdurun.'})};
  }});
  vm.runInContext(fs.readFileSync('app/static/app.js','utf8'),ctx);ctx.showToast=(text,type)=>notices.push({text,type});
  await ctx.toggleBotSettingsModal();

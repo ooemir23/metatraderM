@@ -101,7 +101,7 @@ def test_signal_execution_rejects_unknown_fields_and_bad_rules(monkeypatch):
 def test_broker_symbol_case_is_preserved():
     bot, client = make_bot()
     bot.add_symbol('BTCUSDm')
-    assert bot.symbols == ['EURUSD', 'BTCUSDm']
+    assert bot.symbol == 'BTCUSDm' and bot.symbols == ['BTCUSDm']  # one symbol, like an MT5 EA
     bot.update_config({'symbol': 'EURUSD.a', 'symbols': ['EURUSD.a', 'BTCUSDm']}, persist=False)
     assert bot.symbol == 'EURUSD.a' and bot.symbols == ['EURUSD.a', 'BTCUSDm']
     bot.execute_signal('BTCUSDm', 'BUY', signal_id='s1', expected_account=ACCOUNT, sl_points=200)
@@ -238,3 +238,14 @@ def test_history_is_capped_and_survives_corrupt_file(tmp_path):
         bot.record_signal(source='AUTO', symbol=f'S{i}', side='BUY', lot=.01, result={'success': True, 'ticket': i})
     assert len(bot.signal_history) == StrategyBot.HISTORY_LIMIT and bot.signal_history[0]['symbol'] == f'S{StrategyBot.HISTORY_LIMIT + 4}'
     assert len(bot.get_status()['signal_history']) == 20
+
+
+def test_single_history_row_can_be_deleted():
+    bot, client = make_bot()
+    bot.record_signal(source='MANUAL', symbol='EURUSD', side='BUY', lot=1, result={'success': False, 'error': 'x'})
+    bot.record_signal(source='AUTO', symbol='EURUSD', side='SELL', lot=1, result={'success': True, 'ticket': 7})
+    first, second = bot.signal_history
+    assert first['id'] and first['id'] != second['id']
+    assert bot.delete_history_entry(second['id']) is True
+    assert [r['id'] for r in bot.signal_history] == [first['id']]
+    assert bot.delete_history_entry('missing') is False
