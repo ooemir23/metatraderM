@@ -249,11 +249,11 @@ def test_netting_does_not_mix_owners(client, magic):
     client.mt5.order_send.assert_not_called()
 
 
-@pytest.mark.parametrize('change', ['old_tick', 'lot_step', 'stop_distance'])
+@pytest.mark.parametrize('change', ['invalid_tick', 'lot_step', 'stop_distance'])
 def test_invalid_market_inputs_are_rejected_before_send(client, change):
     args = {}
     volume = .01
-    if change == 'old_tick': client.mt5.symbol_info_tick.return_value.time -= 60
+    if change == 'invalid_tick': client.mt5.symbol_info_tick.return_value.bid = 0
     if change == 'lot_step': volume = .015
     if change == 'stop_distance': args['sl_points'] = 5
     assert not client.open_order('EURUSD', 'BUY', volume, **args)['success']
@@ -848,3 +848,33 @@ def test_pending_modify_api_rejects_nonfinite_expected_price_before_broker(clien
     response=authenticated_web().post('/api/order/modify',json={'ticket':432,'request_id':'pending-bad-state-test','entry_price':1.08,'expected_state':state})
     assert response.status_code==422
     client.mt5.order_send.assert_not_called()
+
+
+def test_close_on_a_quiet_symbol_is_sent_like_mt5(client):
+    client.mt5.positions_get.return_value = [pos(MANUAL_MAGIC)]
+    client.mt5.symbol_info_tick.return_value.time = time.time() - 45
+    assert client.close_position(1)['success']
+    client.mt5.order_send.assert_called_once()
+
+
+def test_close_requote_is_resent_at_the_new_price_like_mt5(client):
+    client.mt5.positions_get.return_value = [pos(MANUAL_MAGIC)]
+    client.mt5.symbol_info.return_value.trade_exemode = 1
+    replies = iter([NS(retcode=10004, order=0, price=0, volume=0, comment='Requote'),
+                    NS(retcode=10009, order=124, price=1.1005, volume=.01, comment='done')])
+
+    def send(request):
+        client.mt5.symbol_info_tick.return_value = NS(ask=1.1005, bid=1.1004, time=time.time())  # market moved
+        return next(replies)
+    client.mt5.order_send.side_effect = send
+    result = client.close_position(1)
+    assert result['success'] and client.mt5.order_send.call_count == 2
+    assert [c[0][0]['price'] for c in client.mt5.order_send.call_args_list] == [1.1, 1.1005]
+
+
+def test_close_requote_retries_are_bounded(client):
+    client.mt5.positions_get.return_value = [pos(MANUAL_MAGIC)]
+    client.mt5.symbol_info.return_value.trade_exemode = 1
+    client.mt5.order_send.return_value = NS(retcode=10004, order=0, price=0, volume=0, comment='Requote')
+    assert not client.close_position(1)['success']
+    assert client.mt5.order_send.call_count == 3

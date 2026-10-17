@@ -290,14 +290,8 @@ function quoteOrderIssue() {
     return en ? 'Waiting for a verified broker quote.' : 'Doğrulanmış broker fiyatı bekleniyor.';
   if (status.broker_connected !== true)
     return en ? 'Waiting for the MT5 broker connection.' : 'MT5 broker bağlantısı bekleniyor.';
-  const ruleNode = document.getElementById('order-rule-mode');
-  const allowStale = !ruleNode || ruleNode.value === 'MT5';
-  if (!allowStale) {
-    if (status.state !== 'fresh') return status.message || (en ? 'Waiting for a current price.' : 'Güncel fiyat bekleniyor.');
-    const age = status.age_seconds + elapsed;
-    if (!Number.isFinite(status.age_seconds) || !Number.isFinite(age) || age < 0 || age > 10)
-      return en ? 'Waiting for a current price.' : 'Güncel fiyat bekleniyor; yeni emir girişi kapalı.';
-  } else if (status.state !== 'fresh' && status.state !== 'stale') {
+  // MT5 rule: the last tick is the current price whatever its age; only a missing/invalid price blocks.
+  if (status.state === 'missing' || status.state === 'invalid') {
     return status.message || (en ? 'Waiting for a valid broker price.' : 'Geçerli broker fiyatı bekleniyor.');
   }
   if (!Number.isFinite(quote.bid) || quote.bid <= 0 || !Number.isFinite(quote.ask) || quote.ask < quote.bid)
@@ -2011,8 +2005,10 @@ async function closePosition(ticket) {
   if (accountVerificationKnown && !currentAccountIdentity) return showToast('Kapatmadan önce broker hesap bağlantısını doğrulayın.', 'error');
   closePending.add(ticket);
   try {
+    // MT5 close button: every click is a new close request at the current price. The bridge only
+    // closes a position that is still open, so a repeat after an unclear reply cannot close twice.
     const key = "close-intent:" + ticket;
-    const requestId = localStorage.getItem(key) || newOrderId();
+    const requestId = newOrderId();
     localStorage.setItem(key, requestId);
     const {response:res,data} = await tradeRequest('/api/order/close',
       {ticket,request_id:requestId,...tradingAccountPayload()});
@@ -2490,7 +2486,7 @@ async function toggleBot() {
     if (data.is_running) {
       showToast("🚀 HMA Algoritmik Bot Başlatıldı!", "success");
       for (const warning of (data.start_warnings || []))
-        showToast(`⏸️ Şimdilik atlandı (piyasa açılınca devreye girer) · ${warning}`, 'warning');
+        showToast(`⚠️ Başlangıç uyarısı · ${warning}`, 'warning');
     } else {
       showToast("🛑 HMA Algoritmik Bot Durduruldu.", "info");
     }

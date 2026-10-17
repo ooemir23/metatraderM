@@ -57,18 +57,19 @@ def test_trade_preview_shows_order_guards_before_submission(client, tmp_path):
     client.mt5.order_send.assert_not_called()
 
 
-def test_explicit_broker_clock_offset_keeps_future_or_stale_quotes_out(client):
+def test_quote_age_and_clock_offset_never_block_orders_like_mt5(client):
+    """MT5 sends at the last tick whatever its timestamp; the broker decides (fill/requote/market closed)."""
     client.mt5.account_info.return_value = NS(login=1, server='test', trade_mode=0,
         currency='USD', equity=1000, margin_free=800, margin_mode=2)
     client.mt5.order_calc_profit.return_value = -20
     client.mt5.order_calc_margin.return_value = 50
     client.mt5.symbol_info_tick.return_value.time = time.time() + 10800
-    assert not trade_preview(client.mt5, 'EURUSD', 'BUY', .01, 200, None, None, 1, 'test')['success']
+    assert trade_preview(client.mt5, 'EURUSD', 'BUY', .01, 200, None, None, 1, 'test')['success']
     client.tick_clock_offset = 10800
     assert client.trade_preview('EURUSD','BUY',.01,200)['success']
     assert client.open_order('EURUSD','BUY',.01)['success']
     client.mt5.symbol_info_tick.return_value.time -= 60
-    assert not client.open_order('EURUSD','BUY',.01)['success']
+    assert client.open_order('EURUSD','BUY',.01)['success']
 
 
 def test_daily_risk_status_uses_verified_account_and_broker_values(client):

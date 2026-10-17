@@ -100,12 +100,12 @@ def test_bot_readiness_is_read_only_and_checks_margin(ready_client):
     assert not result['success'] and 'teminat' in result['error']
 
 
-@pytest.mark.parametrize('failure', ['netting', 'stale', 'history', 'risk', 'permission'])
+@pytest.mark.parametrize('failure', ['netting', 'disconnected', 'history', 'risk', 'permission'])
 def test_bot_readiness_rejects_an_unusable_trading_state(ready_client, failure):
     if failure == 'netting':
         ready_client.mt5.account_info.return_value.margin_mode = 0
-    elif failure == 'stale':
-        ready_client.mt5.symbol_info_tick.return_value.time = time.time() - 60
+    elif failure == 'disconnected':
+        ready_client.mt5.terminal_info.return_value.connected = False
     elif failure == 'history':
         ready_client.get_rates.return_value = []
     elif failure == 'risk':
@@ -273,20 +273,22 @@ def test_partial_autopilot_settings_cannot_reenable_work_during_a_halt(client, m
     update.assert_not_called()
 
 
-def test_closed_market_symbol_is_skipped_not_blocking(ready_client):
-    """Weekend: EURUSD quote is hours old, BTCUSD is live -> bot starts with BTCUSD and warns about EURUSD."""
+def test_quiet_or_closed_market_does_not_block_start_like_mt5(ready_client):
+    """MT5 rule: the last tick is the current price. BTCUSD quiet for 11 s and EURUSD closed for the
+    weekend both start; the closed market only gets a notice and the bot waits for new candles."""
     live = ready_client.mt5.symbol_info_tick.return_value
-    stale = NS(**{**vars(live), 'time': time.time() - 18 * 3600})
-    ready_client.mt5.symbol_info_tick.side_effect = lambda symbol: stale if symbol == 'EURUSD' else live
+    quiet = NS(**{**vars(live), 'time': time.time() - 11})
+    closed = NS(**{**vars(live), 'time': time.time() - 18 * 3600})
+    ready_client.mt5.symbol_info_tick.side_effect = lambda symbol: closed if symbol == 'EURUSD' else quiet
     config = {**StrategyBot(ready_client).config_snapshot(), 'symbol': 'EURUSD', 'symbols': ['EURUSD', 'BTCUSD']}
     result = ready_client.bot_readiness(config)
-    assert result['success'] and result['ready_symbols'] == ['BTCUSD']
-    assert len(result['warnings']) == 1 and result['warnings'][0].startswith('EURUSD:')
+    assert result['success'] and result['ready_symbols'] == ['EURUSD', 'BTCUSD']
+    assert len(result['warnings']) == 1 and result['warnings'][0].startswith('EURUSD:') and 'piyasa kapalı' in result['warnings'][0]
     ready_client.mt5.order_send.assert_not_called()
 
 
-def test_all_symbols_unusable_still_blocks_start(ready_client):
-    ready_client.mt5.symbol_info_tick.return_value.time = time.time() - 18 * 3600
+def test_symbol_without_data_is_skipped_and_all_unusable_blocks_start(ready_client):
+    ready_client.get_rates.return_value = []
     config = {**StrategyBot(ready_client).config_snapshot(), 'symbols': ['EURUSD', 'GBPUSD']}
     result = ready_client.bot_readiness(config)
     assert not result['success'] and 'EURUSD' in result['error'] and 'GBPUSD' in result['error']
@@ -304,4 +306,4 @@ def test_start_warnings_are_logged_and_exposed():
     bot.is_running = True
     bot.set_start_warnings(['EURUSD: Son fiyat 18 saat önce alındı.'])
     assert bot.get_status()['start_warnings'] == ['EURUSD: Son fiyat 18 saat önce alındı.']
-    assert 'Başlangıçta atlandı' in bot.logs[0]['message']
+    assert 'Başlangıç uyarısı' in bot.logs[0]['message']

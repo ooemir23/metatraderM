@@ -33,17 +33,18 @@ function harness(){
   h.advance(5000);c.updateQuoteStatus();assert.equal(h.node('order-buy-btn').disabled,true);
   await c.submitOrder('SELL');assert.equal(h.opens().length,1,'expired connection verification cannot send another order');
  }
- for(const bad of [tick({quote_status:null}),tick({bid:0}),tick({ask:1}),tick({bid:NaN}),tick({quote_status:{state:'future',broker_connected:true,age_seconds:-1}}),tick({quote_status:{state:'fresh',broker_connected:false,age_seconds:0}})]){
+ for(const bad of [tick({quote_status:null}),tick({bid:0}),tick({ask:1}),tick({bid:NaN}),tick({quote_status:{state:'missing',broker_connected:true,age_seconds:null}}),tick({quote_status:{state:'fresh',broker_connected:false,age_seconds:0}})]){
   const h=harness();h.c.renderPriceData(bad);assert.equal(h.node('order-buy-btn').disabled,true);
   await h.c.submitOrder('BUY');await h.c.submitPendingOrder();assert.equal(h.opens().length,0);assert.equal([...h.storage.keys()].filter(k=>k.includes('intent:')).length,0,'invalid quote creates no durable trading intent');
   assert.equal(h.requests.length,0,'invalid quotes must block pending orders too');
  }
  for(const stale of [tick({quote_status:{state:'stale',broker_connected:true,age_seconds:10}}),tick({quote_status:{state:'fresh',broker_connected:true,age_seconds:'0'}}),tick({quote_status:{state:'fresh',broker_connected:true,age_seconds:11}})]){
   const h=harness();h.c.renderPriceData(stale);assert.equal(h.node('order-buy-btn').disabled,false,'MT5 manual mode stays enabled when broker is connected and quote is valid');
-  h.node('order-rule-mode').value='PANEL';h.c.updateOrderButtons();assert.equal(h.node('order-buy-btn').disabled,true,'PANEL mode blocks stale quotes');
+  h.node('order-rule-mode').value='PANEL';h.c.updateOrderButtons();assert.equal(h.node('order-buy-btn').disabled,false,'MT5 rule: quote age never blocks, in PANEL mode either');
  }
  {
-  const h=harness();h.node('order-rule-mode').value='PANEL';h.c.renderPriceData(tick({quote_status:{state:'fresh',broker_connected:true,age_seconds:9}}));h.advance(2000);h.c.updateOrderButtons();assert.equal(h.node('order-buy-btn').disabled,true,'server quote age advances independently of broker timestamp in PANEL mode');
+  const h=harness();h.node('order-rule-mode').value='PANEL';h.c.renderPriceData(tick({quote_status:{state:'fresh',broker_connected:true,age_seconds:9}}));h.advance(2000);h.c.updateOrderButtons();assert.equal(h.node('order-buy-btn').disabled,false,'quiet symbol stays tradable like MT5');
+  h.c.renderPriceData(tick({quote_status:{state:'future',broker_connected:true,age_seconds:-1}}));assert.equal(h.node('order-buy-btn').disabled,false,'broker clock offset does not block, like MT5');
  }
  {
   const h=harness();h.c.renderPriceData(tick());

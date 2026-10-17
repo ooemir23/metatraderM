@@ -645,11 +645,17 @@ def quote_status(tick, tick_offset=0, max_tick_age=10, connected=None):
     return result
 
 
-def _quote_error(tick, tick_offset=0, max_tick_age=10, mt5=None, allow_stale=False):
+def _quote_error(tick, tick_offset=0, max_tick_age=10, mt5=None, allow_stale=True):
+    """MT5 terminal rule: the last tick IS the current price, whatever its age.
+
+    Brokers send a tick only when the price changes, so a quiet symbol (BTCUSD at the weekend)
+    can go a while without one. The broker fills at its own price within the deviation and
+    rejects a closed market itself (retcode 10018), exactly as in MT5. Only a missing/invalid
+    price or a lost broker connection stops the request here. Quote age is informational
+    (quote_status); allow_stale/max_tick_age are kept for call compatibility."""
     status = quote_status(tick, tick_offset, max_tick_age, broker_connection(mt5))
-    allowed = ('fresh', 'stale') if allow_stale else ('fresh',)
-    if status['state'] not in allowed or status['broker_connected'] is not True:
-        return status['message'] + ' Güncel fiyat ve broker bağlantısı doğrulanmadan işlem yapılamaz.'
+    if status['state'] in ('missing', 'invalid') or status['broker_connected'] is not True:
+        return status['message'] + ' Geçerli fiyat ve broker bağlantısı doğrulanmadan işlem yapılamaz.'
     return None
 
 
@@ -947,9 +953,24 @@ def pending_orders(mt5):
                  filling_policy='BOC' if int(getattr(o,'type_filling',2))==3 else 'RETURN') for o in orders]
 
 
+CLOSE_REQUOTE_RETRIES = 2
+REQUOTE_CODES = (10004, 10020, 10021)  # requote, price changed, price off: nothing was executed
+
+
 def close_deal(mt5, ticket, expected_magic=None, expected_login=0, expected_server='', tick_offset=0,
                deviation_points=50, filling_policy='AUTO'):
-    """Close one fresh position through the same checked execution path as opens."""
+    """Close at the current price like MT5's close button: a requote means nothing was executed,
+    so the close is re-sent at the broker's new price (like accepting the requote in MT5)."""
+    for _ in range(CLOSE_REQUOTE_RETRIES + 1):
+        result = _close_deal_once(mt5, ticket, expected_magic, expected_login, expected_server,
+                                  tick_offset, deviation_points, filling_policy)
+        if result.get('retcode') not in REQUOTE_CODES:
+            break
+    return result
+
+
+def _close_deal_once(mt5, ticket, expected_magic=None, expected_login=0, expected_server='', tick_offset=0,
+                     deviation_points=50, filling_policy='AUTO'):
     try:
         account = _account(mt5, expected_login, expected_server)
         scope = (int(account.login), str(account.server))

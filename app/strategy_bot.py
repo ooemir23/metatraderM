@@ -479,7 +479,7 @@ class StrategyBot:
         with self._state_lock:
             self.start_warnings = [str(w)[:300] for w in warnings][:20]
         for warning in self.start_warnings:
-            self.log(f'⚠️ Başlangıçta atlandı (piyasa açılınca kendiliğinden devreye girer): {warning}')
+            self.log(f'⚠️ Başlangıç uyarısı: {warning}')
 
     def _safe_window_issue(self):
         try:

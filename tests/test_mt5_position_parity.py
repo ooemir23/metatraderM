@@ -158,9 +158,16 @@ def test_trailing_shutdown_clears_config_and_restart_requires_rearm(client,tmp_p
     client.mt5.order_send.assert_not_called()
 
 
-def test_trailing_stale_quote_cannot_update_stop(client,tmp_path):
+def test_trailing_quiet_quote_keeps_trailing_like_mt5(client,tmp_path):
     manager,_=trailing_setup(client,tmp_path)
     client.mt5.symbol_info_tick.return_value.time=time.time()-60
+    manager.step()
+    assert manager.configs[10]['status']!='paused'
+
+
+def test_trailing_pauses_when_broker_is_disconnected(client,tmp_path):
+    manager,_=trailing_setup(client,tmp_path)
+    client.mt5.terminal_info.return_value.connected=False
     manager.step()
     assert manager.configs[10]['status']=='paused'
     client.mt5.order_send.assert_not_called()

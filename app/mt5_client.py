@@ -618,6 +618,8 @@ class MT5Client:
             account = self._selected_account()
             return self.journal.has_unresolved_open(account, symbol, mt5_bridge.HMA_MAGIC)
 
+    QUIET_QUOTE_NOTICE_SECONDS = 300
+
     def bot_readiness(self, config):
         """Read-only startup checks against the same account used for execution."""
         with self._lock:
@@ -686,6 +688,13 @@ class MT5Client:
                     else:
                         ready_symbols.append(symbol)
                         candles = max(candles, len(rates))
+                        # Like an MT5 EA, the bot starts on a closed market and simply waits for new candles.
+                        quote = mt5_bridge.quote_status(self.mt5.symbol_info_tick(symbol), self.tick_clock_offset,
+                                                        self.QUIET_QUOTE_NOTICE_SECONDS)
+                        if quote['state'] == 'stale':
+                            hours, minutes = divmod(int(quote['age_seconds']) // 60, 60)
+                            skipped.append(f'{symbol}: {hours} saat {minutes} dakikadır fiyat gelmiyor; piyasa kapalı olabilir. '
+                                           'Bot çalışıyor, yeni mum oluşunca işlem yapar.')
                 if not ready_symbols:
                     raise MT5DataError(' · '.join(skipped) or 'Takip edilen sembol yok.')
                 self._bound_account([*account, self.account_type])
