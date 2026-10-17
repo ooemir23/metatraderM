@@ -670,6 +670,10 @@ function startPolling() {
     refreshSignalScanner(false);
     setInterval(() => refreshSignalScanner(false), 10000);
   }
+  if (typeof fetchBotLiveSignal === 'function') {
+    fetchBotLiveSignal();
+    setInterval(fetchBotLiveSignal, 5000);
+  }
   setInterval(() => {
     if (currentPositionTab === "closed") fetchHistory();
     else if (currentPositionTab === "reports") fetchReports();
@@ -2984,9 +2988,10 @@ async function refreshSignalScanner(manual = false) {
           <span class="font-bold text-white block text-xs">${symEsc}</span>
           <span class="text-[10px] text-gray-400 font-mono">RSI: ${Number(item.rsi || 50).toFixed(1)} · Fiyat: ${item.price}</span>
         </button>
-        <div class="flex items-center gap-1.5 shrink-0">
+        <div class="flex items-center gap-1 shrink-0">
           <span class="px-1.5 py-0.5 rounded text-[10px] ${badgeClass}">${badgeText}</span>
-          <button type="button" onclick="applyScannedSignalToTicket('${symEsc}', ${sl}, ${tp})" title="SL ve TP seviyelerini emir penceresine aktar" class="px-2 py-1 rounded bg-gray-800 hover:bg-cyan-700 text-gray-200 hover:text-white text-[10px] font-semibold transition">Emre Aktar</button>
+          <button type="button" onclick="applyScannedSignalToTicket('${symEsc}', ${sl}, ${tp})" title="SL ve TP seviyelerini emir penceresine aktar" class="px-1.5 py-1 rounded bg-gray-800 hover:bg-cyan-700 text-gray-200 hover:text-white text-[10px] font-semibold transition">Emre</button>
+          <button type="button" onclick="assignScannerSymbolToBot('${symEsc}', ${tf})" title="Bu sembol ve periyodu HMA Algoritmik Bota ata" class="px-1.5 py-1 rounded bg-gray-800 hover:bg-emerald-700 text-gray-200 hover:text-white text-[10px] font-semibold transition">Bota</button>
         </div>
       </div>`;
     }).join('');
@@ -2996,4 +3001,106 @@ async function refreshSignalScanner(manual = false) {
     signalScannerBusy = false;
   }
 }
+
+let latestPendingBotSignal = null;
+
+async function fetchBotLiveSignal() {
+  try {
+    const res = await fetch('/api/bot/live-signal');
+    if (!res.ok) return;
+    const data = await res.json();
+    const execMode = document.getElementById('bot-exec-mode');
+    const rsiFilter = document.getElementById('bot-rsi-filter');
+    const beToggle = document.getElementById('bot-be-toggle');
+    const trailInput = document.getElementById('bot-trail-input');
+    if (execMode && document.activeElement !== execMode && data.execution_mode) execMode.value = data.execution_mode;
+    if (rsiFilter && document.activeElement !== rsiFilter) rsiFilter.checked = Boolean(data.use_rsi_filter);
+    if (beToggle && document.activeElement !== beToggle) beToggle.checked = Boolean(data.use_breakeven);
+    if (trailInput && document.activeElement !== trailInput && data.trailing_stop_points != null) trailInput.value = String(data.trailing_stop_points);
+
+    if (data.available) {
+      const hmaNode = document.getElementById('bot-disp-hma-val');
+      const ma2Node = document.getElementById('bot-disp-ma2-val');
+      if (hmaNode && (!latestBotSettings?.current_hma || Number(latestBotSettings.current_hma) === 0)) {
+        hmaNode.innerText = String(data.hma ?? '0.00000');
+      }
+      if (ma2Node && (!latestBotSettings?.current_ma2 || Number(latestBotSettings.current_ma2) === 0)) {
+        ma2Node.innerText = String(data.ma2 ?? '0.00000');
+      }
+      const trendNode = document.getElementById('bot-live-trend-status');
+      if (trendNode) {
+        const trendText = data.trend === 'BUY' ? '▲ AL Yönlü' : data.trend === 'SELL' ? '▼ SAT Yönlü' : 'Yatay';
+        trendNode.textContent = `${data.symbol} (M${data.timeframe_minutes}) · RSI(14): ${Number(data.rsi || 50).toFixed(1)} · Trend: ${trendText} · Fark: ${data.gap}`;
+        trendNode.className = 'mb-2 text-[10px] font-mono ' + (data.trend === 'BUY' ? 'text-emerald-300' : data.trend === 'SELL' ? 'text-rose-300' : 'text-cyan-300');
+      }
+    }
+
+    const box = document.getElementById('bot-pending-signal-box');
+    const text = document.getElementById('bot-pending-signal-text');
+    if (box && text) {
+      if (data.pending_signal_action && data.pending_signal_action.side) {
+        const p = data.pending_signal_action;
+        latestPendingBotSignal = p;
+        box.classList.remove('hidden');
+        text.textContent = `🔔 ${p.symbol} ${p.side === 'BUY' ? '▲ AL' : '▼ SAT'} Sinyali @ ${p.price} (Saat: ${p.time})`;
+      } else {
+        latestPendingBotSignal = null;
+        box.classList.add('hidden');
+      }
+    }
+  } catch (_) {}
+}
+
+async function saveBotSignalRules() {
+  try {
+    const payload = {
+      execution_mode: document.getElementById('bot-exec-mode')?.value || 'AUTO_TRADE',
+      use_rsi_filter: Boolean(document.getElementById('bot-rsi-filter')?.checked),
+      use_breakeven: Boolean(document.getElementById('bot-be-toggle')?.checked),
+      trailing_stop_points: Math.max(0, parseInt(document.getElementById('bot-trail-input')?.value || '0', 10) || 0),
+    };
+    const res = await fetch('/api/bot/signal-rules', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    if (res.ok && typeof showToast === 'function') {
+      showToast('✅ Bot sinyal ve koruma kuralları güncellendi.', 'success');
+      fetchBotLiveSignal();
+    }
+  } catch (_) {}
+}
+
+async function executePendingBotSignal() {
+  if (!latestPendingBotSignal) return;
+  const sig = latestPendingBotSignal;
+  if (sig.symbol && sig.symbol !== currentSymbol) {
+    switchSymbol(sig.symbol);
+  }
+  await submitOrder(sig.side);
+}
+
+async function assignScannerSymbolToBot(symbol, timeframeMinutes) {
+  try {
+    if (typeof isBotRunning !== 'undefined' && isBotRunning) {
+      showToast('Sembolü bota aktarmadan önce çalışan botu durdurun.', 'warning');
+      return;
+    }
+    const res = await fetch('/api/bot/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({symbol, timeframe_minutes: Number(timeframeMinutes) || 15}),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Bot sembolü güncellenemedi.');
+    }
+    showToast(`🤖 HMA Algoritmik Bot hedefi ${symbol} (M${timeframeMinutes}) olarak ayarlandı!`, 'success');
+    fetchBotStatus();
+    fetchBotLiveSignal();
+  } catch (err) {
+    showToast(`❌ ${err.message}`, 'error');
+  }
+}
+
 

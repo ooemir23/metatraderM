@@ -909,7 +909,39 @@
             </div>
 
             <p id="bot-runtime-status" role="status" class="mb-2 text-[11px] text-gray-300">Bot durumu doğrulanıyor…</p>
-            <p id="bot-atr-status" class="mb-2 text-[10px] text-gray-400">ATR: — · ER: —</p>
+            <p id="bot-atr-status" class="mb-1.5 text-[10px] text-gray-400">ATR: — · ER: —</p>
+            <p id="bot-live-trend-status" class="mb-2 text-[10px] font-mono text-cyan-300">RSI(14): — · Trend: —</p>
+
+            <!-- Bot Signal & Protection Quick Rules -->
+            <div class="bg-[#181d2a] p-2 rounded-xl border border-gray-800/80 mb-2 space-y-1.5 text-[11px]">
+              <div class="flex items-center justify-between gap-2">
+                <label for="bot-exec-mode" class="text-gray-400">Çalışma modu</label>
+                <select id="bot-exec-mode" onchange="saveBotSignalRules()" class="bg-[#121620] border border-gray-700 rounded px-2 py-0.5 text-[11px] text-white font-semibold">
+                  <option value="AUTO_TRADE">Otomatik Al / Sat</option>
+                  <option value="SIGNAL_ONLY">Sadece Sinyal Yakala</option>
+                </select>
+              </div>
+              <div class="grid grid-cols-2 gap-1.5 pt-0.5">
+                <label class="flex items-center gap-1.5 text-gray-300 cursor-pointer select-none">
+                  <input id="bot-rsi-filter" type="checkbox" onchange="saveBotSignalRules()" class="rounded bg-gray-800 border-gray-700">
+                  <span>RSI(14) filtresi</span>
+                </label>
+                <label class="flex items-center gap-1.5 text-gray-300 cursor-pointer select-none">
+                  <input id="bot-be-toggle" type="checkbox" onchange="saveBotSignalRules()" class="rounded bg-gray-800 border-gray-700">
+                  <span>Başabaş stop</span>
+                </label>
+              </div>
+              <div class="flex items-center justify-between gap-2 pt-0.5">
+                <label for="bot-trail-input" class="text-gray-400">İz süren stop (puan)</label>
+                <input id="bot-trail-input" type="number" min="0" max="100000" step="10" value="0" onchange="saveBotSignalRules()" class="w-20 bg-[#121620] border border-gray-700 rounded px-1.5 py-0.5 text-right text-white font-mono text-[11px]">
+              </div>
+            </div>
+
+            <div id="bot-pending-signal-box" class="hidden mb-2 p-2 rounded-xl border border-emerald-500/40 bg-emerald-950/30 text-xs">
+              <div id="bot-pending-signal-text" class="font-bold text-emerald-300 mb-1.5">Sinyal yakalandı</div>
+              <button type="button" onclick="executePendingBotSignal()" class="w-full py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition">Sinyali Şimdi Uygula</button>
+            </div>
+
             <div class="flex items-center justify-between text-xs text-gray-400 mb-2 px-0.5">
               <span>Son Sinyal: <strong id="bot-last-signal" class="text-gray-200">YOK</strong></span>
               <span id="bot-last-signal-time" class="font-mono text-[11px]">--:--:--</span>

@@ -64,8 +64,59 @@ class StrategyBot:
         self.last_signal_price = 0.0
         self.current_hma = 0.0
         self.current_ma2 = 0.0
+        self.current_rsi = 50.0
+        self.execution_mode = "AUTO_TRADE"  # AUTO_TRADE or SIGNAL_ONLY
+        self.use_rsi_filter = False
+        self.rsi_buy_max = 70.0
+        self.rsi_sell_min = 30.0
+        self.max_spread_points = 0
+        self.use_breakeven = False
+        self.trailing_stop_points = 0
+        self.pending_signal_action: Optional[Dict[str, Any]] = None
         self.logs: List[Dict[str, Any]] = []
         self.config_path = Path(config_path) if config_path else None
+
+    def get_signal_rules(self) -> Dict[str, Any]:
+        with self._state_lock:
+            return {
+                "execution_mode": self.execution_mode,
+                "use_rsi_filter": self.use_rsi_filter,
+                "rsi_buy_max": self.rsi_buy_max,
+                "rsi_sell_min": self.rsi_sell_min,
+                "max_spread_points": self.max_spread_points,
+                "use_breakeven": self.use_breakeven,
+                "trailing_stop_points": self.trailing_stop_points,
+                "current_rsi": round(self.current_rsi, 1),
+                "pending_signal_action": self.pending_signal_action,
+            }
+
+    def update_signal_rules(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        with self._state_lock:
+            mode = str(data.get("execution_mode", self.execution_mode)).upper()
+            if mode in ("AUTO_TRADE", "SIGNAL_ONLY"):
+                self.execution_mode = mode
+            if "use_rsi_filter" in data:
+                self.use_rsi_filter = bool(data["use_rsi_filter"])
+            if "rsi_buy_max" in data:
+                val = float(data["rsi_buy_max"])
+                if 50 <= val <= 95:
+                    self.rsi_buy_max = val
+            if "rsi_sell_min" in data:
+                val = float(data["rsi_sell_min"])
+                if 5 <= val <= 50:
+                    self.rsi_sell_min = val
+            if "max_spread_points" in data:
+                val = int(data["max_spread_points"])
+                if 0 <= val <= 100000:
+                    self.max_spread_points = val
+            if "use_breakeven" in data:
+                self.use_breakeven = bool(data["use_breakeven"])
+            if "trailing_stop_points" in data:
+                val = int(data["trailing_stop_points"])
+                if 0 <= val <= 100000:
+                    self.trailing_stop_points = val
+        self.log(f"Sinyal kuralları güncellendi: Mod={self.execution_mode} | RSI Filtre={'Açık' if self.use_rsi_filter else 'Kapalı'} | Başabaş={'Açık' if self.use_breakeven else 'Kapalı'} | İz Süren={self.trailing_stop_points}p")
+        return self.get_signal_rules()
 
     def load_config(self, data):
         self.update_config(data, persist=False)
@@ -241,6 +292,104 @@ class StrategyBot:
                 ema = (price * k) + (ema * (1.0 - k))
             return ema
 
+    @staticmethod
+    def calc_rsi(closes_chrono: List[float], period: int = 14) -> float:
+        if len(closes_chrono) < period + 1:
+            return 50.0
+        gains, losses = [], []
+        for i in range(1, period + 1):
+            diff = closes_chrono[i] - closes_chrono[i - 1]
+            gains.append(max(0.0, diff))
+            losses.append(max(0.0, -diff))
+        avg_gain = sum(gains) / period
+        avg_loss = sum(losses) / period
+        for i in range(period + 1, len(closes_chrono)):
+            diff = closes_chrono[i] - closes_chrono[i - 1]
+            avg_gain = (avg_gain * (period - 1) + max(0.0, diff)) / period
+            avg_loss = (avg_loss * (period - 1) + max(0.0, -diff)) / period
+        if avg_loss == 0:
+            return 100.0
+        rs = avg_gain / avg_loss
+        return round(100.0 - (100.0 / (1.0 + rs)), 1)
+
+    def live_preview(self) -> Dict[str, Any]:
+        try:
+            rates = self.mt5.get_rates(self.symbol, timeframe=self.timeframe_minutes,
+                                       count=max(100, 5 * max(self.hma_period, self.second_ma_period, self.kama_slow, self.atr_period) + 20))
+            if not rates or len(rates) < max(self.hma_period, self.second_ma_period) + 15:
+                return {"available": False, "symbol": self.symbol, **self.get_signal_rules()}
+            rev_closes = [float(r["close"]) for r in reversed(rates)]
+            closed = rates[:-1]
+            study = indicators(closed, IndicatorSettings(hma_period=self.hma_period,
+                kama_period=self.second_ma_period, kama_fast=self.kama_fast,
+                kama_slow=self.kama_slow, atr_period=self.atr_period))
+            atr = float(study["atr"][-1] or 0.0) if study["atr"] else 0.0
+            er = float(study["er"][-1] or 0.0) if study["er"] else 0.0
+            if self.second_ma_type == "KAMA":
+                hma1 = float(study["hma"][-1] or 0.0)
+                ma2_1 = float(study["kama"][-1] or 0.0)
+            else:
+                hma1 = self.calc_hma(rev_closes, self.hma_period, shift=1)
+                ma2_1 = self.calc_second_ma(rev_closes, self.second_ma_type, self.second_ma_period, shift=1)
+            rsi = self.calc_rsi([float(r["close"]) for r in closed], 14)
+            with self._state_lock:
+                if not self.is_running:
+                    self.current_hma, self.current_ma2 = hma1, ma2_1
+                    self.current_atr, self.current_er, self.current_rsi = atr, er, rsi
+            trend = "BUY" if hma1 > ma2_1 else "SELL" if hma1 < ma2_1 else "HOLD"
+            gap = abs(hma1 - ma2_1)
+            return {
+                "available": True,
+                "symbol": self.symbol,
+                "timeframe_minutes": self.timeframe_minutes,
+                "hma": round(hma1, 5),
+                "ma2": round(ma2_1, 5),
+                "rsi": rsi,
+                "atr": round(atr, 5),
+                "er": round(er, 2),
+                "trend": trend,
+                "gap": round(gap, 5),
+                **self.get_signal_rules(),
+            }
+        except Exception:
+            return {"available": False, "symbol": self.symbol, **self.get_signal_rules()}
+
+    def _apply_position_protection(self, expected_account=None):
+        if not (self.use_breakeven or self.trailing_stop_points > 0):
+            return
+        try:
+            positions = self.mt5.get_positions(fresh=False)
+            spec = self.mt5.get_symbol_spec(self.symbol) or {}
+            point = float(spec.get("point") or 0)
+            digits = int(spec.get("digits") or 5)
+            if point <= 0:
+                return
+            for p in positions:
+                if p.get("symbol") != self.symbol or p.get("magic") != HMA_MAGIC:
+                    continue
+                side = p.get("type")
+                open_p = float(p.get("open_price") or 0)
+                curr_p = float(p.get("current_price") or 0)
+                curr_sl = float(p.get("sl") or 0)
+                curr_tp = float(p.get("tp") or 0)
+                if open_p <= 0 or curr_p <= 0:
+                    continue
+                profit_pts = (curr_p - open_p) / point if side == "BUY" else (open_p - curr_p) / point
+                new_sl = None
+                trigger_pts = max(50.0, (self.current_atr / point) if self.current_atr > 0 else 100.0)
+                if self.use_breakeven and profit_pts >= trigger_pts:
+                    be_price = round(open_p + (2 * point if side == "BUY" else -2 * point), digits)
+                    if (side == "BUY" and (curr_sl == 0 or curr_sl < open_p)) or (side == "SELL" and (curr_sl == 0 or curr_sl > open_p)):
+                        new_sl = be_price
+                if self.trailing_stop_points > 0 and profit_pts > self.trailing_stop_points:
+                    trail_sl = round(curr_p - self.trailing_stop_points * point if side == "BUY" else curr_p + self.trailing_stop_points * point, digits)
+                    if (side == "BUY" and trail_sl > curr_sl) or (side == "SELL" and (curr_sl == 0 or trail_sl < curr_sl)):
+                        new_sl = trail_sl
+                if new_sl is not None and abs(new_sl - curr_sl) >= point:
+                    self.mt5.manage_position(int(p["ticket"]), "stops", {"sl": new_sl, "tp": curr_tp, "manual_mode": "MT5"}, f"bot-prot-{p['ticket']}-{int(time.time())}")
+        except Exception:
+            pass
+
     async def run_loop(self):
         self.log(f"🚀 HMA Kesişim Botu Başlatıldı ({self.symbol} M{self.timeframe_minutes})")
 
@@ -278,6 +427,8 @@ class StrategyBot:
             self.last_candle_time = 0
             self._candidate = None
             return
+
+        self._apply_position_protection(expected_account=expected_account)
 
         rates = self.mt5.get_rates(self.symbol, timeframe=self.timeframe_minutes,
                                    count=max(100, 5 * max(self.hma_period, self.second_ma_period, self.kama_slow, self.atr_period) + 20))
@@ -332,6 +483,7 @@ class StrategyBot:
             self.runtime_state, self.runtime_detail = 'WAITING_DATA', 'Gösterge değerleri doğrulanamadı.'
             return
         self.current_hma, self.current_ma2 = hma1, ma2_1
+        self.current_rsi = self.calc_rsi([float(r["close"]) for r in rates[:-1]], 14)
         self.runtime_state, self.runtime_detail, self.last_error = 'WAITING_SIGNAL', 'Kesişim sinyali bekleniyor.', None
         self.last_candle_time = latest_closed_candle_time
         cross = 1 if hma2 <= ma2_2 and hma1 > ma2_1 else -1 if hma2 >= ma2_2 and hma1 < ma2_1 else 0
@@ -372,13 +524,43 @@ class StrategyBot:
         if not direction or self._stop_event.is_set():
             return
         side = "BUY" if direction == 1 else "SELL"
+        if self.use_rsi_filter:
+            if side == "BUY" and self.current_rsi > self.rsi_buy_max:
+                self.log(f"⚠️ RSI aşırı alımda ({self.current_rsi:.1f} > {self.rsi_buy_max}); AL sinyali filtrelendi.")
+                return
+            if side == "SELL" and self.current_rsi < self.rsi_sell_min:
+                self.log(f"⚠️ RSI aşırı satımda ({self.current_rsi:.1f} < {self.rsi_sell_min}); SAT sinyali filtrelendi.")
+                return
+        if self.max_spread_points > 0:
+            try:
+                quote = self.mt5.get_symbol_price(self.symbol) or {}
+                spread = float(quote.get("spread") or 0)
+                if spread > self.max_spread_points:
+                    self.log(f"⚠️ Spread yüksek ({spread:.0f} > {self.max_spread_points} puan); {side} sinyali atlandı.")
+                    return
+            except Exception:
+                pass
         sl, tp = self.order_distances()
         if sl is None:
             return
         self.last_signal = side
         self.last_signal_time = time.strftime("%H:%M:%S")
         self.last_signal_price = closes[1]
-        self.log(f"[{side} SİNYALİ] HMA({hma1:.5f}) / {self.second_ma_type}({ma2_1:.5f}) | ATR: {self.current_atr:.5f}", "SIGNAL")
+        self.log(f"[{side} SİNYALİ] HMA({hma1:.5f}) / {self.second_ma_type}({ma2_1:.5f}) | RSI: {self.current_rsi:.1f} | ATR: {self.current_atr:.5f}", "SIGNAL")
+        if self.execution_mode == "SIGNAL_ONLY":
+            self.pending_signal_action = {
+                "symbol": self.symbol,
+                "side": side,
+                "price": closes[1],
+                "sl_points": sl,
+                "tp_points": tp,
+                "lot_size": self.lot_size,
+                "time": self.last_signal_time,
+                "rsi": round(self.current_rsi, 1),
+            }
+            self.runtime_state, self.runtime_detail = 'WAITING_SIGNAL', f'{side} sinyali yakalandı; onayınız bekleniyor.'
+            self.log(f"🔔 [{side} SİNYALİ YAKALANDI · ONAY BEKLİYOR] Fiyat: {closes[1]:.5f} (Sadece Sinyal Modu)", "SIGNAL")
+            return
         if self.close_opposite and not closed_on_cross and not self.close_positions_by_type("SELL" if direction == 1 else "BUY", expected_account=expected_account):
             self.log("Ters pozisyon kapatılamadı; yeni emir gönderilmedi.", "ERROR")
             return

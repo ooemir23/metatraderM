@@ -1273,6 +1273,17 @@ def restore_bot_settings():
 
 restore_bot_settings()
 
+
+@app.get("/api/bot/live-signal")
+async def get_bot_live_signal():
+    return await asyncio.to_thread(bot.live_preview)
+
+
+@app.post("/api/bot/signal-rules")
+def update_bot_signal_rules(data: Dict[str, Any]):
+    return bot.update_signal_rules(data)
+
+
 # DeepSeek AI Advisor & Autopilot Endpoints
 @app.get("/api/ai/status")
 def get_ai_status():
