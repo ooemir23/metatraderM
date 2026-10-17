@@ -3162,7 +3162,7 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
         <div class="flex items-center gap-2 pt-0.5">
           <button type="button" onclick="applyScannedSignalToTicket('${symEsc}', ${sl}, ${tp})" class="flex-1 py-2 px-2.5 rounded-lg bg-cyan-700/80 hover:bg-cyan-600 text-white text-xs sm:text-sm font-bold transition active:scale-95" title="SL/TP değerlerini manuel emir formuna aktar">🎯 Emre Aktar</button>
           <button type="button" onclick="assignScannerSymbolToBot('${symEsc}', ${tf})" class="flex-1 py-2 px-2.5 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs sm:text-sm font-bold transition active:scale-95" title="${symEsc} sembolünü botun çoklu takip listesine ekle">🤖 Bota Ekle</button>
-          <button type="button" onclick="sendSignalDirectToBot('${symEsc}', '${item.side}', ${item.price}, ${sl}, ${tp})" class="flex-1 py-2 px-2.5 rounded-lg bg-indigo-700/80 hover:bg-indigo-600 text-white text-xs sm:text-sm font-bold transition active:scale-95" title="Bu sinyali hemen HMA Botu ile işleme al">⚡ Bota Gönder</button>
+          <button type="button" onclick="sendSignalDirectToBot('${symEsc}', '${item.side}', ${item.price}, {signalId: 'scan-${symEsc}-${tf}-${item.side}-${item.candle_time}', slPrice: ${sl}, tpPrice: ${tp}})" class="flex-1 py-2 px-2.5 rounded-lg bg-indigo-700/80 hover:bg-indigo-600 text-white text-xs sm:text-sm font-bold transition active:scale-95" title="Bu sinyali hemen HMA Botu ile işleme al">⚡ Bota Gönder</button>
         </div>
       </div>`;
     }).join('');
@@ -3238,7 +3238,7 @@ async function fetchBotLiveSignal() {
                 <span class="text-[11px] text-gray-400 font-mono block">@ ${p.price} · Saat: ${p.time || '--:--'}</span>
               </div>
               <div class="flex items-center gap-1.5 shrink-0">
-                <button type="button" onclick="sendSignalDirectToBot('${sym}', '${p.side}', ${p.price}, ${p.sl_points || 0}, ${p.tp_points || 0})" class="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition">Uygula</button>
+                <button type="button" onclick="sendSignalDirectToBot('${sym}', '${p.side}', ${p.price}, {signalId: '${escapeHtml(p.id)}', slPoints: ${Number(p.sl_points) || 0}, tpPoints: ${Number(p.tp_points) || 0}})" class="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition">Uygula</button>
                 <button type="button" onclick="dismissPendingBotSignal('${sym}')" class="px-2 py-1 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white font-bold text-xs transition" title="Kapat">✕</button>
               </div>
             </div>`;
@@ -3260,7 +3260,7 @@ async function saveBotQuickLot() {
       return;
     }
     const raw = parseFloat(document.getElementById('bot-quick-lot')?.value || '0.01');
-    const lot = Number.isFinite(raw) && raw > 0 ? Math.min(100, Math.max(0.01, Number(raw.toFixed(2)))) : 0.01;
+    const lot = Number.isFinite(raw) && raw > 0 ? Math.min(0.10, Math.max(0.01, Number(raw.toFixed(2)))) : 0.01;
     const input = document.getElementById('bot-quick-lot');
     if (input) input.value = String(lot);
     const res = await fetch('/api/bot/config', {
@@ -3298,7 +3298,7 @@ async function saveBotSignalRules() {
 async function executePendingBotSignal() {
   if (!latestPendingBotSignal) return;
   const sig = latestPendingBotSignal;
-  await sendSignalDirectToBot(sig.symbol, sig.side, sig.price, sig.sl_points || 0, sig.tp_points || 0);
+  await sendSignalDirectToBot(sig.symbol, sig.side, sig.price, {signalId: sig.id, slPoints: sig.sl_points || 0, tpPoints: sig.tp_points || 0});
 }
 
 async function executeAllPendingBotSignals() {
@@ -3309,7 +3309,7 @@ async function executeAllPendingBotSignals() {
     ? data.pending_signal_actions
     : (data.pending_signal_action ? [data.pending_signal_action] : []);
   for (const p of list) {
-    await sendSignalDirectToBot(p.symbol, p.side, p.price, p.sl_points || 0, p.tp_points || 0);
+    await sendSignalDirectToBot(p.symbol, p.side, p.price, {signalId: p.id, slPoints: p.sl_points || 0, tpPoints: p.tp_points || 0});
   }
 }
 
@@ -3372,39 +3372,46 @@ async function assignAllSignalsToBot() {
     return;
   }
   let addedCount = 0;
+  let lastError = '';
   for (const s of latestScannedSignals) {
     try {
-      await fetch('/api/bot/add-symbol', {
+      const res = await fetch('/api/bot/add-symbol', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({symbol: s.symbol}),
       });
-      addedCount++;
+      if (res.ok) addedCount++;
+      else lastError = (await res.json().catch(() => ({}))).detail || 'Sembol eklenemedi.';
     } catch (_) {}
   }
-  showToast(`🤖 ${addedCount} sembol HMA Algoritmik Botuna başarıyla eklendi!`, 'success');
+  if (lastError && !addedCount) showToast(`❌ ${lastError}`, 'error');
+  else showToast(`🤖 ${addedCount} sembol HMA Algoritmik Botuna eklendi.`, addedCount ? 'success' : 'info');
   fetchBotStatus();
   fetchBotLiveSignal();
 }
 
-async function sendSignalDirectToBot(symbol, side, price, sl, tp) {
+async function sendSignalDirectToBot(symbol, side, price, opts = {}) {
   try {
     const sym = (symbol || currentSymbol).toUpperCase();
+    if (!opts.signalId) throw new Error('Sinyal kimliği eksik; listeyi yenileyin.');
     showToast(`⚡ ${sym} ${side} sinyali bota gönderiliyor...`, 'info');
+    // SL/TP is sent either as prices (scanner) or as points (bot signal), never mixed.
+    const body = {symbol: sym, side, signal_id: String(opts.signalId), price: Number(price) || undefined};
+    if (Number(opts.slPrice) > 0 || Number(opts.tpPrice) > 0) {
+      body.sl_price = Number(opts.slPrice) > 0 ? Number(opts.slPrice) : undefined;
+      body.tp_price = Number(opts.tpPrice) > 0 ? Number(opts.tpPrice) : undefined;
+    } else {
+      body.sl_points = Number(opts.slPoints) > 0 ? Math.round(Number(opts.slPoints)) : undefined;
+      body.tp_points = Number(opts.tpPoints) > 0 ? Math.round(Number(opts.tpPoints)) : undefined;
+    }
     const res = await fetch('/api/bot/execute-signal', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        symbol: sym,
-        side: side,
-        price: Number(price) || undefined,
-        sl: Number(sl) || undefined,
-        tp: Number(tp) || undefined,
-      }),
+      body: JSON.stringify(body),
     });
     const result = await res.json();
     if (!res.ok || !result.success) {
-      throw new Error(result.error || result.detail || 'Emir iletilemedi.');
+      throw new Error(result.error || (typeof result.detail === 'string' ? result.detail : '') || 'Emir iletilemedi.');
     }
     showToast(`✅ ${sym} ${side} emri HMA Bot ile açıldı! (Bilet: #${result.ticket})`, 'success');
     if (typeof fetchPositions === 'function') fetchPositions();

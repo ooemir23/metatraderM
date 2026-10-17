@@ -149,12 +149,27 @@ assert.ok(html.includes('id="bot-execute-all-signals-btn"'), 'Missing bot-execut
   assert.equal(JSON.parse(remReq.opts.body).symbol, 'GBPUSD');
 
   // Test 4: sendSignalDirectToBot calls /api/bot/execute-signal
-  await ctx.sendSignalDirectToBot('XAUUSD', 'SELL', 2650.5, 2680.0, 2600.0);
+  await ctx.sendSignalDirectToBot('XAUUSD', 'SELL', 2650.5, {signalId: 'scan-XAUUSD-15-SELL-1700000000', slPrice: 2680.0, tpPrice: 2600.0});
   const execReq = sentRequests.find((r) => r.url === '/api/bot/execute-signal');
   assert.ok(execReq, 'Must call /api/bot/execute-signal');
   const execBody = JSON.parse(execReq.opts.body);
   assert.equal(execBody.symbol, 'XAUUSD');
   assert.equal(execBody.side, 'SELL');
+  assert.equal(execBody.signal_id, 'scan-XAUUSD-15-SELL-1700000000');
+  assert.equal(execBody.sl_price, 2680.0, 'Scanner SL is sent as a price');
+  assert.equal(execBody.sl_points, undefined, 'Prices and points are never mixed');
+
+  // Bot signals carry points, not prices.
+  let mark = sentRequests.length;
+  await ctx.sendSignalDirectToBot('EURUSD', 'BUY', 1.085, {signalId: 'EURUSD-BUY-1', slPoints: 200, tpPoints: 400});
+  const pointsBody = JSON.parse(sentRequests.slice(mark).find((r) => r.url === '/api/bot/execute-signal').opts.body);
+  assert.equal(pointsBody.sl_points, 200);
+  assert.equal(pointsBody.sl_price, undefined, 'Points must not be sent as SL price');
+
+  // A signal without a stable id is not sent (no idempotency key).
+  mark = sentRequests.length;
+  await ctx.sendSignalDirectToBot('EURUSD', 'BUY', 1.085, {});
+  assert.ok(!sentRequests.slice(mark).some((r) => r.url === '/api/bot/execute-signal'), 'Missing signal id blocks submission');
   assert.ok(toasts.some((t) => t.msg.includes('998877')), 'Toast shows execution success with ticket');
 
   // Test 5: refreshSignalScanner in multi mode & assignAllSignalsToBot

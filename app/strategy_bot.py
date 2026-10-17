@@ -99,8 +99,9 @@ class StrategyBot:
     def update_signal_rules(self, data: Dict[str, Any]) -> Dict[str, Any]:
         with self._state_lock:
             mode = str(data.get("execution_mode", self.execution_mode)).upper()
-            if mode in ("AUTO_TRADE", "SIGNAL_ONLY"):
-                self.execution_mode = mode
+            if mode not in ("AUTO_TRADE", "SIGNAL_ONLY"):
+                raise ValueError("Geçersiz çalışma modu.")
+            self.execution_mode = mode
             if "use_rsi_filter" in data:
                 self.use_rsi_filter = bool(data["use_rsi_filter"])
             if "rsi_buy_max" in data:
@@ -160,6 +161,8 @@ class StrategyBot:
 
     def add_symbol(self, sym: str) -> List[str]:
         with self._state_lock:
+            if self.is_running or self._check_lock.locked() or (self.task is not None and not self.task.done()):
+                raise RuntimeError('Sembol listesini değiştirmeden önce botu durdurun; yeni semboller başlangıç kontrolünden geçmelidir.')
             sym = sym.strip().upper()
             if not re.fullmatch(r'[A-Z0-9_.#-]{1,32}', sym):
                 raise ValueError("Geçersiz sembol.")
@@ -168,14 +171,13 @@ class StrategyBot:
             if sym not in self.symbols:
                 self.symbols.append(sym)
                 self.log(f"➕ Bot izleme listesine eklendi: {sym} (Aktif: {', '.join(self.symbols)})")
-                try:
-                    self.persist_config(self.config_snapshot())
-                except Exception:
-                    pass
+                self.persist_config(self.config_snapshot())
             return list(self.symbols)
 
     def remove_symbol(self, sym: str) -> List[str]:
         with self._state_lock:
+            if self.is_running or self._check_lock.locked() or (self.task is not None and not self.task.done()):
+                raise RuntimeError('Sembol listesini değiştirmeden önce botu durdurun; yeni semboller başlangıç kontrolünden geçmelidir.')
             sym = sym.strip().upper()
             if hasattr(self, 'symbols') and sym in self.symbols:
                 if len(self.symbols) > 1:
@@ -183,10 +185,7 @@ class StrategyBot:
                     if self.symbol == sym:
                         self.symbol = self.symbols[0]
                     self.log(f"➖ Bot izleme listesinden çıkarıldı: {sym} (Kalan: {', '.join(self.symbols)})")
-                    try:
-                        self.persist_config(self.config_snapshot())
-                    except Exception:
-                        pass
+                    self.persist_config(self.config_snapshot())
                 else:
                     self.log(f"⚠️ {sym} son semboldür ve kaldırılamaz. En az 1 sembol kalmalıdır.", "WARNING")
             return list(self.symbols)
@@ -529,6 +528,10 @@ class StrategyBot:
         latest_closed_candle_time = rev_rates[1]["time"]
 
         last_t = self.last_candle_times.get(sym, 0)
+        if sym == self.symbol:
+            # The single-symbol marker is still reset/advanced by older code paths;
+            # never process a candle older than either marker.
+            last_t = max(last_t, self.last_candle_time or 0)
         if self.is_running and not last_t:
             hma1_init = self.calc_hma(closes, self.hma_period, shift=1)
             hma2_init = self.calc_hma(closes, self.hma_period, shift=2)
@@ -716,7 +719,7 @@ class StrategyBot:
             self.runtime_state, self.runtime_detail = 'SUBMITTING', f'{sym} emir sonucu bekleniyor.'
 
         res = self.mt5.open_order(sym, side, self.lot_size, sl_points=sl, tp_points=tp,
-            comment=f"HMA Bot {side}", magic=HMA_MAGIC, request_id=self.order_id(side, sym=sym), stop_event=self._stop_event, manual_mode="MT5", **kwargs)
+            comment=f"HMA Bot {side}", magic=HMA_MAGIC, request_id=self.order_id(side, sym=sym), stop_event=self._stop_event, **kwargs)
 
         if res.get("success"):
             if sym == self.symbol:
@@ -786,47 +789,57 @@ class StrategyBot:
                     return False
         return True
 
-    def execute_signal(self, symbol: str, side: str, price: Optional[float] = None, sl_price: Optional[float] = None, tp_price: Optional[float] = None, lot_size: Optional[float] = None) -> Dict[str, Any]:
+    def execute_signal(self, symbol: str, side: str, *, signal_id: str, expected_account,
+                       price: Optional[float] = None, sl_price: Optional[float] = None, tp_price: Optional[float] = None,
+                       sl_points: Optional[int] = None, tp_points: Optional[int] = None) -> Dict[str, Any]:
+        """Manually confirmed signal: same panel risk rules, account binding and idempotency as the bot."""
+        symbol = symbol.strip().upper()
+        side = side.strip().upper()
+        if side not in ("BUY", "SELL") or not re.fullmatch(r'[A-Z0-9_.#-]{1,32}', symbol):
+            raise ValueError("Geçersiz sembol veya yön.")
+        if (sl_price is not None or tp_price is not None) and (sl_points is not None or tp_points is not None):
+            raise ValueError("SL/TP fiyat veya puan olarak gönderilmeli; ikisi birlikte değil.")
         with self._state_lock:
-            symbol = symbol.strip().upper()
-            side = side.strip().upper()
-            if side not in ("BUY", "SELL"):
-                raise ValueError("Geçersiz yön: BUY veya SELL olmalıdır.")
-            spec = self.mt5.get_symbol_spec(symbol) or {}
-            point = float(spec.get("point") or 0.0001)
-            lot = lot_size if (lot_size and lot_size > 0) else self.lot_size
-
-            sl_pts = 0
-            if sl_price and price and point > 0:
-                sl_pts = max(0, int(round(abs(price - sl_price) / point)))
-            elif self.use_stop_loss:
-                dist_sl, _ = self.order_distances(symbol)
-                sl_pts = dist_sl or self.sl_points
-
-            tp_pts = 0
-            if tp_price and price and point > 0:
-                tp_pts = max(0, int(round(abs(price - tp_price) / point)))
-            elif self.use_take_profit:
-                _, dist_tp = self.order_distances(symbol)
-                tp_pts = dist_tp or self.tp_points
-
-            res = self.mt5.open_order(
-                symbol,
-                side,
-                lot,
-                sl_points=sl_pts,
-                tp_points=tp_pts,
-                comment=f"HMA Sinyal {side}",
-                magic=HMA_MAGIC,
-                manual_mode="MT5"
-            )
-            if res.get("success"):
-                self.log(f"🎯 Sinyal Bota Aktarıldı ve Açıldı: {symbol} {side} #{res.get('ticket')} @ {res.get('price')} (Lot: {lot})")
-                self.pending_signal_actions = [a for a in getattr(self, 'pending_signal_actions', []) if not (a.get('symbol') == symbol and a.get('side') == side)]
+            lot = self.lot_size
+            default_sl = self.sl_points if self.use_stop_loss else 0
+            default_tp = self.tp_points if self.use_take_profit else 0
+            use_stop_loss = self.use_stop_loss
+        if sl_price is not None or tp_price is not None:
+            if price is None or not math.isfinite(price) or price <= 0:
+                raise ValueError("Fiyat bazlı SL/TP için sinyal fiyatı gerekli.")
+            point = float((self.mt5.get_symbol_spec(symbol) or {}).get("point") or 0)
+            if not math.isfinite(point) or point <= 0:
+                raise ValueError("Sembolün point değeri doğrulanamadı.")
+            direction = 1 if side == "BUY" else -1
+            if sl_price is not None and direction * (price - sl_price) <= 0:
+                raise ValueError("Stop Loss sinyal yönünün yanlış tarafında.")
+            if tp_price is not None and direction * (tp_price - price) <= 0:
+                raise ValueError("Kâr Al sinyal yönünün yanlış tarafında.")
+            sl_pts = int(round(abs(price - sl_price) / point)) if sl_price is not None else default_sl
+            tp_pts = int(round(abs(tp_price - price) / point)) if tp_price is not None else default_tp
+        else:
+            sl_pts = default_sl if sl_points is None else int(sl_points)
+            tp_pts = default_tp if tp_points is None else int(tp_points)
+        if sl_pts < 0 or tp_pts < 0:
+            raise ValueError("SL/TP mesafesi negatif olamaz.")
+        if use_stop_loss and sl_pts <= 0:
+            raise ValueError("Bot ayarlarında Stop Loss açık; geçerli bir stop mesafesi gerekli.")
+        if self.mt5.has_unresolved_bot_order(symbol):
+            raise ValueError("Önceki bot emrinin sonucu belirsiz; MT5 mutabakatını bekleyin.")
+        identity = (tuple(expected_account), symbol, side, signal_id)
+        request_id = "sig-" + hashlib.sha256(repr(identity).encode()).hexdigest()
+        res = self.mt5.open_order(symbol, side, lot, sl_points=sl_pts, tp_points=tp_pts,
+                                  comment=f"HMA Sinyal {side}", magic=HMA_MAGIC,
+                                  request_id=request_id, expected_account=expected_account)
+        if res.get("success"):
+            self.log(f"🎯 Sinyal onaylandı ve açıldı: {symbol} {side} #{res.get('ticket')} @ {res.get('price')} (Lot: {lot})")
+            with self._state_lock:
+                self.pending_signal_actions = [a for a in self.pending_signal_actions
+                                               if not (a.get('symbol') == symbol and a.get('side') == side)]
                 self.pending_signal_action = self.pending_signal_actions[0] if self.pending_signal_actions else None
-            else:
-                self.log(f"❌ Sinyal Bota Aktarılamadı ({symbol} {side}): {res.get('error')}", "ERROR")
-            return res
+        else:
+            self.log(f"❌ Sinyal emri açılamadı ({symbol} {side}): {res.get('error')}", "ERROR")
+        return res
 
     def clear_pending_signal(self, symbol: Optional[str] = None):
         with self._state_lock:
@@ -852,6 +865,8 @@ class StrategyBot:
                 self.mt5.automation_stopped.clear()
                 self._stop_event.clear()
                 self.last_candle_time = 0
+                self.last_candle_times = {}
+                self._candidates = {}
                 self.is_running = True
                 self.runtime_state, self.runtime_detail, self.last_error = 'WAITING_DATA', 'Yeni kapanmış mum verisi bekleniyor.', None
                 self.task = asyncio.create_task(self.run_loop())
