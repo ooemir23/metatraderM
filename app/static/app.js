@@ -202,7 +202,7 @@ function clearSymbolPrices() {
   if (typeof displayedTickTime !== 'undefined') displayedTickTime = 0;
   if (typeof displayedQuoteStatus !== 'undefined') displayedQuoteStatus = null;
   if (typeof updateQuoteStatus === 'function') updateQuoteStatus();
-  for (const id of ['header-bid', 'header-ask', 'header-spread', 'btn-bid-price', 'btn-ask-price']) {
+  for (const id of ['header-bid', 'header-ask', 'header-spread', 'btn-bid-price', 'btn-ask-price', 'ticket-bid-price', 'ticket-ask-price']) {
     const node = document.getElementById(id);
     if (node) node.textContent = '—';
   }
@@ -1377,8 +1377,12 @@ function renderPriceData(tick) {
       document.getElementById("header-spread").innerText = tick.spread;
       document.getElementById("btn-bid-price").innerText = `@ ${bid}`;
       document.getElementById("btn-ask-price").innerText = `@ ${ask}`;
+      const ticketBid = document.getElementById("ticket-bid-price");
+      const ticketAsk = document.getElementById("ticket-ask-price");
+      if (ticketBid) ticketBid.innerText = bid;
+      if (ticketAsk) ticketAsk.innerText = ask;
     } else {
-      for (const id of ['header-bid','header-ask','header-spread','btn-bid-price','btn-ask-price']) {
+      for (const id of ['header-bid','header-ask','header-spread','btn-bid-price','btn-ask-price','ticket-bid-price','ticket-ask-price']) {
         const node = document.getElementById(id);
         if (node) node.innerText = '—';
       }
@@ -1511,6 +1515,51 @@ function adjustLot(delta) {
 function setLot(val) {
   document.getElementById('lot-input').value = String(val);
   if (typeof scheduleTradePreview === 'function') scheduleTradePreview();
+}
+function adjustStopPrice(field, direction) {
+  const input = document.getElementById(field + '-input');
+  if (!input) return;
+  ticketProtectionEdited = true;
+  const spec = window.MT5Markets?.getSymbol(currentSymbol);
+  const digits = Number.isInteger(spec?.digits) && spec.digits >= 0 && spec.digits <= 8 ? spec.digits : 5;
+  const point = Number.isFinite(spec?.point) && spec.point > 0 ? spec.point : Math.pow(10, -digits);
+  const current = Number(input.value);
+  let next;
+  if (!Number.isFinite(current) || current <= 0) {
+    const base = Number.isFinite(executableQuote?.bid) && executableQuote.bid > 0 ? executableQuote.bid : 0;
+    next = Math.max(0, base + direction * point);
+  } else {
+    next = Math.max(0, current + direction * point);
+  }
+  input.value = next > 0 ? next.toFixed(digits) : '0';
+  if (typeof scheduleTradePreview === 'function') scheduleTradePreview();
+}
+function adjustDeviation(delta) {
+  const input = document.getElementById('order-deviation');
+  if (!input) return;
+  const current = Number(input.value);
+  const next = Math.max(0, Math.min(100000, (Number.isInteger(current) ? current : 20) + delta));
+  input.value = String(next);
+  saveOrderTicketPreferences();
+}
+function changeOrderExecutionType() {
+  const isPending = document.getElementById('order-execution-type')?.value === 'PENDING';
+  document.getElementById('market-order-buttons')?.classList.toggle('hidden', isPending);
+  document.getElementById('pending-order-buttons')?.classList.toggle('hidden', !isPending);
+  document.getElementById('market-deviation-row')?.classList.toggle('hidden', isPending);
+  if (isPending) {
+    const pendingPanel = document.getElementById('pending-type')?.closest?.('details');
+    if (pendingPanel) pendingPanel.open = true;
+  }
+}
+async function submitUnifiedPendingOrder() {
+  const lot = document.getElementById('lot-input')?.value;
+  const sl = document.getElementById('sl-input')?.value;
+  const tp = document.getElementById('tp-input')?.value;
+  if (lot != null && document.getElementById('pending-volume')) document.getElementById('pending-volume').value = lot;
+  if (sl != null && document.getElementById('pending-sl')) document.getElementById('pending-sl').value = sl;
+  if (tp != null && document.getElementById('pending-tp')) document.getElementById('pending-tp').value = tp;
+  if (typeof submitPendingOrder === 'function') await submitPendingOrder();
 }
 
 // Keep the last result per symbol; a broker rejection is not a live session calendar.

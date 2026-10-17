@@ -629,80 +629,159 @@
       <!-- RIGHT COLUMN (4 COLS): FAST ORDERS, BOT & LIVE LOGS -->
       <div class="lg:col-span-4 flex flex-col gap-3 sm:gap-4">
         
-        <!-- CARD 1: FAST ORDER EXECUTION -->
-        <div class="bg-[#121620] p-3 sm:p-4 rounded-2xl border border-gray-800/80 shadow-xl">
-          <div class="flex items-center justify-between mb-2 pb-1.5 border-b border-gray-800">
-            <div class="flex items-center gap-1.5">
-              <i class="ph-bold ph-lightning text-amber-400 text-base"></i>
-              <h2 class="font-bold text-white text-xs sm:text-sm uppercase tracking-wider">Hızlı Emir Girişi</h2>
+        <!-- CARD 1: MT5 ORDER WINDOW (F9) -->
+        <div class="bg-[#121620] p-3.5 sm:p-4 rounded-2xl border border-gray-800/80 shadow-xl text-xs">
+          <!-- Title Bar -->
+          <div class="flex items-center justify-between mb-3 pb-2 border-b border-gray-800">
+            <div class="flex items-center gap-2">
+              <i class="ph-bold ph-chart-line-up text-cyan-400 text-sm"></i>
+              <h2 class="font-bold text-white text-xs sm:text-sm tracking-wide">Emir</h2>
             </div>
-            <span id="order-symbol-tag" class="text-xs px-2 py-0.5 rounded bg-gray-800 text-emerald-400 font-mono font-bold">EURUSD</span>
+            <span id="order-symbol-tag" class="text-xs px-2 py-0.5 rounded bg-[#181d2a] border border-gray-700 text-cyan-300 font-mono font-bold">EURUSD</span>
           </div>
 
-          <label for="order-symbol-select" class="block text-[11px] font-semibold text-gray-400 mb-1">MT5 işlem sembolü</label>
-          <button id="order-symbol-select" type="button" class="market-order-picker" aria-haspopup="dialog" aria-controls="market-dialog" aria-label="MT5 işlem ürününü seç" disabled>
-            <span id="order-symbol-name" data-no-translate>EURUSD</span><span class="text-gray-400">Ürün seç <i class="ph-bold ph-caret-down" aria-hidden="true"></i></span>
-          </button>
-          <p id="market-selection-note" class="market-selection-note" role="status"></p>
+          <div class="space-y-2.5">
+            <!-- Row 1: Sembol (Symbol) -->
+            <div class="grid grid-cols-12 items-center gap-2">
+              <label for="order-symbol-select" class="col-span-4 text-[11px] text-gray-400 font-medium">Sembol:</label>
+              <div class="col-span-8">
+                <button id="order-symbol-select" type="button" class="market-order-picker !py-1.5 !px-2.5" aria-haspopup="dialog" aria-controls="market-dialog" aria-label="MT5 işlem ürününü seç" disabled>
+                  <span id="order-symbol-name" data-no-translate>EURUSD</span><span class="text-gray-400">Ürün seç <i class="ph-bold ph-caret-down" aria-hidden="true"></i></span>
+                </button>
+              </div>
+            </div>
+            <p id="market-selection-note" class="market-selection-note hidden" role="status"></p>
 
-          <!-- Lot Size Selector -->
-          <div class="mb-2">
-            <label class="block text-[11px] font-semibold text-gray-400 mb-1">İşlem Hacmi (Lot)</label>
-            <div class="flex items-center gap-1.5">
-              <button onclick="adjustLot(-0.01)" class="w-8 h-8 rounded-lg bg-gray-800 hover:bg-gray-700 text-white font-bold text-sm">-</button>
-              <input type="number" id="lot-input" value="0.01" step="0.01" min="0.01" max="100.0" class="flex-1 bg-[#181d2a] border border-gray-700 rounded-lg px-2.5 py-1.5 text-center text-white font-bold text-sm focus:outline-none focus:border-emerald-500">
-              <button onclick="adjustLot(+0.01)" class="w-8 h-8 rounded-lg bg-gray-800 hover:bg-gray-700 text-white font-bold text-sm">+</button>
+            <!-- Row 2: Tür (Type: Market Execution vs Pending Order) -->
+            <div class="grid grid-cols-12 items-center gap-2">
+              <label for="order-execution-type" class="col-span-4 text-[11px] text-gray-400 font-medium">Tür:</label>
+              <div class="col-span-8">
+                <select id="order-execution-type" onchange="changeOrderExecutionType()" class="w-full bg-[#181d2a] border border-gray-700 rounded-lg px-2.5 py-1.5 text-white font-medium text-xs focus:outline-none focus:border-cyan-500">
+                  <option value="MARKET">Piyasa Yürütmesi</option>
+                  <option value="PENDING">Bekleyen Emir</option>
+                </select>
+              </div>
             </div>
-            <!-- Preset lot badges -->
-            <div class="flex items-center gap-1 mt-1.5">
-              <button onclick="setLot(0.01)" class="flex-1 py-0.5 text-[10px] rounded bg-gray-800/80 hover:bg-gray-700 text-gray-300 font-mono">0.01</button>
-              <button onclick="setLot(0.05)" class="flex-1 py-0.5 text-[10px] rounded bg-gray-800/80 hover:bg-gray-700 text-gray-300 font-mono">0.05</button>
-              <button onclick="setLot(0.10)" class="flex-1 py-0.5 text-[10px] rounded bg-gray-800/80 hover:bg-gray-700 text-gray-300 font-mono">0.10</button>
-              <button onclick="setLot(0.50)" class="flex-1 py-0.5 text-[10px] rounded bg-gray-800/80 hover:bg-gray-700 text-gray-300 font-mono">0.50</button>
-            </div>
-          </div>
 
-          <label class="block text-[11px] text-gray-400 mb-2">Doldurma politikası
-            <select id="order-filling" onchange="saveOrderTicketPreferences();scheduleTradePreview()" class="bg-gray-800 rounded p-1 ml-2"><option value="AUTO">Broker varsayılanı</option><option value="FOK">Fill or Kill (FOK)</option><option value="IOC">Immediate or Cancel (IOC)</option><option value="RETURN">Return</option></select>
-          </label>
-          <label class="block text-[11px] text-gray-400 mb-2">SL / TP girişi
-            <select id="order-stop-mode" onchange="changeOrderStopMode()" class="bg-gray-800 rounded p-1 ml-2"><option value="price">Fiyat seviyesi (MT5)</option><option value="points">Girişten uzaklık (puan)</option></select>
-          </label>
-          <p id="lot-rules" class="text-[11px] text-gray-400 mb-2"></p>
-          <!-- MT5 protection levels; 0 means omitted -->
-          <div class="grid grid-cols-2 gap-2 mb-2.5">
-            <div>
-              <label for="sl-input" class="block text-[11px] font-semibold text-gray-400 mb-0.5">Stop Loss · 0 = Yok</label>
-              <input type="number" id="sl-input" value="0" step="any" min="0" placeholder="0 = Yok" class="w-full bg-[#181d2a] border border-gray-700 rounded-lg px-2 py-1 text-center text-white text-xs font-mono focus:outline-none focus:border-red-500">
+            <!-- Row 3: Hacim (Volume / Lot) -->
+            <div class="grid grid-cols-12 items-center gap-2">
+              <label for="lot-input" class="col-span-4 text-[11px] text-gray-400 font-medium">Hacim:</label>
+              <div class="col-span-8">
+                <div class="flex items-center gap-1">
+                  <button type="button" onclick="adjustLot(-0.01)" class="w-7 h-7 rounded bg-[#181d2a] border border-gray-700 hover:bg-gray-700 text-gray-200 font-bold text-xs">-</button>
+                  <input type="number" id="lot-input" value="0.01" step="0.01" min="0.01" max="100.0" class="flex-1 min-w-0 bg-[#181d2a] border border-gray-700 rounded px-2 py-1 text-center text-white font-mono font-bold text-xs focus:outline-none focus:border-cyan-500">
+                  <button type="button" onclick="adjustLot(+0.01)" class="w-7 h-7 rounded bg-[#181d2a] border border-gray-700 hover:bg-gray-700 text-gray-200 font-bold text-xs">+</button>
+                </div>
+                <div class="flex items-center gap-1 mt-1">
+                  <button type="button" onclick="setLot(0.01)" class="flex-1 py-0.5 text-[10px] rounded bg-gray-800/80 hover:bg-gray-700 text-gray-300 font-mono">0.01</button>
+                  <button type="button" onclick="setLot(0.05)" class="flex-1 py-0.5 text-[10px] rounded bg-gray-800/80 hover:bg-gray-700 text-gray-300 font-mono">0.05</button>
+                  <button type="button" onclick="setLot(0.10)" class="flex-1 py-0.5 text-[10px] rounded bg-gray-800/80 hover:bg-gray-700 text-gray-300 font-mono">0.10</button>
+                  <button type="button" onclick="setLot(0.50)" class="flex-1 py-0.5 text-[10px] rounded bg-gray-800/80 hover:bg-gray-700 text-gray-300 font-mono">0.50</button>
+                </div>
+                <p id="lot-rules" class="text-[10px] text-gray-500 mt-0.5 font-mono"></p>
+              </div>
             </div>
-            <div>
-              <label for="tp-input" class="block text-[11px] font-semibold text-gray-400 mb-0.5">Take Profit · 0 = Yok</label>
-              <input type="number" id="tp-input" value="0" step="any" min="0" placeholder="0 = Yok" class="w-full bg-[#181d2a] border border-gray-700 rounded-lg px-2 py-1 text-center text-white text-xs font-mono focus:outline-none focus:border-emerald-500">
-            </div>
-          </div>
 
-          <label class="block text-[11px] text-gray-400 mb-2">Azami sapma (puan)
-            <input id="order-deviation" onchange="saveOrderTicketPreferences()" type="number" min="0" max="100000" step="1" value="20" class="bg-gray-800 rounded px-2 py-1 w-20">
-            <span>Request/Instant yürütmede uygulanır; Market yürütmede broker fiyatı belirler.</span>
-          </label>
-          <p class="text-[11px] text-gray-400 mb-2"><span id="live-feed-status">Sunucu bağlantısı bekleniyor</span> · <span id="mt5-feed-status">MT5 broker bağlantısı doğrulanamadı</span> · <span id="tick-age">Fiyat bekleniyor</span></p>
-          <button id="trading-halt-message" type="button" onclick="openTradingRiskDialog()" class="hidden mb-2 w-full rounded-lg border border-amber-700/50 bg-amber-950/30 px-2 py-1.5 text-left text-[11px] text-amber-200 hover:bg-amber-900/40" aria-haspopup="dialog">İşlem riski yükleniyor…</button>
-          <!-- BIG BUY & SELL BUTTONS -->
-          <p id="order-readiness-status" role="status" aria-live="polite" class="mb-2 text-[11px] text-amber-200" hidden></p>
-          <div class="grid grid-cols-2 gap-2.5">
-            <button id="order-sell-btn" disabled onclick="submitOrder('SELL')" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-gradient-to-b from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-extrabold shadow-lg shadow-red-600/20 active:scale-[0.98] transition">
-              <span class="text-xs sm:text-sm tracking-wide">SAT (SELL)</span>
-              <span id="btn-bid-price" class="text-[11px] font-mono font-medium text-red-100 opacity-90">--</span>
-            </button>
-            <button id="order-buy-btn" disabled onclick="submitOrder('BUY')" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-gradient-to-b from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-extrabold shadow-lg shadow-emerald-600/20 active:scale-[0.98] transition">
-              <span class="text-xs sm:text-sm tracking-wide">AL (BUY)</span>
-              <span id="btn-ask-price" class="text-[11px] font-mono font-medium text-emerald-100 opacity-90">--</span>
-            </button>
-          </div>
-          <div id="order-notice" class="order-notice" data-tone="neutral" role="status" aria-live="polite" aria-atomic="true">
-            <span id="order-notice-title" class="order-notice-title">İşlem durumu</span>
-            <span id="order-notice-message">Emir sonucu ve işlem uyarıları burada gösterilir.</span>
-            <button id="order-reset-btn" type="button" onclick="clearUncertainOrder()" hidden>MT5 kontrolü ve yeni talep</button>
+            <!-- Row 4: Doldurma Politikası (Fill Policy) -->
+            <div class="grid grid-cols-12 items-center gap-2">
+              <label for="order-filling" class="col-span-4 text-[11px] text-gray-400 font-medium">Doldurma politikası</label>
+              <div class="col-span-8">
+                <select id="order-filling" onchange="saveOrderTicketPreferences();scheduleTradePreview()" class="w-full bg-[#181d2a] border border-gray-700 rounded-lg px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-cyan-500">
+                  <option value="AUTO">Broker varsayılanı</option>
+                  <option value="FOK">Fill or Kill (FOK)</option>
+                  <option value="IOC">Immediate or Cancel (IOC)</option>
+                  <option value="RETURN">Return</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Hidden stop mode selector (always price level in MT5) -->
+            <select id="order-stop-mode" onchange="changeOrderStopMode()" class="hidden" hidden>
+              <option value="price" selected>Fiyat seviyesi (MT5)</option>
+              <option value="points">Girişten uzaklık (puan)</option>
+            </select>
+
+            <!-- Row 5: Zarar Durdur (SL) & Kâr Al (TP) Side-by-Side like MT5 -->
+            <div class="grid grid-cols-2 gap-2 pt-0.5">
+              <div>
+                <label for="sl-input" class="block text-[11px] text-gray-400 font-medium mb-1">Zarar Durdur (SL)</label>
+                <div class="flex items-center gap-1">
+                  <button type="button" onclick="adjustStopPrice('sl', -1)" class="w-6 h-7 rounded bg-[#181d2a] border border-gray-700 hover:bg-gray-700 text-gray-300 font-bold text-xs">-</button>
+                  <input type="number" id="sl-input" value="0" step="any" min="0" placeholder="0.00000" class="w-full min-w-0 bg-[#181d2a] border border-gray-700 rounded px-1.5 py-1 text-center text-white text-xs font-mono focus:outline-none focus:border-rose-500">
+                  <button type="button" onclick="adjustStopPrice('sl', 1)" class="w-6 h-7 rounded bg-[#181d2a] border border-gray-700 hover:bg-gray-700 text-gray-300 font-bold text-xs">+</button>
+                </div>
+              </div>
+              <div>
+                <label for="tp-input" class="block text-[11px] text-gray-400 font-medium mb-1">Kâr Al (TP)</label>
+                <div class="flex items-center gap-1">
+                  <button type="button" onclick="adjustStopPrice('tp', -1)" class="w-6 h-7 rounded bg-[#181d2a] border border-gray-700 hover:bg-gray-700 text-gray-300 font-bold text-xs">-</button>
+                  <input type="number" id="tp-input" value="0" step="any" min="0" placeholder="0.00000" class="w-full min-w-0 bg-[#181d2a] border border-gray-700 rounded px-1.5 py-1 text-center text-white text-xs font-mono focus:outline-none focus:border-emerald-500">
+                  <button type="button" onclick="adjustStopPrice('tp', 1)" class="w-6 h-7 rounded bg-[#181d2a] border border-gray-700 hover:bg-gray-700 text-gray-300 font-bold text-xs">+</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Row 6: Yorum (Comment) & Azami Sapma (Deviation) -->
+            <div class="grid grid-cols-12 items-center gap-2">
+              <label for="order-comment" class="col-span-4 text-[11px] text-gray-400 font-medium">Yorum:</label>
+              <div class="col-span-8">
+                <input id="order-comment" type="text" maxlength="31" placeholder="" class="w-full bg-[#181d2a] border border-gray-700 rounded-lg px-2.5 py-1 text-white text-xs font-mono focus:outline-none focus:border-cyan-500">
+              </div>
+            </div>
+
+            <div id="market-deviation-row" class="grid grid-cols-12 items-center gap-2">
+              <label for="order-deviation" class="col-span-4 text-[11px] text-gray-400 font-medium">Azami sapma (puan)</label>
+              <div class="col-span-8 flex items-center gap-1">
+                <button type="button" onclick="adjustDeviation(-1)" class="w-7 h-7 rounded bg-[#181d2a] border border-gray-700 hover:bg-gray-700 text-gray-300 font-bold text-xs">-</button>
+                <input id="order-deviation" onchange="saveOrderTicketPreferences()" type="number" min="0" max="100000" step="1" value="20" class="flex-1 min-w-0 bg-[#181d2a] border border-gray-700 rounded px-2 py-1 text-center text-white font-mono text-xs focus:outline-none focus:border-cyan-500">
+                <button type="button" onclick="adjustDeviation(1)" class="w-7 h-7 rounded bg-[#181d2a] border border-gray-700 hover:bg-gray-700 text-gray-300 font-bold text-xs">+</button>
+              </div>
+            </div>
+
+            <!-- MT5 LIVE BID / ASK QUOTE HEADER -->
+            <div class="grid grid-cols-2 gap-2 pt-2 border-t border-gray-800/80">
+              <div class="bg-[#181d2a] border border-gray-800 rounded-lg py-1.5 px-2.5 text-center">
+                <span class="block text-[10px] text-gray-400 uppercase font-semibold">Bid (Satış)</span>
+                <span id="ticket-bid-price" class="font-mono font-bold text-base sm:text-lg text-rose-400 tabular-nums">--</span>
+              </div>
+              <div class="bg-[#181d2a] border border-gray-800 rounded-lg py-1.5 px-2.5 text-center">
+                <span class="block text-[10px] text-gray-400 uppercase font-semibold">Ask (Alış)</span>
+                <span id="ticket-ask-price" class="font-mono font-bold text-base sm:text-lg text-cyan-400 tabular-nums">--</span>
+              </div>
+            </div>
+
+            <!-- Hidden status nodes for background state tracking -->
+            <p class="hidden" hidden><span id="live-feed-status">Sunucu bağlantısı bekleniyor</span> · <span id="mt5-feed-status">MT5 broker bağlantısı doğrulanamadı</span> · <span id="tick-age">Fiyat bekleniyor</span></p>
+            <button id="trading-halt-message" type="button" onclick="openTradingRiskDialog()" class="hidden mb-2 w-full rounded-lg border border-amber-700/50 bg-amber-950/30 px-2 py-1.5 text-left text-[11px] text-amber-200 hover:bg-amber-900/40" aria-haspopup="dialog">İşlem riski yükleniyor…</button>
+            <p id="order-readiness-status" role="status" aria-live="polite" class="hidden" hidden></p>
+
+            <!-- MT5 SELL BY MARKET / BUY BY MARKET BUTTONS -->
+            <div id="market-order-buttons" class="grid grid-cols-2 gap-2">
+              <button id="order-sell-btn" disabled onclick="submitOrder('SELL')" class="flex flex-col items-center justify-center py-2.5 px-2 rounded-lg bg-[#c93b3b] hover:bg-[#b53232] text-white font-bold shadow transition active:scale-[0.99]">
+                <span class="text-xs tracking-wide">Sell by Market</span>
+                <span class="text-[10px] font-normal text-red-100">Piyasadan Sat</span>
+                <span id="btn-bid-price" class="text-[11px] font-mono font-semibold text-white mt-0.5">--</span>
+              </button>
+              <button id="order-buy-btn" disabled onclick="submitOrder('BUY')" class="flex flex-col items-center justify-center py-2.5 px-2 rounded-lg bg-[#2b6cb0] hover:bg-[#255d99] text-white font-bold shadow transition active:scale-[0.99]">
+                <span class="text-xs tracking-wide">Buy by Market</span>
+                <span class="text-[10px] font-normal text-blue-100">Piyasadan Al</span>
+                <span id="btn-ask-price" class="text-[11px] font-mono font-semibold text-white mt-0.5">--</span>
+              </button>
+            </div>
+
+            <!-- MT5 PENDING ORDER BUTTON (shown when Tür = Bekleyen Emir) -->
+            <div id="pending-order-buttons" class="hidden">
+              <button id="order-place-btn" type="button" onclick="submitUnifiedPendingOrder()" class="w-full py-2.5 px-3 rounded-lg bg-[#2b6cb0] hover:bg-[#255d99] text-white font-bold text-xs shadow transition active:scale-[0.99]">
+                Emir Ver (Place)
+              </button>
+            </div>
+
+            <!-- Compact MT5 Status Bar -->
+            <div id="order-notice" class="order-notice !mt-2 !py-2 !px-2.5" data-tone="neutral" role="status" aria-live="polite" aria-atomic="true">
+              <span id="order-notice-title" class="order-notice-title">İşlem durumu</span>
+              <span id="order-notice-message">Emir sonucu ve işlem uyarıları burada gösterilir.</span>
+              <button id="order-reset-btn" type="button" onclick="clearUncertainOrder()" hidden>MT5 kontrolü ve yeni talep</button>
+            </div>
           </div>
         </div>
 

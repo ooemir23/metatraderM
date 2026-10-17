@@ -2,6 +2,18 @@
 (function () {
   const STORAGE_KEY = "hma_ui_language";
   const en = Object.fromEntries([
+    ["Emir", "Order"],
+    ["Sembol:", "Symbol:"],
+    ["Tür:", "Type:"],
+    ["Piyasa Yürütmesi", "Market Execution"],
+    ["Bekleyen Emir", "Pending Order"],
+    ["Hacim:", "Volume:"],
+    ["Yorum:", "Comment:"],
+    ["Bid (Satış)", "Bid"],
+    ["Ask (Alış)", "Ask"],
+    ["Piyasadan Sat", "Sell by Market"],
+    ["Piyasadan Al", "Buy by Market"],
+    ["Emir Ver (Place)", "Place"],
     ["Değiştir", "Modify"],
     ["Değişikliği gönder", "Submit modification"],
     ["Manuel işlem kuralları", "Manual trading rules"],
