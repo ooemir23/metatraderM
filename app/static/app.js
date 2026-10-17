@@ -666,6 +666,10 @@ function startPolling() {
   setInterval(fetchPrice, 800);
   setInterval(fetchBotStatus, 3000);
   setInterval(refreshTradingStatus, 5000);
+  if (typeof refreshSignalScanner === 'function') {
+    refreshSignalScanner(false);
+    setInterval(() => refreshSignalScanner(false), 10000);
+  }
   setInterval(() => {
     if (currentPositionTab === "closed") fetchHistory();
     else if (currentPositionTab === "reports") fetchReports();
@@ -2876,3 +2880,120 @@ async function saveAIAutopilot() {
     showToast(`❌ İstek Hatası: ${err.message}`, "error");
   } finally { aiSettingsBusy = false; }
 }
+
+let signalScannerBusy = false;
+let signalAutoAlertEnabled = true;
+const announcedSignalCrosses = new Map();
+
+function toggleSignalAutoAlert(enabled) {
+  signalAutoAlertEnabled = Boolean(enabled);
+}
+
+function playSignalBeep(isBuy) {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(isBuy ? 880 : 520, ctx.currentTime);
+    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.25);
+  } catch (_) {}
+}
+
+function applyScannedSignalToTicket(symbol, slPrice, tpPrice) {
+  if (symbol && symbol !== currentSymbol) {
+    switchSymbol(symbol);
+  }
+  const stopMode = document.getElementById('order-stop-mode');
+  if (stopMode) stopMode.value = 'price';
+  const slInput = document.getElementById('sl-input');
+  const tpInput = document.getElementById('tp-input');
+  if (slInput && Number.isFinite(slPrice) && slPrice > 0) slInput.value = String(slPrice);
+  if (tpInput && Number.isFinite(tpPrice) && tpPrice > 0) tpInput.value = String(tpPrice);
+  ticketProtectionEdited = true;
+  if (typeof showToast === 'function') {
+    showToast(`🎯 ${symbol} sinyal SL (${slPrice}) ve TP (${tpPrice}) seviyeleri emir penceresine aktarıldı.`, 'info');
+  }
+}
+
+async function refreshSignalScanner(manual = false) {
+  if (signalScannerBusy) return;
+  const listNode = document.getElementById('signal-scanner-list');
+  const statusNode = document.getElementById('signal-scanner-status');
+  if (!listNode) return;
+  signalScannerBusy = true;
+  try {
+    const tfNode = document.getElementById('signal-scan-tf');
+    const tf = Number(tfNode?.value || 15) || 15;
+    const symbols = Array.from(new Set([currentSymbol || 'EURUSD', 'EURUSD', 'XAUUSD', 'GBPUSD', 'USDJPY', 'BTCUSD'])).slice(0, 6);
+    if (manual && statusNode) statusNode.textContent = 'Sinyaller taranıyor…';
+    const res = await fetch(`/api/signals/scan?symbols=${encodeURIComponent(symbols.join(','))}&timeframe_minutes=${tf}`);
+    if (!res.ok) throw new Error('Sinyal taraması alınamadı');
+    const data = await res.json();
+    const rows = Array.isArray(data.signals) ? data.signals : [];
+    if (statusNode) {
+      statusNode.textContent = `HMA(${data.hma_period || 14}) / EMA(${data.ema_period || 34}) · Son tarama: ${new Date().toLocaleTimeString('tr-TR')}`;
+    }
+    if (!rows.length) {
+      listNode.innerHTML = '<div class="text-gray-400 text-[11px] py-2 text-center">Sembol verisi bekleniyor…</div>';
+      return;
+    }
+    listNode.innerHTML = rows.map(item => {
+      const isCrossBuy = item.signal === 'BUY_CROSS';
+      const isCrossSell = item.signal === 'SELL_CROSS';
+      const isBuy = item.side === 'BUY';
+      const badgeClass = isCrossBuy
+        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold'
+        : isCrossSell
+        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold'
+        : isBuy
+        ? 'bg-emerald-950/50 text-emerald-400 border border-emerald-800/50'
+        : 'bg-rose-950/50 text-rose-400 border border-rose-800/50';
+      const badgeText = isCrossBuy
+        ? '▲ YENİ AL (Kesişim)'
+        : isCrossSell
+        ? '▼ YENİ SAT (Kesişim)'
+        : isBuy
+        ? `↗ AL Trend (${item.bars_ago} mum)`
+        : `↘ SAT Trend (${item.bars_ago} mum)`;
+      const key = `${item.symbol}:${tf}`;
+      if ((isCrossBuy || isCrossSell) && item.candle_time) {
+        const prevCandle = announcedSignalCrosses.get(key);
+        if (prevCandle !== item.candle_time) {
+          announcedSignalCrosses.set(key, item.candle_time);
+          if (signalAutoAlertEnabled && prevCandle !== undefined) {
+            playSignalBeep(isCrossBuy);
+            if (typeof showToast === 'function') {
+              showToast(`${isCrossBuy ? '🟢 YENİ AL SİNYALİ' : '🔴 YENİ SAT SİNYALİ'}: ${item.symbol} (${tf}dk) @ ${item.price}`, isCrossBuy ? 'success' : 'info');
+            }
+          }
+        }
+      }
+      const symEsc = escapeHtml(item.symbol);
+      const sl = Number(item.suggested_sl || 0);
+      const tp = Number(item.suggested_tp || 0);
+      return `<div class="flex items-center justify-between gap-1.5 bg-[#181d2a] border border-gray-800/90 rounded-lg px-2 py-1.5">
+        <button type="button" onclick="switchSymbol('${symEsc}')" class="text-left min-w-0">
+          <span class="font-bold text-white block text-xs">${symEsc}</span>
+          <span class="text-[10px] text-gray-400 font-mono">RSI: ${Number(item.rsi || 50).toFixed(1)} · Fiyat: ${item.price}</span>
+        </button>
+        <div class="flex items-center gap-1.5 shrink-0">
+          <span class="px-1.5 py-0.5 rounded text-[10px] ${badgeClass}">${badgeText}</span>
+          <button type="button" onclick="applyScannedSignalToTicket('${symEsc}', ${sl}, ${tp})" title="SL ve TP seviyelerini emir penceresine aktar" class="px-2 py-1 rounded bg-gray-800 hover:bg-cyan-700 text-gray-200 hover:text-white text-[10px] font-semibold transition">Emre Aktar</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (_) {
+    if (manual && statusNode) statusNode.textContent = 'Sinyal taraması şu an yapılamadı.';
+  } finally {
+    signalScannerBusy = false;
+  }
+}
+

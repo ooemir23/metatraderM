@@ -2,7 +2,7 @@
 (() => {
   const defaults = {timeframe:15, type:'candles', theme:'dark', grid:true, volume:true,
     log:false, scale:0, invert:false, crosshair:true, priceLine:true,
-    sma:false, ema:false, period:20, emaPeriod:50, up:'#10b981', down:'#ef4444'};
+    sma:false, ema:true, hma:true, signals:true, period:20, emaPeriod:34, hmaPeriod:14, up:'#10b981', down:'#ef4444'};
   const frames = {1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'};
   const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch (_) { return fallback; } };
   const write = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (_) { return false; } };
@@ -11,10 +11,11 @@
     if (Object.hasOwn(frames, raw.timeframe)) result.timeframe = Number(raw.timeframe);
     if (['candles','bars','line','area'].includes(raw.type)) result.type = raw.type;
     if (['dark','light'].includes(raw.theme)) result.theme = raw.theme;
-    for (const key of ['grid','volume','log','sma','ema','invert','crosshair','priceLine']) if (typeof raw[key] === 'boolean') result[key] = raw[key];
+    for (const key of ['grid','volume','log','sma','ema','hma','signals','invert','crosshair','priceLine']) if (typeof raw[key] === 'boolean') result[key] = raw[key];
     result.scale = [0,1,2,3].includes(raw.scale) ? raw.scale : (raw.log ? 1 : 0);
     if (Number.isInteger(raw.period) && raw.period >= 2 && raw.period <= 200) result.period = raw.period;
     if (Number.isInteger(raw.emaPeriod) && raw.emaPeriod >= 2 && raw.emaPeriod <= 200) result.emaPeriod = raw.emaPeriod;
+    if (Number.isInteger(raw.hmaPeriod) && raw.hmaPeriod >= 2 && raw.hmaPeriod <= 200) result.hmaPeriod = raw.hmaPeriod;
     for (const key of ['up','down']) if (/^#[0-9a-f]{6}$/i.test(raw[key])) result[key] = raw[key];
     return result;
   }
@@ -60,6 +61,7 @@
     state.volume.applyOptions({visible:prefs.volume});
     state.average.applyOptions({visible:prefs.sma});
     state.exponential.applyOptions({visible:prefs.ema});
+    if (state.hma) state.hma.applyOptions({visible:prefs.hma});
   }
   function renderData(state, fit = false) {
     if (!state.rows.length) return;
@@ -70,12 +72,30 @@
     const precision = Number.isInteger(digits) && digits >= 0 && digits <= 8 ? digits
       : Math.min(8, Math.max(2, ...rows.slice(-50).flatMap(r=>['open','high','low','close'].map(k=>(String(r[k]).split('.')[1]||'').length))));
     const priceFormat = {type:'price',precision,minMove:10**-precision};
-    for (const series of [state.price,state.average,state.exponential]) series.applyOptions({priceFormat});
+    for (const series of [state.price,state.average,state.exponential,state.hma].filter(Boolean)) series.applyOptions({priceFormat});
     state.volume.setData(rows.map(r=>({time:r.time,value:r.tick_volume,color:(r.close>=r.open?prefs.up:prefs.down)+'70'})));
     let sum = 0; const avg=[];
     rows.forEach((r,i)=>{sum+=r.close;if(i>=prefs.period) sum-=rows[i-prefs.period].close;if(i>=prefs.period-1) avg.push({time:r.time,value:sum/prefs.period});});
     state.average.setData(avg);
-    state.exponential.setData(emaValues(rows,prefs.emaPeriod));
+    const ema = emaValues(rows,prefs.emaPeriod);
+    state.exponential.setData(ema);
+    const hma = hmaValues(rows,prefs.hmaPeriod);
+    if (state.hma) state.hma.setData(hma);
+    const markers = prefs.signals ? signalMarkers(rows, prefs.hmaPeriod, prefs.emaPeriod) : [];
+    if (state.markersPlugin && typeof state.markersPlugin.setMarkers === 'function') {
+      state.markersPlugin.setMarkers(markers);
+    }
+    if (state.signalBadge) {
+      const lastMarker = markers.at(-1);
+      if (lastMarker) {
+        const isBuy = lastMarker.shape === 'arrowUp';
+        state.signalBadge.textContent = `${isBuy ? '▲ AL Sinyali' : '▼ SAT Sinyali'} (${ lastMarker.text })`;
+        state.signalBadge.style.color = isBuy ? '#10b981' : '#ef4444';
+        state.signalBadge.hidden = false;
+      } else {
+        state.signalBadge.hidden = true;
+      }
+    }
     if (fit) { state.chart.timeScale().fitContent(); state.chart.timeScale().setVisibleLogicalRange({from:Math.max(0,rows.length-120),to:rows.length+4}); }
   }
   function emaValues(rows, period) {
@@ -84,6 +104,56 @@
     const result=[{time:rows[period-1].time,value}], alpha=2/(period+1);
     for(let i=period;i<rows.length;i++) {value=alpha*rows[i].close+(1-alpha)*value;result.push({time:rows[i].time,value});}
     return result;
+  }
+  function wmaAt(values, idx, period) {
+    if (idx < period - 1 || period <= 0) return null;
+    let num = 0, den = (period * (period + 1)) / 2;
+    for (let j = 0; j < period; j++) num += values[idx - j] * (period - j);
+    return num / den;
+  }
+  function hmaValues(rows, period) {
+    const p = Math.max(2, Math.floor(Number(period) || 14));
+    const half = Math.max(1, Math.floor(p / 2));
+    const sqrtP = Math.max(1, Math.floor(Math.sqrt(p)));
+    if (rows.length < p + sqrtP - 1) return [];
+    const closes = rows.map(r => r.close);
+    const diffs = [];
+    for (let i = 0; i < closes.length; i++) {
+      const wh = wmaAt(closes, i, half);
+      const wf = wmaAt(closes, i, p);
+      diffs.push(wh !== null && wf !== null ? 2 * wh - wf : null);
+    }
+    const result = [];
+    for (let i = p - 1 + sqrtP - 1; i < rows.length; i++) {
+      let num = 0, den = (sqrtP * (sqrtP + 1)) / 2, ok = true;
+      for (let j = 0; j < sqrtP; j++) {
+        const d = diffs[i - j];
+        if (d === null) { ok = false; break; }
+        num += d * (sqrtP - j);
+      }
+      if (ok) result.push({time: rows[i].time, value: num / den});
+    }
+    return result;
+  }
+  function signalMarkers(rows, hmaPeriod = 14, emaPeriod = 34) {
+    const hma = hmaValues(rows, hmaPeriod);
+    const ema = emaValues(rows, emaPeriod);
+    if (!hma.length || !ema.length) return [];
+    const hMap = new Map(hma.map(x => [x.time, x.value]));
+    const eMap = new Map(ema.map(x => [x.time, x.value]));
+    const markers = [];
+    for (let i = 1; i < rows.length; i++) {
+      const tPrev = rows[i - 1].time, tCurr = rows[i].time;
+      const hPrev = hMap.get(tPrev), ePrev = eMap.get(tPrev);
+      const hCurr = hMap.get(tCurr), eCurr = eMap.get(tCurr);
+      if (hPrev === undefined || ePrev === undefined || hCurr === undefined || eCurr === undefined) continue;
+      if (hPrev <= ePrev && hCurr > eCurr) {
+        markers.push({time: tCurr, position: 'belowBar', color: '#10b981', shape: 'arrowUp', text: 'AL'});
+      } else if (hPrev >= ePrev && hCurr < eCurr) {
+        markers.push({time: tCurr, position: 'aboveBar', color: '#ef4444', shape: 'arrowDown', text: 'SAT'});
+      }
+    }
+    return markers;
   }
   function csvData(state) {
     // Broker candle timestamps are preserved, not mislabeled as UTC dates.
@@ -99,6 +169,7 @@
     if (state.price) state.chart.removeSeries(state.price);
     const types = {candles:LightweightCharts.CandlestickSeries,bars:LightweightCharts.BarSeries,line:LightweightCharts.LineSeries,area:LightweightCharts.AreaSeries};
     state.price = state.chart.addSeries(types[prefs.type], seriesOptions());
+    state.markersPlugin = typeof LightweightCharts.createSeriesMarkers === 'function' ? LightweightCharts.createSeriesMarkers(state.price, []) : null;
     state.lines = [];
     for (const price of state.savedLines) state.lines.push(state.price.createPriceLine({price,color:'#38bdf8',lineWidth:1,lineStyle:2,axisLabelVisible:true,title:'Seviye'}));
   }
@@ -186,7 +257,7 @@
     dispose();
     const host=document.getElementById('tradingview-container'); if (!host) return;
     host.innerHTML=`<div class="mt5-chart-shell">
-      <div class="mt5-chart-toolbar"><span class="mt5-chart-status" role="status">MT5 grafiği yükleniyor…</span><button type="button" class="mt5-settings-button">Grafik ayarları · Sağ tuş</button></div>
+      <div class="mt5-chart-toolbar"><span class="mt5-chart-status" role="status">MT5 grafiği yükleniyor…</span><span class="mt5-chart-signal font-mono font-bold text-xs px-2 py-0.5 rounded bg-gray-800/80" hidden></span><button type="button" class="mt5-settings-button">Grafik ayarları · Sağ tuş</button></div>
       <div class="mt5-chart-canvas" tabindex="0" aria-label="MT5 fiyat grafiği"></div>
       <div class="mt5-chart-menu" hidden role="dialog" aria-label="Grafik ayarları">
         <div class="mt5-menu-title">Grafik ayarları <button type="button" data-action="close" aria-label="Grafik ayarlarını kapat">✕</button></div>
@@ -203,6 +274,9 @@
         <label>Ölçeği ters çevir<input type="checkbox" data-setting="invert" aria-label="Ölçeği ters çevir"></label>
         <label>Artı imleç<input type="checkbox" data-setting="crosshair" aria-label="Artı imleç"></label>
         <label>Son fiyat çizgisi<input type="checkbox" data-setting="priceLine" aria-label="Son fiyat çizgisi"></label>
+        <label>Hull ortalama (HMA)<input type="checkbox" data-setting="hma" aria-label="Hull ortalama"></label>
+        <label>HMA periyodu<input type="number" min="2" max="200" data-setting="hmaPeriod" aria-label="HMA periyodu"></label>
+        <label>Al / Sat sinyal okları<input type="checkbox" data-setting="signals" aria-label="Al Sat sinyal okları"></label>
         <label>Hareketli ortalama (SMA)<input type="checkbox" data-setting="sma" aria-label="Hareketli ortalama"></label>
         <label>SMA periyodu<input type="number" min="2" max="200" data-setting="period" aria-label="SMA periyodu"></label>
         <label>Üssel ortalama (EMA)<input type="checkbox" data-setting="ema" aria-label="Üssel ortalama"></label>
@@ -227,7 +301,8 @@
     const saved = read(`mt5.chart.levels.${symbol}`,[]);
     const state = active = {symbol,timeframe:prefs.timeframe,host,rows:[],loaded:false,cleanup:[],
       savedLines:Array.isArray(saved)?saved.filter(v=>typeof v==='number'&&Number.isFinite(v)&&v>0).slice(0,50):[],
-      menu:host.querySelector('.mt5-chart-menu'),status:host.querySelector('.mt5-chart-status')};
+      menu:host.querySelector('.mt5-chart-menu'),status:host.querySelector('.mt5-chart-status'),
+      signalBadge:host.querySelector('.mt5-chart-signal')};
     const canvas=host.querySelector('.mt5-chart-canvas');
     state.chart=LightweightCharts.createChart(canvas,{autoSize:true});
     rebuildPrice(state);
@@ -235,6 +310,7 @@
     state.volume.priceScale().applyOptions({scaleMargins:{top:.8,bottom:0}});
     state.average=state.chart.addSeries(LightweightCharts.LineSeries,{color:'#fbbf24',lineWidth:2,priceLineVisible:false,lastValueVisible:false,title:'SMA'});
     state.exponential=state.chart.addSeries(LightweightCharts.LineSeries,{color:'#a78bfa',lineWidth:2,priceLineVisible:false,lastValueVisible:false,title:'EMA'});
+    state.hma=state.chart.addSeries(LightweightCharts.LineSeries,{color:'#06b6d4',lineWidth:2,priceLineVisible:false,lastValueVisible:false,title:'HMA'});
     applyStyle(state);
     document.getElementById('current-symbol-title').textContent=`${symbol} · ${frames[prefs.timeframe]} · MT5`;
     const on=(target,name,fn)=>{target.addEventListener(name,fn);state.cleanup.push(()=>target.removeEventListener(name,fn));};
@@ -247,8 +323,8 @@
     on(host.querySelector('.mt5-settings-button'),'click',()=>{state.selectedPrice=null;showMenu(state);state.menu.querySelector('[data-action="level"]').disabled=true;});
     on(state.menu,'change',event=>{
       const key=event.target.dataset.setting;if(!key) return;
-      const value=event.target.type==='checkbox'?event.target.checked:['timeframe','period','emaPeriod','scale'].includes(key)?Number(event.target.value):event.target.value;
-      if (['period','emaPeriod'].includes(key) && (!Number.isInteger(value)||value<2||value>200)) {event.target.value=prefs[key];return;}
+      const value=event.target.type==='checkbox'?event.target.checked:['timeframe','period','emaPeriod','hmaPeriod','scale'].includes(key)?Number(event.target.value):event.target.value;
+      if (['period','emaPeriod','hmaPeriod'].includes(key) && (!Number.isInteger(value)||value<2||value>200)) {event.target.value=prefs[key];return;}
       change(key,value);
     });
     on(state.menu,'click',event=>{
@@ -262,7 +338,7 @@
       }
       if(action==='export-csv' && state.loaded) download(new Blob(['\ufeff'+csvData(state)],{type:'text/csv;charset=utf-8'}),`${symbol}-${frames[state.timeframe]}-MT5.csv`);
       if(action==='export-png' && state.loaded) state.chart.takeScreenshot().toBlob(blob=>{if(blob)download(blob,`${symbol}-${frames[state.timeframe]}-MT5.png`);},'image/png');
-      if(action==='clear-indicators') {prefs.sma=false;prefs.ema=false;prefs.volume=false;saveSettings(state);applyStyle(state);}
+      if(action==='clear-indicators') {prefs.sma=false;prefs.ema=false;prefs.hma=false;prefs.signals=false;prefs.volume=false;saveSettings(state);applyStyle(state);renderData(state);}
       if(action==='save-template') status(state,write('mt5.chart.template.v1',prefs)?'Görünüm şablonu bu tarayıcıda kaydedildi.':'Şablon kaydedilemedi; tarayıcı depolama iznini kontrol edin.');
       if(action==='load-template') {
         const template=read('mt5.chart.template.v1',null);
@@ -288,5 +364,5 @@
     // Manual broker selection remains the source of order identity.
     switchSymbol(currentSymbol);
   }
-  window.MT5Chart={mode,setMode,mount,dispose,normalize,emaValues,csvData,tick};
+  window.MT5Chart={mode,setMode,mount,dispose,normalize,emaValues,hmaValues,signalMarkers,csvData,tick};
 })();

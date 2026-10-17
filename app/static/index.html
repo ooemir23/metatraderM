@@ -856,6 +856,35 @@
           <div id="market-depth-levels" class="max-h-64 overflow-y-auto"></div>
         </details>
 
+        <!-- LIVE MULTI-SYMBOL BUY/SELL SIGNAL SCANNER -->
+        <div id="signal-scanner-card" class="bg-[#121620] p-3 sm:p-4 rounded-2xl border border-gray-800/80 shadow-xl text-xs">
+          <div class="flex items-center justify-between gap-2 mb-2 pb-1.5 border-b border-gray-800">
+            <div class="flex items-center gap-1.5">
+              <i class="ph-bold ph-radar text-emerald-400 text-base"></i>
+              <h2 class="font-bold text-white text-xs sm:text-sm uppercase tracking-wider">Canlı Al / Sat Sinyal Tarayıcı</h2>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <select id="signal-scan-tf" onchange="refreshSignalScanner(true)" aria-label="Sinyal tarama periyodu" class="bg-[#181d2a] border border-gray-700 rounded px-1.5 py-0.5 text-[11px] text-white font-mono">
+                <option value="5">M5</option>
+                <option value="15" selected>M15</option>
+                <option value="60">H1</option>
+                <option value="240">H4</option>
+              </select>
+              <button type="button" onclick="refreshSignalScanner(true)" class="px-2 py-0.5 rounded bg-cyan-700 hover:bg-cyan-600 text-white font-semibold text-[11px]">Tara</button>
+            </div>
+          </div>
+          <div class="flex items-center justify-between text-[11px] text-gray-400 mb-2">
+            <span id="signal-scanner-status">HMA(14) / EMA(34) + RSI(14) + ATR(14) taranıyor…</span>
+            <label class="flex items-center gap-1 cursor-pointer select-none">
+              <input id="signal-auto-alert" type="checkbox" checked onchange="toggleSignalAutoAlert(this.checked)" class="rounded bg-gray-800 border-gray-700">
+              <span>Sesli uyarı</span>
+            </label>
+          </div>
+          <div id="signal-scanner-list" class="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
+            <div class="text-gray-400 text-[11px] py-2 text-center">Sinyaller yükleniyor…</div>
+          </div>
+        </div>
+
         <!-- CARD 2: HMA CROSSOVER STRATEGY BOT -->
         <div class="bg-[#121620] p-3 sm:p-4 rounded-2xl border border-gray-800/80 shadow-xl flex-1 flex flex-col justify-between">
           <div>

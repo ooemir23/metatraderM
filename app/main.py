@@ -416,6 +416,139 @@ async def chart_candles(symbol: str = Query(default='EURUSD', pattern=r'^[A-Za-z
             'clock_offset_seconds': mt5_client.tick_clock_offset}
 
 
+def _calc_rsi(closes_chronological, period=14):
+    if len(closes_chronological) < period + 1:
+        return 50.0
+    gains, losses = [], []
+    for i in range(1, period + 1):
+        diff = closes_chronological[i] - closes_chronological[i - 1]
+        gains.append(max(0.0, diff))
+        losses.append(max(0.0, -diff))
+    avg_gain = sum(gains) / period
+    avg_loss = sum(losses) / period
+    for i in range(period + 1, len(closes_chronological)):
+        diff = closes_chronological[i] - closes_chronological[i - 1]
+        avg_gain = (avg_gain * (period - 1) + max(0.0, diff)) / period
+        avg_loss = (avg_loss * (period - 1) + max(0.0, -diff)) / period
+    if avg_loss == 0:
+        return 100.0
+    rs = avg_gain / avg_loss
+    return round(100.0 - (100.0 / (1.0 + rs)), 1)
+
+
+def _calc_atr(rates_chronological, period=14):
+    if len(rates_chronological) < period + 1:
+        return 0.0
+    trs = []
+    for i in range(1, len(rates_chronological)):
+        r, prev = rates_chronological[i], rates_chronological[i - 1]
+        tr = max(float(r['high']) - float(r['low']),
+                 abs(float(r['high']) - float(prev['close'])),
+                 abs(float(r['low']) - float(prev['close'])))
+        trs.append(tr)
+    return sum(trs[-period:]) / period if len(trs) >= period else 0.0
+
+
+def _scan_symbols_sync(symbol_list, timeframe_minutes, hma_period, ema_period):
+    items = []
+    for sym in symbol_list:
+        try:
+            rates = mt5_client.get_rates(sym, timeframe_minutes, 120)
+            if not rates or len(rates) < max(hma_period, ema_period) + 15:
+                continue
+            rev_closes = [float(r['close']) for r in reversed(rates)]
+            hma0 = StrategyBot.calc_hma(rev_closes, hma_period, shift=0)
+            ema0 = StrategyBot.calc_second_ma(rev_closes, 'EMA', ema_period, shift=0)
+            hma1 = StrategyBot.calc_hma(rev_closes, hma_period, shift=1)
+            ema1 = StrategyBot.calc_second_ma(rev_closes, 'EMA', ema_period, shift=1)
+            hma2 = StrategyBot.calc_hma(rev_closes, hma_period, shift=2)
+            ema2 = StrategyBot.calc_second_ma(rev_closes, 'EMA', ema_period, shift=2)
+            if not all(math.isfinite(v) and v > 0 for v in (hma0, ema0, hma1, ema1, hma2, ema2)):
+                continue
+            bars_ago = 0
+            cross_side = None
+            for shift in range(0, min(25, len(rev_closes) - max(hma_period, ema_period) - 6)):
+                h_curr = StrategyBot.calc_hma(rev_closes, hma_period, shift=shift)
+                e_curr = StrategyBot.calc_second_ma(rev_closes, 'EMA', ema_period, shift=shift)
+                h_prev = StrategyBot.calc_hma(rev_closes, hma_period, shift=shift + 1)
+                e_prev = StrategyBot.calc_second_ma(rev_closes, 'EMA', ema_period, shift=shift + 1)
+                if h_prev <= e_prev and h_curr > e_curr:
+                    bars_ago = shift
+                    cross_side = 'BUY'
+                    break
+                if h_prev >= e_prev and h_curr < e_curr:
+                    bars_ago = shift
+                    cross_side = 'SELL'
+                    break
+            if hma2 <= ema2 and hma1 > ema1:
+                signal, side = 'BUY_CROSS', 'BUY'
+                bars_ago = 1
+            elif hma2 >= ema2 and hma1 < ema1:
+                signal, side = 'SELL_CROSS', 'SELL'
+                bars_ago = 1
+            elif hma1 <= ema1 and hma0 > ema0:
+                signal, side = 'BUY_CROSS', 'BUY'
+                bars_ago = 0
+            elif hma1 >= ema1 and hma0 < ema0:
+                signal, side = 'SELL_CROSS', 'SELL'
+                bars_ago = 0
+            elif hma1 > ema1:
+                signal, side = 'BUY_TREND', 'BUY'
+            elif hma1 < ema1:
+                signal, side = 'SELL_TREND', 'SELL'
+            else:
+                signal, side = 'NEUTRAL', 'HOLD'
+            closes_chrono = [float(r['close']) for r in rates[:-1]]
+            rsi = _calc_rsi(closes_chrono, 14)
+            atr = _calc_atr(rates[:-1], 14)
+            price = float(rates[-1]['close'])
+            sample_decimals = max((len(str(r['close']).split('.')[1]) if '.' in str(r['close']) else 2) for r in rates[-10:])
+            digits = min(8, max(2, sample_decimals))
+            sl = round(price - 2.0 * atr if side == 'BUY' else price + 2.0 * atr, digits) if atr > 0 and side in ('BUY', 'SELL') else 0.0
+            tp = round(price + 3.0 * atr if side == 'BUY' else price - 3.0 * atr, digits) if atr > 0 and side in ('BUY', 'SELL') else 0.0
+            items.append({
+                'symbol': sym,
+                'signal': signal,
+                'side': side,
+                'bars_ago': bars_ago,
+                'cross_side': cross_side or side,
+                'price': round(price, digits),
+                'hma': round(hma1, digits),
+                'ema': round(ema1, digits),
+                'rsi': rsi,
+                'atr': round(atr, digits),
+                'suggested_sl': max(0.0, sl),
+                'suggested_tp': max(0.0, tp),
+                'digits': digits,
+                'candle_time': int(rates[-2]['time']) if len(rates) >= 2 else int(rates[-1]['time']),
+            })
+        except Exception:
+            continue
+    return items
+
+
+@app.get('/api/signals/scan')
+async def scan_signals(symbols: str = Query(default='EURUSD,GBPUSD,XAUUSD,USDJPY,BTCUSD', max_length=320),
+                       timeframe_minutes: int = Query(default=15),
+                       hma_period: int = Query(default=14, ge=2, le=200),
+                       ema_period: int = Query(default=34, ge=2, le=200)):
+    if timeframe_minutes not in TIMEFRAME_NAMES:
+        raise HTTPException(status_code=422, detail='Desteklenmeyen zaman dilimi.')
+    raw_list = [s.strip() for s in symbols.split(',') if s.strip()]
+    symbol_list = []
+    for s in raw_list:
+        if re.fullmatch(r'[A-Za-z0-9_.#-]{1,32}', s) and s not in symbol_list:
+            symbol_list.append(s)
+        if len(symbol_list) >= 8:
+            break
+    if not symbol_list:
+        symbol_list = ['EURUSD', 'GBPUSD', 'XAUUSD', 'USDJPY']
+    items = await asyncio.to_thread(_scan_symbols_sync, symbol_list, timeframe_minutes, hma_period, ema_period)
+    return {'timeframe_minutes': timeframe_minutes, 'hma_period': hma_period, 'ema_period': ema_period,
+            'signals': items, 'checked_at': int(time.time())}
+
+
+
 @app.get('/api/research/history')
 def research_history(symbol: str = Query(default='XAUUSD', pattern=r'^[A-Za-z0-9_.#-]+$', max_length=32),
                      timeframe_minutes: int = Query(default=60),

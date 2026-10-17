@@ -2,6 +2,12 @@
 (function () {
   const STORAGE_KEY = "hma_ui_language";
   const en = Object.fromEntries([
+    ["Canlı Al / Sat Sinyal Tarayıcı", "Live Buy / Sell Signal Scanner"],
+    ["Sinyal tarama periyodu", "Signal scan timeframe"],
+    ["Tara", "Scan"],
+    ["HMA(14) / EMA(34) + RSI(14) + ATR(14) taranıyor…", "Scanning HMA(14) / EMA(34) + RSI(14) + ATR(14)…"],
+    ["Sesli uyarı", "Sound alert"],
+    ["Sinyaller yükleniyor…", "Loading signals…"],
     ["Emir", "Order"],
     ["Sembol:", "Symbol:"],
     ["Tür:", "Type:"],
