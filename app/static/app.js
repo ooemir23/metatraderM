@@ -2952,36 +2952,25 @@ function toggleSignalAutoAlert(enabled) {
   }
 }
 
-function playSignalBeep(isBuy = true, isTest = false, spokenText = '') {
+function playSignalBeep(isBuy = true, isTest = false) {
   try {
     const ctx = ensureSignalAudioCtx();
-    if (ctx) {
-      const now = ctx.currentTime;
-      const freqs = isBuy ? [660, 880, 1100] : [780, 580, 440];
-      freqs.forEach((freq, idx) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'triangle';
-        const start = now + idx * 0.13;
-        osc.frequency.setValueAtTime(freq, start);
-        gain.gain.setValueAtTime(0.28, start);
-        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.12);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(start);
-        osc.stop(start + 0.12);
-      });
-    }
-    if ('speechSynthesis' in window && (spokenText || isTest)) {
-      window.speechSynthesis.cancel();
-      const utter = new SpeechSynthesisUtterance(
-        spokenText || (isTest ? 'Sesli sinyal bildirimi aktif.' : (isBuy ? 'Al sinyali yakalandı' : 'Sat sinyali yakalandı'))
-      );
-      utter.lang = 'tr-TR';
-      utter.rate = 1.05;
-      utter.volume = 1.0;
-      window.speechSynthesis.speak(utter);
-    }
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const freqs = isBuy ? [587.33, 880, 1174.66] : [880, 659.25, 440];
+    freqs.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = isBuy ? 'triangle' : 'sine';
+      const start = now + idx * 0.11;
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.22, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.14);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.15);
+    });
   } catch (_) {}
 }
 
@@ -3043,20 +3032,16 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
         : `↘ SAT Trend (${item.bars_ago} mum)`;
       const key = `${item.symbol}:${tf}:${item.signal}:${item.candle_time}`;
       if (signalAutoAlertEnabled) {
-        const alreadyAnnounced = announcedSignalCrosses.get(`${item.symbol}:${tf}`) === key;
-        if (!alreadyAnnounced || manual) {
+        const prevKey = announcedSignalCrosses.get(`${item.symbol}:${tf}`);
+        const isNewCrossover = (isCrossBuy || isCrossSell) && prevKey !== key;
+        if (isNewCrossover) {
           announcedSignalCrosses.set(`${item.symbol}:${tf}`, key);
-          if (isCrossBuy || isCrossSell || manual) {
-            const speech = isCrossBuy
-              ? `${item.symbol} yeni al sinyali yakalandı.`
-              : isCrossSell
-              ? `${item.symbol} yeni sat sinyali yakalandı.`
-              : `${item.symbol} ${isBuy ? 'al yönlü trend' : 'sat yönlü trend'}.`;
-            playSignalBeep(isBuy, false, speech);
-            if ((isCrossBuy || isCrossSell) && typeof showToast === 'function') {
-              showToast(`${isCrossBuy ? '🟢 YENİ AL SİNYALİ' : '🔴 YENİ SAT SİNYALİ'}: ${item.symbol} (${tf}dk) @ ${item.price}`, isCrossBuy ? 'success' : 'info');
-            }
+          playSignalBeep(isCrossBuy, false);
+          if (typeof showToast === 'function') {
+            showToast(`${isCrossBuy ? '🟢 YENİ AL SİNYALİ' : '🔴 YENİ SAT SİNYALİ'}: ${item.symbol} (${tf}dk) @ ${item.price}`, isCrossBuy ? 'success' : 'info');
           }
+        } else if (!prevKey) {
+          announcedSignalCrosses.set(`${item.symbol}:${tf}`, key);
         }
       }
       const symEsc = escapeHtml(item.symbol);
