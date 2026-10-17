@@ -4,6 +4,9 @@
   const en = Object.fromEntries([
     ["Canlı Al / Sat Sinyal Tarayıcı", "Live Buy / Sell Signal Scanner"],
     ["Pozisyonlara dön", "Back to positions"],
+    ["Araçlar", "Tools"],
+    ["Araçları kapat", "Close tools"],
+    ["Strateji testi, araştırma, piyasa derinliği ve sistem günlüğü", "Strategy test, research, market depth and system log"],
     ["Sinyal Tarayıcı & HMA Bot", "Signal Scanner & HMA Bot"],
     ["Sinyal & Bot", "Signals & Bot"],
     ["Pozisyonlar", "Positions"],

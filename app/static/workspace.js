@@ -42,21 +42,67 @@
       pnl.dataset.tone = profit.className.includes('rose') ? 'loss' : profit.className.includes('emerald') ? 'profit' : '';
     }
   }
-  // Pending bot signals waiting for approval light a dot on the toggle.
-  function syncDot() {
-    const box = $('bot-pending-signal-box'), dot = $('signals-toggle-dot');
-    if (dot) dot.hidden = !box || box.classList.contains('hidden');
+  // Toggle badges: green = directional scanner signals (pulses on fresh crossovers),
+  // amber = bot signals waiting for approval.
+  function setBadge(id, count, title) {
+    const node = $(id);
+    if (!node) return;
+    node.hidden = !(count > 0);
+    node.textContent = count > 99 ? '99+' : String(count);
+    if (title) node.title = title;
+  }
+  function onScanner(event) {
+    const {signals = 0, crosses = 0} = event.detail || {};
+    setBadge('signals-count', signals, `${signals} sinyal · ${crosses} yeni kesişim`);
+    $('signals-count')?.classList.toggle('has-cross', crosses > 0);
+  }
+  function onPending(event) {
+    const count = Number(event.detail?.count) || 0;
+    setBadge('signals-pending', count, `${count} bot sinyali onay bekliyor`);
+  }
+
+  // ---- Tools drawer (strategy test, research, market depth, system log) ----
+  const seenErrors = new Set();
+  function errorRows() {
+    return [...($('system-logs')?.querySelectorAll('.text-rose-400') || [])].map(row => row.textContent.trim());
+  }
+  function syncErrorBadge() {
+    const open = $('tools-drawer')?.classList.contains('open');
+    const rows = errorRows();
+    if (open) rows.forEach(row => seenErrors.add(row));
+    setBadge('tools-error-badge', open ? 0 : rows.filter(row => !seenErrors.has(row)).length);
+  }
+  let toolsReturnFocus = null;
+  function setToolsDrawer(open) {
+    const drawer = $('tools-drawer'), backdrop = $('tools-backdrop');
+    if (!drawer) return;
+    if (open) toolsReturnFocus = document.activeElement;
+    drawer.classList.toggle('open', open);
+    drawer.toggleAttribute('inert', !open);
+    drawer.setAttribute('aria-hidden', String(!open));
+    if (backdrop) backdrop.hidden = !open;
+    $('tools-toggle')?.setAttribute('aria-expanded', String(open));
+    syncErrorBadge();
+    if (open) drawer.querySelector('.tools-drawer-close')?.focus({preventScroll: true});
+    else toolsReturnFocus?.focus?.({preventScroll: true});
   }
 
   function init() {
     const watch = (id, fn, opts) => { const node = $(id); if (node && typeof MutationObserver === 'function') new MutationObserver(fn).observe(node, opts); };
     watch('pos-count-badge', syncStrip, {childList: true, characterData: true, subtree: true});
     watch('acc-profit', syncStrip, {childList: true, characterData: true, subtree: true, attributes: true});
-    watch('bot-pending-signal-box', syncDot, {attributes: true, attributeFilter: ['class']});
-    syncStrip(); syncDot();
+    watch('system-logs', syncErrorBadge, {childList: true, subtree: true});
+    window.addEventListener('hma:scanner', onScanner);
+    window.addEventListener('hma:bot-pending', onPending);
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && $('tools-drawer')?.classList.contains('open')
+          && !document.fullscreenElement && !document.querySelector('dialog[open]')) setToolsDrawer(false);
+    });
+    syncStrip(); errorRows().forEach(row => seenErrors.add(row));
     setWorkspaceView(storedView(), {persist: false, focus: false});
   }
 
   window.setWorkspaceView = setWorkspaceView;
+  window.setToolsDrawer = setToolsDrawer;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();

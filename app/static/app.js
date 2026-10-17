@@ -3112,6 +3112,13 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
     }
     latestScannedSignals = rows;
     if (typeof window !== 'undefined') window.latestScannedSignals = rows;
+    // Header badge on the "Sinyal & Bot" toggle: directional signals and fresh crossovers.
+    try {
+      window.dispatchEvent(new CustomEvent('hma:scanner', {detail: {
+        signals: rows.filter(r => r.side === 'BUY' || r.side === 'SELL').length,
+        crosses: rows.filter(r => r.signal === 'BUY_CROSS' || r.signal === 'SELL_CROSS').length,
+        timeframe: tf}}));
+    } catch (_) {}
 
     const tfText = {1:'1 dk',5:'5 dk',15:'15 dk',30:'30 dk',60:'1 sa',240:'4 sa',1440:'1 gün'}[tf] || `${tf} dk`;
     const tfCode = {1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'}[tf] || `M${tf}`;
@@ -3249,6 +3256,7 @@ async function fetchBotLiveSignal() {
       ? data.pending_signal_actions
       : (data.pending_signal_action && data.pending_signal_action.side ? [data.pending_signal_action] : []);
 
+    try { window.dispatchEvent(new CustomEvent('hma:bot-pending', {detail: {count: pendingList.length}})); } catch (_) {}
     if (box) {
       if (pendingList.length > 0) {
         latestPendingBotSignal = pendingList[0];
