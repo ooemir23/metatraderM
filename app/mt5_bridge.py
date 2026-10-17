@@ -321,7 +321,7 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
                 not math.isfinite(max_total_lots) or committed + volume > max_total_lots + 1e-9)) or
                 (max_open_orders is not None and len(current) + len(pending) + 1 > max_open_orders)):
             raise ValueError('Toplam açık/bekleyen işlem sınırı aşılıyor.')
-        info, tick = _market(mt5, symbol, tick_offset)
+        info, tick = _market(mt5, symbol, tick_offset, allow_stale=native)
         if not _volume_valid(info, volume):
             raise ValueError('Lot miktarı broker sınırlarına uymuyor.')
         config = _pending_configuration(info, tick, order_type, pending_type, entry_price,
