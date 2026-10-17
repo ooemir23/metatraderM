@@ -629,50 +629,54 @@ class MT5Client:
                 if terminal is None or any(getattr(source, name, True) is False for source, name in (
                         (broker, 'trade_allowed'), (broker, 'trade_expert'), (terminal, 'trade_allowed'))) or getattr(terminal, 'tradeapi_disabled', False) is True:
                     raise MT5DataError('Broker veya terminal otomatik işlem izni kapalı.')
-                symbol = config['symbol']
-                if self.journal.has_unresolved_open(account, symbol, mt5_bridge.HMA_MAGIC):
-                    raise MT5DataError('Önceki HMA emrinin sonucu belirsiz; broker durumunu doğrulayın.')
-                count = max(100, 5 * max(config['hma_period'], config['second_ma_period'],
-                                        config['kama_slow'], config['atr_period']) + 20)
-                rates = self.get_rates(symbol, config['timeframe_minutes'], count)
-                required = max(config['hma_period'] + int(math.sqrt(config['hma_period'])) + 3,
-                    config['second_ma_period'] + (int(math.sqrt(config['second_ma_period'])) + 3 if config['second_ma_type'] == 'HMA' else 2),
-                    max(config['hma_period'], config['second_ma_period'], config['atr_period']) + 15)
-                if not rates or len(rates) < required:
-                    raise MT5DataError('Strateji için yeterli kapanmış mum verisi yok.')
-                if any(rates[i]['time'] >= rates[i + 1]['time'] for i in range(len(rates) - 1)):
-                    raise MT5DataError('Mum sıralaması doğrulanamadı.')
-                sl = config['sl_points'] if config['use_stop_loss'] else 0
-                tp = config['tp_points'] if config['use_take_profit'] else 0
-                if config['risk_mode'] == 'ATR':
-                    from app.strategy_research import Settings, indicators
-                    study = indicators(rates[:-1], Settings(hma_period=config['hma_period'],
-                        kama_period=config['second_ma_period'], kama_fast=config['kama_fast'],
-                        kama_slow=config['kama_slow'], atr_period=config['atr_period']))
-                    atr = study['atr'][-1]
-                    point = float(self.get_symbol_spec(symbol)['point'])
-                    if atr is None or not math.isfinite(atr) or atr <= 0 or point <= 0:
-                        raise MT5DataError('ATR stop mesafesi hesaplanamadı.')
-                    sl = math.ceil(atr * config['atr_stop_multiplier'] / point) if config['use_stop_loss'] else 0
-                    tp = math.ceil(atr * config['atr_target_multiplier'] / point) if config['use_take_profit'] else 0
-                if config['use_stop_loss'] and sl <= 0:
-                    raise MT5DataError('Stop Loss açıkken geçerli bir mesafe gerekli.')
-                if config['use_take_profit'] and tp <= 0:
-                    raise MT5DataError('Kâr Al açıkken geçerli bir mesafe gerekli.')
-                if config['use_h4_filter']:
-                    h4 = self.get_rates(symbol, 240, count)
-                    if not h4 or len(h4) < max(config['hma_period'], config['second_ma_period'], config['atr_period']) + 15:
-                        raise MT5DataError('H4 filtresi için yeterli kapanmış mum verisi yok.')
-                for side in ('BUY', 'SELL'):
-                    preview = self.trade_preview(symbol, side, config['lot_size'], sl, tp_points=tp, manual_mode='MT5')
-                    if not preview.get('success'):
-                        raise MT5DataError(preview.get('error', 'İşlem risk kontrolü başarısız.'))
-                    margin, free = preview.get('margin_required'), preview.get('free_margin')
-                    if margin is None or free is None or not all(math.isfinite(v) for v in (margin, free)) or margin < 0 or margin > free:
-                        raise MT5DataError('İşlem için yeterli serbest teminat doğrulanamadı.')
+                symbols = list(dict.fromkeys(config.get('symbols') or [config['symbol']]))
+                for symbol in symbols:
+                    try:
+                        if self.journal.has_unresolved_open(account, symbol, mt5_bridge.HMA_MAGIC):
+                            raise MT5DataError('Önceki HMA emrinin sonucu belirsiz; broker durumunu doğrulayın.')
+                        count = max(100, 5 * max(config['hma_period'], config['second_ma_period'],
+                                                config['kama_slow'], config['atr_period']) + 20)
+                        rates = self.get_rates(symbol, config['timeframe_minutes'], count)
+                        required = max(config['hma_period'] + int(math.sqrt(config['hma_period'])) + 3,
+                            config['second_ma_period'] + (int(math.sqrt(config['second_ma_period'])) + 3 if config['second_ma_type'] == 'HMA' else 2),
+                            max(config['hma_period'], config['second_ma_period'], config['atr_period']) + 15)
+                        if not rates or len(rates) < required:
+                            raise MT5DataError('Strateji için yeterli kapanmış mum verisi yok.')
+                        if any(rates[i]['time'] >= rates[i + 1]['time'] for i in range(len(rates) - 1)):
+                            raise MT5DataError('Mum sıralaması doğrulanamadı.')
+                        sl = config['sl_points'] if config['use_stop_loss'] else 0
+                        tp = config['tp_points'] if config['use_take_profit'] else 0
+                        if config['risk_mode'] == 'ATR':
+                            from app.strategy_research import Settings, indicators
+                            study = indicators(rates[:-1], Settings(hma_period=config['hma_period'],
+                                kama_period=config['second_ma_period'], kama_fast=config['kama_fast'],
+                                kama_slow=config['kama_slow'], atr_period=config['atr_period']))
+                            atr = study['atr'][-1]
+                            point = float(self.get_symbol_spec(symbol)['point'])
+                            if atr is None or not math.isfinite(atr) or atr <= 0 or point <= 0:
+                                raise MT5DataError('ATR stop mesafesi hesaplanamadı.')
+                            sl = math.ceil(atr * config['atr_stop_multiplier'] / point) if config['use_stop_loss'] else 0
+                            tp = math.ceil(atr * config['atr_target_multiplier'] / point) if config['use_take_profit'] else 0
+                        if config['use_stop_loss'] and sl <= 0:
+                            raise MT5DataError('Stop Loss açıkken geçerli bir mesafe gerekli.')
+                        if config['use_take_profit'] and tp <= 0:
+                            raise MT5DataError('Kâr Al açıkken geçerli bir mesafe gerekli.')
+                        if config['use_h4_filter']:
+                            h4 = self.get_rates(symbol, 240, count)
+                            if not h4 or len(h4) < max(config['hma_period'], config['second_ma_period'], config['atr_period']) + 15:
+                                raise MT5DataError('H4 filtresi için yeterli kapanmış mum verisi yok.')
+                        for side in ('BUY', 'SELL'):
+                            preview = self.trade_preview(symbol, side, config['lot_size'], sl, tp_points=tp)
+                            if not preview.get('success'):
+                                raise MT5DataError(preview.get('error', 'İşlem risk kontrolü başarısız.'))
+                            margin, free = preview.get('margin_required'), preview.get('free_margin')
+                            if margin is None or free is None or not all(math.isfinite(v) for v in (margin, free)) or margin < 0 or margin > free:
+                                raise MT5DataError('İşlem için yeterli serbest teminat doğrulanamadı.')
+                    except MT5DataError as exc:
+                        raise MT5DataError(f'{symbol}: {exc}') from exc
                 self._bound_account([*account, self.account_type])
                 return {'success': True, 'account': [*account, self.account_type],
-                        'symbol': symbol, 'candles': len(rates)}
+                        'symbol': config['symbol'], 'symbols': symbols, 'candles': len(rates)}
             except Exception as exc:
                 return {'success': False, 'error': str(exc)}
 

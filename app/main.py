@@ -1284,52 +1284,77 @@ async def get_bot_live_signal():
     return await asyncio.to_thread(bot.live_preview)
 
 
+class BotSignalRulesRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    execution_mode: Optional[Literal["AUTO_TRADE", "SIGNAL_ONLY"]] = None
+    use_rsi_filter: Optional[bool] = None
+    rsi_buy_max: Optional[float] = Field(default=None, ge=50, le=95, allow_inf_nan=False)
+    rsi_sell_min: Optional[float] = Field(default=None, ge=5, le=50, allow_inf_nan=False)
+    max_spread_points: Optional[int] = Field(default=None, ge=0, le=100000)
+    use_breakeven: Optional[bool] = None
+    trailing_stop_points: Optional[int] = Field(default=None, ge=0, le=100000)
+
+
 @app.post("/api/bot/signal-rules")
-def update_bot_signal_rules(data: Dict[str, Any]):
-    return bot.update_signal_rules(data)
+def update_bot_signal_rules(req: BotSignalRulesRequest, request: Request):
+    data = req.model_dump(exclude_none=True)
+    # Switching a running bot from signal-only to live orders needs a fresh real-account unlock.
+    if data.get('execution_mode') == 'AUTO_TRADE' and bot.is_running and bot.execution_mode != 'AUTO_TRADE':
+        require_real_unlock(request)
+    try:
+        return bot.update_signal_rules(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 class BotSymbolActionRequest(BaseModel):
-    symbol: str
+    symbol: str = Field(min_length=1, max_length=32, pattern=r'^[A-Za-z0-9_.#-]+$')
 
 @app.post("/api/bot/add-symbol")
 def add_bot_symbol(req: BotSymbolActionRequest):
     try:
         symbols = bot.add_symbol(req.symbol)
         return {"success": True, "symbols": symbols, "symbol": bot.symbol}
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail='Bot sembol listesi kaydedilemedi.') from exc
 
 @app.post("/api/bot/remove-symbol")
 def remove_bot_symbol(req: BotSymbolActionRequest):
     try:
         symbols = bot.remove_symbol(req.symbol)
         return {"success": True, "symbols": symbols, "symbol": bot.symbol}
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail='Bot sembol listesi kaydedilemedi.') from exc
 
 class BotExecuteSignalRequest(BaseModel):
-    symbol: str
+    model_config = ConfigDict(extra='forbid')
+    symbol: str = Field(min_length=1, max_length=32, pattern=r'^[A-Za-z0-9_.#-]+$')
     side: Literal["BUY", "SELL"]
-    price: Optional[float] = None
-    sl: Optional[float] = None
-    tp: Optional[float] = None
-    lot_size: Optional[float] = None
+    # Stable per-signal key: repeated clicks on the same signal map to one journaled order.
+    signal_id: str = Field(min_length=1, max_length=100, pattern=r'^[A-Za-z0-9_.:#-]+$')
+    price: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
+    sl_price: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
+    tp_price: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
+    sl_points: Optional[int] = Field(default=None, ge=0, le=10_000_000)
+    tp_points: Optional[int] = Field(default=None, ge=0, le=10_000_000)
 
 @app.post("/api/bot/execute-signal")
-def execute_bot_signal(req: BotExecuteSignalRequest):
+def execute_bot_signal(req: BotExecuteSignalRequest, account=Depends(require_real_unlock)):
     try:
-        res = bot.execute_signal(
-            symbol=req.symbol,
-            side=req.side,
-            price=req.price,
-            sl_price=req.sl,
-            tp_price=req.tp,
-            lot_size=req.lot_size
-        )
-        return res
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        res = bot.execute_signal(req.symbol, req.side, signal_id=req.signal_id, expected_account=account,
+                                 price=req.price, sl_price=req.sl_price, tp_price=req.tp_price,
+                                 sl_points=req.sl_points, tp_points=req.tp_points)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return trade_response(res)
 
 @app.post("/api/bot/clear-pending-signal")
 def clear_bot_pending_signal(data: Optional[Dict[str, Any]] = None):
