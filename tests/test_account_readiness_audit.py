@@ -271,3 +271,37 @@ def test_partial_autopilot_settings_cannot_reenable_work_during_a_halt(client, m
         json={'min_confidence': 90})
     assert response.status_code == 409
     update.assert_not_called()
+
+
+def test_closed_market_symbol_is_skipped_not_blocking(ready_client):
+    """Weekend: EURUSD quote is hours old, BTCUSD is live -> bot starts with BTCUSD and warns about EURUSD."""
+    live = ready_client.mt5.symbol_info_tick.return_value
+    stale = NS(**{**vars(live), 'time': time.time() - 18 * 3600})
+    ready_client.mt5.symbol_info_tick.side_effect = lambda symbol: stale if symbol == 'EURUSD' else live
+    config = {**StrategyBot(ready_client).config_snapshot(), 'symbol': 'EURUSD', 'symbols': ['EURUSD', 'BTCUSD']}
+    result = ready_client.bot_readiness(config)
+    assert result['success'] and result['ready_symbols'] == ['BTCUSD']
+    assert len(result['warnings']) == 1 and result['warnings'][0].startswith('EURUSD:')
+    ready_client.mt5.order_send.assert_not_called()
+
+
+def test_all_symbols_unusable_still_blocks_start(ready_client):
+    ready_client.mt5.symbol_info_tick.return_value.time = time.time() - 18 * 3600
+    config = {**StrategyBot(ready_client).config_snapshot(), 'symbols': ['EURUSD', 'GBPUSD']}
+    result = ready_client.bot_readiness(config)
+    assert not result['success'] and 'EURUSD' in result['error'] and 'GBPUSD' in result['error']
+
+
+def test_unresolved_previous_order_blocks_even_with_other_ready_symbols(ready_client, monkeypatch):
+    monkeypatch.setattr(ready_client.journal, 'has_unresolved_open', lambda account, symbol, magic: symbol == 'EURUSD')
+    config = {**StrategyBot(ready_client).config_snapshot(), 'symbols': ['EURUSD', 'BTCUSD']}
+    result = ready_client.bot_readiness(config)
+    assert not result['success'] and 'belirsiz' in result['error']
+
+
+def test_start_warnings_are_logged_and_exposed():
+    bot = StrategyBot(Mock())
+    bot.is_running = True
+    bot.set_start_warnings(['EURUSD: Son fiyat 18 saat önce alındı.'])
+    assert bot.get_status()['start_warnings'] == ['EURUSD: Son fiyat 18 saat önce alındı.']
+    assert 'Başlangıçta atlandı' in bot.logs[0]['message']

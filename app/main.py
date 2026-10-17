@@ -1269,6 +1269,7 @@ async def toggle_bot(request: Request):
                     bot.start(expected_config=config)
                 except RuntimeError as exc:
                     raise HTTPException(status_code=409, detail=str(exc)) from exc
+                bot.set_start_warnings(ready.get('warnings') or [])
         return bot.get_status()
 
 @app.post("/api/bot/config")

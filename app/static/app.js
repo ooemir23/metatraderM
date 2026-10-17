@@ -2376,6 +2376,8 @@ async function toggleBot() {
     if (!res.ok || data.success === false) throw new Error(typeof data.detail === 'string' ? data.detail : data.error || 'Bot komutu doğrulanamadı.');
     if (data.is_running) {
       showToast("🚀 HMA Algoritmik Bot Başlatıldı!", "success");
+      for (const warning of (data.start_warnings || []))
+        showToast(`⏸️ Şimdilik atlandı (piyasa açılınca devreye girer) · ${warning}`, 'warning');
     } else {
       showToast("🛑 HMA Algoritmik Bot Durduruldu.", "info");
     }

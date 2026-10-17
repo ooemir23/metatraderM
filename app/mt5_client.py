@@ -631,10 +631,12 @@ class MT5Client:
                         (broker, 'trade_allowed'), (broker, 'trade_expert'), (terminal, 'trade_allowed'))) or getattr(terminal, 'tradeapi_disabled', False) is True:
                     raise MT5DataError('Broker veya terminal otomatik işlem izni kapalı.')
                 symbols = list(dict.fromkeys(config.get('symbols') or [config['symbol']]))
+                ready_symbols, skipped, candles = [], [], 0
                 for symbol in symbols:
+                    # An unresolved earlier order is never skipped: the bot must not start until it is reconciled.
+                    if self.journal.has_unresolved_open(account, symbol, mt5_bridge.HMA_MAGIC):
+                        raise MT5DataError(f'{symbol}: Önceki HMA emrinin sonucu belirsiz; broker durumunu doğrulayın.')
                     try:
-                        if self.journal.has_unresolved_open(account, symbol, mt5_bridge.HMA_MAGIC):
-                            raise MT5DataError('Önceki HMA emrinin sonucu belirsiz; broker durumunu doğrulayın.')
                         count = max(100, 5 * max(config['hma_period'], config['second_ma_period'],
                                                 config['kama_slow'], config['atr_period']) + 20)
                         rates = self.get_rates(symbol, config['timeframe_minutes'], count)
@@ -674,10 +676,18 @@ class MT5Client:
                             if margin is None or free is None or not all(math.isfinite(v) for v in (margin, free)) or margin < 0 or margin > free:
                                 raise MT5DataError('İşlem için yeterli serbest teminat doğrulanamadı.')
                     except MT5DataError as exc:
-                        raise MT5DataError(f'{symbol}: {exc}') from exc
+                        # Market closed (weekend/holiday), stale quote or missing data for one symbol must not
+                        # block the others; each order is re-checked against a fresh quote before it is sent.
+                        skipped.append(f'{symbol}: {exc}')
+                    else:
+                        ready_symbols.append(symbol)
+                        candles = max(candles, len(rates))
+                if not ready_symbols:
+                    raise MT5DataError(' · '.join(skipped) or 'Takip edilen sembol yok.')
                 self._bound_account([*account, self.account_type])
                 return {'success': True, 'account': [*account, self.account_type],
-                        'symbol': config['symbol'], 'symbols': symbols, 'candles': len(rates)}
+                        'symbol': config['symbol'], 'symbols': symbols, 'ready_symbols': ready_symbols,
+                        'warnings': skipped, 'candles': candles}
             except Exception as exc:
                 return {'success': False, 'error': str(exc)}
 

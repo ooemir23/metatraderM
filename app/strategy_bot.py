@@ -71,6 +71,7 @@ class StrategyBot:
         self.trade_days = [0, 1, 2, 3, 4, 5, 6]  # Monday = 0
         self.blocked_windows: List[str] = []     # "HH:MM-HH:MM" daily or "YYYY-MM-DD HH:MM-HH:MM"
         self.started_at = 0
+        self.start_warnings: List[str] = []
         self._loss_check_at = 0.0
 
         # State tracking
@@ -449,6 +450,12 @@ class StrategyBot:
             self.last_candle_times = {}
         self.log(f"Bot ayarları güncellendi: {', '.join(self.symbols)} | HMA: {self.hma_period} | 2.MA: {self.second_ma_type}({self.second_ma_period}) | Lot: {self.lot_size}")
 
+    def set_start_warnings(self, warnings):
+        with self._state_lock:
+            self.start_warnings = [str(w)[:300] for w in warnings][:20]
+        for warning in self.start_warnings:
+            self.log(f'⚠️ Başlangıçta atlandı (piyasa açılınca kendiliğinden devreye girer): {warning}')
+
     def _safe_window_issue(self):
         try:
             return self.trading_window_issue()
@@ -485,6 +492,7 @@ class StrategyBot:
                 "lot_mode", "risk_pct", "max_consecutive_losses", "trade_hours_enabled", "trade_start", "trade_end",
                 "trade_utc_offset_min", "trade_days", "blocked_windows")},
             "trading_window_issue": self._safe_window_issue(),
+            "start_warnings": list(self.start_warnings) if self.is_running else [],
             "last_signal": self.last_signal,
             "last_signal_time": self.last_signal_time,
             "last_signal_price": self.last_signal_price,
