@@ -488,3 +488,30 @@ html { background: #0b0e14; }
 .signal-btn-primary { padding:7px 14px; border-radius:9px; background:#0e7490; color:#fff; font-size:12px; font-weight:700; }
 .signal-btn-primary:hover { background:#0891b2; }
 .signal-settings-dialog button:focus-visible, .signal-settings-btn:focus-visible { outline:2px solid #22d3ee; outline-offset:2px; }
+
+/* Signals sent to the bot (under the HMA bot card) */
+.bot-history { margin-top:6px; border:1px solid #1f2937; border-radius:12px; background:#151a26; }
+.bot-history-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; border-bottom:1px solid #1f2937; font-size:12px; font-weight:700; color:#e5e7eb; }
+.bot-history-head > span { display:inline-flex; align-items:center; gap:6px; }
+.bot-history-count { min-width:20px; padding:0 6px; border-radius:999px; background:#312e81; color:#c7d2fe; font:700 11px/18px ui-monospace, monospace; text-align:center; }
+.bot-history-clear { padding:3px 9px; border-radius:7px; border:1px solid #334155; background:#181d2a; color:#94a3b8; font-size:11px; font-weight:600; }
+.bot-history-clear:hover { color:#fff; background:#243044; }
+.bot-history-list { max-height:240px; overflow-y:auto; }
+.bot-history-empty { margin:0; padding:12px; text-align:center; color:#94a3b8; font-size:12px; }
+.bot-history-row { display:grid; grid-template-columns:auto auto auto auto minmax(0,1fr); grid-template-areas:"time source symbol side meta" "status status status status status";
+  gap:3px 8px; align-items:center; padding:7px 10px; border-bottom:1px solid #1f293780; font-size:12px; }
+.bot-history-row:last-child { border-bottom:0; }
+.bot-history-time { grid-area:time; font:600 11px ui-monospace, monospace; color:#94a3b8; }
+.bot-history-source { grid-area:source; padding:1px 6px; border-radius:6px; font-size:10.5px; font-weight:700; }
+.bot-history-source[data-source="manual"] { background:#4338ca33; color:#c7d2fe; }
+.bot-history-source[data-source="auto"] { background:#0891b233; color:#a5f3fc; }
+.bot-history-symbol { grid-area:symbol; font-weight:700; color:#f3f4f6; }
+.bot-history-side { grid-area:side; padding:1px 6px; border-radius:6px; font-size:10.5px; font-weight:800; }
+.bot-history-side.is-buy { background:#10b98126; color:#6ee7b7; }
+.bot-history-side.is-sell { background:#f43f5e26; color:#fda4af; }
+.bot-history-meta { grid-area:meta; font:500 11px ui-monospace, monospace; color:#cbd5e1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bot-history-status { grid-area:status; font-size:11.5px; color:#94a3b8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bot-history-row[data-tone="error"] .bot-history-status { color:#fb7185; white-space:normal; }
+.bot-history-row[data-tone="pending"] .bot-history-status { color:#fbbf24; }
+.bot-history-row[data-tone="profit"] .bot-history-status { color:#34d399; font-weight:700; }
+.bot-history-row[data-tone="loss"] .bot-history-status { color:#fb7185; font-weight:700; }

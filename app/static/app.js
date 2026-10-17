@@ -1048,6 +1048,7 @@ function renderPositionsData(positions) {
     executionPositions.clear();
     (positions || []).forEach(p => executionPositions.set(p.ticket, p));
     updatePositionExecution();
+    if (typeof renderBotSignalHistory === 'function') renderBotSignalHistory();
     if (typeof rememberPositions === "function") rememberPositions(positions);
     seedNettingProtection(positions);
     const tbody = document.getElementById("positions-table-body");
@@ -1574,6 +1575,8 @@ async function fetchBotStatus() {
       lastSigEl.className = "text-gray-200";
     }
     document.getElementById("bot-last-signal-time").innerText = bot.last_signal_time || "--:--:--";
+
+    renderBotSignalHistory(bot.signal_history);
 
     // Render Logs
     if (bot.logs && bot.logs.length > 0) {
@@ -2250,6 +2253,48 @@ async function closeFilteredPositions(filterType) {
 
 function closeAllPositions() {
   closeFilteredPositions("all");
+}
+
+// Signals sent to the bot: newest first, live status from the open-positions feed.
+let latestBotSignalHistory = [];
+function renderBotSignalHistory(rows) {
+  const list = document.getElementById('bot-history-list');
+  if (!list) return;
+  if (Array.isArray(rows)) latestBotSignalHistory = rows;
+  rows = latestBotSignalHistory;
+  const count = document.getElementById('bot-history-count');
+  if (count) count.textContent = String(rows.length);
+  const clear = document.getElementById('bot-history-clear');
+  if (clear) clear.hidden = !rows.length;
+  if (!rows.length) { list.innerHTML = '<p class="bot-history-empty">Henüz bota sinyal gönderilmedi.</p>'; return; }
+  const money = (v) => (typeof formatMoney === 'function' ? formatMoney(v) : Number(v).toFixed(2));
+  list.innerHTML = rows.map(r => {
+    const time = Number.isFinite(r.time) ? new Date(r.time * 1000).toLocaleTimeString('tr-TR') : '--:--:--';
+    const buy = r.side === 'BUY';
+    const open = r.success && r.ticket != null ? executionPositions.get(Number(r.ticket)) || executionPositions.get(r.ticket) : null;
+    let status, tone;
+    if (!r.success && !r.pending) { status = r.error || 'Gönderilemedi'; tone = 'error'; }
+    else if (r.pending) { status = 'Sonuç bekleniyor · MT5 kontrol edin'; tone = 'pending'; }
+    else if (open) {
+      const profit = Number(open.profit);
+      status = `Açık · ${profit >= 0 ? '+' : ''}${money(profit)}`; tone = profit >= 0 ? 'profit' : 'loss';
+    } else { status = 'Kapandı'; tone = 'closed'; }
+    return `<div class="bot-history-row" data-tone="${tone}">
+      <span class="bot-history-time">${time}</span>
+      <span class="bot-history-source" data-source="${r.source === 'AUTO' ? 'auto' : 'manual'}">${r.source === 'AUTO' ? 'Otomatik' : 'Manuel'}</span>
+      <span class="bot-history-symbol">${escapeHtml(r.symbol || '')}</span>
+      <span class="bot-history-side ${buy ? 'is-buy' : 'is-sell'}">${buy ? 'AL' : 'SAT'}</span>
+      <span class="bot-history-meta">${r.lot != null ? r.lot : '—'} lot${r.price != null ? ' @ ' + r.price : ''}${r.ticket != null ? ' · #' + escapeHtml(String(r.ticket)) : ''}</span>
+      <span class="bot-history-status" title="${escapeHtml(status)}">${escapeHtml(status)}</span>
+    </div>`;
+  }).join('');
+}
+async function clearBotSignalHistory() {
+  try {
+    const res = await fetch('/api/bot/signal-history/clear', {method: 'POST'});
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Liste temizlenemedi.');
+    renderBotSignalHistory([]);
+  } catch (err) { showToast(`❌ ${err.message}`, 'error'); }
 }
 
 // Toggle Bot

@@ -1381,6 +1381,12 @@ def execute_bot_signal(req: BotExecuteSignalRequest, account=Depends(require_rea
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return trade_response(res)
 
+@app.post("/api/bot/signal-history/clear")
+def clear_bot_signal_history():
+    bot.clear_history()
+    return {"success": True, "signal_history": []}
+
+
 @app.post("/api/bot/clear-pending-signal")
 def clear_bot_pending_signal(data: Optional[Dict[str, Any]] = None):
     try:

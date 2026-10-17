@@ -209,3 +209,32 @@ def test_bot_own_positions_still_capped(broker):
     broker.mt5.positions_get.return_value = broker.mt5.positions_get.return_value + own
     result = broker.open_order('EURUSD', 'BUY', .01, sl_points=200, magic=HMA_MAGIC, request_id='bot-cap-own-1')
     assert not result['success'] and 'Toplam' in result['error']
+
+
+# --- History of signals sent to the bot ---
+def test_sent_signals_are_recorded_persisted_and_cleared(tmp_path):
+    client = Mock(login_id=7, server='demo', account_type='DEMO')
+    client.has_unresolved_bot_order.return_value = False
+    client.get_symbol_spec.return_value = {'point': .00001}
+    client.open_order.side_effect = [{'success': True, 'ticket': 42, 'price': 1.1},
+                                     {'success': False, 'error': 'Piyasa kapalı'}]
+    bot = StrategyBot(client, config_path=tmp_path / 'bot_settings.json')
+    bot.execute_signal('EURUSD', 'BUY', signal_id='s1', expected_account=ACCOUNT, sl_points=200)
+    bot.execute_signal('XAUUSD', 'SELL', signal_id='s2', expected_account=ACCOUNT, sl_points=300)
+    newest, oldest = bot.get_status()['signal_history'][:2]
+    assert (newest['symbol'], newest['success'], newest['error']) == ('XAUUSD', False, 'Piyasa kapalı')
+    assert (oldest['ticket'], oldest['source'], oldest['sl_points']) == (42, 'MANUAL', 200)
+    reloaded = StrategyBot(client, config_path=tmp_path / 'bot_settings.json')
+    assert [r['symbol'] for r in reloaded.signal_history] == ['XAUUSD', 'EURUSD'], 'survives restart'
+    reloaded.clear_history()
+    assert StrategyBot(client, config_path=tmp_path / 'bot_settings.json').signal_history == []
+
+
+def test_history_is_capped_and_survives_corrupt_file(tmp_path):
+    (tmp_path / 'bot_signal_history.json').write_text('{not json')
+    bot = StrategyBot(Mock(), config_path=tmp_path / 'bot_settings.json')
+    assert bot.signal_history == []
+    for i in range(StrategyBot.HISTORY_LIMIT + 5):
+        bot.record_signal(source='AUTO', symbol=f'S{i}', side='BUY', lot=.01, result={'success': True, 'ticket': i})
+    assert len(bot.signal_history) == StrategyBot.HISTORY_LIMIT and bot.signal_history[0]['symbol'] == f'S{StrategyBot.HISTORY_LIMIT + 4}'
+    assert len(bot.get_status()['signal_history']) == 20

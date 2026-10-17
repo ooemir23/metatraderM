@@ -79,6 +79,9 @@ class StrategyBot:
         self.pending_signal_actions: List[Dict[str, Any]] = []
         self.logs: List[Dict[str, Any]] = []
         self.config_path = Path(config_path) if config_path else None
+        # Signals sent to the bot (manual "Bota Gönder"/"Uygula" and automatic orders), newest first.
+        self.history_path = self.config_path.with_name('bot_signal_history.json') if self.config_path else None
+        self.signal_history: List[Dict[str, Any]] = self._load_history()
 
     def get_signal_rules(self) -> Dict[str, Any]:
         with self._state_lock:
@@ -150,6 +153,58 @@ class StrategyBot:
             os.replace(name, self.config_path)
         finally:
             if os.path.exists(name): os.unlink(name)
+
+    HISTORY_LIMIT = 50
+
+    def _load_history(self) -> List[Dict[str, Any]]:
+        try:
+            if self.history_path and self.history_path.exists():
+                rows = json.loads(self.history_path.read_text())
+                if isinstance(rows, list):
+                    return [r for r in rows if isinstance(r, dict)][:self.HISTORY_LIMIT]
+        except Exception:
+            logger.error('Bot signal history could not be read; starting empty.')
+        return []
+
+    def _persist_history(self):
+        if not self.history_path:
+            return
+        try:
+            self.history_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            fd, name = tempfile.mkstemp(prefix='.bot-history-', dir=self.history_path.parent)
+            try:
+                with os.fdopen(fd, 'w') as stream:
+                    json.dump(self.signal_history, stream, allow_nan=False)
+                os.replace(name, self.history_path)
+            finally:
+                if os.path.exists(name): os.unlink(name)
+        except Exception:
+            logger.error('Bot signal history could not be saved.')
+
+    def record_signal(self, *, source, symbol, side, lot, result, sl_points=0, tp_points=0, signal_id=None):
+        def number(value):
+            try:
+                value = float(value)
+                return value if math.isfinite(value) else None
+            except (TypeError, ValueError):
+                return None
+        entry = {
+            'time': int(time.time()), 'source': source, 'symbol': symbol, 'side': side, 'lot': number(lot),
+            'sl_points': int(sl_points or 0), 'tp_points': int(tp_points or 0), 'signal_id': signal_id,
+            'success': bool(result.get('success')), 'ticket': result.get('ticket'), 'price': number(result.get('price')),
+            'pending': bool(result.get('pending') or result.get('uncertain')),
+            'error': None if result.get('success') else str(result.get('error') or 'Emir gönderilemedi.')[:240],
+        }
+        with self._state_lock:
+            self.signal_history.insert(0, entry)
+            del self.signal_history[self.HISTORY_LIMIT:]
+            self._persist_history()
+        return entry
+
+    def clear_history(self):
+        with self._state_lock:
+            self.signal_history = []
+            self._persist_history()
 
     def log(self, message: str, level: str = "INFO"):
         timestamp = time.strftime("%H:%M:%S")
@@ -294,7 +349,8 @@ class StrategyBot:
             "current_hma": round(self.current_hma, 5),
             "current_ma2": round(self.current_ma2, 5),
             "pending_signal_actions": getattr(self, "pending_signal_actions", []),
-            "logs": self.logs[:15]
+            "logs": self.logs[:15],
+            "signal_history": self.signal_history[:20]
         }
 
     # WMA (Weighted Moving Average)
@@ -744,6 +800,7 @@ class StrategyBot:
 
         res = self.mt5.open_order(sym, side, self.lot_size, sl_points=sl, tp_points=tp,
             comment=f"HMA Bot {side}", magic=HMA_MAGIC, request_id=self.order_id(side, sym=sym), stop_event=self._stop_event, **kwargs)
+        self.record_signal(source='AUTO', symbol=sym, side=side, lot=self.lot_size, result=res, sl_points=sl, tp_points=tp)
 
         if res.get("success"):
             if sym == self.symbol:
@@ -857,6 +914,8 @@ class StrategyBot:
                                   request_id=request_id, expected_account=expected_account,
                                   # Manually confirmed: same broker-only rules as the MT5 order ticket.
                                   manual_mode="MT5")
+        self.record_signal(source='MANUAL', symbol=symbol, side=side, lot=lot, result=res,
+                           sl_points=sl_pts, tp_points=tp_pts, signal_id=signal_id)
         if res.get("success"):
             self.log(f"🎯 Sinyal onaylandı ve açıldı: {symbol} {side} #{res.get('ticket')} @ {res.get('price')} (Lot: {lot})")
             with self._state_lock:

@@ -996,6 +996,17 @@
                   <span>Son Sinyal: <strong id="bot-last-signal" class="text-white font-bold">YOK</strong></span>
                   <span id="bot-last-signal-time" class="font-mono text-xs text-gray-400">--:--:--</span>
                 </div>
+
+                <!-- SIGNALS SENT TO THE BOT (manual confirmations + automatic orders) -->
+                <div class="bot-history">
+                  <div class="bot-history-head">
+                    <span><i class="ph-bold ph-paper-plane-tilt text-indigo-300"></i> Bota Gönderilen Sinyaller <span id="bot-history-count" class="bot-history-count">0</span></span>
+                    <button type="button" id="bot-history-clear" onclick="clearBotSignalHistory()" class="bot-history-clear" title="Listeyi temizle (pozisyonlar etkilenmez)">Temizle</button>
+                  </div>
+                  <div id="bot-history-list" class="bot-history-list" aria-live="polite">
+                    <p class="bot-history-empty">Henüz bota sinyal gönderilmedi.</p>
+                  </div>
+                </div>
               </div>
 
             </div>
