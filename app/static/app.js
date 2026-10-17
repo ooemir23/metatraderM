@@ -1587,7 +1587,7 @@ async function fetchBotStatus() {
         const removeBtn = canRemove
           ? `<button type="button" onclick="event.stopPropagation(); removeSymbolFromBot('${escapeHtml(sym)}')" class="hover:text-rose-400 text-gray-400 font-bold ml-1 px-1 transition" title="${escapeHtml(sym)} sembolünü bot takip listesinden kaldır">✕</button>`
           : '';
-        return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-mono font-bold tracking-wide">
+        return `<span data-bot-symbol="${escapeHtml(sym)}" class="inline-flex items-center px-2.5 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-mono font-bold tracking-wide">
           <span>${escapeHtml(sym)}</span>
           ${removeBtn}
         </span>`;
@@ -2367,7 +2367,7 @@ function renderBotSymbolStatus(bot) {
     const candle = row.candle_time ? new Date(row.candle_time * 1000) : null;
     const candleText = candle ? ` · son mum ${candle.toLocaleDateString('tr-TR') === new Date().toLocaleDateString('tr-TR')
       ? candle.toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'}) : candle.toLocaleString('tr-TR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}` : '';
-    return `<div class="bot-symstat-row" data-tone="${tone}">
+    return `<div class="bot-symstat-row" data-tone="${tone}" data-bot-symbol="${escapeHtml(sym)}">
       <span class="bot-symstat-sym">${escapeHtml(sym)} <small>${tfCode(row.timeframe_minutes || bot.timeframe_minutes)}${candleText}</small></span>
       <span class="bot-symstat-state">${label}</span>
       <span class="bot-symstat-detail">${escapeHtml(row.detail || (bot.is_running ? 'İlk kapanmış mum değerlendiriliyor…' : 'Botu başlatınca burada ne beklediği görünür.'))}</span>
@@ -3711,24 +3711,47 @@ async function dismissPendingBotSignal(symbol) {
   fetchBotLiveSignal();
 }
 
+// Scroll the bot card's tracked-symbols block into view and flash what changed.
+function focusBotSymbol(sym, {flashToggle = false} = {}) {
+  if (typeof setWorkspaceView === 'function') setWorkspaceView('signals', {focus: false});
+  const anchor = document.getElementById('bot-symbols-badges');
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  (flashToggle ? document.getElementById('bot-card') : anchor?.parentElement)
+    ?.scrollIntoView({behavior: reduce ? 'auto' : 'smooth', block: flashToggle ? 'start' : 'center'});
+  setTimeout(() => {
+    const esc = window.CSS?.escape ? CSS.escape(sym) : sym;
+    flashFields([
+      ...(flashToggle ? [document.getElementById('bot-toggle-btn'), document.getElementById('bot-status-badge')] : []),
+      ...document.querySelectorAll(`[data-bot-symbol="${esc}"]`),
+      flashToggle ? null : document.getElementById('bot-symbols-count'),
+    ]);
+  }, reduce ? 0 : 350);
+}
+
 async function assignScannerSymbolToBot(symbol, timeframeMinutes) {
+  const sym = String(symbol || currentSymbol || 'EURUSD').trim();
+  const already = (latestBotSettings?.symbols || []).includes(sym);
   try {
-    const sym = String(symbol || currentSymbol || 'EURUSD').trim();
     const res = await fetch('/api/bot/add-symbol', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({symbol: sym}),
     });
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Sembol bota eklenemedi.');
+      const err = await res.json().catch(() => ({}));
+      const error = new Error(typeof err.detail === 'string' ? err.detail : 'Sembol bota eklenemedi.');
+      error.botRunning = res.status === 409;
+      throw error;
     }
     const data = await res.json();
-    showToast(`🤖 ${sym} HMA Algoritmik Botuna eklendi! (Aktif: ${data.symbols.join(', ')})`, 'success');
-    fetchBotStatus();
+    showToast(already ? `🤖 ${sym} zaten botun takip listesinde.` : `🤖 ${sym} HMA Algoritmik Botuna eklendi (Aktif: ${data.symbols.join(', ')}).`, 'success');
+    await fetchBotStatus();        // re-render badges before flashing the new one
+    focusBotSymbol(sym);
     fetchBotLiveSignal();
   } catch (err) {
     showToast(`❌ ${err.message}`, 'error');
+    // Bot running: show where to stop it.
+    if (err.botRunning) focusBotSymbol(sym, {flashToggle: true});
   }
 }
 
