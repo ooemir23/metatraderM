@@ -267,6 +267,9 @@
               </tr>
             </tbody>
           </table>
+          <div class="mt-3 pt-2 border-t border-gray-800/80 text-xs">
+            <div id="pending-orders-list" class="font-mono text-xs px-1" aria-live="polite">Emirler yükleniyor…</div>
+          </div>
         </div>
 
         <!-- CLOSED POSITIONS TABLE -->
@@ -663,6 +666,22 @@
               </div>
             </div>
 
+            <!-- MT5 PENDING ORDER FIELDS (Shown when Tür = Bekleyen Emir) -->
+            <div id="pending-order-fields" class="hidden space-y-2.5 pt-1 border-t border-gray-800/60">
+              <select id="pending-stop-mode" onchange="changeOrderStopMode(true)" class="hidden" hidden><option value="price" selected>Fiyat seviyesi (MT5)</option><option value="points">Girişten uzaklık (puan)</option></select>
+              <input id="pending-volume" type="number" step="0.01" value="0.01" min="0.01" class="hidden" hidden>
+              <input id="pending-sl" type="number" step="any" value="0" min="0" class="hidden" hidden>
+              <input id="pending-tp" type="number" step="any" value="0" min="0" class="hidden" hidden>
+              <div class="grid grid-cols-2 gap-2">
+                <label class="text-[11px] text-gray-400 font-medium">Tür<select id="pending-type" onchange="changePendingOptions()" class="mt-1 w-full bg-[#181d2a] border border-gray-700 px-2 py-1.5 rounded-lg text-white text-xs"><option>BUY_LIMIT</option><option>SELL_LIMIT</option><option>BUY_STOP</option><option>SELL_STOP</option><option>BUY_STOP_LIMIT</option><option>SELL_STOP_LIMIT</option></select></label>
+                <label class="text-[11px] text-gray-400 font-medium">Emir fiyatı<input id="pending-price" type="number" step="any" min="0" class="mt-1 w-full bg-[#181d2a] border border-gray-700 px-2 py-1.5 rounded-lg text-white font-mono text-xs"></label>
+                <label id="pending-stoplimit-field" hidden class="text-[11px] text-gray-400 font-medium">Stop Limit fiyatı<input id="pending-stoplimit" type="number" min="0" step="any" class="mt-1 w-full bg-[#181d2a] border border-gray-700 px-2 py-1.5 rounded-lg text-white font-mono text-xs"></label>
+                <label class="text-[11px] text-gray-400 font-medium">Doldurma<select id="pending-filling" class="mt-1 w-full bg-[#181d2a] border border-gray-700 px-2 py-1.5 rounded-lg text-white text-xs"><option value="RETURN">Return</option><option value="BOC">Book or Cancel (BOC)</option></select></label>
+                <label class="text-[11px] text-gray-400 font-medium">Geçerlilik<select id="pending-time-type" onchange="changePendingOptions()" class="mt-1 w-full bg-[#181d2a] border border-gray-700 px-2 py-1.5 rounded-lg text-white text-xs"><option value="GTC">İptal edilene kadar (GTC)</option><option value="DAY">Günlük (DAY)</option><option value="SPECIFIED">Belirtilen tarih/saat</option><option value="SPECIFIED_DAY">Belirtilen gün</option></select></label>
+                <label id="pending-expiration-field" hidden class="text-[11px] text-gray-400 font-medium">Son geçerlilik (yerel saat)<input id="pending-expiration" type="datetime-local" class="mt-1 w-full bg-[#181d2a] border border-gray-700 px-2 py-1.5 rounded-lg text-white font-mono text-xs"></label>
+              </div>
+            </div>
+
             <!-- Row 3: Hacim (Volume / Lot) -->
             <div class="grid grid-cols-12 items-center gap-2">
               <label for="lot-input" class="col-span-4 text-[11px] text-gray-400 font-medium">Hacim:</label>
@@ -683,7 +702,7 @@
             </div>
 
             <!-- Row 4: Doldurma Politikası (Fill Policy) -->
-            <div class="grid grid-cols-12 items-center gap-2">
+            <div id="market-filling-row" class="grid grid-cols-12 items-center gap-2">
               <label for="order-filling" class="col-span-4 text-[11px] text-gray-400 font-medium">Doldurma politikası</label>
               <div class="col-span-8">
                 <select id="order-filling" onchange="saveOrderTicketPreferences();scheduleTradePreview()" class="w-full bg-[#181d2a] border border-gray-700 rounded-lg px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-cyan-500">
@@ -827,25 +846,6 @@
           <p class="mt-2 text-gray-400">Girilen ayarlar bu tarayıcıda otomatik saklanır. Sıfırla, varsayılan ayarlara döner ve mevcut raporu temizler.</p>
           <p id="research-status" role="status" aria-live="polite" class="mt-3 text-gray-200"></p>
           <div id="research-result" class="mt-3 overflow-x-auto"></div>
-        </details>
-
-        <details class="bg-[#121620] p-4 rounded-2xl border border-gray-800 text-xs">
-          <summary class="text-white font-bold cursor-pointer">Bekleyen emir oluştur / yönet</summary>
-          <p class="text-gray-400 my-2">Aktif sembol için fiyat girin. Emir seçilen geçerlilik süresince brokerda kalır ve panel kapalıyken de tetiklenebilir. MT5 modunda broker kuralları; panel modunda ek risk sınırları uygulanır.</p>
-          <label>SL / TP girişi<select id="pending-stop-mode" onchange="changeOrderStopMode(true)" class="bg-gray-800 rounded p-1 mb-2 ml-2"><option value="price">Fiyat seviyesi (MT5)</option><option value="points">Girişten uzaklık (puan)</option></select></label>
-          <div class="grid grid-cols-2 gap-2">
-            <label>Tür<select id="pending-type" onchange="changePendingOptions()" class="w-full bg-gray-800 p-2 rounded"><option>BUY_LIMIT</option><option>SELL_LIMIT</option><option>BUY_STOP</option><option>SELL_STOP</option><option>BUY_STOP_LIMIT</option><option>SELL_STOP_LIMIT</option></select></label>
-            <label>Emir fiyatı<input id="pending-price" type="number" step="any" min="0" class="w-full bg-gray-800 p-2 rounded"></label>
-            <label>Lot<input id="pending-volume" type="number" step="0.01" value="0.01" min="0.01" class="w-full bg-gray-800 p-2 rounded"></label>
-            <label>Doldurma<select id="pending-filling" class="w-full bg-gray-800 p-2 rounded"><option value="RETURN">Return</option><option value="BOC">Book or Cancel (BOC)</option></select></label>
-            <label id="pending-stoplimit-field" hidden>Stop Limit fiyatı<input id="pending-stoplimit" type="number" min="0" step="any" class="w-full bg-gray-800 p-2 rounded"></label>
-            <label>Geçerlilik<select id="pending-time-type" onchange="changePendingOptions()" class="w-full bg-gray-800 p-2 rounded"><option value="GTC">İptal edilene kadar (GTC)</option><option value="DAY">Günlük (DAY)</option><option value="SPECIFIED">Belirtilen tarih/saat</option><option value="SPECIFIED_DAY">Belirtilen gün</option></select></label>
-            <label id="pending-expiration-field" hidden>Son geçerlilik (yerel saat)<input id="pending-expiration" type="datetime-local" class="w-full bg-gray-800 p-2 rounded"></label>
-            <label>SL · 0 = Yok<input id="pending-sl" type="number" step="any" value="0" min="0" class="w-full bg-gray-800 p-2 rounded"></label>
-            <label>TP · 0 = Yok<input id="pending-tp" type="number" step="any" value="0" min="0" class="w-full bg-gray-800 p-2 rounded"></label>
-          </div>
-          <button onclick="submitPendingOrder()" class="mt-3 py-2 px-3 rounded bg-cyan-700 text-white font-semibold">Bekleyen emir gönder</button>
-          <div id="pending-orders-list" class="mt-3" aria-live="polite">Emirler yükleniyor…</div>
         </details>
 
         <details id="market-depth-panel" ontoggle="if(this.open)refreshMarketDepth()" class="bg-[#121620] p-4 rounded-2xl border border-gray-800 text-xs">

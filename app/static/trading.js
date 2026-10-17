@@ -62,6 +62,8 @@ async function refreshMarketDepth() {
 function stageDepthOrder(index) {
   const snapshot=displayedDepth,row=snapshot?.levels[index];
   if(!row||row.market||!(row.price>0)||snapshot.symbol!==currentSymbol||snapshot.generation!==accountSessionGeneration||snapshot.account!==JSON.stringify(currentAccountIdentity)||accountSwitching)return showToast('Derinlik değişti; veriyi yenileyin.','error');
+  const execType=document.getElementById('order-execution-type');
+  if(execType){execType.value='PENDING';if(typeof changeOrderExecutionType==='function')changeOrderExecutionType();}
   const type=document.getElementById('pending-type'),price=document.getElementById('pending-price');
   type.value=row.side+'_LIMIT';price.value=String(row.price);changePendingOptions();
   const panel=type.closest?.('details');if(panel)panel.open=true;

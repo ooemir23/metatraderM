@@ -38,4 +38,4 @@ class LiveFeed:
             except Exception:
                 data = {'error': 'Canlı veriler doğrulanamadı.', 'sampled_at': time.time()}
             self.publish(data)
-            await asyncio.sleep(.5)
+            await asyncio.sleep(.25)

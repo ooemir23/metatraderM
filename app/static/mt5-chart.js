@@ -127,7 +127,30 @@
       if (state === active && token === generation) status(state,`Veri güncellenemedi · ${error.name === 'AbortError' ? 'Bağlantı zaman aşımı' : error.message} · Yeniden deneniyor`);
     } finally {
       clearTimeout(timeout);
-      if (state === active && token === generation) { clearTimeout(state.timer); state.timer=setTimeout(()=>load(state),5000); }
+      if (state === active && token === generation) { clearTimeout(state.timer); state.timer=setTimeout(()=>load(state),2000); }
+    }
+  }
+  function tick(symbol, bid, ask, time) {
+    const state = active;
+    if (!state || !state.loaded || state.symbol !== symbol || !state.rows.length) return;
+    if (!Number.isFinite(bid) || bid <= 0) return;
+    const last = state.rows[state.rows.length - 1];
+    const step = state.timeframe * 60;
+    const barTime = Number.isInteger(time) && time >= last.time ? time - (time % step) : last.time;
+    if (barTime > last.time) {
+      state.rows.push({time: barTime, open: bid, high: bid, low: bid, close: bid, tick_volume: 1});
+      if (state.rows.length > 1000) state.rows.shift();
+    } else {
+      last.close = bid;
+      if (bid > last.high) last.high = bid;
+      if (bid < last.low) last.low = bid;
+      last.tick_volume = (last.tick_volume || 0) + 1;
+    }
+    const current = state.rows[state.rows.length - 1];
+    if (typeof state.price?.update === 'function') {
+      state.price.update(['line','area'].includes(prefs.type) ? {time: current.time, value: current.close} : current);
+    } else {
+      renderData(state, false);
     }
   }
   function saveSettings(state) {
@@ -265,5 +288,5 @@
     // Manual broker selection remains the source of order identity.
     switchSymbol(currentSymbol);
   }
-  window.MT5Chart={mode,setMode,mount,dispose,normalize,emaValues,csvData};
+  window.MT5Chart={mode,setMode,mount,dispose,normalize,emaValues,csvData,tick};
 })();

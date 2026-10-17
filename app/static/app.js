@@ -220,10 +220,16 @@ function quoteOrderIssue() {
     return en ? 'Waiting for a verified broker quote.' : 'Doğrulanmış broker fiyatı bekleniyor.';
   if (status.broker_connected !== true)
     return en ? 'Waiting for the MT5 broker connection.' : 'MT5 broker bağlantısı bekleniyor.';
-  if (status.state !== 'fresh') return status.message || (en ? 'Waiting for a current price.' : 'Güncel fiyat bekleniyor.');
-  const age = status.age_seconds + elapsed;
-  if (!Number.isFinite(status.age_seconds) || !Number.isFinite(age) || age < 0 || age > 10)
-    return en ? 'Waiting for a current price.' : 'Güncel fiyat bekleniyor; yeni emir girişi kapalı.';
+  const ruleNode = document.getElementById('order-rule-mode');
+  const allowStale = !ruleNode || ruleNode.value === 'MT5';
+  if (!allowStale) {
+    if (status.state !== 'fresh') return status.message || (en ? 'Waiting for a current price.' : 'Güncel fiyat bekleniyor.');
+    const age = status.age_seconds + elapsed;
+    if (!Number.isFinite(status.age_seconds) || !Number.isFinite(age) || age < 0 || age > 10)
+      return en ? 'Waiting for a current price.' : 'Güncel fiyat bekleniyor; yeni emir girişi kapalı.';
+  } else if (status.state !== 'fresh' && status.state !== 'stale') {
+    return status.message || (en ? 'Waiting for a valid broker price.' : 'Geçerli broker fiyatı bekleniyor.');
+  }
   if (!Number.isFinite(quote.bid) || quote.bid <= 0 || !Number.isFinite(quote.ask) || quote.ask < quote.bid)
     return en ? 'Waiting for a valid broker price.' : 'Geçerli broker fiyatı bekleniyor.';
   return '';
@@ -655,9 +661,9 @@ function startPolling() {
   fetchAIPerformance();
   setInterval(fetchAIPerformance, 300000);
 
-  setInterval(fetchAccount, 2000);
-  setInterval(fetchPositions, 2000);
-  setInterval(fetchPrice, 1500);
+  setInterval(fetchAccount, 1500);
+  setInterval(fetchPositions, 1500);
+  setInterval(fetchPrice, 800);
   setInterval(fetchBotStatus, 3000);
   setInterval(refreshTradingStatus, 5000);
   setInterval(() => {
@@ -1381,6 +1387,7 @@ function renderPriceData(tick) {
       const ticketAsk = document.getElementById("ticket-ask-price");
       if (ticketBid) ticketBid.innerText = bid;
       if (ticketAsk) ticketAsk.innerText = ask;
+      window.MT5Chart?.tick?.(currentSymbol, tick.bid, tick.ask, tick.time);
     } else {
       for (const id of ['header-bid','header-ask','header-spread','btn-bid-price','btn-ask-price','ticket-bid-price','ticket-ask-price']) {
         const node = document.getElementById(id);
@@ -1544,18 +1551,19 @@ function adjustDeviation(delta) {
 }
 function changeOrderExecutionType() {
   const isPending = document.getElementById('order-execution-type')?.value === 'PENDING';
+  document.getElementById('pending-order-fields')?.classList.toggle('hidden', !isPending);
+  document.getElementById('market-filling-row')?.classList.toggle('hidden', isPending);
   document.getElementById('market-order-buttons')?.classList.toggle('hidden', isPending);
   document.getElementById('pending-order-buttons')?.classList.toggle('hidden', !isPending);
   document.getElementById('market-deviation-row')?.classList.toggle('hidden', isPending);
-  if (isPending) {
-    const pendingPanel = document.getElementById('pending-type')?.closest?.('details');
-    if (pendingPanel) pendingPanel.open = true;
-  }
+  if (isPending && typeof changePendingOptions === 'function') changePendingOptions();
 }
 async function submitUnifiedPendingOrder() {
   const lot = document.getElementById('lot-input')?.value;
   const sl = document.getElementById('sl-input')?.value;
   const tp = document.getElementById('tp-input')?.value;
+  const stopMode = document.getElementById('order-stop-mode')?.value;
+  if (stopMode && document.getElementById('pending-stop-mode')) document.getElementById('pending-stop-mode').value = stopMode;
   if (lot != null && document.getElementById('pending-volume')) document.getElementById('pending-volume').value = lot;
   if (sl != null && document.getElementById('pending-sl')) document.getElementById('pending-sl').value = sl;
   if (tp != null && document.getElementById('pending-tp')) document.getElementById('pending-tp').value = tp;
@@ -1906,7 +1914,7 @@ async function refreshTradingStatus() {
     const en = window.MT5I18n?.language() === 'en';
     const button = document.getElementById('resume-trading-btn');
     if (button) {
-      button.classList.toggle('hidden', false);
+      button.classList.toggle('hidden', !state.new_orders_halted);
       button.textContent = state.new_orders_halted
         ? (en ? 'Trading Risk · Locked' : 'İşlem Riski · Kilitli')
         : state.daily_limit_enabled

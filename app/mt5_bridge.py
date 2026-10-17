@@ -528,7 +528,7 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
         tick = mt5.symbol_info_tick(symbol)
         if info is None:
             return {'success': False, 'error': 'Sembol bilgisi alınamadı.'}
-        quote_error = _quote_error(tick, tick_offset, max_tick_age, mt5)
+        quote_error = _quote_error(tick, tick_offset, max_tick_age, mt5, allow_stale=native)
         if quote_error:
             return {'success': False, 'error': quote_error}
         _symbol_rules(info)
@@ -575,7 +575,7 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
                          quote_time=int(tick.time) - int(tick_offset), deviation_points=deviation_points)
         if pending_type:
             request.update(action=5, type_filling=_pending_filling(info,pending_type,filling_policy), **config)
-            return {**trade_risk, **_checked_send(mt5, request, scope, tick_offset=tick_offset, max_tick_age=max_tick_age),
+            return {**trade_risk, **_checked_send(mt5, request, scope, tick_offset=tick_offset, max_tick_age=max_tick_age, allow_stale=native),
                     'pending_order': True, 'execution': execution}
         if int(info.trade_exemode) == 2:
             request.pop('price', None)  # Market execution has no client execution price.
@@ -586,7 +586,7 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
         return {'success': False, 'error': str(exc)}
     for filling in fillings:
         request['type_filling'] = filling
-        response = {**trade_risk, **_checked_send(mt5, request, scope, tick_offset=tick_offset, max_tick_age=max_tick_age),
+        response = {**trade_risk, **_checked_send(mt5, request, scope, tick_offset=tick_offset, max_tick_age=max_tick_age, allow_stale=native),
                     'execution': execution}
         # Only an explicit INVALID_FILL is proof that a different policy is safe.
         if response.get('retcode') != 10030:
@@ -642,9 +642,10 @@ def quote_status(tick, tick_offset=0, max_tick_age=10, connected=None):
     return result
 
 
-def _quote_error(tick, tick_offset=0, max_tick_age=10, mt5=None):
+def _quote_error(tick, tick_offset=0, max_tick_age=10, mt5=None, allow_stale=False):
     status = quote_status(tick, tick_offset, max_tick_age, broker_connection(mt5))
-    if status['state'] != 'fresh' or status['broker_connected'] is not True:
+    allowed = ('fresh', 'stale') if allow_stale else ('fresh',)
+    if status['state'] not in allowed or status['broker_connected'] is not True:
         return status['message'] + ' Güncel fiyat ve broker bağlantısı doğrulanmadan işlem yapılamaz.'
     return None
 
@@ -670,12 +671,12 @@ def price(mt5, symbol, tick_offset=0):
                 quote_status=status)
 
 
-def _market(mt5, symbol, tick_offset=0):
+def _market(mt5, symbol, tick_offset=0, allow_stale=False):
     info, tick = mt5.symbol_info(symbol), mt5.symbol_info_tick(symbol)
     if info is None:
         raise ValueError('Sembol bilgisi alınamadı.')
     _symbol_rules(info)
-    quote_error = _quote_error(tick, tick_offset, mt5=mt5)
+    quote_error = _quote_error(tick, tick_offset, mt5=mt5, allow_stale=allow_stale)
     if quote_error:
         raise ValueError(quote_error)
     return info, tick
@@ -864,7 +865,7 @@ def _price_valid(info, price):
 
 
 def _checked_send(mt5, request, account_scope, allow_no_change=False, tick_offset=0, max_tick_age=10,
-                  before_send=None):
+                  before_send=None, allow_stale=False):
     """Validate the actual request, then send once. Check failures never imply a send."""
     try:
         account = _account(mt5, *account_scope)
@@ -890,7 +891,7 @@ def _checked_send(mt5, request, account_scope, allow_no_change=False, tick_offse
         # Account/quote may change while the broker calculates the check result.
         _account(mt5, *account_scope)
         if request.get('action') in (1, 5, 6, 7):
-            message = _quote_error(mt5.symbol_info_tick(request['symbol']), tick_offset, max_tick_age, mt5)
+            message = _quote_error(mt5.symbol_info_tick(request['symbol']), tick_offset, max_tick_age, mt5, allow_stale=allow_stale)
             if message:
                 raise ValueError(message)
         if before_send is not None:
