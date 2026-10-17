@@ -2343,6 +2343,37 @@ const BOT_STATE_LABELS = {
   WAITING_DATA: ['Veri bekleniyor', 'idle'], AWAITING_APPROVAL: ['Onayın bekleniyor', 'action'],
   SKIPPED: ['Sinyal atlandı', 'warn'], REJECTED: ['Emir reddedildi', 'error'], ORDER_OPENED: ['Emir açıldı', 'ok'],
 };
+// "Bota Ekle": the scanner signal that was added, shown in that symbol's bot card.
+const botAddedSignals = {};
+function rememberAddedSignal(sym, timeframeMinutes) {
+  const item = (latestScannedSignals || []).find(r => r.symbol === sym);
+  if (item) botAddedSignals[sym] = {...item, timeframe_minutes: Number(timeframeMinutes) || item.timeframe_minutes};
+}
+function addedSignalHtml(sym, bot) {
+  const live = (latestScannedSignals || []).find(r => r.symbol === sym);
+  const item = live || botAddedSignals[sym];
+  if (!item) return '';
+  const digits = Number.isInteger(item.digits) ? item.digits : 5;
+  const fmt = v => (v != null && Number(v) > 0) ? Number(v).toFixed(digits) : '—';
+  const directional = item.side === 'BUY' || item.side === 'SELL';
+  const sideText = item.side === 'BUY' ? 'AL' : item.side === 'SELL' ? 'SAT' : item.signal === 'FILTERED' ? 'Filtrelendi' : 'Nötr';
+  const cross = item.signal === 'BUY_CROSS' || item.signal === 'SELL_CROSS';
+  const lot = bot?.lot_mode === 'RISK' ? `özsermayenin %${bot.risk_pct} riski kadar lot` : `${bot?.lot_size ?? '—'} lot`;
+  const head = `<span class="bot-symstat-trade-line"><span class="bot-symstat-trade-side" data-side="${escapeHtml(item.side || 'HOLD')}">${escapeHtml(sideText)}</span>`
+    + ` ${cross ? 'Yeni kesişim' : 'Trend'} · Fiyat <b>${fmt(item.price)}</b>`
+    + (directional ? ` · ${escapeHtml(lot)}</span><span class="bot-symstat-trade-line">"Bota Gönder" ile: SL <b>${fmt(item.suggested_sl)}</b> · TP <b>${fmt(item.suggested_tp)}</b></span>` : '</span>');
+  // The automatic bot uses its own SL/TP settings, not the scanner suggestion.
+  const botStops = !bot ? '' : bot.risk_mode === 'ATR'
+    ? `SL ATR×${bot.use_stop_loss ? bot.atr_stop_multiplier : '—'}, TP ${bot.use_take_profit ? 'ATR×' + bot.atr_target_multiplier : 'yok'}`
+    : `SL ${bot.use_stop_loss ? bot.sl_points + ' puan' : 'yok'}, TP ${bot.use_take_profit ? bot.tp_points + ' puan' : 'yok'}`;
+  // MT5 EA rule: the bot trades only a new crossover on a closed candle, never a signal already on the chart.
+  const plan = !directional
+    ? (item.filtered ? `Filtre: ${item.filtered}` : 'Yön yok; bot kesişim bekler.')
+    : bot?.is_running
+      ? `Bot bu sembolde bir sonraki kapanmış mumda yeni kesişim olursa ${lot} açar (${botStops}). Bu sinyali hemen açmak için "Bota Gönder".`
+      : `Bot durdu. Başlatınca mevcut sinyali açmaz, sonraki yeni kesişimde ${lot} açar (${botStops}). Hemen açmak için "Bota Gönder".`;
+  return `<span class="bot-symstat-trade"><span class="bot-symstat-trade-title">Taranan sinyal</span>${head}<small>${escapeHtml(plan)}</small></span>`;
+}
 function renderBotSymbolStatus(bot) {
   const node = document.getElementById('bot-symbol-status');
   if (!node || !bot) return;
@@ -2367,6 +2398,7 @@ function renderBotSymbolStatus(bot) {
       <span class="bot-symstat-sym">${escapeHtml(sym)} <small>${tfCode(row.timeframe_minutes || bot.timeframe_minutes)}${candleText}</small></span>
       <span class="bot-symstat-state">${label}</span>
       <span class="bot-symstat-detail">${escapeHtml(row.detail || (bot.is_running ? 'İlk kapanmış mum değerlendiriliyor…' : 'Botu başlatınca burada ne beklediği görünür.'))}</span>
+      ${addedSignalHtml(sym, bot)}
     </div>`;
   }).join('');
   node.innerHTML = `${notes.map(n => `<p class="bot-symstat-note">${escapeHtml(n)}</p>`).join('')}${rows}`;
@@ -3461,6 +3493,8 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
     if (sigSettings.only_crosses) rows = rows.filter(r => r.signal === 'BUY_CROSS' || r.signal === 'SELL_CROSS');
     latestScannedSignals = rows;
     if (typeof window !== 'undefined') window.latestScannedSignals = rows;
+    // Keep the "Taranan sinyal" line in the bot cards current with the new scan.
+    if (latestBotSettings && typeof renderBotSymbolStatus === 'function') renderBotSymbolStatus(latestBotSettings);
     // Header badge on the "Sinyal & Bot" toggle: directional signals and fresh crossovers.
     try {
       window.dispatchEvent(new CustomEvent('hma:scanner', {detail: {
@@ -3754,6 +3788,7 @@ function focusBotSymbol(sym, {flashToggle = false} = {}) {
 async function assignScannerSymbolToBot(symbol, timeframeMinutes) {
   const sym = String(symbol || currentSymbol || 'EURUSD').trim();
   const already = (latestBotSettings?.symbols || []).includes(sym);
+  rememberAddedSignal(sym, timeframeMinutes);
   try {
     const res = await fetch('/api/bot/add-symbol', {
       method: 'POST',
@@ -3791,6 +3826,7 @@ async function removeSymbolFromBot(symbol) {
       throw new Error(err.detail || 'Sembol bot listesinden kaldırılamadı.');
     }
     const data = await res.json();
+    delete botAddedSignals[sym];
     showToast(`➖ ${sym} bot takip listesinden çıkarıldı. (Kalan: ${data.symbols.join(', ')})`, 'info');
     fetchBotStatus();
     fetchBotLiveSignal();
