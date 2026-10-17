@@ -103,7 +103,7 @@ def positions(mt5, include_commission=False, tick_offset=0, quotes=None):
                 pass  # Keep live positions available when only cost history is unavailable.
         row = dict(ticket=int(p.ticket), identifier=int(p.identifier), symbol=str(p.symbol),
                  type='BUY' if p.type == 0 else 'SELL', type_raw=int(p.type),
-                 magic=int(p.magic), volume=float(p.volume),
+                 magic=int(p.magic), comment=str(getattr(p, 'comment', '')), volume=float(p.volume),
                  price_open=float(p.price_open), price_current=float(p.price_current),
                  digits=int(symbol_info.digits) if symbol_info else 5,
                  sl=float(p.sl), tp=float(p.tp), profit=float(p.profit), swap=float(p.swap),

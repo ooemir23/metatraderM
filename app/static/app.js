@@ -973,6 +973,28 @@ function renderPositionExecution(position) {
     ${fills ? `<div class="overflow-x-auto"><table class="w-full text-xs text-left whitespace-nowrap"><thead class="bg-[#1c2230] text-gray-400"><tr><th class="p-3">Açılış emri</th><th class="p-3">Lot</th><th class="p-3">Gönderim Bid / Ask</th><th class="p-3">İstenen</th><th class="p-3">Gerçekleşen</th><th class="p-3">Spread</th><th class="p-3">Slippage</th></tr></thead><tbody>${fills}</tbody></table></div>` : ''}`;
 }
 
+function tradeSourceBadge(item) {
+  const magic = Number(item?.magic || 0);
+  const fillMagic = Array.isArray(item?.opening_fills) && item.opening_fills.length
+    ? Number(item.opening_fills[0]?.magic || 0)
+    : 0;
+  const effectiveMagic = magic || fillMagic;
+  const comment = String(item?.comment || '');
+  if (effectiveMagic === 123461 || /hma bot/i.test(comment)) {
+    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 text-[9px] font-sans font-semibold leading-tight" title="HMA Algoritmik Bot / Otomatik Sinyal Yakalama (Magic #123461)">🤖 Otomatik Sinyal (HMA Bot)</span>`;
+  }
+  if (effectiveMagic === 123462 || /ai|deepseek|mevo/i.test(comment)) {
+    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 text-[9px] font-sans font-semibold leading-tight" title="MevO Yapay Zeka Sinyali (Magic #123462)">🧠 Otomatik Sinyal (MevO AI)</span>`;
+  }
+  if (effectiveMagic === 123460 || comment.startsWith('vm:') || /hma web|panel/i.test(comment)) {
+    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-sans font-semibold leading-tight" title="HMA Web Sitesinden Manuel Açıldı (Magic #123460)">🌐 HMA Sitesi (Manuel)</span>`;
+  }
+  if (effectiveMagic === 0) {
+    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[9px] font-sans font-semibold leading-tight" title="Orijinal MetaTrader 5 Terminalinden Manuel Açıldı (Magic #0)">🖥️ Orijinal MT5 (Manuel)</span>`;
+  }
+  return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-gray-800 text-gray-300 border border-gray-700 text-[9px] font-sans font-semibold leading-tight" title="Harici Uzman Danışman / EA (Magic #${effectiveMagic})">⚙️ Harici Bot (#${effectiveMagic})</span>`;
+}
+
 function renderPositionsData(positions) {
     if (accountSwitching) return;
     if (!Array.isArray(positions)) throw new Error('Pozisyon listesi doğrulanamadı.');
@@ -1005,7 +1027,10 @@ function renderPositionsData(positions) {
 
       rowsHtml += `
         <tr class="hover:bg-[#151a26]/60 transition border-b border-gray-800/40 group">
-          <td class="py-2 px-2 text-gray-400 whitespace-nowrap">#${p.ticket}</td>
+          <td class="py-2 px-2 text-gray-400 whitespace-nowrap">
+            <span class="block font-mono text-gray-200">#${p.ticket}</span>
+            ${tradeSourceBadge(p)}
+          </td>
           <td class="py-2 px-2 font-bold text-white whitespace-nowrap">${escapeHtml(p.symbol)}</td>
           <td class="py-2 px-2 whitespace-nowrap">${typeBadge}</td>
           <td class="py-2 px-2 text-gray-200 font-semibold whitespace-nowrap">${p.volume}</td>
@@ -1197,7 +1222,12 @@ async function fetchHistory() {
 
       rowsHtml += `
         <tr data-testid="history-deal-${ticket}" onclick="showHistoryDetails(${positionId}, ${ticket}, this)" class="cursor-pointer hover:bg-[#151a26]/60 transition border-b border-gray-800/40" title="Açılış ve kapanış detaylarını göster">
-          <td class="py-2.5 px-3 text-gray-400"><button type="button" onclick="event.stopPropagation(); showHistoryDetails(${positionId}, ${ticket}, this)" class="text-left hover:text-cyan-400 focus:outline focus:outline-2 focus:outline-cyan-400 rounded" aria-label="İşlem #${ticket} detayları">#${ticket} <span class="text-[10px] text-gray-500 block">Pos: #${positionId} · Detay</span></button></td>
+          <td class="py-2.5 px-3 text-gray-400">
+            <button type="button" onclick="event.stopPropagation(); showHistoryDetails(${positionId}, ${ticket}, this)" class="text-left hover:text-cyan-400 focus:outline focus:outline-2 focus:outline-cyan-400 rounded" aria-label="İşlem #${ticket} detayları">
+              #${ticket} <span class="text-[10px] text-gray-500 block">Pos: #${positionId} · Detay</span>
+            </button>
+            <div>${tradeSourceBadge(d)}</div>
+          </td>
           <td class="py-2.5 px-3 font-bold text-white">${escapeHtml(d.symbol)}</td>
           <td class="py-2.5 px-3">${typeBadge}</td>
           <td class="py-2.5 px-3 text-gray-200 font-semibold">${d.volume}</td>
