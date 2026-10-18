@@ -505,6 +505,18 @@ def _scan_symbols_sync(symbol_list, timeframe_minutes, hma_period, ema_period, m
     return items
 
 
+@app.get('/api/market/next-open')
+async def market_next_open(symbol: str = Query(min_length=1, max_length=32, pattern=r'^[A-Za-z0-9_.#-]+$')):
+    """Estimated reopening of a closed market from the broker's own M5 history (server clock)."""
+    from app import market_hours
+    rates = await asyncio.to_thread(mt5_client.get_rates, symbol, 5, 8000)
+    if not rates:
+        raise HTTPException(status_code=503, detail='Mum geçmişi alınamadı.')
+    server_now = int(time.time()) + int(mt5_client.tick_clock_offset)
+    result = market_hours.next_open([r['time'] for r in rates], server_now)
+    return {'symbol': symbol, 'server_now': server_now, 'clock_offset_seconds': mt5_client.tick_clock_offset, **result}
+
+
 MTF_TIMEFRAMES = (5, 15, 60, 240)
 
 

@@ -712,6 +712,7 @@ function switchSymbol(symbol, reloadChart = true) {
   }
   currentSymbol = symbol;
   if (typeof syncBotSymbol === 'function' && latestBotSettings && !latestBotSettings.is_running) syncBotSymbol(symbol, {announce: false});
+  if (typeof refreshMarketOpen === 'function') refreshMarketOpen(symbol);
   if(document.getElementById('market-depth-panel')?.open&&typeof refreshMarketDepth==='function')refreshMarketDepth();
   updateLotRules();
   window.MT5Markets?.setActive(symbol);
@@ -762,6 +763,9 @@ function startPolling() {
   setInterval(fetchPositions, 1500);
   setInterval(fetchPrice, 800);
   setInterval(fetchBotStatus, 3000);
+  refreshMarketOpen(currentSymbol);
+  setInterval(() => refreshMarketOpen(currentSymbol), 60000);
+  setInterval(() => { if (marketOpenInfo.get(currentSymbol)?.data?.closed) renderOrderNotice(); }, 30000);   // countdown
   setInterval(refreshTradingStatus, 5000);
   if (typeof refreshSignalScanner === 'function') {
     refreshSignalScanner(false);
@@ -1768,14 +1772,49 @@ async function clearUncertainOrder() {
   setOrderNotice(symbol, "Yeni talep hazır", "Sonraki tıklama yeni bir işlem talebi oluşturur. Risk kontrolleri geçerlidir.", "neutral");
 }
 
+// Closed market: estimated reopening from the broker's own bar history (server clock + local time).
+const marketOpenInfo = new Map();
+async function refreshMarketOpen(sym = currentSymbol, force = false) {
+  if (!sym) return;
+  const cached = marketOpenInfo.get(sym);
+  if (!force && cached && (cached.loading || Date.now() - cached.at < 60000)) return;
+  marketOpenInfo.set(sym, {...(cached || {}), loading: true, at: cached?.at || 0});
+  try {
+    const res = await fetch(`/api/market/next-open?symbol=${encodeURIComponent(sym)}`);
+    const data = await res.json();
+    marketOpenInfo.set(sym, res.ok ? {data, at: Date.now()} : {at: Date.now()});
+  } catch (_) {
+    marketOpenInfo.set(sym, {at: Date.now()});
+  }
+  if (sym === currentSymbol) renderOrderNotice();
+}
+function marketOpenText(info) {
+  if (!info?.closed) return '';
+  if (!info.known || !info.next_open) return 'Açılış saati geçmiş verilerden çıkarılamadı.';
+  const offset = Number(info.clock_offset_seconds) || 0;
+  const serverNow = Date.now() / 1000 + offset;
+  const left = Math.max(0, Math.round(info.next_open - serverNow));
+  const at = new Date(info.next_open * 1000), opt = {timeZone: 'UTC'};
+  const server = `${at.toLocaleDateString('tr-TR', {...opt, weekday: 'long'})} ${at.toLocaleDateString('tr-TR', {...opt, day: '2-digit', month: '2-digit'})} ${at.toLocaleTimeString('tr-TR', {...opt, hour: '2-digit', minute: '2-digit'})}`;
+  const local = new Date((info.next_open - offset) * 1000).toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'});
+  if (info.overdue || left === 0) return `Beklenen açılış: ${server} (sunucu saati). Broker henüz fiyat göndermedi; tatil olabilir.`;
+  const d = Math.floor(left / 86400), h = Math.floor(left % 86400 / 3600), m = Math.ceil(left % 3600 / 60);
+  const parts = [d ? `${d} gün` : '', h ? `${h} sa` : '', m ? `${m} dk` : ''].filter(Boolean).join(' ') || '1 dk';
+  return `Tahmini açılış: ${server} (sunucu saati · senin saatinle ${local}) · ${parts} sonra. Brokerın geçmiş haftalardaki kapanışlarına göre hesaplandı; tatillerde değişebilir.`;
+}
 function renderOrderNotice(flash = false) {
   const box = document.getElementById("order-notice");
   if (!box) return;
-  const notice = chartSelectionBlocked ? {
+  const openInfo = marketOpenInfo.get(currentSymbol)?.data;
+  const closedNow = !chartSelectionBlocked && openInfo?.closed && openInfo.symbol === currentSymbol;
+  let notice = chartSelectionBlocked ? {
     title: 'Grafikteki ürün için MT5 eşleşmesi yok', message: 'Al/Sat için hızlı emir bölümündeki MT5 sembolünü seçin. Grafik ürünü işlem hesabında eşlenemedi.', tone: 'error'
-  } : orderNotices.get(currentSymbol) || {
+  } : orderNotices.get(currentSymbol) || (closedNow ? {
+    title: `${currentSymbol} · Piyasa kapalı`, message: 'Bu sembolde işlem seansı kapalı.', tone: 'warning'
+  } : {
     title: "İşlem durumu", message: "Emir sonucu ve işlem uyarıları burada gösterilir.", tone: "neutral"
-  };
+  });
+  if (closedNow) notice = {...notice, message: `${notice.message} ${marketOpenText(openInfo)}`};
   refreshOrderRecovery();
   box.dataset.tone = notice.tone;
   document.getElementById("order-notice-title").textContent = notice.title;
@@ -1789,6 +1828,7 @@ function renderOrderNotice(flash = false) {
 
 function setOrderNotice(symbol, title, message, tone, flash = false, quoteDiagnostic = false) {
   orderNotices.set(symbol, {title: `${symbol} · ${title}`, message, tone, quoteDiagnostic});
+  if (/piyasa kapalı/i.test(title)) refreshMarketOpen(symbol, true);
   if (symbol === currentSymbol) renderOrderNotice(flash);
 }
 
@@ -1820,7 +1860,7 @@ function orderErrorMessage(data) {
   if (raw.startsWith("Fiyat zamanı sunucu")) return ["Fiyat saatini kontrol edin", raw];
   if (raw.startsWith("Broker geçerli fiyat")) return ["Geçerli fiyat bekleniyor", raw];
   if (code === 10018 || /market closed/i.test(raw))
-    return ["Son emir: piyasa kapalı", "Bu sembolde işlem seansı kapalı. Piyasa açıldığında yeniden deneyin."];
+    return ["Son emir: piyasa kapalı", "Bu sembolde işlem seansı kapalı."];
   if (code === 10027 || /autotrading disabled/i.test(raw))
     return ["İşlem izni kapalı", "MT5 Algo Trading ve Python API işlem izinlerini kontrol edin."];
   if (code === 10019 || /not enough money|no money/i.test(raw))

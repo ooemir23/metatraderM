@@ -548,7 +548,7 @@
     ["Emir sonucu belirsiz", "Order outcome uncertain"],
     ["Tekrar göndermeden önce açık pozisyonları kontrol edin.", "Check open positions before resubmitting."],
     ["Son emir: piyasa kapalı", "Market closed"],
-    ["Bu sembolde işlem seansı kapalı. Piyasa açıldığında yeniden deneyin.", "The trading session for this symbol is closed. Try again when the market opens."],
+    ["Bu sembolde işlem seansı kapalı.", "The trading session for this symbol is closed."],
     ["İşlem izni kapalı", "Trading disabled"],
     ["MT5 Algo Trading ve Python API işlem izinlerini kontrol edin.", "Check MT5 Algo Trading and Python API trading permissions."],
     ["Yetersiz teminat", "Insufficient margin"],
