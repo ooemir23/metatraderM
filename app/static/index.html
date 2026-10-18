@@ -862,6 +862,9 @@
                   <h2 class="font-bold text-white text-sm uppercase tracking-wide whitespace-nowrap">Canlı Al / Sat Sinyal Tarayıcı</h2>
                 </div>
                 <div class="flex items-center gap-1.5">
+                  <button type="button" id="scanner-symbol-button" class="scan-symbol-button is-header" aria-haspopup="dialog" title="Sembol değiştir (Piyasa Gözlemi)">
+                    <span id="scanner-symbol-name">EURUSD</span><i class="ph-bold ph-caret-down" aria-hidden="true"></i>
+                  </button>
                   <select id="signal-scan-mode" onchange="onScannerModeChange(this.value)" class="bg-[#181d2a] border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-200 font-semibold focus:border-cyan-500">
                     <option value="SELECTED" selected>🎯 Seçili Sembol</option>
                     <option value="ALL">⭐ Seçili + ★ Listem</option>

@@ -725,3 +725,11 @@ html { background: #0b0e14; }
 .ws-bot-state[data-running="true"] { background:#10b98126; color:#6ee7b7; }
 .ws-bot-state[data-running="true"]::before { background:#10b981; box-shadow:0 0 0 3px #10b98133; }
 @media (max-width: 640px) { .ws-bot-state { display:none; } }
+
+/* Scanner: symbol name opens Market Watch (same as the chart title). */
+.scan-symbol-button { display:inline-flex; align-items:center; gap:4px; padding:1px 5px; margin:0 2px 0 -5px; border-radius:6px; border:1px solid transparent; background:transparent; color:inherit; font:inherit; letter-spacing:inherit; cursor:pointer; }
+.scan-symbol-button i { font-size:10px; color:#94a3b8; }
+.scan-symbol-button:hover { background:#1f2937; border-color:#334155; }
+.scan-symbol-button:hover i { color:#fff; }
+.scan-symbol-button:focus-visible { outline:2px solid #22d3ee; outline-offset:1px; }
+.scan-symbol-button.is-header { margin:0; padding:4px 8px; border-color:#374151; background:#181d2a; font-size:12px; font-weight:700; color:#fff; }

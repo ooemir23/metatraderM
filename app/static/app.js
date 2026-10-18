@@ -27,6 +27,7 @@ document.addEventListener("DOMContentLoaded", () => {
   for(const id of ['sl-input','tp-input'])document.getElementById(id)?.addEventListener('input',()=>{ticketProtectionEdited=true;});
   window.MT5Markets?.init({onSelect:switchSymbol, onChange:marketCatalogueChanged});
   window.MT5Markets?.setActive(currentSymbol);
+  renderScannerSymbolButton(currentSymbol);
   updateChartTimeframeButtons(window.MT5Chart?.getTimeframe?.() || 15);
   initTradingView(currentSymbol);
   initChartResizer();
@@ -714,6 +715,7 @@ function switchSymbol(symbol, reloadChart = true) {
   currentSymbol = symbol;
   if (typeof syncBotSymbol === 'function' && latestBotSettings && !latestBotSettings.is_running) syncBotSymbol(symbol, {announce: false});
   if (typeof refreshMarketOpen === 'function') refreshMarketOpen(symbol);
+  if (typeof renderScannerSymbolButton === 'function') renderScannerSymbolButton(symbol);
   if(document.getElementById('market-depth-panel')?.open&&typeof refreshMarketDepth==='function')refreshMarketDepth();
   updateLotRules();
   window.MT5Markets?.setActive(symbol);
@@ -3690,6 +3692,15 @@ function applyScannedSignalToTicket(symbol, slPrice, tpPrice) {
   }
 }
 
+// Symbol change from the scanner: the same Market Watch window as the chart (MT5: one symbol list for every window).
+function openScannerSymbolPicker(trigger) {
+  if (window.MT5Markets?.open) window.MT5Markets.open(trigger);
+}
+function renderScannerSymbolButton(symbol) {
+  const name = document.getElementById('scanner-symbol-name');
+  if (name) name.textContent = symbol || '';
+}
+
 // Scanner mode: "SELECTED" (default) shows only the chart's symbol; "ALL" scans a watch list.
 const SCAN_MODE_KEY = 'hma.scanner.mode.v1';
 function applyScannerModeUi(mode) {
@@ -3940,7 +3951,7 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
       return `<div class="bg-[#181d2a] border ${isActive ? 'border-cyan-500/70 ring-1 ring-cyan-500/30' : 'border-gray-800/90'} rounded-xl p-3 space-y-2.5" data-scan-symbol="${symEsc}">
         <div class="flex items-center justify-between gap-2">
           <div class="min-w-0">
-            <span class="font-bold text-white text-[13px] block tracking-wide">${symEsc}${isActive ? ' <span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-600 text-white font-bold align-middle">SEÇİLİ</span>' : ''} <span class="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono font-bold">${tfText} (${tfCode})</span></span>
+            <span class="font-bold text-white text-[13px] block tracking-wide"><button type="button" class="scan-symbol-button" onclick="openScannerSymbolPicker(this)" aria-haspopup="dialog" title="Sembol değiştir (Piyasa Gözlemi)">${symEsc}<i class="ph-bold ph-caret-down" aria-hidden="true"></i></button>${isActive ? ' <span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-600 text-white font-bold align-middle">SEÇİLİ</span>' : ''} <span class="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono font-bold">${tfText} (${tfCode})</span></span>
             <span class="text-xs text-gray-200 font-mono">Fiyat: <strong class="text-white">${priceFmt}</strong> · ${rsiLabel}: <strong>${Number(item.rsi || 50).toFixed(1)}</strong> · ATR: <strong>${item.atr}</strong></span>
           </div>
           <span class="px-2.5 py-1.5 rounded-lg text-xs font-bold ${badgeClass}">${badgeText}</span>
