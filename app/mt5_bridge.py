@@ -541,6 +541,9 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
         if not native and int(account.margin_mode) != 2 and any(int(p.magic) != magic for p in same_symbol):
             return {'success': False, 'error': 'Netting hesabında bu sembol başka işlem kaynağına ait.'}
         own_same = [p for p in same_symbol if int(p.magic) == magic]
+        if magic == HMA_MAGIC:
+            # HMA_Crossover_EA HasOpenPosition(orderType): same symbol, same magic, same direction.
+            own_same = [p for p in own_same if (int(p.type) == 0) == (order_type == 'BUY')]
         if magic in (HMA_MAGIC, AI_MAGIC) and own_same:
             return own_position_error(symbol, magic, order_type, own_same)
         if not mt5.symbol_select(symbol, True):

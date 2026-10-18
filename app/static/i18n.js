@@ -195,7 +195,7 @@
     ["Yalnızca yetersiz mesafeleri yükseltir; SL'yi genişletmek olası kaybı artırır. Emir göndermez.", "Only raises insufficient distances; widening the SL increases potential loss. Does not submit an order."],
     ["Bot durumu doğrulanıyor…", "Verifying bot status…"],
     ["İşlem detayları", "Trade details"],
-    ["Aynı sembolde tek bot pozisyonu (zorunlu)", "One bot position per symbol (required)"],
+    ["Aynı yönde ikinci bot pozisyonu açılmaz (MT5 EA kuralı)", "No second bot position in the same direction (MT5 EA rule)"],
     ["Grafik kaynağı", "Chart source"],
     ["Fiyat detaylarını kapat", "Close price details"],
     ["Yeni tavsiye bekleniyor", "Waiting for a new recommendation"],

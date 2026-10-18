@@ -246,7 +246,7 @@ def test_status_explains_existing_bot_position():
     bot.close_opposite = False
     bot._check_strategy()
     row = bot.get_status()['symbol_status']['EURUSD']
-    assert row['state'] == 'SKIPPED' and 'zaten bir bot pozisyonu' in row['detail']
+    assert row['state'] == 'SKIPPED' and 'aynı yönde bir bot pozisyonu' in row['detail']
     client.open_order.assert_not_called()
 
 

@@ -897,3 +897,15 @@ def test_strategy_position_open_error_names_the_position():
     assert r['error'] == ('BTCUSD: Botun açık SAT pozisyonu var (#353903535, 1 lot, 18.10 16:41 açıldı). '
                           'MT5 EA kuralı: aynı yönde ikinci pozisyon açılmaz. Yeni işlem için önce onu kapatın.')
     assert 'Ters yöndeki' in b.own_position_error('BTCUSD', b.HMA_MAGIC, 'BUY', [pos])['error']
+
+
+def test_hma_bot_blocks_only_same_direction_like_ea(client):
+    """HMA_Crossover_EA HasOpenPosition(orderType): a SELL bot position blocks SELL, not BUY (hedging account)."""
+    client.mt5.account_info.return_value.margin_mode = 2
+    client.mt5.positions_get.return_value = [pos(HMA_MAGIC, side=1)]          # bot SELL open
+    same = client.open_order('EURUSD', 'SELL', .01, magic=HMA_MAGIC, request_id='s1')
+    assert not same['success'] and same['reason_code'] == 'strategy_position_open'
+    client.mt5.order_send.assert_not_called()
+    opposite = client.open_order('EURUSD', 'BUY', .01, magic=HMA_MAGIC, request_id='b1')
+    assert opposite.get('reason_code') != 'strategy_position_open'
+    assert client.mt5.order_send.called

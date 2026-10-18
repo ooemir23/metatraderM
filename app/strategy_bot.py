@@ -1018,11 +1018,12 @@ class StrategyBot:
 
         if self.single_position:
             owned = self.mt5.get_positions(fresh=True)
-            pending = self.mt5.get_pending_orders()
-            if any(p['symbol'] == sym and p.get('magic') == HMA_MAGIC for p in owned + pending):
-                self._sym_status(sym, 'SKIPPED', f'{side} kesişimi atlandı: bu sembolde zaten bir bot pozisyonu açık '
-                                 '("Şimdi AL/SAT" ile açılanlar dahil). Aynı sembolde tek bot pozisyonu tutulur.')
-                self.log(f'Bot {sym} pozisyonu zaten açık; yeni giriş atlandı.')
+            # HMA_Crossover_EA HasOpenPosition(orderType): only a bot position in the SAME direction blocks.
+            # An opposite one was closed above when close_opposite is on; otherwise MT5 opens the hedge.
+            if any(p['symbol'] == sym and p.get('magic') == HMA_MAGIC and p.get('type') == side for p in owned):
+                self._sym_status(sym, 'SKIPPED', f'{side} kesişimi atlandı: bu sembolde aynı yönde bir bot pozisyonu açık '
+                                 '("Şimdi AL/SAT" ile açılanlar dahil). MT5 EA kuralı: aynı yönde ikinci pozisyon açılmaz.')
+                self.log(f'Bot {sym} {side} pozisyonu zaten açık; yeni giriş atlandı.')
                 return
 
         issue = self.trading_window_issue()
