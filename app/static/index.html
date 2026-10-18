@@ -120,10 +120,11 @@
 
       <div id="chart-card" class="w-full bg-[#121620] rounded-2xl border border-gray-800/80 overflow-hidden flex flex-col h-[480px] lg:h-[520px] xl:h-[580px] shadow-xl">
         <div class="px-3.5 py-2 border-b border-gray-800 flex items-center justify-between bg-[#151a26] flex-wrap gap-2">
-          <div class="flex items-center gap-2">
+          <button type="button" id="chart-symbol-button" class="chart-symbol-button" aria-haspopup="dialog" title="Sembol değiştir (Piyasa Gözlemi)">
             <i class="ph-bold ph-chart-line text-emerald-400"></i>
             <span id="current-symbol-title" class="font-bold text-white text-xs">EURUSD • 15 dk (M15)</span>
-          </div>
+            <i class="ph-bold ph-caret-down chart-symbol-caret" aria-hidden="true"></i>
+          </button>
 
           <!-- QUICK CANDLE TIMEFRAME SELECTOR BAR -->
           <div id="chart-timeframe-toolbar" class="flex items-center bg-[#10141e] p-1 rounded-xl border border-gray-800 text-xs font-mono select-none" role="toolbar" aria-label="Grafik Mum Zaman Dilimi">

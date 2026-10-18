@@ -236,6 +236,7 @@
     initialized = true;
     node('market-open')?.addEventListener('click', event => open(event.currentTarget));
     node('order-symbol-select')?.addEventListener('click', event => open(event.currentTarget));
+    node('chart-symbol-button')?.addEventListener('click', event => open(event.currentTarget));
     node('market-close')?.addEventListener('click', close);
     node('market-retry')?.addEventListener('click', () => refresh(true));
     node('market-manage-favorites')?.addEventListener('click', () => {

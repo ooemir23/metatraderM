@@ -615,3 +615,10 @@ html { background: #0b0e14; }
 }
 .field-flash { animation:field-flash 1.8s ease-in-out 1; border-color:#22d3ee !important; }
 @media (prefers-reduced-motion: reduce) { .field-flash { animation:none; box-shadow:0 0 0 2px #22d3ee99; } }
+
+/* Chart title doubles as the symbol picker (opens Market Watch). */
+.chart-symbol-button { display:inline-flex; align-items:center; gap:8px; padding:4px 8px; margin:-4px -8px; border-radius:8px; border:1px solid transparent; background:transparent; cursor:pointer; }
+.chart-symbol-button:hover { background:#1f2937; border-color:#334155; }
+.chart-symbol-button:focus-visible { outline:2px solid #22d3ee; outline-offset:1px; }
+.chart-symbol-caret { font-size:11px; color:#94a3b8; }
+.chart-symbol-button:hover .chart-symbol-caret { color:#fff; }

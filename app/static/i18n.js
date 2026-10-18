@@ -129,6 +129,7 @@
     ["⭐ Seçili + ★ Listem", "⭐ Selected + ★ My list"],
     ["🎯 Seçili Sembol", "🎯 Selected Symbol"],
     ["Seçili sembolü izler", "Follows the selected symbol"],
+    ["Sembol değiştir (Piyasa Gözlemi)", "Change symbol (Market Watch)"],
     ["Bot sembolü:", "Bot symbol:"],
     ["İz süren (p)", "Trailing (pts)"],
     ["1 Dakikalık Mumlar (M1)", "1 Minute Candles (M1)"],
