@@ -419,7 +419,8 @@ async function fetchExecutionHealth() {
     if (!response.ok) throw new Error('Ölçüm alınamadı.');
     const data = await response.json(), run = data.execution_ms, queue = data.queue_ms;
     const format = value => value == null ? '—' : `${value} ms`;
-    label.textContent = `İşleme (${run.count}): ortanca ${format(run.p50)} · %95 ${format(run.p95)} · en yüksek ${format(run.max)}. Kuyruk (${queue.count}): %95 ${format(queue.p95)}.`;
+    label.textContent = `İşleme (${run.count}): ortanca ${format(run.p50)} · %95 ${format(run.p95)} · en yüksek ${format(run.max)}. Kuyruk (${queue.count}): %95 ${format(queue.p95)}.`
+      + (data.live_snapshot?.interval_ms ? ` Fiyat yenileme: ${Math.round(data.live_snapshot.interval_ms)} ms'de bir.` : '');
   } catch (_) { label.textContent = 'Gecikme bilgisi şu anda alınamıyor.'; }
 }
 let checkingOrderResults = false;

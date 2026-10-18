@@ -211,3 +211,15 @@ def test_flatten_cancels_pending_before_closing_positions(monkeypatch):
     monkeypatch.setattr(main.mt5_client,'close_by_filter',lambda *a:calls.append('close') or {'success':True,'closed_count':1})
     result=main.flatten_account('test-id')
     assert calls == ['cancel','close'] and result['cancelled_count'] == 1 and result['success']
+
+
+def test_live_feed_interval_adapts_to_snapshot_time():
+    # Fast MT5 read: up to 10 updates per second (MT5 redraws on every tick).
+    assert abs(LiveFeed.pause_after(.01) - .09) < 1e-9
+    # Slower read: MT5 stays idle twice as long as a snapshot, so orders are not held up.
+    assert abs(LiveFeed.pause_after(.05) - .10) < 1e-9
+    # Slow reads: the full cycle stays within the old fixed 0.25 s unless the read itself is slow.
+    assert abs(LiveFeed.pause_after(.08) - .16) < 1e-9
+    assert abs(LiveFeed.pause_after(.2) - .4) < 1e-9
+    feed = LiveFeed(Mock()); feed.durations.extend([.01, .02, .03])
+    assert feed.stats()['p50_ms'] == 20.0

@@ -967,7 +967,7 @@ def configure_trailing(req: TrailingRequest, account=Depends(require_real_unlock
 # API Endpoints
 @app.get("/api/operations/latency")
 def operation_latency():
-    return mt5_client.journal.latency()
+    return {**mt5_client.journal.latency(), 'live_snapshot': live_feed.stats()}
 
 @app.get('/api/operations/events')
 def operation_events(after: int = Query(default=0, ge=0)):
