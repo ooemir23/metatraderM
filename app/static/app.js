@@ -1613,6 +1613,12 @@ async function fetchBotStatus() {
       toggleBtn.className = "bot-head-btn bot-head-start";
       toggleBtn.innerHTML = `<i class="ph-bold ph-play"></i><span>Botu Başlat</span>`;
     }
+    const tabState = document.getElementById('ws-tab-bot-state');
+    if (tabState) {
+      if (tabState.dataset) tabState.dataset.running = String(Boolean(bot.is_running));
+      else tabState.setAttribute?.('data-running', String(Boolean(bot.is_running)));
+      tabState.textContent = bot.is_running ? `Bot çalışıyor · ${bot.symbol}` : 'Bot durdu';
+    }
     const runtime = document.getElementById('bot-runtime-status');
     if (runtime) {
       const en = window.MT5I18n?.language?.() === 'en';

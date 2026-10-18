@@ -718,3 +718,10 @@ html { background: #0b0e14; }
 .ws-src[data-src="web"] { background:#10b98133; border-color:#10b98166; color:#6ee7b7; }   /* HMA site (manual) */
 .ws-src[data-src="ea"]  { background:#1f2937; border-color:#374151; color:#e5e7eb; }       /* other EA */
 .ws-src[data-src="none"] { background:#1f2937; color:#94a3b8; }
+
+/* "Sinyal & Bot" tab: bot state + only attention-worthy counts (new crosses, approvals). */
+.ws-bot-state { display:inline-flex; align-items:center; gap:5px; padding:0 8px; border-radius:999px; background:#1f2937; color:#94a3b8; font-size:11.5px; font-weight:600; line-height:20px; white-space:nowrap; }
+.ws-bot-state::before { content:''; width:7px; height:7px; border-radius:50%; background:#64748b; }
+.ws-bot-state[data-running="true"] { background:#10b98126; color:#6ee7b7; }
+.ws-bot-state[data-running="true"]::before { background:#10b981; box-shadow:0 0 0 3px #10b98133; }
+@media (max-width: 640px) { .ws-bot-state { display:none; } }

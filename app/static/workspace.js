@@ -61,8 +61,10 @@
     const {signals = 0, crosses = 0} = event.detail || {};
     setBadge('signals-count', signals, `${signals} sinyal · ${crosses} yeni kesişim`);
     $('signals-count')?.classList.toggle('has-cross', crosses > 0);
-    setBadge('ws-tab-signals-count', signals, `${signals} sinyal · ${crosses} yeni kesişim`);
-    $('ws-tab-signals-count')?.classList.toggle('has-cross', crosses > 0);
+    // The tab only counts what needs attention: new crossovers (a trend direction is always present).
+    setBadge('ws-tab-signals-count', crosses, `${crosses} yeni kesişim`);
+    const cross = $('ws-tab-signals-count');
+    if (cross && crosses > 0) cross.textContent = `${crosses > 99 ? '99+' : crosses} yeni`;
   }
   function onPending(event) {
     const count = Number(event.detail?.count) || 0;
