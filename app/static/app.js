@@ -2403,52 +2403,81 @@ const BOT_STATE_LABELS = {
   WAITING_DATA: ['Veri bekleniyor', 'idle'], AWAITING_APPROVAL: ['Onayın bekleniyor', 'action'],
   SKIPPED: ['Sinyal atlandı', 'warn'], REJECTED: ['Emir reddedildi', 'error'], ORDER_OPENED: ['Emir açıldı', 'ok'],
 };
-// "Bota Ekle": the scanner signal that was added, shown in that symbol's bot card.
-const botAddedSignals = {};
-function rememberAddedSignal(sym, timeframeMinutes) {
-  delete dismissedAddedSignals[sym];   // adding again shows it again
-  const item = (latestScannedSignals || []).find(r => r.symbol === sym);
-  if (item) botAddedSignals[sym] = {...item, timeframe_minutes: Number(timeframeMinutes) || item.timeframe_minutes};
+// "Bota Ekle" list: signals the user added to the bot, shown in their own frame ("Bota Eklenenler").
+// Remembered in this browser; each entry follows the latest scan of its symbol.
+const ADDED_SIGNALS_KEY = 'hma.bot.added-signals.v2';
+let botAddedSignals = {};
+try { botAddedSignals = JSON.parse(localStorage.getItem(ADDED_SIGNALS_KEY) || '{}') || {}; } catch (_) { botAddedSignals = {}; }
+function saveAddedSignals() {
+  try { localStorage.setItem(ADDED_SIGNALS_KEY, JSON.stringify(botAddedSignals)); } catch (_) { /* session-only */ }
 }
-// "Sil" hides a shown signal until a different signal (new candle or direction) arrives for that symbol.
-const DISMISSED_SIGNALS_KEY = 'hma.bot.dismissed-signals.v1';
-let dismissedAddedSignals = {};
-try { dismissedAddedSignals = JSON.parse(localStorage.getItem(DISMISSED_SIGNALS_KEY) || '{}') || {}; } catch (_) { dismissedAddedSignals = {}; }
-const addedSignalKey = item => `${item.signal || ''}:${item.side || ''}:${item.candle_time || ''}`;
+function rememberAddedSignal(sym, timeframeMinutes) {
+  const item = (latestScannedSignals || []).find(r => r.symbol === sym);
+  const previous = botAddedSignals[sym] || {};
+  delete botAddedSignals[sym];   // newest first
+  botAddedSignals = {[sym]: {...previous, ...(item || {}), symbol: sym, added_at: Date.now(),
+    timeframe_minutes: Number(timeframeMinutes) || item?.timeframe_minutes || previous.timeframe_minutes}, ...botAddedSignals};
+  saveAddedSignals();
+}
 function dismissAddedSignal(sym) {
-  const item = (latestScannedSignals || []).find(r => r.symbol === sym) || botAddedSignals[sym];
-  if (item) dismissedAddedSignals[sym] = addedSignalKey(item);
   delete botAddedSignals[sym];
-  try { localStorage.setItem(DISMISSED_SIGNALS_KEY, JSON.stringify(dismissedAddedSignals)); } catch (_) { /* session-only */ }
-  const bot = latestBotSettings || lastRenderedBotStatus;
-  if (bot) renderBotSymbolStatus(bot);
+  saveAddedSignals();
+  renderBotAddedSignals(latestBotSettings || lastRenderedBotStatus);
+}
+function clearAddedSignals() {
+  botAddedSignals = {};
+  saveAddedSignals();
+  renderBotAddedSignals(latestBotSettings || lastRenderedBotStatus);
 }
 function addedSignalHtml(sym, bot) {
+  const saved = botAddedSignals[sym];
+  if (!saved) return '';
   const live = (latestScannedSignals || []).find(r => r.symbol === sym);
-  const item = live || botAddedSignals[sym];
-  if (!item || dismissedAddedSignals[sym] === addedSignalKey(item)) return '';
+  const item = live ? {...saved, ...live} : saved;
+  if (live) botAddedSignals[sym] = {...item};
   const digits = Number.isInteger(item.digits) ? item.digits : 5;
   const fmt = v => (v != null && Number(v) > 0) ? Number(v).toFixed(digits) : '—';
   const directional = item.side === 'BUY' || item.side === 'SELL';
-  const sideText = item.side === 'BUY' ? 'AL' : item.side === 'SELL' ? 'SAT' : item.signal === 'FILTERED' ? 'Filtrelendi' : 'Nötr';
+  const sideText = item.side === 'BUY' ? 'AL' : item.side === 'SELL' ? 'SAT' : item.signal === 'FILTERED' ? 'Filtrelendi' : item.side ? 'Nötr' : '—';
   const cross = item.signal === 'BUY_CROSS' || item.signal === 'SELL_CROSS';
+  const tfCode = {1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'}[item.timeframe_minutes] || '';
   const lot = bot?.lot_mode === 'RISK' ? `özsermayenin %${bot.risk_pct} riski kadar lot` : `${bot?.lot_size ?? '—'} lot`;
-  const head = `<span class="bot-symstat-trade-line"><span class="bot-symstat-trade-side" data-side="${escapeHtml(item.side || 'HOLD')}">${escapeHtml(sideText)}</span>`
-    + ` ${cross ? 'Yeni kesişim' : 'Trend'} · Fiyat <b>${fmt(item.price)}</b>`
-    + (directional ? ` · ${escapeHtml(lot)}</span><span class="bot-symstat-trade-line">"Bota Gönder" ile: SL <b>${fmt(item.suggested_sl)}</b> · TP <b>${fmt(item.suggested_tp)}</b></span>` : '</span>');
-  // The automatic bot uses its own SL/TP settings, not the scanner suggestion.
   const botStops = !bot ? '' : bot.risk_mode === 'ATR'
     ? `SL ATR×${bot.use_stop_loss ? bot.atr_stop_multiplier : '—'}, TP ${bot.use_take_profit ? 'ATR×' + bot.atr_target_multiplier : 'yok'}`
     : `SL ${bot.use_stop_loss ? bot.sl_points + ' puan' : 'yok'}, TP ${bot.use_take_profit ? bot.tp_points + ' puan' : 'yok'}`;
+  const onBot = bot && bot.symbol === sym;
   // MT5 EA rule: the bot trades only a new crossover on a closed candle, never a signal already on the chart.
-  const plan = !directional
-    ? (item.filtered ? `Filtre: ${item.filtered}` : 'Yön yok; bot kesişim bekler.')
-    : bot?.is_running
-      ? `Bot bu sembolde bir sonraki kapanmış mumda yeni kesişim olursa ${lot} açar (${botStops}). Bu sinyali hemen açmak için "Bota Gönder".`
-      : `Bot durdu. Başlatınca mevcut sinyali açmaz, sonraki yeni kesişimde ${lot} açar (${botStops}). Hemen açmak için "Bota Gönder".`;
-  return `<span class="bot-symstat-trade"><span class="bot-symstat-trade-title">Taranan sinyal`
-    + `<button type="button" class="bot-symstat-trade-delete" onclick="dismissAddedSignal('${escapeHtml(sym)}')" title="Bu sinyali karttan kaldır (emir veya pozisyon etkilenmez)"><i class="ph-bold ph-trash"></i> Sil</button></span>`
-    + `${head}<small>${escapeHtml(plan)}</small></span>`;
+  const plan = !onBot
+    ? `Bot şu an ${bot?.symbol || '—'} sembolünde. Bu sembolü izlemesi için tekrar "Bota Ekle"ye basın.`
+    : !directional
+      ? (item.filtered ? `Filtre: ${item.filtered}` : 'Yön yok; bot kesişim bekler.')
+      : bot.is_running
+        ? `Bot bir sonraki kapanmış mumda yeni kesişim olursa ${lot} açar (${botStops}). Bu sinyali hemen açmak için "Bota Gönder".`
+        : `Bot durdu. Başlatınca mevcut sinyali açmaz, sonraki yeni kesişimde ${lot} açar (${botStops}). Hemen açmak için "Bota Gönder".`;
+  const lines = item.price
+    ? `<span class="bot-added-line"><span class="bot-symstat-trade-side" data-side="${escapeHtml(item.side || 'HOLD')}">${escapeHtml(sideText)}</span>`
+      + ` ${cross ? 'Yeni kesişim' : 'Trend'} · Fiyat <b>${fmt(item.price)}</b>${directional ? ` · ${escapeHtml(lot)}` : ''}</span>`
+      + (directional ? `<span class="bot-added-line">"Bota Gönder" ile: SL <b>${fmt(item.suggested_sl)}</b> · TP <b>${fmt(item.suggested_tp)}</b></span>` : '')
+    : '<span class="bot-added-line">Sinyal bilgisi bir sonraki taramada gelecek.</span>';
+  return `<div class="bot-added-item" data-on-bot="${onBot ? 'true' : 'false'}" data-bot-symbol="${escapeHtml(sym)}">
+    <div class="bot-added-head"><b>${escapeHtml(sym)}</b>${tfCode ? ` <small>${tfCode}</small>` : ''}
+      <span class="bot-added-badge">${onBot ? 'Bot bu sembolde' : 'Bot başka sembolde'}</span>
+      <button type="button" class="bot-symstat-trade-delete" onclick="dismissAddedSignal('${escapeHtml(sym)}')" title="Listeden kaldır (emir veya pozisyon etkilenmez)"><i class="ph-bold ph-trash"></i> Sil</button></div>
+    ${lines}<small>${escapeHtml(plan)}</small>
+  </div>`;
+}
+function renderBotAddedSignals(bot) {
+  const node = document.getElementById('bot-added-signals');
+  if (!node) return;
+  const symbols = Object.keys(botAddedSignals);
+  if (!symbols.length) { node.hidden = true; node.innerHTML = ''; return; }
+  // The bot's own symbol first, then most recently added.
+  symbols.sort((a, b) => (bot && b === bot.symbol) - (bot && a === bot.symbol));
+  node.innerHTML = `<div class="bot-added-title"><span><i class="ph-bold ph-robot"></i> Bota Eklenenler <span class="bot-history-count">${symbols.length}</span></span>`
+    + `<button type="button" class="bot-history-clear" onclick="clearAddedSignals()">Temizle</button></div>`
+    + symbols.map(sym => addedSignalHtml(sym, bot)).join('');
+  node.hidden = false;
+  saveAddedSignals();
 }
 // MT5 shows bar times on the broker server clock. Bar timestamps already are server time,
 // so format them as UTC (no browser time zone shift); "today" is the server's today.
@@ -2484,11 +2513,11 @@ function renderBotSymbolStatus(bot) {
       <span class="bot-symstat-sym">${escapeHtml(sym)} <small>${tfCode(row.timeframe_minutes || bot.timeframe_minutes)}${candleText}</small></span>
       <span class="bot-symstat-state">${label}</span>
       <span class="bot-symstat-detail">${escapeHtml(row.detail || (bot.is_running ? 'İlk kapanmış mum değerlendiriliyor…' : 'Botu başlatınca burada ne beklediği görünür.'))}</span>
-      ${addedSignalHtml(sym, bot)}
     </div>`;
   }).join('');
   node.innerHTML = `${notes.map(n => `<p class="bot-symstat-note">${escapeHtml(n)}</p>`).join('')}${rows}`;
   node.hidden = false;
+  renderBotAddedSignals(bot);
 }
 
 // Protection / sizing summary line under the bot status.

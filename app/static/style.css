@@ -629,3 +629,21 @@ html { background: #0b0e14; }
 .market-section { padding:8px 10px 4px; font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#94a3b8; }
 .market-section:first-child { padding-top:2px; color:#fbbf24; }
 .market-row.is-favorite { background:#f59e0b0d; }
+
+/* "Bota Eklenenler": signals added to the bot, in their own frame. */
+.bot-added { margin:0 0 10px; border:1px solid #155e75; border-radius:12px; background:#0b1220; overflow:hidden; }
+.bot-added-title { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; border-bottom:1px solid #1e293b; background:#0e74901a; font-size:12px; font-weight:700; color:#e5e7eb; }
+.bot-added-title > span { display:inline-flex; align-items:center; gap:6px; }
+.bot-added-title i { color:#22d3ee; }
+.bot-added-item { display:grid; gap:3px; padding:8px 10px; border-bottom:1px solid #1e293b; border-left:3px solid transparent; font:12px/1.4 ui-monospace, monospace; color:#e2e8f0; }
+.bot-added-item:last-child { border-bottom:0; }
+.bot-added-item[data-on-bot="true"] { border-left-color:#22d3ee; }
+.bot-added-item[data-on-bot="false"] { opacity:.75; }
+.bot-added-item b { color:#fff; }
+.bot-added-item > small { font:11.5px/1.4 system-ui, sans-serif; color:#94a3b8; }
+.bot-added-head { display:flex; align-items:center; gap:6px; font-family:system-ui, sans-serif; font-size:12.5px; }
+.bot-added-head small { font:500 10.5px ui-monospace, monospace; color:#94a3b8; }
+.bot-added-head .bot-symstat-trade-delete { margin-left:auto; }
+.bot-added-badge { padding:0 6px; border-radius:5px; font-size:10.5px; font-weight:700; background:#1f2937; color:#94a3b8; }
+.bot-added-item[data-on-bot="true"] .bot-added-badge { background:#0891b233; color:#a5f3fc; }
+.bot-added-line { display:block; }
