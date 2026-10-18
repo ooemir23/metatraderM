@@ -390,7 +390,8 @@ html { background: #0b0e14; }
 .positions-strip { display:none; flex:0 0 44px; flex-direction:column; align-items:center; gap:10px; padding:12px 0;
   border:1px solid #1f2937; border-radius:12px; background:#151a26; color:#cbd5e1; cursor:pointer;
   transition:background .15s, border-color .15s; }
-.workspace-split[data-view="signals"] .positions-strip { display:flex; }
+/* The "Pozisyonlar | Sinyal & Bot" bar above switches views, so no side strip; the scanner and bot use the full width. */
+.workspace-split[data-view="signals"] { gap:0; }
 .positions-strip:hover { background:#1b2232; border-color:#0e7490; color:#fff; }
 .positions-strip:focus-visible, .signals-toggle:focus-visible, .signals-back:focus-visible { outline:2px solid #22d3ee; outline-offset:2px; }
 .positions-strip-label { writing-mode:vertical-rl; transform:rotate(180deg); font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
