@@ -647,3 +647,21 @@ html { background: #0b0e14; }
 .bot-added-badge { padding:0 6px; border-radius:5px; font-size:10.5px; font-weight:700; background:#1f2937; color:#94a3b8; }
 .bot-added-item[data-on-bot="true"] .bot-added-badge { background:#0891b233; color:#a5f3fc; }
 .bot-added-line { display:block; }
+
+/* Scanner card: past signal list */
+.signal-trades { border:1px solid #1f2937; border-radius:8px; background:#0f172a; font-size:11.5px; color:#cbd5e1; }
+.signal-trades summary { cursor:pointer; padding:6px 8px; font-weight:600; color:#a5f3fc; list-style-position:inside; }
+.signal-trades-scroll { max-height:220px; overflow:auto; border-top:1px solid #1f2937; }
+.signal-trades table { width:100%; border-collapse:collapse; font:11px ui-monospace, monospace; }
+.signal-trades th { position:sticky; top:0; background:#111827; color:#94a3b8; font-weight:600; text-align:left; padding:4px 8px; }
+.signal-trades td { padding:4px 8px; border-top:1px solid #1e293b; white-space:nowrap; }
+.signal-trades tr[data-outcome="filtered"] td { opacity:.6; }
+.signal-trades .good { color:#6ee7b7; font-weight:700; } .signal-trades .bad { color:#fda4af; font-weight:700; } .signal-trades .muted { color:#94a3b8; }
+.signal-trade-side { padding:0 5px; border-radius:4px; font-weight:800; }
+.signal-trade-side.is-buy { background:#10b98126; color:#6ee7b7; } .signal-trade-side.is-sell { background:#f43f5e26; color:#fda4af; }
+/* Scanner card: same rule on several timeframes */
+.signal-mtf { display:flex; flex-wrap:wrap; align-items:center; gap:5px; padding:6px 8px; border-radius:8px; background:#0f172a; border:1px solid #1f2937; font-size:11.5px; }
+.signal-mtf-label { color:#94a3b8; font-weight:600; margin-right:2px; }
+.signal-mtf-chip { padding:1px 7px; border-radius:6px; font:700 11px ui-monospace, monospace; background:#1f2937; color:#cbd5e1; }
+.signal-mtf-chip[data-side="buy"] { background:#10b98126; color:#6ee7b7; } .signal-mtf-chip[data-side="sell"] { background:#f43f5e26; color:#fda4af; }
+.signal-mtf-summary { margin-left:auto; color:#cbd5e1; } .signal-mtf-summary .good { color:#6ee7b7; } .signal-mtf-summary .bad { color:#fda4af; }

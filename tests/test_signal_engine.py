@@ -192,3 +192,34 @@ def test_endpoint_passes_filters_and_stats(monkeypatch):
 def test_endpoint_rejects_invalid_filters(monkeypatch, params):
     monkeypatch.setattr(main.mt5_client, 'get_rates', Mock(return_value=series()))
     assert web().get('/api/signals/scan', params={'symbols': 'EURUSD', 'timeframe_minutes': 15, **params}).status_code == 422
+
+
+def test_history_stats_lists_each_signal_newest_first():
+    rows = series(700)
+    st = analyze(rows, stats=True)['stats']
+    trades = st['trades']
+    assert trades and len([t for t in trades if t['outcome'] != 'filtered']) == min(st['passed'], 60)
+    assert trades == sorted(trades, key=lambda t: t['time'], reverse=True)
+    for t in trades:
+        assert t['side'] in ('BUY', 'SELL') and t['outcome'] in ('win', 'loss', 'open', 'filtered')
+        if t['outcome'] == 'win':
+            assert t['r'] > 0 and t['bars'] >= 1 and t['exit_time'] > t['time']
+        if t['outcome'] == 'loss':
+            assert t['r'] == -1.0
+    assert sum(t['outcome'] == 'win' for t in trades) == st['wins'] or len(trades) == 60
+    blocked = analyze(rows, stats=True, adx_filter=True, adx_min=100)['stats']['trades']
+    assert blocked and all(t['outcome'] == 'filtered' and t['filters'] == ['adx'] for t in blocked)
+
+
+def test_multi_timeframe_endpoint(monkeypatch):
+    rows = series(700)
+    seen = []
+    monkeypatch.setattr(main.mt5_client, 'get_rates', Mock(side_effect=lambda s, tf, n: seen.append(tf) or rows[-n:]))
+    res = web().get('/api/signals/mtf', params={'symbol': 'EURUSD', 'timeframes': '5,15,60,240'})
+    assert res.status_code == 200
+    body = res.json()
+    assert [r['timeframe_minutes'] for r in body['timeframes']] == [5, 15, 60, 240]
+    assert set(seen) == {5, 15, 60, 240}
+    assert all(r['side'] in ('BUY', 'SELL', 'HOLD') for r in body['timeframes'])
+    assert body['buy'] + body['sell'] <= 4
+    assert web().get('/api/signals/mtf', params={'symbol': 'EURUSD', 'timeframes': '7'}).status_code == 422

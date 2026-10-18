@@ -3585,6 +3585,80 @@ function onScannerModeChange(mode) {
 var latestScannedSignals = [];
 if (typeof window !== 'undefined') window.latestScannedSignals = latestScannedSignals;
 
+// Past signals of the history test, as a list (time on the MT5 server clock, like MT5's chart).
+const openSignalTradeLists = new Set();
+function brokerDateTime(epoch) {
+  return new Date(Number(epoch) * 1000).toLocaleString('tr-TR', {timeZone: 'UTC', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
+}
+function signalTradesHtml(item, tf) {
+  const trades = item?.stats?.trades;
+  if (!Array.isArray(trades) || !trades.length) return '';
+  const digits = Number.isInteger(item.digits) ? item.digits : 5;
+  const key = `${item.symbol}:${tf}`;
+  const names = window.HMASignalSettings?.filterNames || {};
+  const rowsHtml = trades.map(t => {
+    const buy = t.side === 'BUY';
+    const result = t.outcome === 'win' ? `<span class="good">TP ✓ +${t.r}R</span>`
+      : t.outcome === 'loss' ? '<span class="bad">SL ✗ −1R</span>'
+      : t.outcome === 'open' ? '<span class="muted">Açık</span>'
+      : `<span class="muted">Filtre: ${escapeHtml((t.filters || []).map(k => names[k] || k).join(', '))}</span>`;
+    return `<tr data-outcome="${escapeHtml(t.outcome)}"><td>${brokerDateTime(t.time)}</td>`
+      + `<td><span class="signal-trade-side ${buy ? 'is-buy' : 'is-sell'}">${buy ? 'AL' : 'SAT'}</span></td>`
+      + `<td>${Number(t.entry).toFixed(digits)}</td><td>${result}</td><td>${t.bars ? t.bars + ' mum' : '—'}</td></tr>`;
+  }).join('');
+  return `<details class="signal-trades" ${openSignalTradeLists.has(key) ? 'open' : ''} ontoggle="toggleSignalTrades('${escapeHtml(key)}', this.open)">
+    <summary>Sinyal listesi (${trades.length}) · en yeni üstte · sunucu saati</summary>
+    <div class="signal-trades-scroll"><table><thead><tr><th>Tarih</th><th>Yön</th><th>Giriş</th><th>Sonuç</th><th>Süre</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
+  </details>`;
+}
+function toggleSignalTrades(key, open) { if (open) openSignalTradeLists.add(key); else openSignalTradeLists.delete(key); }
+
+// Same rule on M5 / M15 / H1 / H4 for the selected symbol (refreshed at most once a minute).
+const signalMtfCache = new Map();
+const SIGNAL_MTF_TTL = 60000;
+function signalMtfKey(sym) {
+  const s = window.HMASignalSettings?.get?.() || {};
+  return `${sym}|${s.hma_period ?? 14}|${s.ema_period ?? 34}|${s.ma_type || 'EMA'}|${s.confirm_close !== false}`;
+}
+function signalMtfHtml(data) {
+  if (!data) return '<span class="signal-mtf-label">Zaman dilimleri yükleniyor…</span>';
+  if (data.error) return `<span class="signal-mtf-label">Zaman dilimleri alınamadı.</span>`;
+  const code = m => ({1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'}[m] || `M${m}`);
+  const chips = data.timeframes.map(r => {
+    if (!r.available) return `<span class="signal-mtf-chip" data-side="none">${code(r.timeframe_minutes)} —</span>`;
+    const buy = r.side === 'BUY', sell = r.side === 'SELL';
+    const cross = r.signal === 'BUY_CROSS' || r.signal === 'SELL_CROSS';
+    const ago = r.bars_ago == null ? '25+' : r.bars_ago;
+    return `<span class="signal-mtf-chip" data-side="${buy ? 'buy' : sell ? 'sell' : 'none'}" title="${code(r.timeframe_minutes)}: ${cross ? 'yeni kesişim' : `son kesişim ${ago} mum önce`}">`
+      + `${code(r.timeframe_minutes)} ${buy ? '▲ AL' : sell ? '▼ SAT' : '• Nötr'}${cross ? ' · yeni' : ''}</span>`;
+  }).join('');
+  const total = data.timeframes.length;
+  const summary = data.aligned
+    ? `<b class="${data.aligned === 'BUY' ? 'good' : 'bad'}">${total}/${total} ${data.aligned === 'BUY' ? 'AL' : 'SAT'} · uyumlu</b>`
+    : `<span>${data.buy} AL · ${data.sell} SAT · karışık</span>`;
+  return `<span class="signal-mtf-label">Zaman dilimleri</span>${chips}<span class="signal-mtf-summary">${summary}</span>`;
+}
+async function refreshSignalMtf(sym) {
+  if (!sym) return;
+  const key = signalMtfKey(sym), cached = signalMtfCache.get(key);
+  const paint = () => document.querySelectorAll(`[data-mtf-symbol="${window.CSS?.escape ? CSS.escape(sym) : sym}"]`)
+    .forEach(n => { n.innerHTML = signalMtfHtml(signalMtfCache.get(key)); });
+  if (cached && (cached.loading || Date.now() - cached.at < SIGNAL_MTF_TTL)) { paint(); return; }
+  signalMtfCache.set(key, {...(cached || {}), loading: true, at: cached?.at || 0, timeframes: cached?.timeframes || []});
+  const s = window.HMASignalSettings?.get?.() || {};
+  try {
+    const q = new URLSearchParams({symbol: sym, timeframes: '5,15,60,240', hma_period: s.hma_period ?? 14,
+      ema_period: s.ema_period ?? 34, ma_type: s.ma_type || 'EMA', confirm_close: String(s.confirm_close !== false)});
+    const res = await fetch(`/api/signals/mtf?${q}`);
+    const data = await res.json();
+    if (!res.ok || !Array.isArray(data.timeframes)) throw new Error('mtf');
+    signalMtfCache.set(key, {...data, at: Date.now()});
+  } catch (_) {
+    signalMtfCache.set(key, {error: true, at: Date.now() - SIGNAL_MTF_TTL + 15000, timeframes: []});   // retry in ~15 s
+  }
+  paint();
+}
+
 async function refreshSignalScanner(manual = false, forceReplace = false) {
   if (signalScannerBusy && !forceReplace && !manual) return;
   const listNode = document.getElementById('signal-scanner-list');
@@ -3732,6 +3806,8 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
         </div>
         ${item.reason ? `<p class="signal-reason"><i class="ph-bold ph-info"></i> <span>${escapeHtml(item.reason)}</span></p>` : ''}
         ${item.stats ? `<p class="signal-stats"><i class="ph-bold ph-flask"></i> ${window.HMASignalSettings?.statsHtml?.(item.stats) || ''}</p>` : ''}
+        ${signalTradesHtml(item, tf)}
+        ${isActive ? `<div class="signal-mtf" data-mtf-symbol="${symEsc}">${signalMtfHtml(signalMtfCache.get(signalMtfKey(item.symbol)))}</div>` : ''}
         <div class="flex items-center gap-2 pt-0.5">
           <button type="button" onclick="applyScannedSignalToTicket('${symEsc}', ${sl}, ${tp})" class="flex-1 py-2 px-2.5 rounded-lg bg-cyan-700/80 hover:bg-cyan-600 text-white text-xs font-bold transition active:scale-95" title="SL/TP değerlerini manuel emir formuna aktar">🎯 Emre Aktar</button>
           <button type="button" onclick="assignScannerSymbolToBot('${symEsc}', ${tf})" class="flex-1 py-2 px-2.5 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs font-bold transition active:scale-95" title="${symEsc} sembolünü botun çoklu takip listesine ekle">🤖 Bota Ekle</button>
@@ -3739,6 +3815,7 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
         </div>
       </div>`;
     }).join('');
+    refreshSignalMtf(activeSym);
   } catch (err) {
     if (!isCurrent() || err?.name === 'AbortError') return;
     if (statusNode) statusNode.textContent = 'Sinyal taraması şu an yapılamadı.';

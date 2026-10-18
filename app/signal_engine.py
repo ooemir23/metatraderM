@@ -309,6 +309,7 @@ def history_stats(ctx, bars=None):
     crosses = passed = wins = losses = open_ = 0
     net_r = 0.0
     filter_counts = {}
+    trades = []   # every crossover in the window, newest first in the result
     spread = ctx.spread_price()
     for i in range(start, last_closed + 1):
         side = cross_at(ctx.fast, ctx.slow, i)
@@ -320,23 +321,30 @@ def history_stats(ctx, bars=None):
         if blocked:
             for key, _ in blocked:
                 filter_counts[key] = filter_counts.get(key, 0) + 1
+            trades.append({'time': int(rates[i]['time']), 'side': side, 'entry': ctx.closes[i],
+                           'outcome': 'filtered', 'filters': [k for k, _ in blocked]})
             continue
         passed += 1
         close = ctx.closes[i]
         sl = close - s['sl_atr'] * atr if side == 'BUY' else close + s['sl_atr'] * atr
         tp = close + s['tp_atr'] * atr if side == 'BUY' else close - s['tp_atr'] * atr
         win_r = ctx.reward_risk(atr)
-        outcome = None
+        outcome, exit_j = None, None
         for j in range(i + 1, last_closed + 1):
             high, low = float(rates[j]['high']), float(rates[j]['low'])
             hit_sl = low <= sl if side == 'BUY' else high + spread >= sl
             hit_tp = high >= tp if side == 'BUY' else low + spread <= tp
             if hit_sl:
-                outcome = 'loss'
+                outcome, exit_j = 'loss', j
                 break
             if hit_tp:
-                outcome = 'win'
+                outcome, exit_j = 'win', j
                 break
+        trades.append({'time': int(rates[i]['time']), 'side': side, 'entry': close, 'sl': sl, 'tp': tp,
+                       'outcome': outcome or 'open',
+                       'r': round(win_r, 2) if outcome == 'win' else -1.0 if outcome == 'loss' else None,
+                       'bars': (exit_j - i) if exit_j is not None else None,
+                       'exit_time': int(rates[exit_j]['time']) if exit_j is not None else None})
         if outcome == 'win':
             wins += 1
             net_r += win_r
@@ -355,6 +363,7 @@ def history_stats(ctx, bars=None):
         'win_rate_pct': round(100.0 * wins / closed, 1) if closed else None,
         'avg_r': round(net_r / closed, 2) if closed else None, 'net_r': round(net_r, 2),
         'small_sample': closed < 30,
+        'trades': trades[::-1][:60],
     }
 
 

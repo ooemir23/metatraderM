@@ -505,6 +505,41 @@ def _scan_symbols_sync(symbol_list, timeframe_minutes, hma_period, ema_period, m
     return items
 
 
+MTF_TIMEFRAMES = (5, 15, 60, 240)
+
+
+@app.get('/api/signals/mtf')
+async def signals_multi_timeframe(symbol: str = Query(min_length=1, max_length=32, pattern=r'^[A-Za-z0-9_.#-]+$'),
+                                  timeframes: str = Query(default='5,15,60,240', max_length=40),
+                                  hma_period: int = Query(default=14, ge=2, le=200),
+                                  ema_period: int = Query(default=34, ge=2, le=200),
+                                  ma_type: Literal['EMA', 'SMA', 'LWMA', 'HMA'] = Query(default='EMA'),
+                                  confirm_close: bool = Query(default=True)):
+    """Same HMA x MA rule on several timeframes of one symbol (no filters): trend and last cross per timeframe."""
+    try:
+        tfs = list(dict.fromkeys(int(x) for x in timeframes.split(',') if x.strip()))
+    except ValueError:
+        raise HTTPException(status_code=422, detail='Geçersiz zaman dilimi listesi.')
+    if not tfs or len(tfs) > 6 or any(tf not in TIMEFRAME_NAMES for tf in tfs):
+        raise HTTPException(status_code=422, detail='Desteklenmeyen zaman dilimi.')
+    settings = dict(hma_period=hma_period, ema_period=ema_period, ma_type=ma_type, confirm_close=confirm_close)
+
+    def run():
+        rows = []
+        for tf in tfs:
+            items = _scan_symbols_sync([symbol], tf, **settings)
+            item = items[0] if items else None
+            rows.append({'timeframe_minutes': tf, 'available': bool(item),
+                         **({k: item.get(k) for k in ('signal', 'side', 'bars_ago', 'cross_side', 'hma', 'ema',
+                                                      'price', 'digits', 'candle_time')} if item else {})})
+        return rows
+    rows = await asyncio.to_thread(run)
+    sides = [r['side'] for r in rows if r.get('side') in ('BUY', 'SELL')]
+    aligned = sides[0] if sides and len(sides) == len(rows) and len(set(sides)) == 1 else None
+    return {'symbol': symbol, 'timeframes': rows, 'aligned': aligned,
+            'buy': sides.count('BUY'), 'sell': sides.count('SELL')}
+
+
 @app.get('/api/signals/scan')
 async def scan_signals(symbols: str = Query(min_length=1, max_length=320),
                        timeframe_minutes: int = Query(default=15),
