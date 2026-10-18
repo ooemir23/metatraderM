@@ -1036,19 +1036,33 @@ class MT5Client:
                 "errors": errors
             }
 
-    def get_rates(self, symbol: str, timeframe: int = 15, count: int = 100) -> Optional[List[Dict[str, Any]]]:
-        with self._lock:
-            if not self.ensure_connected():
-                return None
+    RATES_CHUNK = 1000
 
-            try:
-                name = TIMEFRAME_NAMES.get(timeframe)
-                if name is None:
-                    raise ValueError(f"Desteklenmeyen zaman dilimi: {timeframe}")
-                return self._bridge("rates", symbol, name, count)
-            except Exception as e:
-                logger.error(f"Error fetching rates for {symbol}: {e}")
-                return None
+    def get_rates(self, symbol: str, timeframe: int = 15, count: int = 100) -> Optional[List[Dict[str, Any]]]:
+        name = TIMEFRAME_NAMES.get(timeframe)
+        if name is None:
+            logger.error(f"Desteklenmeyen zaman dilimi: {timeframe}")
+            return None
+        # Read big histories newest-first in chunks and release the MT5 lock between them,
+        # so an order or close (which jumps the queue) never waits for a long chart download.
+        rows, start = {}, 0
+        while start < count:
+            size = min(self.RATES_CHUNK, count - start)
+            with self._lock:
+                if not self.ensure_connected():
+                    return None
+                try:
+                    chunk = (self._bridge("rates", symbol, name, size) if start == 0
+                             else self._bridge("rates_from", symbol, name, start, size))
+                except Exception as e:
+                    logger.error(f"Error fetching rates for {symbol}: {e}")
+                    return None if not rows else [rows[t] for t in sorted(rows)]
+            for r in chunk:
+                rows.setdefault(r['time'], r)
+            if len(chunk) < size:
+                break
+            start += size
+        return [rows[t] for t in sorted(rows)]
 
     def get_research_rates(self, symbol: str, timeframe: int, start: int, end: int):
         if timeframe not in (60, 240) or end <= start or end - start > 5 * 366 * 86400:

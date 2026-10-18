@@ -92,3 +92,14 @@ assert.match(counts, /data-src="bot" title="1 pozisyon · Otomatik Sinyal \(HMA 
 ctx.renderPositionSourceCounts([]);
 assert.match(node('ws-tab-positions-count').innerHTML, /data-src="none"[^>]*>0</);
 console.log('position source counts ok');
+
+// 7. Close result text: fill, net P/L, slippage vs requested price, queue + send time.
+{
+  vm.runInContext("formatMoney = v => Number(v).toFixed(2) + ' USD'", ctx);
+  const text = ctx.closeResultText({
+    realized: {price: 1.12390, volume: 1, profit: 12.4, commission: -0.7, swap: 0, fee: 0, net: 11.7},
+    execution: {requested_price: 1.12392, bid: 1.12392, ask: 1.12394, point: 0.00001},
+    queue_ms: 3.2, execution_ms: 84.6}, {type: 'BUY', digits: 5});
+  assert.equal(text, '1 lot @ 1.12390 · net +11.70 USD (kâr 12.40 USD, komisyon/swap -0.70 USD) · istenen 1.12392 · kayma 2 puan aleyhe · sırada 3 ms + gönderim 85 ms');
+}
+console.log('close result text ok');

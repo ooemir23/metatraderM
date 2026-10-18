@@ -136,6 +136,15 @@ def rates(mt5, symbol, timeframe, count):
                  close=float(r[4]), tick_volume=int(r[5])) for r in rows]
 
 
+def rates_from(mt5, symbol, timeframe, start_pos, count):
+    """`count` bars ending `start_pos` bars before the current one (MT5 copy_rates_from_pos)."""
+    rows = mt5.copy_rates_from_pos(symbol, getattr(mt5, timeframe), int(start_pos), int(count))
+    if rows is None:
+        raise RuntimeError('Mum verisi okunamadı')
+    return [dict(time=int(r[0]), open=float(r[1]), high=float(r[2]), low=float(r[3]),
+                 close=float(r[4]), tick_volume=int(r[5])) for r in rows]
+
+
 def research_rates(mt5, symbol, timeframe, start, end, clock_offset=0):
     """Read-only, chunked history. End is exclusive; forming bars are excluded."""
     seconds = {'TIMEFRAME_H1': 3600, 'TIMEFRAME_H4': 14400}.get(timeframe)
@@ -950,7 +959,7 @@ def _send_once(mt5, request, allow_no_change=False):
         code = int(result.retcode)
         success = code in (10008, 10009, 10010) or (allow_no_change and code == 10025)
         response = dict(success=success, retcode=code, partial=code == 10010, pending=code == 10008,
-                    uncertain=code in (10012, 10031), ticket=int(result.order),
+                    uncertain=code in (10012, 10031), ticket=int(result.order), deal=int(getattr(result, 'deal', 0) or 0),
                     volume=float(result.volume), price=float(result.price),
                     error='' if success else str(result.comment), comment=str(result.comment))
         if code in (10004,10020):
@@ -1035,8 +1044,29 @@ def _close_deal_once(mt5, ticket, expected_magic=None, expected_login=0, expecte
         response['error'] = ('Pozisyon kısmen kapandı; kalan hacmi kontrol edin.' if response.get('partial')
                              else 'Kapatma emri kabul edildi; pozisyonun kapanması henüz doğrulanmadı.')
     response['success'] = bool(response.get('success') and response.get('retcode') == 10009)
+    realized = _close_deal_result(mt5, response.get('deal')) if response.get('success') else None
     return {**response, 'ticket': ticket, 'position': ticket, 'order_ticket': response.get('ticket'),
-            'requested_volume': volume, 'execution': execution}
+            'requested_volume': volume, 'execution': execution,
+            **({'realized': realized} if realized else {})}
+
+
+def _close_deal_result(mt5, deal_ticket):
+    """The closing deal as MT5 records it (History tab): fill price and money result."""
+    try:
+        if not deal_ticket:
+            return None
+        rows = mt5.history_deals_get(ticket=int(deal_ticket))
+        if not rows:
+            return None
+        d = rows[0]
+        values = {k: float(getattr(d, k, 0) or 0) for k in ('price', 'volume', 'profit', 'commission', 'swap', 'fee')}
+        if not all(math.isfinite(v) for v in values.values()):
+            return None
+        values['net'] = round(values['profit'] + values['commission'] + values['swap'] + values['fee'], 2)
+        values['deal'] = int(deal_ticket)
+        return values
+    except Exception:
+        return None  # The close itself succeeded; the summary is optional.
 
 
 def manage_position(mt5, ticket, operation, values, expected_login, expected_server, tick_offset=0,

@@ -2100,8 +2100,28 @@ async function submitOrder(type) {
 }
 
 // Close Single Position (Instant 1-Click)
+// What actually happened on a close, as MT5's History shows it, plus where the time went.
+function closeResultText(data, position) {
+  const r = data.realized, ex = data.execution || {};
+  const digits = Number.isInteger(position?.digits) ? position.digits : 5;
+  const parts = [];
+  if (r && Number.isFinite(r.price)) parts.push(`${r.volume ?? ''} lot @ ${Number(r.price).toFixed(digits)}`.trim());
+  if (r && Number.isFinite(r.net)) parts.push(`net ${r.net >= 0 ? '+' : ''}${formatMoney(r.net)}`
+    + (r.commission || r.swap || r.fee ? ` (kâr ${formatMoney(r.profit)}, komisyon/swap ${formatMoney(r.commission + r.swap + r.fee)})` : ''));
+  // Requested = Bid for closing a BUY, Ask for closing a SELL; positive slippage = against you.
+  if (r && Number.isFinite(ex.requested_price) && Number(ex.point) > 0) {
+    const closingBuy = position ? position.type === 'BUY' : ex.requested_price === ex.bid;
+    const slip = Math.round(((closingBuy ? ex.requested_price - r.price : r.price - ex.requested_price) / ex.point) * 10) / 10;
+    parts.push(`istenen ${Number(ex.requested_price).toFixed(digits)} · kayma ${slip > 0 ? slip + ' puan aleyhe' : slip < 0 ? -slip + ' puan lehe' : 'yok'}`);
+  }
+  const times = [Number.isFinite(data.queue_ms) ? `sırada ${Math.round(data.queue_ms)} ms` : '',
+                 Number.isFinite(data.execution_ms) ? `gönderim ${Math.round(data.execution_ms)} ms` : ''].filter(Boolean);
+  if (times.length) parts.push(times.join(' + '));
+  return parts.join(' · ');
+}
 async function closePosition(ticket) {
   if (closePending.has(ticket) || accountSwitching) return;
+  const position = executionPositions.get(Number(ticket)) || executionPositions.get(ticket);
   if (accountVerificationKnown && !currentAccountIdentity) return showToast('Kapatmadan önce broker hesap bağlantısını doğrulayın.', 'error');
   closePending.add(ticket);
   try {
@@ -2116,8 +2136,10 @@ async function closePosition(ticket) {
     if (res.ok && data.success) {
       const message = data.pending ? `#${ticket} kapatma talebi kabul edildi; broker sonucu bekleniyor.`
         : data.partial ? `#${ticket} pozisyonu kısmen kapatıldı; kalan lotu kontrol edin.`
-        : `✅ #${ticket} numaralı pozisyon kapatıldı.`;
+        : `✅ #${ticket} kapatıldı · ${closeResultText(data, position) || 'sonuç MT5 geçmişinde'}`;
       showToast(message, data.pending || data.partial ? "warning" : "success");
+      if (position?.symbol && !data.pending && !data.partial)
+        setOrderNotice(position.symbol, `#${ticket} kapatıldı`, closeResultText(data, position) || 'Pozisyon kapandı.', 'neutral');
       fetchPositions(true);
       fetchAccount(true);
       fetchHistory();

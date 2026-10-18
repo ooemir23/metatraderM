@@ -505,15 +505,27 @@ def _scan_symbols_sync(symbol_list, timeframe_minutes, hma_period, ema_period, m
     return items
 
 
+_NEXT_OPEN_CACHE: Dict[str, Any] = {}
+_MTF_CACHE: Dict[Any, Any] = {}
+
+
 @app.get('/api/market/next-open')
 async def market_next_open(symbol: str = Query(min_length=1, max_length=32, pattern=r'^[A-Za-z0-9_.#-]+$')):
     """Estimated reopening of a closed market from the broker's own M5 history (server clock)."""
     from app import market_hours
-    rates = await asyncio.to_thread(mt5_client.get_rates, symbol, 5, 8000)
-    if not rates:
-        raise HTTPException(status_code=503, detail='Mum geçmişi alınamadı.')
+    # The closure pattern changes rarely: read the M5 history at most every 10 minutes per symbol
+    # (shared by all dashboards), so it never competes with orders for the MT5 connection.
+    cached = _NEXT_OPEN_CACHE.get(symbol)
+    if cached and time.monotonic() - cached[0] < 600:
+        times = cached[1]
+    else:
+        rates = await asyncio.to_thread(mt5_client.get_rates, symbol, 5, 8000)
+        if not rates:
+            raise HTTPException(status_code=503, detail='Mum geçmişi alınamadı.')
+        times = [r['time'] for r in rates]
+        _NEXT_OPEN_CACHE[symbol] = (time.monotonic(), times)
     server_now = int(time.time()) + int(mt5_client.tick_clock_offset)
-    result = market_hours.next_open([r['time'] for r in rates], server_now)
+    result = market_hours.next_open(times, server_now)
     return {'symbol': symbol, 'server_now': server_now, 'clock_offset_seconds': mt5_client.tick_clock_offset, **result}
 
 
@@ -545,7 +557,15 @@ async def signals_multi_timeframe(symbol: str = Query(min_length=1, max_length=3
                          **({k: item.get(k) for k in ('signal', 'side', 'bars_ago', 'cross_side', 'hma', 'ema',
                                                       'price', 'digits', 'candle_time')} if item else {})})
         return rows
-    rows = await asyncio.to_thread(run)
+    key = (symbol, tuple(tfs), hma_period, ema_period, ma_type, confirm_close)
+    cached = _MTF_CACHE.get(key)
+    if cached and time.monotonic() - cached[0] < 30:
+        rows = cached[1]
+    else:
+        rows = await asyncio.to_thread(run)
+        _MTF_CACHE[key] = (time.monotonic(), rows)
+        for stale in [k for k, v in _MTF_CACHE.items() if time.monotonic() - v[0] > 300]:
+            _MTF_CACHE.pop(stale, None)
     sides = [r['side'] for r in rows if r.get('side') in ('BUY', 'SELL')]
     aligned = sides[0] if sides and len(sides) == len(rows) and len(set(sides)) == 1 else None
     return {'symbol': symbol, 'timeframes': rows, 'aligned': aligned,
@@ -1122,7 +1142,9 @@ def open_order(req: OrderRequest, account=Depends(require_real_unlock)):
 
 @app.post("/api/order/close")
 def close_order(req: PositionCloseRequest):
+    queued = time.perf_counter()
     with mt5_client._lock.order():
+        queue_ms = round((time.perf_counter() - queued) * 1000, 1)
         account = bound_request_account(req)
         payload = {'ticket':req.ticket,'account':account}
         options = {}
@@ -1130,7 +1152,7 @@ def close_order(req: PositionCloseRequest):
             options = {'deviation_points':req.deviation_points,'filling_policy':req.filling_policy}
             payload.update(options)
         res = mt5_client.journal.run('close-'+req.request_id,payload,
-                                     lambda:mt5_client.close_position(req.ticket,**options))
+                                     lambda:mt5_client.close_position(req.ticket,**options), queue_ms=queue_ms)
     if not res.get("success"):
         return JSONResponse(status_code=400, content={**res, "detail": res.get("error", "Close failed")})
     return res

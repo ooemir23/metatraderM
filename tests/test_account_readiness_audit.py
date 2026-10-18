@@ -326,3 +326,34 @@ def test_full_bot_exposure_cap_warns_but_does_not_block_start(ready_client):
     assert not sent['success'] and sent.get('reason_code') == 'exposure_limit'
     assert '0.01 lot + bu emir 0.01 lot = 0.02 lot' in sent['error'].replace('(1 işlem) ', '')
     ready_client.mt5.order_send.assert_not_called()
+
+
+def test_close_reports_the_realized_deal(client):
+    """After a close the panel shows what MT5's History shows: fill price and money result."""
+    client.mt5.positions_get.return_value = [pos(magic=MANUAL_MAGIC)]
+    client.mt5.order_send.return_value.deal = 555
+    client.mt5.history_deals_get.side_effect = lambda *a, **k: (
+        [NS(price=1.12392, volume=.01, profit=12.4, commission=-0.7, swap=0.0, fee=0.0)] if k.get('ticket') == 555 else [])
+    result = client.close_position(1)
+    assert result['success']
+    assert result['realized'] == {'price': 1.12392, 'volume': .01, 'profit': 12.4, 'commission': -0.7,
+                                  'swap': 0.0, 'fee': 0.0, 'net': 11.7, 'deal': 555}
+
+
+def test_big_candle_reads_release_the_lock_between_chunks(client):
+    """A 2500-bar read is three MT5 calls; an order can take the lock between them."""
+    bars = [{'time': t} for t in range(0, 3000 * 60, 60)]
+    calls = []
+    def copy(symbol, tf, start, count):
+        calls.append((start, count))
+        end = len(bars) - start
+        return [(b['time'], 1, 1, 1, 1, 1) for b in bars[max(0, end - count):end]]
+    client.mt5.copy_rates_from_pos.side_effect = copy
+    acquired = []
+    original = client._lock.acquire
+    client._lock.acquire = lambda *a, **k: acquired.append(1) or original(*a, **k)
+    rows = client.get_rates('EURUSD', 1, 2500)
+    assert calls == [(0, 1000), (1000, 1000), (2000, 500)]
+    assert len(rows) == 2500 and rows == sorted(rows, key=lambda r: r['time'])
+    assert len({r['time'] for r in rows}) == 2500
+    assert len(acquired) >= 3, 'lock taken per chunk, not for the whole read'
