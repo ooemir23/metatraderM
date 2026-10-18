@@ -43,8 +43,6 @@
     const count = $('positions-strip-count'), pnl = $('positions-strip-pnl');
     const badge = $('pos-count-badge'), profit = $('acc-profit');
     if (count && badge) count.textContent = /^\d+$/.test(badge.textContent.trim()) ? badge.textContent.trim() : '–';
-    const tabCount = $('ws-tab-positions-count');
-    if (tabCount && badge) tabCount.textContent = /^\d+$/.test(badge.textContent.trim()) ? badge.textContent.trim() : '–';
     if (pnl && profit) {
       pnl.textContent = profit.textContent.trim();
       pnl.dataset.tone = profit.className.includes('rose') ? 'loss' : profit.className.includes('emerald') ? 'profit' : '';

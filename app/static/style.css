@@ -707,3 +707,13 @@ html { background: #0b0e14; }
 .ws-tab-count.has-cross { background:#10b98133; color:#6ee7b7; animation:pulse 1.6s ease-in-out infinite; }
 .ws-tab-count.is-pending { background:#f59e0b33; color:#fcd34d; }
 @media (max-width: 480px) { .ws-tab { font-size:12.5px; padding:0 8px; } }
+
+/* Position counts by source, coloured like the source badges in the positions table. */
+.ws-src-counts { display:inline-flex; gap:4px; }
+.ws-src { min-width:22px; padding:0 7px; border-radius:999px; border:1px solid transparent; font:700 11.5px/18px ui-monospace, monospace; text-align:center; }
+.ws-src[data-src="mt5"] { background:#f59e0b33; border-color:#f59e0b66; color:#fcd34d; }   /* Orijinal MT5 (Manuel) */
+.ws-src[data-src="bot"] { background:#06b6d433; border-color:#06b6d466; color:#67e8f9; }   /* HMA bot */
+.ws-src[data-src="ai"]  { background:#a855f733; border-color:#a855f766; color:#d8b4fe; }   /* MevO AI */
+.ws-src[data-src="web"] { background:#10b98133; border-color:#10b98166; color:#6ee7b7; }   /* HMA site (manual) */
+.ws-src[data-src="ea"]  { background:#1f2937; border-color:#374151; color:#e5e7eb; }       /* other EA */
+.ws-src[data-src="none"] { background:#1f2937; color:#94a3b8; }

@@ -80,3 +80,15 @@ assert.equal((rowsHtml.match(/editBotHistoryEntry\(43\)/g) || []).length, 1);
 assert.match(rowsHtml, /deleteBotHistoryEntry\('aa1'\)/);
 assert.match(rowsHtml, /deleteBotHistoryEntry\('bb2'\)/);
 console.log('history row actions ok');
+
+// 6. "Pozisyonlar" tab: one coloured count per position source.
+ctx.renderPositionSourceCounts([
+  ...Array(7).fill({magic: 0, comment: ''}),
+  {magic: 123461, comment: 'HMA Bot'},
+]);
+const counts = node('ws-tab-positions-count').innerHTML;
+assert.match(counts, /data-src="mt5" title="7 pozisyon · Orijinal MT5 \(Manuel\)">7</);
+assert.match(counts, /data-src="bot" title="1 pozisyon · Otomatik Sinyal \(HMA Bot\)">1</);
+ctx.renderPositionSourceCounts([]);
+assert.match(node('ws-tab-positions-count').innerHTML, /data-src="none"[^>]*>0</);
+console.log('position source counts ok');

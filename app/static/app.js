@@ -1075,6 +1075,33 @@ function renderPositionExecution(position) {
     ${fills ? `<div class="overflow-x-auto"><table class="w-full text-xs text-left whitespace-nowrap"><thead class="bg-[#1c2230] text-gray-400"><tr><th class="p-3">Açılış emri</th><th class="p-3">Lot</th><th class="p-3">Gönderim Bid / Ask</th><th class="p-3">İstenen</th><th class="p-3">Gerçekleşen</th><th class="p-3">Spread</th><th class="p-3">Slippage</th></tr></thead><tbody>${fills}</tbody></table></div>` : ''}`;
 }
 
+// Position source, same rules and colours as the badge in the positions table.
+const TRADE_SOURCES = {
+  bot: 'Otomatik Sinyal (HMA Bot)', ai: 'Otomatik Sinyal (MevO AI)', web: 'HMA Sitesi (Manuel)',
+  mt5: 'Orijinal MT5 (Manuel)', ea: 'Harici Bot / EA'};
+function tradeSource(item) {
+  const magic = Number(item?.magic || 0);
+  const fillMagic = Array.isArray(item?.opening_fills) && item.opening_fills.length ? Number(item.opening_fills[0]?.magic || 0) : 0;
+  const effectiveMagic = magic || fillMagic;
+  const comment = String(item?.comment || '');
+  if (effectiveMagic === 123461 || /hma bot/i.test(comment)) return 'bot';
+  if (effectiveMagic === 123462 || /ai|deepseek|mevo/i.test(comment)) return 'ai';
+  if (effectiveMagic === 123460 || comment.startsWith('vm:') || /hma web|panel/i.test(comment)) return 'web';
+  return effectiveMagic === 0 ? 'mt5' : 'ea';
+}
+// "Pozisyonlar" tab: one coloured count per source (e.g. amber 7 = MT5 manual, cyan 1 = HMA bot).
+function renderPositionSourceCounts(positions) {
+  const node = document.getElementById('ws-tab-positions-count');
+  if (!node) return;
+  const counts = {};
+  for (const p of positions || []) { const k = tradeSource(p); counts[k] = (counts[k] || 0) + 1; }
+  const order = ['mt5', 'bot', 'ai', 'web', 'ea'].filter(k => counts[k]);
+  node.innerHTML = order.length
+    ? order.map(k => `<span class="ws-src" data-src="${k}" title="${counts[k]} pozisyon · ${TRADE_SOURCES[k]}">${counts[k]}</span>`).join('')
+    : '<span class="ws-src" data-src="none" title="Açık pozisyon yok">0</span>';
+  node.setAttribute?.('aria-label', order.length ? order.map(k => `${counts[k]} ${TRADE_SOURCES[k]}`).join(', ') : 'Açık pozisyon yok');
+}
+
 function tradeSourceBadge(item) {
   const magic = Number(item?.magic || 0);
   const fillMagic = Array.isArray(item?.opening_fills) && item.opening_fills.length
@@ -1110,6 +1137,7 @@ function renderPositionsData(positions) {
     const tbody = document.getElementById("positions-table-body");
     const countBadge = document.getElementById("pos-count-badge");
     if (countBadge) countBadge.innerText = positions.length;
+    renderPositionSourceCounts(positions);
 
     if (!positions || positions.length === 0) {
       tbody.innerHTML = `<tr><td colspan="10" class="py-8 text-center text-gray-400 font-sans text-sm">Henüz açık pozisyon bulunmuyor.</td></tr>`;
