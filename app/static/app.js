@@ -3559,20 +3559,16 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
     if (mode === 'SELECTED') {
       symbolsToScan = [activeSym];
     } else {
-      const marketWatchSymbols = Array.isArray(window.MT5Markets?.all)
-        ? window.MT5Markets.all.map(s => (typeof s === 'string' ? s : s?.name)).filter(Boolean)
-        : [];
-      const botSymbols = Array.isArray(latestBotSettings?.symbols) ? latestBotSettings.symbols : [];
-      symbolsToScan = Array.from(new Set([
-        activeSym,
-        ...botSymbols,
-        'EURUSD', 'GBPUSD', 'XAUUSD', 'USDJPY', 'BTCUSD', 'ETHUSD',
-        ...marketWatchSymbols
-      ])).slice(0, 10);
+      // Like MT5's Market Watch: only symbols the user chose (★ list) plus the selected one.
+      // Never a built-in list of symbols the user did not pick.
+      const watchList = typeof window.MT5Markets?.favorites === 'function' ? window.MT5Markets.favorites() : [];
+      symbolsToScan = Array.from(new Set([activeSym, ...watchList])).slice(0, 8);
     }
 
     if (statusNode && (manual || forceReplace)) statusNode.textContent = mode === 'SELECTED'
-      ? `${activeSym} taranıyor…` : `${symbolsToScan.length} sembol taranıyor (seçili: ${activeSym})…`;
+      ? `${activeSym} taranıyor…`
+      : symbolsToScan.length > 1 ? `${symbolsToScan.length} sembol taranıyor (seçili + ★ listen)…`
+      : `${activeSym} taranıyor · Çoklu tarama için Piyasa Gözlemi'nde sembollere ★ ekleyin.`;
     if (forceReplace && mode === 'SELECTED') {
       listNode.innerHTML = `<div class="text-gray-400 text-xs py-3 text-center">${escapeHtml(activeSym)} için sinyal hesaplanıyor…</div>`;
     }

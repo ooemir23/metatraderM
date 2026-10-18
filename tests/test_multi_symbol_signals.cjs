@@ -186,6 +186,14 @@ assert.ok(html.includes('id="bot-execute-all-signals-btn"'), 'Missing bot-execut
   await ctx.refreshSignalScanner(true);
   const scannedList = ctx.window.latestScannedSignals || ctx.latestScannedSignals || [];
   assert.ok(scannedList.length >= 2, 'Should scan multiple signals');
+  // MT5 Market Watch rule: only the selected symbol and the user's ★ list, never a built-in list.
+  const scanUrl = decodeURIComponent(sentRequests.filter((r) => r.url.startsWith('/api/signals/scan')).at(-1).url);
+  const scanned = scanUrl.match(/symbols=([^&]*)/)[1].split(',');
+  assert.ok(!scanned.includes('USDJPY'), 'USDJPY is not scanned unless the user picked it');
+  ctx.window.MT5Markets.favorites = () => ['USDJPY', 'XAUUSD'];
+  await ctx.refreshSignalScanner(true);
+  const withStars = decodeURIComponent(sentRequests.filter((r) => r.url.startsWith('/api/signals/scan')).at(-1).url).match(/symbols=([^&]*)/)[1].split(',');
+  assert.ok(withStars.includes('USDJPY') && withStars.includes('XAUUSD'), '★ symbols are scanned');
 
   // Test 6: fetchBotLiveSignal renders multiple pending signals
   await ctx.fetchBotLiveSignal();

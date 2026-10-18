@@ -506,7 +506,7 @@ def _scan_symbols_sync(symbol_list, timeframe_minutes, hma_period, ema_period, m
 
 
 @app.get('/api/signals/scan')
-async def scan_signals(symbols: str = Query(default='EURUSD,GBPUSD,XAUUSD,USDJPY,BTCUSD', max_length=320),
+async def scan_signals(symbols: str = Query(min_length=1, max_length=320),
                        timeframe_minutes: int = Query(default=15),
                        hma_period: int = Query(default=14, ge=2, le=200),
                        ema_period: int = Query(default=34, ge=2, le=200),
@@ -548,7 +548,7 @@ async def scan_signals(symbols: str = Query(default='EURUSD,GBPUSD,XAUUSD,USDJPY
         if len(symbol_list) >= 8:
             break
     if not symbol_list:
-        symbol_list = ['EURUSD', 'GBPUSD', 'XAUUSD', 'USDJPY']
+        raise HTTPException(status_code=422, detail='Taranacak sembol seçilmedi.')
     settings = dict(hma_period=hma_period, ema_period=ema_period, ma_type=ma_type, rsi_period=rsi_period,
                     atr_period=atr_period, sl_atr=sl_atr, tp_atr=tp_atr, confirm_close=confirm_close,
                     rsi_filter=rsi_filter, rsi_buy_max=rsi_buy_max, rsi_sell_min=rsi_sell_min,

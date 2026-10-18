@@ -261,5 +261,7 @@
     });
     render();
   }
-  window.MT5Markets = {init, setAccount, setActive, open, close, refresh, getSymbol, isSelectionVerified, selectionIssue, version:() => generation};
+  // The user's own list (★), the equivalent of MT5's Market Watch.
+  window.MT5Markets = {init, setAccount, setActive, open, close, refresh, getSymbol, isSelectionVerified, selectionIssue, version:() => generation,
+    favorites: () => [...favorites]};
 })();

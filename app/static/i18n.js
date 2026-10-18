@@ -126,7 +126,7 @@
     ["Tümünü Uygula", "Apply All"],
     ["Tümünü Bota Aktar", "Transfer All to Bot"],
     ["Tarayıcıdaki tüm sembolleri çalışan bota aktar", "Transfer all scanned symbols to the running bot"],
-    ["🌐 Çoklu Tarama", "🌐 Multi Scan"],
+    ["⭐ Seçili + ★ Listem", "⭐ Selected + ★ My list"],
     ["🎯 Seçili Sembol", "🎯 Selected Symbol"],
     ["Seçili sembolü izler", "Follows the selected symbol"],
     ["Bot sembolü:", "Bot symbol:"],
