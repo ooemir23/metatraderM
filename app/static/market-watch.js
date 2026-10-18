@@ -125,16 +125,23 @@
     const category = node('market-category')?.value || 'all';
     const missingFavorites = favorites.filter(name => !symbols.has(name));
     const catalogItems = [...symbols.values(), ...(category === 'favorites' ? missingFavorites.map(name => ({name, description:'',path:'',category:'other',missing:true})) : [])];
-    const matches = catalogItems.filter(item => (category === 'all' || item.category === category || (category === 'favorites' && favorites.includes(item.name)))
+    const filtered = catalogItems.filter(item => (category === 'all' || item.category === category || (category === 'favorites' && favorites.includes(item.name)))
       && (!query || [item.name, item.description, item.path].some(value => value.toLowerCase().includes(query))));
+    // Favourites first (in the order they were starred), like MT5's Market Watch above the full symbol list.
+    const rank = name => { const i = favorites.indexOf(name); return i < 0 ? Infinity : i; };
+    const matches = filtered.map((item, i) => [item, i]).sort((a, b) => rank(a[0].name) - rank(b[0].name) || a[1] - b[1]).map(([item]) => item);
+    const favoriteCount = matches.filter(item => favorites.includes(item.name)).length;
     status.textContent = persistenceWarning ? t('Favoriler bu oturumda kullanılabilir; tarayıcı kaydına izin verilmedi.', 'Favourites are available for this session; browser storage is blocked.')
       : !symbols.size ? t('Bu hesap için broker ürünü bulunamadı.', 'No broker instruments were found for this account.')
       : !matches.length ? t('Aramanıza uygun ürün bulunamadı.', 'No instruments match your search.')
       : category === 'favorites' && missingFavorites.length ? t('Katalogda bulunmayan favorileri yıldızla kaldırabilirsiniz.', 'Remove favourites missing from the catalogue with the star button.')
       : matches.length > 150 ? t('İlk 150 ürün gösteriliyor. Arama veya kategoriyle daraltın.', 'Showing the first 150 instruments. Refine by search or category.') : '';
     if (count) count.textContent = t(`${matches.length} / ${symbols.size} ürün`, `${matches.length} / ${symbols.size} instruments`);
-    for (const item of matches.slice(0, 150)) {
-      const row = element('div', 'market-row' + (item.name === active ? ' is-active' : ''));
+    const heading = text => { const h = element('div', 'market-section', text); h.setAttribute('role', 'presentation'); target.append(h); };
+    matches.slice(0, 150).forEach((item, index) => {
+      if (category !== 'favorites' && favoriteCount && index === 0) heading(t(`★ Favoriler (${favoriteCount})`, `★ Favourites (${favoriteCount})`));
+      if (category !== 'favorites' && favoriteCount && index === favoriteCount) heading(t('Tüm ürünler', 'All instruments'));
+      const row = element('div', 'market-row' + (item.name === active ? ' is-active' : '') + (favorites.includes(item.name) ? ' is-favorite' : ''));
       row.setAttribute('role', 'listitem');
       const button = element('button', 'market-select');
       button.type = 'button';
@@ -151,7 +158,7 @@
       if (item.missing || tradeLabel(item)) badge.classList.add('market-restricted');
       row.append(button, badge, favoriteButton(item.name));
       target.append(row);
-    }
+    });
   }
   function renderActive() {
     const name = node('order-symbol-name');

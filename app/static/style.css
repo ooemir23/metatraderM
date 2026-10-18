@@ -622,3 +622,8 @@ html { background: #0b0e14; }
 .chart-symbol-button:focus-visible { outline:2px solid #22d3ee; outline-offset:1px; }
 .chart-symbol-caret { font-size:11px; color:#94a3b8; }
 .chart-symbol-button:hover .chart-symbol-caret { color:#fff; }
+
+/* Market Watch dialog: favourites on top with section labels. */
+.market-section { padding:8px 10px 4px; font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#94a3b8; }
+.market-section:first-child { padding-top:2px; color:#fbbf24; }
+.market-row.is-favorite { background:#f59e0b0d; }

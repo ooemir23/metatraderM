@@ -111,7 +111,7 @@ function harness(storage = new Map()) {
   h.nodes.get('market-results').children[0].children[0].click();
   assert.equal(h.selected.at(-1), 'BTCUSD#');
   h.nodes.get('market-category').value = 'all'; h.nodes.get('market-category').emit('change');
-  assert.equal(h.nodes.get('market-results').children.find(row => row.children[0].children[0].textContent === 'EUR/USD').children[0].disabled, true);
+  assert.equal(h.nodes.get('market-results').children.find(row => row.children?.[0]?.children?.[0]?.textContent === 'EUR/USD').children[0].disabled, true);
 
   h.nodes.get('market-retry').click();
   assert.equal(h.requests[2].url, '/api/symbols?refresh=true', 'operator refresh bypasses the broker catalogue cache');
