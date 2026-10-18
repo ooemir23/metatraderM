@@ -674,8 +674,15 @@ class MT5Client:
                             h4 = self.get_rates(symbol, 240, count)
                             if not h4 or len(h4) < max(config['hma_period'], config['second_ma_period'], config['atr_period']) + 15:
                                 raise MT5DataError('H4 filtresi için yeterli kapanmış mum verisi yok.')
+                        exposure_note = None
                         for side in ('BUY', 'SELL'):
                             preview = self.trade_preview(symbol, side, config['lot_size'], sl, tp_points=tp, magic=mt5_bridge.HMA_MAGIC)
+                            if preview.get('reason_code') == 'exposure_limit':
+                                # Like an MT5 EA the bot starts anyway; the limit is checked again when an
+                                # order is sent (open positions may be closed by then).
+                                exposure_note = (preview['error'] + ' Bot çalışıyor; sinyal geldiğinde sınır hâlâ '
+                                                 'doluysa emir açılmaz.')
+                                break
                             if not preview.get('success'):
                                 raise MT5DataError(preview.get('error', 'İşlem risk kontrolü başarısız.'))
                             margin, free = preview.get('margin_required'), preview.get('free_margin')
@@ -688,6 +695,8 @@ class MT5Client:
                     else:
                         ready_symbols.append(symbol)
                         candles = max(candles, len(rates))
+                        if exposure_note:
+                            skipped.append(exposure_note)
                         # Like an MT5 EA, the bot starts on a closed market and simply waits for new candles.
                         quote = mt5_bridge.quote_status(self.mt5.symbol_info_tick(symbol), self.tick_clock_offset,
                                                         self.QUIET_QUOTE_NOTICE_SECONDS)

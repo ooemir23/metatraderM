@@ -323,10 +323,12 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
         committed = _committed_volume(own_current, own_pending)
         if not native and max_open_orders is not None and (type(max_open_orders) is not int or max_open_orders < 1):
             raise ValueError('Geçersiz açık işlem sayısı sınırı.')
-        if not native and ((max_total_lots is not None and (
-                not math.isfinite(max_total_lots) or committed + volume > max_total_lots + 1e-9)) or
+        if max_total_lots is not None and not math.isfinite(max_total_lots):
+            raise ValueError('Geçersiz toplam lot sınırı.')
+        if not native and ((max_total_lots is not None and committed + volume > max_total_lots + 1e-9) or
                 (max_open_orders is not None and len(own_current) + len(own_pending) + 1 > max_open_orders)):
-            raise ValueError('Toplam açık/bekleyen işlem sınırı aşılıyor.')
+            return exposure_limit_error(symbol, magic, committed, len(own_current) + len(own_pending), volume,
+                                        max_total_lots, max_open_orders)
         info, tick = _market(mt5, symbol, tick_offset, allow_stale=native)
         if not _volume_valid(info, volume):
             raise ValueError('Lot miktarı broker sınırlarına uymuyor.')
@@ -521,7 +523,8 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
         own_current, own_pending = _exposure_scope(current, pending, magic)
         committed = _committed_volume(own_current, own_pending)
         if not native and (committed + volume > max_total_lots + 1e-9 or len(own_current) + len(own_pending) + 1 > max_open_orders):
-            return {'success': False, 'error': 'Toplam açık/bekleyen işlem sınırı aşılıyor.'}
+            return exposure_limit_error(symbol, magic, committed, len(own_current) + len(own_pending), volume,
+                                        max_total_lots, max_open_orders)
         if magic in (HMA_MAGIC, AI_MAGIC) and int(account.margin_mode) != 2:
             return {"success": False, "error": "Otomatik stratejiler için hedging hesabı gerekli; netting sahipliği birleştirir."}
         same_symbol = [p for p in current if str(p.symbol) == symbol]
@@ -703,6 +706,20 @@ def _symbol_rules(info):
     if (not all(math.isfinite(v) for v in values) or any(v <= 0 for v in values[:5])
             or values[2] < values[1] or any(v < 0 for v in values[5:])):
         raise ValueError('Broker sembol fiyat/lot kuralları doğrulanamadı.')
+
+
+def exposure_limit_error(symbol, magic, committed, count, volume, max_total_lots, max_open_orders):
+    """Readable app-limit message with the numbers (this limit is not an MT5 rule)."""
+    owner = 'Otomatik botun' if magic in (HMA_MAGIC, AI_MAGIC) else 'Hesaptaki'
+    where = ('Bot Ayarları > Lot ve risk bölümünden' if magic in (HMA_MAGIC, AI_MAGIC)
+             else 'Risk ayarlarından')
+    return {'success': False, 'reason_code': 'exposure_limit',
+            'committed_lots': round(committed, 8), 'open_count': count,
+            'max_total_lots': max_total_lots, 'max_open_orders': max_open_orders,
+            'error': (f'{symbol}: Toplam lot/işlem sınırı dolu. {owner} açık ve bekleyen işlemleri '
+                      f'{committed:g} lot ({count} işlem) + bu emir {volume:g} lot = {committed + volume:g} lot; '
+                      f'sınır {max_total_lots:g} lot ve {max_open_orders} işlem. {where} sınırı artırın '
+                      'ya da açık işlemlerden birini kapatın.')}
 
 
 def _exposure_scope(current, pending, magic):

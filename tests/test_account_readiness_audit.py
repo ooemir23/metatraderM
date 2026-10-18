@@ -307,3 +307,22 @@ def test_start_warnings_are_logged_and_exposed():
     bot.set_start_warnings(['EURUSD: Son fiyat 18 saat önce alındı.'])
     assert bot.get_status()['start_warnings'] == ['EURUSD: Son fiyat 18 saat önce alındı.']
     assert 'Başlangıç uyarısı' in bot.logs[0]['message']
+
+
+def test_full_bot_exposure_cap_warns_but_does_not_block_start(ready_client):
+    """MT5 EA rule: the bot starts; the app's total-lot cap is checked when an order is sent."""
+    from app.mt5_bridge import HMA_MAGIC
+    ready_client.max_total_lots = 0.01
+    ready_client.mt5.positions_get.return_value = [pos(magic=HMA_MAGIC)]          # 0.01 lot bot position
+    config = StrategyBot(ready_client).config_snapshot()
+    result = ready_client.bot_readiness(config)
+    assert result['success']
+    warning = ' '.join(result['warnings'])
+    assert 'Toplam lot/işlem sınırı dolu' in warning and '0.01 lot (1 işlem)' in warning
+    assert 'Bot çalışıyor' in warning
+    ready_client.mt5.order_send.assert_not_called()
+    # The order itself is still refused while the cap is full, with the numbers.
+    sent = ready_client.open_order('EURUSD', 'BUY', .01, magic=HMA_MAGIC)
+    assert not sent['success'] and sent.get('reason_code') == 'exposure_limit'
+    assert '0.01 lot + bu emir 0.01 lot = 0.02 lot' in sent['error'].replace('(1 işlem) ', '')
+    ready_client.mt5.order_send.assert_not_called()
