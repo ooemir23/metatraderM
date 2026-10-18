@@ -909,3 +909,15 @@ def test_hma_bot_blocks_only_same_direction_like_ea(client):
     opposite = client.open_order('EURUSD', 'BUY', .01, magic=HMA_MAGIC, request_id='b1')
     assert opposite.get('reason_code') != 'strategy_position_open'
     assert client.mt5.order_send.called
+
+
+def test_manual_now_trade_may_add_same_direction_positions(client):
+    """"Şimdi AL/SAT" (manual_mode MT5) is the MT5 order ticket: no one-position rule; the automatic bot keeps it."""
+    client.mt5.account_info.return_value.margin_mode = 2
+    client.mt5.positions_get.return_value = [pos(HMA_MAGIC, side=1)]          # bot SELL open
+    manual = client.open_order('EURUSD', 'SELL', .01, magic=HMA_MAGIC, request_id='m1', manual_mode='MT5')
+    assert manual.get('reason_code') != 'strategy_position_open' and client.mt5.order_send.called
+    client.mt5.order_send.reset_mock()
+    auto = client.open_order('EURUSD', 'SELL', .01, magic=HMA_MAGIC, request_id='a1')
+    assert auto['reason_code'] == 'strategy_position_open'
+    client.mt5.order_send.assert_not_called()

@@ -544,7 +544,9 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
         if magic == HMA_MAGIC:
             # HMA_Crossover_EA HasOpenPosition(orderType): same symbol, same magic, same direction.
             own_same = [p for p in own_same if (int(p.type) == 0) == (order_type == 'BUY')]
-        if magic in (HMA_MAGIC, AI_MAGIC) and own_same:
+        # The EA rule is for automatic entries only. A manually confirmed order ("Şimdi AL/SAT", native MT5
+        # rules) is like the MT5 order ticket: any number of positions in the same direction.
+        if magic in (HMA_MAGIC, AI_MAGIC) and own_same and not native:
             return own_position_error(symbol, magic, order_type, own_same)
         if not mt5.symbol_select(symbol, True):
             return {'success': False, 'error': 'Sembol seçilemedi.'}
