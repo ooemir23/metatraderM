@@ -585,7 +585,9 @@ html { background: #0b0e14; }
 .bot-symstat-trade b { color:#fff; }
 .bot-symstat-trade-line { display:block; }
 .bot-symstat-trade small { font:11.5px/1.4 system-ui, sans-serif; color:#94a3b8; }
-.bot-symstat-trade-title { font:600 10.5px system-ui, sans-serif; text-transform:uppercase; letter-spacing:.04em; color:#64748b; }
+.bot-symstat-trade-title { display:flex; align-items:center; justify-content:space-between; gap:8px; font:600 10.5px system-ui, sans-serif; text-transform:uppercase; letter-spacing:.04em; color:#64748b; }
+.bot-symstat-trade-delete { display:inline-flex; align-items:center; gap:3px; padding:2px 7px; border-radius:6px; border:1px solid #334155; background:#181d2a; color:#cbd5e1; font:600 10.5px system-ui, sans-serif; text-transform:none; letter-spacing:0; cursor:pointer; }
+.bot-symstat-trade-delete:hover { border-color:#f43f5e66; background:#f43f5e1f; color:#fda4af; }
 .bot-symstat-trade-side { display:inline-block; padding:0 6px; border-radius:5px; font-weight:800; background:#334155; color:#e2e8f0; }
 .bot-symstat-trade-side[data-side="BUY"] { background:#05966933; color:#34d399; }
 .bot-symstat-trade-side[data-side="SELL"] { background:#dc262633; color:#f87171; }

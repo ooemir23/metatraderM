@@ -2406,13 +2406,27 @@ const BOT_STATE_LABELS = {
 // "Bota Ekle": the scanner signal that was added, shown in that symbol's bot card.
 const botAddedSignals = {};
 function rememberAddedSignal(sym, timeframeMinutes) {
+  delete dismissedAddedSignals[sym];   // adding again shows it again
   const item = (latestScannedSignals || []).find(r => r.symbol === sym);
   if (item) botAddedSignals[sym] = {...item, timeframe_minutes: Number(timeframeMinutes) || item.timeframe_minutes};
+}
+// "Sil" hides a shown signal until a different signal (new candle or direction) arrives for that symbol.
+const DISMISSED_SIGNALS_KEY = 'hma.bot.dismissed-signals.v1';
+let dismissedAddedSignals = {};
+try { dismissedAddedSignals = JSON.parse(localStorage.getItem(DISMISSED_SIGNALS_KEY) || '{}') || {}; } catch (_) { dismissedAddedSignals = {}; }
+const addedSignalKey = item => `${item.signal || ''}:${item.side || ''}:${item.candle_time || ''}`;
+function dismissAddedSignal(sym) {
+  const item = (latestScannedSignals || []).find(r => r.symbol === sym) || botAddedSignals[sym];
+  if (item) dismissedAddedSignals[sym] = addedSignalKey(item);
+  delete botAddedSignals[sym];
+  try { localStorage.setItem(DISMISSED_SIGNALS_KEY, JSON.stringify(dismissedAddedSignals)); } catch (_) { /* session-only */ }
+  const bot = latestBotSettings || lastRenderedBotStatus;
+  if (bot) renderBotSymbolStatus(bot);
 }
 function addedSignalHtml(sym, bot) {
   const live = (latestScannedSignals || []).find(r => r.symbol === sym);
   const item = live || botAddedSignals[sym];
-  if (!item) return '';
+  if (!item || dismissedAddedSignals[sym] === addedSignalKey(item)) return '';
   const digits = Number.isInteger(item.digits) ? item.digits : 5;
   const fmt = v => (v != null && Number(v) > 0) ? Number(v).toFixed(digits) : '—';
   const directional = item.side === 'BUY' || item.side === 'SELL';
@@ -2432,7 +2446,9 @@ function addedSignalHtml(sym, bot) {
     : bot?.is_running
       ? `Bot bu sembolde bir sonraki kapanmış mumda yeni kesişim olursa ${lot} açar (${botStops}). Bu sinyali hemen açmak için "Bota Gönder".`
       : `Bot durdu. Başlatınca mevcut sinyali açmaz, sonraki yeni kesişimde ${lot} açar (${botStops}). Hemen açmak için "Bota Gönder".`;
-  return `<span class="bot-symstat-trade"><span class="bot-symstat-trade-title">Taranan sinyal</span>${head}<small>${escapeHtml(plan)}</small></span>`;
+  return `<span class="bot-symstat-trade"><span class="bot-symstat-trade-title">Taranan sinyal`
+    + `<button type="button" class="bot-symstat-trade-delete" onclick="dismissAddedSignal('${escapeHtml(sym)}')" title="Bu sinyali karttan kaldır (emir veya pozisyon etkilenmez)"><i class="ph-bold ph-trash"></i> Sil</button></span>`
+    + `${head}<small>${escapeHtml(plan)}</small></span>`;
 }
 // MT5 shows bar times on the broker server clock. Bar timestamps already are server time,
 // so format them as UTC (no browser time zone shift); "today" is the server's today.
@@ -2444,9 +2460,11 @@ function brokerCandleText(candleTime, clockOffsetSeconds = 0) {
     ? candle.toLocaleTimeString('tr-TR', {timeZone: 'UTC', hour: '2-digit', minute: '2-digit'})
     : candle.toLocaleString('tr-TR', {timeZone: 'UTC', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
 }
+let lastRenderedBotStatus = null;
 function renderBotSymbolStatus(bot) {
   const node = document.getElementById('bot-symbol-status');
   if (!node || !bot) return;
+  lastRenderedBotStatus = bot;
   const symbols = Array.isArray(bot.symbols) && bot.symbols.length ? bot.symbols : [bot.symbol];
   const status = bot.symbol_status || {};
   const tfCode = (m) => ({1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'}[m] || `M${m}`);

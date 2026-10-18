@@ -59,3 +59,16 @@ console.log('bot added signal ui ok');
   } finally { vm.runInContext('Date.now = globalThis.__savedNow;', ctx); }
 }
 console.log('broker candle time ok');
+
+// "Sil" hides the shown signal; a new signal for the symbol shows again.
+{
+  vm.runInContext(`latestScannedSignals = [{symbol: 'EURUSD', signal: 'SELL_CROSS', side: 'SELL', price: 1.16513, digits: 5, candle_time: 1700000000}];`, ctx);
+  ctx.renderBotSymbolStatus(bot);
+  assert.match(node('bot-symbol-status').innerHTML, /dismissAddedSignal\('EURUSD'\)/);
+  ctx.dismissAddedSignal('EURUSD');
+  assert.doesNotMatch(node('bot-symbol-status').innerHTML, /Taranan sinyal/, 'removed from the card');
+  vm.runInContext(`latestScannedSignals = [{symbol: 'EURUSD', signal: 'BUY_CROSS', side: 'BUY', price: 1.167, digits: 5, candle_time: 1700001800}];`, ctx);
+  ctx.renderBotSymbolStatus(bot);
+  assert.match(node('bot-symbol-status').innerHTML, /data-side="BUY"/, 'a new signal is shown again');
+}
+console.log('dismiss added signal ok');
