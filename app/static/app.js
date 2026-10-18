@@ -23,6 +23,7 @@ const TV_SYMBOLS = {
 
 // Initialize on DOM load
 document.addEventListener("DOMContentLoaded", () => {
+  if (typeof restoreBotSections === 'function') restoreBotSections();
   for(const id of ['sl-input','tp-input'])document.getElementById(id)?.addEventListener('input',()=>{ticketProtectionEdited=true;});
   window.MT5Markets?.init({onSelect:switchSymbol, onChange:marketCatalogueChanged});
   window.MT5Markets?.setActive(currentSymbol);
@@ -1593,7 +1594,7 @@ async function fetchBotStatus() {
         ORDER_REJECTED:['Son emir reddedildi','Last order rejected'],ORDER_UNRESOLVED:['Emir sonucu doğrulanmalı','Order outcome requires verification'],ERROR:['Bot hatası','Bot error']};
       const state = labels[bot.runtime_state]?.[en ? 1 : 0] || (bot.is_running ? (en ? 'Running; readiness unverified' : 'Çalışıyor; işlem hazırlığı doğrulanamadı') : (en ? 'Stopped' : 'Durduruldu'));
       runtime.textContent = state + (bot.runtime_detail ? ` · ${window.MT5I18n?.translate?.(bot.runtime_detail) || bot.runtime_detail}` : '');
-      runtime.className = 'mb-2 text-[11px] ' + (['ORDER_REJECTED','ORDER_UNRESOLVED','ERROR'].includes(bot.runtime_state) ? 'text-rose-300' : ['WAITING_CONNECTION','WAITING_DATA'].includes(bot.runtime_state) ? 'text-amber-300' : 'text-gray-300');
+      runtime.className = 'bot-line ' + (['ORDER_REJECTED','ORDER_UNRESOLVED','ERROR'].includes(bot.runtime_state) ? 'text-rose-300' : ['WAITING_CONNECTION','WAITING_DATA'].includes(bot.runtime_state) ? 'text-amber-300' : 'text-gray-300');
     }
 
     document.getElementById("bot-disp-hma-p").innerText = bot.hma_period;
@@ -1609,8 +1610,9 @@ async function fetchBotStatus() {
     if (symbolsCount) symbolsCount.textContent = botSym;
     if (symbolsBadges) {
       const differs = bot.is_running && currentSymbol && currentSymbol !== botSym;
-      symbolsBadges.innerHTML = `<span data-bot-symbol="${escapeHtml(botSym)}" class="inline-flex items-center px-2.5 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-mono font-bold tracking-wide">${escapeHtml(botSym)}</span>`
-        + (differs ? `<span class="bot-symbol-differs">Seçili sembol ${escapeHtml(currentSymbol)}. Botu durdurunca ${escapeHtml(currentSymbol)}'a geçer.</span>` : '');
+      // The symbol name is in the heading; this line only explains a mismatch with the chart.
+      symbolsBadges.innerHTML = differs ? `<span class="bot-symbol-differs">Seçili sembol ${escapeHtml(currentSymbol)}. Botu durdurunca ${escapeHtml(currentSymbol)}'a geçer.</span>` : '';
+      symbolsBadges.hidden = !differs;
     }
     if (!bot.is_running) syncBotSymbol(currentSymbol, {announce: false});
 
@@ -1631,6 +1633,7 @@ async function fetchBotStatus() {
     renderBotProtection(bot);
     renderBotSymbolStatus(bot);
     renderBotLotHint(bot);
+    updateBotQuickSummary(bot);
 
     // Render Logs
     if (bot.logs && bot.logs.length > 0) {
@@ -1646,7 +1649,7 @@ async function fetchBotStatus() {
     }
   } catch (err) {
     const runtime = document.getElementById('bot-runtime-status');
-    if (runtime) { runtime.textContent = 'Bot durumu doğrulanamadı; gösterilen bilgiler eski olabilir.'; runtime.className = 'mb-2 text-[11px] text-amber-300'; }
+    if (runtime) { runtime.textContent = 'Bot durumu doğrulanamadı; gösterilen bilgiler eski olabilir.'; runtime.className = 'bot-line text-amber-300'; }
     console.error("fetchBotStatus error:", err);
   }
 }
@@ -2383,7 +2386,7 @@ function renderBotSignalHistory(rows) {
   if (count) count.textContent = String(rows.length);
   const clear = document.getElementById('bot-history-clear');
   if (clear) clear.hidden = !rows.length;
-  if (!rows.length) { list.innerHTML = '<p class="bot-history-empty">Henüz bota sinyal gönderilmedi.</p>'; return; }
+  if (!rows.length) { list.innerHTML = '<p class="bot-history-empty">Henüz sinyalden işlem açılmadı.</p>'; return; }
   const money = (v) => (typeof formatMoney === 'function' ? formatMoney(v) : Number(v).toFixed(2));
   list.innerHTML = rows.map(r => {
     const when = Number.isFinite(r.time) ? new Date(r.time * 1000) : null;
@@ -2427,14 +2430,45 @@ function renderBotLotHint(bot) {
     node.textContent = `Lot risk modunda (%${bot.risk_pct}) stopa göre hesaplanır; bu kutu kullanılmaz.`;
     node.dataset.tone = '';
   } else if (cap > 0 && bot.lot_size > cap + 1e-9) {
-    node.innerHTML = `"Bota Gönder" ${escapeHtml(String(bot.lot_size))} lot açar. Otomatik bot en fazla ${escapeHtml(String(cap))} lot açabilir; bu lotla bot başlatılamaz. `
+    node.innerHTML = `"Şimdi AL/SAT" ${escapeHtml(String(bot.lot_size))} lot açar. Otomatik bot en fazla ${escapeHtml(String(cap))} lot açabilir; bu lotla bot başlatılamaz. `
       + `<button type="button" class="bot-lot-raise" onclick="raiseBotLotLimit()">Sınırı ${escapeHtml(String(bot.lot_size))} lot yap</button>`;
     node.dataset.tone = 'warn';
+    const quick = document.getElementById('bot-quick-settings');
+    if (quick && !quick.open) quick.open = true;
   } else {
-    node.textContent = `"Bota Gönder" ve otomatik bot ${bot.lot_size} lot açar${cap > 0 ? ` (otomatik bot sınırı ${cap} lot)` : ''}.`;
+    node.textContent = `"Şimdi AL/SAT" ve otomatik bot ${bot.lot_size} lot açar${cap > 0 ? ` (otomatik bot sınırı ${cap} lot)` : ''}.`;
     node.dataset.tone = '';
   }
   node.hidden = false;
+}
+
+// Collapsible bot sections remember whether they were open (per browser).
+const BOT_SECTIONS_KEY = 'hma.bot.sections.v1';
+function rememberBotSection(el) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(BOT_SECTIONS_KEY) || '{}') || {};
+    saved[el.id] = el.open;
+    localStorage.setItem(BOT_SECTIONS_KEY, JSON.stringify(saved));
+  } catch (_) { /* session-only */ }
+}
+function restoreBotSections() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(BOT_SECTIONS_KEY) || '{}') || {}; } catch (_) {}
+  for (const id of ['bot-quick-settings', 'bot-tech-details']) {
+    const el = document.getElementById(id);
+    if (el && typeof saved[id] === 'boolean') el.open = saved[id];
+  }
+}
+// Closed "Hızlı ayarlar" still shows the essentials in its title line.
+function updateBotQuickSummary(bot) {
+  const node = document.getElementById('bot-quick-summary');
+  if (!node || !bot) return;
+  const mode = bot.execution_mode === 'SIGNAL_ONLY' ? 'Sadece sinyal' : 'Otomatik al/sat';
+  const lot = bot.lot_mode === 'RISK' ? `risk %${bot.risk_pct}` : `${bot.lot_size} lot`;
+  const stops = bot.risk_mode === 'ATR'
+    ? `SL ${bot.use_stop_loss ? 'ATR×' + bot.atr_stop_multiplier : 'yok'} · TP ${bot.use_take_profit ? 'ATR×' + bot.atr_target_multiplier : 'yok'}`
+    : `SL ${bot.use_stop_loss ? bot.sl_points + ' p' : 'yok'} · TP ${bot.use_take_profit ? bot.tp_points + ' p' : 'yok'}`;
+  node.textContent = `${mode} · ${lot} · ${stops}`;
 }
 
 // Per-symbol bot decision status ("neden işlem açmadı?").
@@ -2443,7 +2477,7 @@ const BOT_STATE_LABELS = {
   WAITING_DATA: ['Veri bekleniyor', 'idle'], AWAITING_APPROVAL: ['Onayın bekleniyor', 'action'],
   SKIPPED: ['Sinyal atlandı', 'warn'], REJECTED: ['Emir reddedildi', 'error'], ORDER_OPENED: ['Emir açıldı', 'ok'],
 };
-// "Bota Ekle" list: signals the user added to the bot, shown in their own frame ("Bota Eklenenler").
+// "Botla İzle" list: signals the user handed to the bot, shown in their own frame ("Botun İzledikleri").
 // Remembered in this browser; each entry follows the latest scan of its symbol.
 const ADDED_SIGNALS_KEY = 'hma.bot.added-signals.v2';
 let botAddedSignals = {};
@@ -2486,18 +2520,19 @@ function addedSignalHtml(sym, bot) {
     ? `SL ATR×${bot.use_stop_loss ? bot.atr_stop_multiplier : '—'}, TP ${bot.use_take_profit ? 'ATR×' + bot.atr_target_multiplier : 'yok'}`
     : `SL ${bot.use_stop_loss ? bot.sl_points + ' puan' : 'yok'}, TP ${bot.use_take_profit ? bot.tp_points + ' puan' : 'yok'}`;
   const onBot = bot && bot.symbol === sym;
+  const nowLabel = `Şimdi ${sideText}`;
   // MT5 EA rule: the bot trades only a new crossover on a closed candle, never a signal already on the chart.
   const plan = !onBot
-    ? `Bot şu an ${bot?.symbol || '—'} sembolünde. Bu sembolü izlemesi için tekrar "Bota Ekle"ye basın.`
+    ? `Bot şu an ${bot?.symbol || '—'} sembolünde. Bu sembolü izlemesi için "Botla İzle"ye basın.`
     : !directional
       ? (item.filtered ? `Filtre: ${item.filtered}` : 'Yön yok; bot kesişim bekler.')
       : bot.is_running
-        ? `Bot bir sonraki kapanmış mumda yeni kesişim olursa ${lot} açar (${botStops}). Bu sinyali hemen açmak için "Bota Gönder".`
-        : `Bot durdu. Başlatınca mevcut sinyali açmaz, sonraki yeni kesişimde ${lot} açar (${botStops}). Hemen açmak için "Bota Gönder".`;
+        ? `Bot bir sonraki kapanmış mumda yeni kesişim olursa ${lot} açar (${botStops}). Bu sinyale hemen girmek için "${nowLabel}".`
+        : `Bot durdu. Başlatınca mevcut sinyali açmaz, sonraki yeni kesişimde ${lot} açar (${botStops}). Hemen girmek için "${nowLabel}".`;
   const lines = item.price
     ? `<span class="bot-added-line"><span class="bot-symstat-trade-side" data-side="${escapeHtml(item.side || 'HOLD')}">${escapeHtml(sideText)}</span>`
       + ` ${cross ? 'Yeni kesişim' : 'Trend'} · Fiyat <b>${fmt(item.price)}</b>${directional ? ` · ${escapeHtml(lot)}` : ''}</span>`
-      + (directional ? `<span class="bot-added-line">"Bota Gönder" ile: SL <b>${fmt(item.suggested_sl)}</b> · TP <b>${fmt(item.suggested_tp)}</b></span>` : '')
+      + (directional ? `<span class="bot-added-line">"${nowLabel}" ile: SL <b>${fmt(item.suggested_sl)}</b> · TP <b>${fmt(item.suggested_tp)}</b></span>` : '')
     : '<span class="bot-added-line">Sinyal bilgisi bir sonraki taramada gelecek.</span>';
   return `<div class="bot-added-item" data-on-bot="${onBot ? 'true' : 'false'}" data-bot-symbol="${escapeHtml(sym)}">
     <div class="bot-added-head"><b>${escapeHtml(sym)}</b>${tfCode ? ` <small>${tfCode}</small>` : ''}
@@ -2513,7 +2548,7 @@ function renderBotAddedSignals(bot) {
   if (!symbols.length) { node.hidden = true; node.innerHTML = ''; return; }
   // The bot's own symbol first, then most recently added.
   symbols.sort((a, b) => (bot && b === bot.symbol) - (bot && a === bot.symbol));
-  node.innerHTML = `<div class="bot-added-title"><span><i class="ph-bold ph-robot"></i> Bota Eklenenler <span class="bot-history-count">${symbols.length}</span></span>`
+  node.innerHTML = `<div class="bot-added-title"><span><i class="ph-bold ph-robot"></i> Botun İzledikleri <span class="bot-history-count">${symbols.length}</span></span>`
     + `<button type="button" class="bot-history-clear" onclick="clearAddedSignals()">Temizle</button></div>`
     + symbols.map(sym => addedSignalHtml(sym, bot)).join('');
   node.hidden = false;
@@ -2622,7 +2657,7 @@ function renderBotPerformance(d) {
       ${table(`Giriş saatine göre (UTC${d.utc_offset_min >= 0 ? '+' : ''}${d.utc_offset_min / 60})`, d.by_hour, 'Saat')}
       ${table('Kaynağa göre', d.by_source, 'Kaynak')}
     </div>
-    <p class="bot-protect-note">Geçmiş sonuçlardır, gelecek tahmini değildir. Sayılar MT5 geçmişindeki kapanmış HMA botu pozisyonlarından (otomatik ve "Bota Gönder") hesaplanır.</p>`;
+    <p class="bot-protect-note">Geçmiş sonuçlardır, gelecek tahmini değildir. Sayılar MT5 geçmişindeki kapanmış HMA botu pozisyonlarından (otomatik ve "Şimdi AL/SAT") hesaplanır.</p>`;
 }
 
 async function clearBotSignalHistory() {
@@ -3625,6 +3660,22 @@ function onScannerModeChange(mode) {
 var latestScannedSignals = [];
 if (typeof window !== 'undefined') window.latestScannedSignals = latestScannedSignals;
 
+// "Şimdi AL/SAT": opens a market order right away (like MT5's Buy/Sell by Market); the label shows side and lot.
+function nowTradeLot() {
+  const bot = latestBotSettings;
+  if (!bot) return '';
+  return bot.lot_mode === 'RISK' ? `risk %${bot.risk_pct}` : `${bot.lot_size} lot`;
+}
+function nowTradeLabel(item, tradable) {
+  if (!tradable) return '⚡ Şimdi işleme gir';
+  const lot = nowTradeLot();
+  return `⚡ Şimdi ${item.side === 'BUY' ? 'AL' : 'SAT'}${lot ? ' · ' + lot : ''}`;
+}
+function nowTradeTitle(item, sl, tp) {
+  const digits = Number.isInteger(item.digits) ? item.digits : 5;
+  const fmt = v => Number(v) > 0 ? Number(v).toFixed(digits) : 'yok';
+  return `Bu sinyalin yönünde hemen piyasa emri açar · SL ${fmt(sl)} · TP ${fmt(tp)} · pozisyonu bot yönetir`;
+}
 // Past signals of the history test, as a list (time on the MT5 server clock, like MT5's chart).
 const openSignalTradeLists = new Set();
 function brokerDateTime(epoch) {
@@ -3850,8 +3901,8 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
         ${isActive ? `<div class="signal-mtf" data-mtf-symbol="${symEsc}">${signalMtfHtml(signalMtfCache.get(signalMtfKey(item.symbol)))}</div>` : ''}
         <div class="flex items-center gap-2 pt-0.5">
           <button type="button" onclick="applyScannedSignalToTicket('${symEsc}', ${sl}, ${tp})" class="flex-1 py-2 px-2.5 rounded-lg bg-cyan-700/80 hover:bg-cyan-600 text-white text-xs font-bold transition active:scale-95" title="SL/TP değerlerini manuel emir formuna aktar">🎯 Emre Aktar</button>
-          <button type="button" onclick="assignScannerSymbolToBot('${symEsc}', ${tf})" class="flex-1 py-2 px-2.5 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs font-bold transition active:scale-95" title="${symEsc} sembolünü botun çoklu takip listesine ekle">🤖 Bota Ekle</button>
-          <button type="button" ${tradable ? '' : `disabled title="${item.signal === 'FILTERED' ? escapeHtml('Filtre bu sinyali engelledi: ' + (filterText || 'filtre')) : 'Nötr sinyal: yön yok, emir gönderilemez'}"`} onclick="sendSignalDirectToBot('${symEsc}', '${item.side}', ${item.price}, {signalId: 'scan-${symEsc}-${tf}-${item.side}-${item.candle_time}', slPrice: ${sl}, tpPrice: ${tp}})" class="disabled:opacity-40 disabled:cursor-not-allowed flex-1 py-2 px-2.5 rounded-lg bg-indigo-700/80 hover:bg-indigo-600 text-white text-xs font-bold transition active:scale-95" title="Bu sinyali hemen HMA Botu ile işleme al">⚡ Bota Gönder</button>
+          <button type="button" onclick="assignScannerSymbolToBot('${symEsc}', ${tf})" class="flex-1 py-2 px-2.5 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs font-bold transition active:scale-95" title="İşlem açmaz: ${symEsc} botun sembolü olur, bot bir sonraki yeni kesişimi bekler">🤖 Botla İzle</button>
+          <button type="button" ${tradable ? `title="${escapeHtml(nowTradeTitle(item, sl, tp))}"` : `disabled title="${item.signal === 'FILTERED' ? escapeHtml('Filtre bu sinyali engelledi: ' + (filterText || 'filtre')) : 'Nötr sinyal: yön yok, emir gönderilemez'}"`} onclick="sendSignalDirectToBot('${symEsc}', '${item.side}', ${item.price}, {signalId: 'scan-${symEsc}-${tf}-${item.side}-${item.candle_time}', slPrice: ${sl}, tpPrice: ${tp}})" class="disabled:opacity-40 disabled:cursor-not-allowed flex-1 py-2 px-2.5 rounded-lg ${!tradable ? 'bg-gray-700' : item.side === 'BUY' ? 'bg-sky-700 hover:bg-sky-600' : 'bg-rose-700 hover:bg-rose-600'} text-white text-xs font-bold transition active:scale-95">${escapeHtml(nowTradeLabel(item, tradable))}</button>
         </div>
       </div>`;
     }).join('');
@@ -3900,8 +3951,9 @@ async function fetchBotLiveSignal() {
       const trendNode = document.getElementById('bot-live-trend-status');
       if (trendNode) {
         const trendText = data.trend === 'BUY' ? '▲ AL Yönlü' : data.trend === 'SELL' ? '▼ SAT Yönlü' : 'Yatay';
-        trendNode.textContent = `${data.symbol} (M${data.timeframe_minutes}) · RSI(14): ${Number(data.rsi || 50).toFixed(1)} · Trend: ${trendText} · Fark: ${data.gap}`;
-        trendNode.className = 'mb-2.5 text-xs font-mono font-semibold ' + (data.trend === 'BUY' ? 'text-emerald-300' : data.trend === 'SELL' ? 'text-rose-300' : 'text-cyan-300');
+        const relation = data.trend === 'BUY' ? 'HMA, yavaş ortalamanın üstünde' : data.trend === 'SELL' ? 'HMA, yavaş ortalamanın altında' : 'HMA ve yavaş ortalama eşit';
+        trendNode.textContent = `${trendText} · ${relation} (fark ${data.gap}) · RSI(14) ${Number(data.rsi || 50).toFixed(1)}`;
+        trendNode.className = 'bot-line bot-trend-line ' + (data.trend === 'BUY' ? 'text-emerald-300' : data.trend === 'SELL' ? 'text-rose-300' : 'text-cyan-300');
       }
     }
 

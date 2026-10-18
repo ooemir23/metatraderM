@@ -133,7 +133,6 @@ assert.ok(html.includes('id="bot-execute-all-signals-btn"'), 'Missing bot-execut
   // Test 1: only the bot's (selected) symbol is shown, like an MT5 EA on one chart
   await ctx.fetchBotStatus();
   assert.equal(node('bot-symbols-count').textContent, 'EURUSD');
-  assert.ok(node('bot-symbols-badges').innerHTML.includes('EURUSD'), 'Badge for EURUSD should exist');
   assert.ok(!node('bot-symbols-badges').innerHTML.includes('GBPUSD'), 'other symbols are not listed');
 
   // Test 2: "Bota Ekle" makes that symbol the bot symbol (bot stopped)

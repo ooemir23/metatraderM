@@ -665,3 +665,31 @@ html { background: #0b0e14; }
 .signal-mtf-chip { padding:1px 7px; border-radius:6px; font:700 11px ui-monospace, monospace; background:#1f2937; color:#cbd5e1; }
 .signal-mtf-chip[data-side="buy"] { background:#10b98126; color:#6ee7b7; } .signal-mtf-chip[data-side="sell"] { background:#f43f5e26; color:#fda4af; }
 .signal-mtf-summary { margin-left:auto; color:#cbd5e1; } .signal-mtf-summary .good { color:#6ee7b7; } .signal-mtf-summary .bad { color:#fda4af; }
+
+/* ---- HMA bot panel layout: status first, then lists, settings and details collapsible ---- */
+.bot-overview { display:grid; gap:8px; margin:0 0 10px; padding:10px; border-radius:12px; background:#151a26; border:1px solid #1f2937; }
+.bot-overview-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.bot-overview-symbol { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:#94a3b8; }
+.bot-overview-symbol i { color:#22d3ee; }
+.bot-overview-symbol strong { font:800 14px ui-monospace, monospace; color:#fff; letter-spacing:.02em; }
+.bot-overview-hint { font-size:11px; color:#64748b; }
+.bot-overview-badges:empty, .bot-overview-badges[hidden] { display:none; }
+.bot-overview .bot-symstat { margin:0; }
+.bot-indicators { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.bot-indicators > div { display:flex; align-items:baseline; justify-content:space-between; gap:6px; padding:6px 9px; border-radius:9px; background:#0f172a; }
+.bot-indicators span { font-size:11.5px; font-weight:600; color:#94a3b8; }
+.bot-indicators b { font:800 14px ui-monospace, monospace; }
+.bot-indicators b.is-fast { color:#22d3ee; } .bot-indicators b.is-slow { color:#fbbf24; }
+.bot-line { margin:0; font-size:11.5px; line-height:1.45; color:#cbd5e1; }
+.bot-trend-line { font:700 11.5px ui-monospace, monospace; }
+.bot-overview .bot-protect-status { margin:0; }
+.bot-section { margin:0 0 10px; border:1px solid #1f2937; border-radius:12px; background:#151a26; }
+.bot-section > summary { display:flex; align-items:center; gap:6px; padding:8px 10px; cursor:pointer; font-size:12px; font-weight:700; color:#e5e7eb; list-style:none; }
+.bot-section > summary::-webkit-details-marker { display:none; }
+.bot-section > summary::after { content:'▸'; margin-left:auto; color:#64748b; transition:transform .15s; }
+.bot-section[open] > summary::after { transform:rotate(90deg); }
+.bot-section-hint { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; font-weight:500; color:#94a3b8; }
+.bot-quick-body, .bot-tech-body { padding:4px 10px 10px; border-top:1px solid #1f2937; }
+.bot-tech-body { display:grid; gap:4px; padding-top:8px; }
+.bot-history { margin-bottom:10px; }
+@media (max-width: 480px) { .bot-indicators { grid-template-columns:1fr; } .bot-section-hint { display:none; } }

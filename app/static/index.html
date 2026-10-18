@@ -908,75 +908,22 @@
                   </div>
                 </div>
 
-                <!-- Bot Active Tracked Symbols Badges -->
-                <div class="mb-2.5 p-2.5 rounded-xl bg-[#181d2a] border border-gray-800/80">
-                  <div class="flex items-center justify-between mb-1.5">
-                    <span class="text-xs text-gray-300 font-bold flex items-center gap-1.5">
-                      <i class="ph-bold ph-list-bullets text-cyan-400"></i>
-                      <span>Bot sembolü: <strong id="bot-symbols-count" class="text-white">EURUSD</strong></span>
-                    </span>
-                    <span class="text-[11px] text-gray-400">Seçili sembolü izler</span>
+                <!-- 1. STATUS: symbol, what the bot waits for, indicator values, trend -->
+                <section class="bot-overview" aria-label="Bot durumu">
+                  <div class="bot-overview-head">
+                    <span class="bot-overview-symbol"><i class="ph-bold ph-crosshair"></i> Bot sembolü <strong id="bot-symbols-count">EURUSD</strong></span>
+                    <span class="bot-overview-hint">Seçili sembolü izler</span>
                   </div>
-                  <div id="bot-symbols-badges" class="flex flex-wrap gap-1.5 items-center">
-                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-mono font-bold">
-                      <span>EURUSD</span>
-                    </span>
+                  <div id="bot-symbols-badges" class="bot-overview-badges"></div>
+                  <div id="bot-symbol-status" class="bot-symstat" aria-live="polite" hidden></div>
+                  <div class="bot-indicators">
+                    <div><span>HMA (<span id="bot-disp-hma-p">14</span>)</span><b id="bot-disp-hma-val" class="is-fast">0.00000</b></div>
+                    <div><span><span id="bot-disp-ma2-t">EMA</span> (<span id="bot-disp-ma2-p">34</span>)</span><b id="bot-disp-ma2-val" class="is-slow">0.00000</b></div>
                   </div>
-                </div>
-
-                <!-- Per-symbol: what is the bot waiting for / why did it not trade -->
-                <div id="bot-symbol-status" class="bot-symstat" aria-live="polite" hidden></div>
-
-                <!-- Signals added with "Bota Ekle", in their own frame -->
-                <div id="bot-added-signals" class="bot-added" aria-live="polite" hidden></div>
-
-                <!-- Bot Live Status Indicators -->
-                <div class="grid grid-cols-2 gap-2 mb-2.5 bg-[#181d2a] p-3 rounded-xl border border-gray-800/80">
-                  <div>
-                    <span class="text-gray-300 block text-xs font-semibold mb-0.5">HMA (<span id="bot-disp-hma-p">14</span>):</span>
-                    <span id="bot-disp-hma-val" class="font-mono font-extrabold text-[15px] text-cyan-400">0.00000</span>
-                  </div>
-                  <div>
-                    <span class="text-gray-300 block text-xs font-semibold mb-0.5"><span id="bot-disp-ma2-t">EMA</span> (<span id="bot-disp-ma2-p">34</span>):</span>
-                    <span id="bot-disp-ma2-val" class="font-mono font-extrabold text-[15px] text-amber-400">0.00000</span>
-                  </div>
-                </div>
-
-                <p id="bot-runtime-status" role="status" class="mb-1.5 text-xs text-gray-200 font-medium">Bot durumu doğrulanıyor…</p>
-                <p id="bot-atr-status" class="mb-1.5 text-xs text-gray-300 font-mono">ATR: — · ER: —</p>
-                <p id="bot-live-trend-status" class="mb-2.5 text-xs font-mono font-semibold text-cyan-300">RSI(14): — · Trend: —</p>
-
-                <!-- Bot Signal & Protection Quick Rules -->
-                <div class="bg-[#181d2a] p-3 rounded-xl border border-gray-800/80 mb-2.5 space-y-2 text-xs">
-                  <div class="flex items-center justify-between gap-2">
-                    <label for="bot-exec-mode" class="text-gray-300 font-medium">Çalışma modu</label>
-                    <select id="bot-exec-mode" onchange="saveBotSignalRules()" class="bg-[#121620] border border-gray-700 rounded-lg px-2.5 py-1 text-xs text-white font-semibold">
-                      <option value="AUTO_TRADE">Otomatik Al / Sat</option>
-                      <option value="SIGNAL_ONLY">Sadece Sinyal Yakala</option>
-                    </select>
-                  </div>
-                  <div class="grid grid-cols-2 gap-2 pt-0.5">
-                    <label class="flex items-center gap-2 text-gray-200 font-medium cursor-pointer select-none">
-                      <input id="bot-rsi-filter" type="checkbox" onchange="saveBotSignalRules()" class="rounded bg-gray-800 border-gray-700 w-4 h-4 text-cyan-500">
-                      <span>RSI(14) filtresi</span>
-                    </label>
-                    <label class="flex items-center gap-2 text-gray-200 font-medium cursor-pointer select-none">
-                      <input id="bot-be-toggle" type="checkbox" onchange="saveBotSignalRules()" class="rounded bg-gray-800 border-gray-700 w-4 h-4 text-cyan-500">
-                      <span>Başabaş stop</span>
-                    </label>
-                  </div>
-                  <div class="grid grid-cols-2 gap-2 pt-0.5">
-                    <div class="flex items-center justify-between gap-1.5">
-                      <label for="bot-quick-lot" class="text-gray-300 font-medium">Emir lotu</label>
-                      <input id="bot-quick-lot" type="number" min="0.01" max="100" step="0.01" value="0.01" onchange="saveBotQuickLot()" class="w-20 bg-[#121620] border border-gray-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs font-bold">
-                    </div>
-                    <p id="bot-lot-hint" class="bot-lot-hint" hidden></p>
-                    <div class="flex items-center justify-between gap-1.5">
-                      <label for="bot-trail-input" class="text-gray-300 font-medium">İz süren (p)</label>
-                      <input id="bot-trail-input" type="number" min="0" max="100000" step="10" value="0" onchange="saveBotSignalRules()" class="w-20 bg-[#121620] border border-gray-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs font-bold">
-                    </div>
-                  </div>
-                </div>
+                  <p id="bot-live-trend-status" class="bot-line">RSI(14): — · Trend: —</p>
+                  <p id="bot-runtime-status" role="status" class="bot-line">Bot durumu doğrulanıyor…</p>
+                  <p id="bot-protect-status" class="bot-protect-status" hidden></p>
+                </section>
 
                 <!-- Bot Pending Signals Box (Sadece Sinyal Modu) -->
                 <div id="bot-pending-signal-box" class="hidden mb-2.5 p-2.5 rounded-xl border border-emerald-500/40 bg-emerald-950/30 text-xs">
@@ -988,23 +935,54 @@
                   <button type="button" onclick="executePendingBotSignal()" class="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition">Son Sinyali Şimdi Uygula</button>
                 </div>
 
-                <div class="flex items-center justify-between text-xs text-gray-300 font-medium mb-2.5 px-0.5">
-                  <span>Son Sinyal: <strong id="bot-last-signal" class="text-white font-bold">YOK</strong></span>
-                  <span id="bot-last-signal-time" class="font-mono text-xs text-gray-400">--:--:--</span>
-                </div>
-
-                <p id="bot-protect-status" class="bot-protect-status" hidden></p>
+                <!-- 2. Symbols handed to the bot with "Botla İzle" -->
+                <div id="bot-added-signals" class="bot-added" aria-live="polite" hidden></div>
 
                 <!-- SIGNALS SENT TO THE BOT (manual confirmations + automatic orders) -->
                 <div class="bot-history">
                   <div class="bot-history-head">
-                    <span><i class="ph-bold ph-paper-plane-tilt text-indigo-300"></i> Bota Gönderilen Sinyaller <span id="bot-history-count" class="bot-history-count">0</span></span>
+                    <span><i class="ph-bold ph-paper-plane-tilt text-indigo-300"></i> Sinyalden Açılan İşlemler <span id="bot-history-count" class="bot-history-count">0</span></span>
                     <button type="button" id="bot-history-clear" onclick="clearBotSignalHistory()" class="bot-history-clear" title="Listeyi temizle (pozisyonlar etkilenmez)">Temizle</button>
                   </div>
                   <div id="bot-history-list" class="bot-history-list" aria-live="polite">
-                    <p class="bot-history-empty">Henüz bota sinyal gönderilmedi.</p>
+                    <p class="bot-history-empty">Henüz sinyalden işlem açılmadı.</p>
                   </div>
                 </div>
+
+                <!-- QUICK SETTINGS (collapsible; opens itself when the lot needs attention) -->
+                <details id="bot-quick-settings" class="bot-section" ontoggle="rememberBotSection(this)">
+                  <summary><i class="ph-bold ph-sliders-horizontal text-cyan-300"></i> <span>Hızlı ayarlar</span> <span id="bot-quick-summary" class="bot-section-hint"></span></summary>
+                <div class="bot-quick-body space-y-2 text-xs">
+                    <div class="flex items-center justify-between gap-2">
+                      <label for="bot-exec-mode" class="text-gray-300 font-medium">Çalışma modu</label>
+                      <select id="bot-exec-mode" onchange="saveBotSignalRules()" class="bg-[#121620] border border-gray-700 rounded-lg px-2.5 py-1 text-xs text-white font-semibold">
+                        <option value="AUTO_TRADE">Otomatik Al / Sat</option>
+                        <option value="SIGNAL_ONLY">Sadece Sinyal Yakala</option>
+                      </select>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 pt-0.5">
+                      <label class="flex items-center gap-2 text-gray-200 font-medium cursor-pointer select-none">
+                        <input id="bot-rsi-filter" type="checkbox" onchange="saveBotSignalRules()" class="rounded bg-gray-800 border-gray-700 w-4 h-4 text-cyan-500">
+                        <span>RSI(14) filtresi</span>
+                      </label>
+                      <label class="flex items-center gap-2 text-gray-200 font-medium cursor-pointer select-none">
+                        <input id="bot-be-toggle" type="checkbox" onchange="saveBotSignalRules()" class="rounded bg-gray-800 border-gray-700 w-4 h-4 text-cyan-500">
+                        <span>Başabaş stop</span>
+                      </label>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 pt-0.5">
+                      <div class="flex items-center justify-between gap-1.5">
+                        <label for="bot-quick-lot" class="text-gray-300 font-medium">Emir lotu</label>
+                        <input id="bot-quick-lot" type="number" min="0.01" max="100" step="0.01" value="0.01" onchange="saveBotQuickLot()" class="w-20 bg-[#121620] border border-gray-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs font-bold">
+                      </div>
+                      <p id="bot-lot-hint" class="bot-lot-hint" hidden></p>
+                      <div class="flex items-center justify-between gap-1.5">
+                        <label for="bot-trail-input" class="text-gray-300 font-medium">İz süren (p)</label>
+                        <input id="bot-trail-input" type="number" min="0" max="100000" step="10" value="0" onchange="saveBotSignalRules()" class="w-20 bg-[#121620] border border-gray-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs font-bold">
+                      </div>
+                    </div>
+                  </div>
+                </details>
 
                 <!-- BOT PERFORMANCE (closed HMA bot positions from MT5 history) -->
                 <details id="bot-performance" class="bot-perf" ontoggle="if(this.open)fetchBotPerformance()">
@@ -1014,6 +992,15 @@
                     </select>
                   </summary>
                   <div id="bot-perf-body" class="bot-perf-body" aria-live="polite"><p class="bot-history-empty">Yükleniyor…</p></div>
+                </details>
+
+                <!-- TECHNICAL DETAILS -->
+                <details id="bot-tech-details" class="bot-section" ontoggle="rememberBotSection(this)">
+                  <summary><i class="ph-bold ph-info text-gray-400"></i> <span>Teknik ayrıntılar</span></summary>
+                  <div class="bot-tech-body">
+                    <p id="bot-atr-status" class="bot-line font-mono">ATR: — · ER: —</p>
+                    <p class="bot-line">Son sinyal: <strong id="bot-last-signal" class="text-white font-bold">YOK</strong> · <span id="bot-last-signal-time" class="font-mono text-gray-400">--:--:--</span></p>
+                  </div>
                 </details>
               </div>
 
@@ -1380,7 +1367,7 @@
           <div class="bot-protect-wide"><span class="block text-gray-400 mb-1">İşlem günleri</span><div class="bot-days"><label class="bot-day"><input type="checkbox" id="cfg-day-0" value="0"><span>Pzt</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-1" value="1"><span>Sal</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-2" value="2"><span>Çar</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-3" value="3"><span>Per</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-4" value="4"><span>Cum</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-5" value="5"><span>Cmt</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-6" value="6"><span>Paz</span></label></div></div>
           <label class="bot-protect-wide">Haber / engelli saatler (her satıra bir aralık)
             <textarea id="cfg-blocked" rows="3" placeholder="15:25-15:45&#10;2026-11-06 15:20-15:50" class="block w-full rounded bg-gray-800 p-2 font-mono"></textarea></label>
-          <p class="bot-protect-note">"15:25-15:45" her gün, "2026-11-06 15:20-15:50" yalnız o gün geçerlidir; seçilen saat dilimine göre. Kurallar yalnız yeni otomatik girişleri engeller; açık pozisyonlar ve ters sinyalde kapatma etkilenmez. "Bota Gönder" ile elle onaylanan sinyallere uygulanmaz. Art arda kayıp sayımı bot başlatıldığında sıfırlanır.</p>
+          <p class="bot-protect-note">"15:25-15:45" her gün, "2026-11-06 15:20-15:50" yalnız o gün geçerlidir; seçilen saat dilimine göre. Kurallar yalnız yeni otomatik girişleri engeller; açık pozisyonlar ve ters sinyalde kapatma etkilenmez. "Şimdi AL/SAT" ile elle açılan işlemlere uygulanmaz. Art arda kayıp sayımı bot başlatıldığında sıfırlanır.</p>
         </fieldset>
         </div>
         </div>

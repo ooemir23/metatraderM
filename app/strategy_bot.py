@@ -98,7 +98,7 @@ class StrategyBot:
         self.pending_signal_actions: List[Dict[str, Any]] = []
         self.logs: List[Dict[str, Any]] = []
         self.config_path = Path(config_path) if config_path else None
-        # Signals sent to the bot (manual "Bota Gönder"/"Uygula" and automatic orders), newest first.
+        # Signals sent to the bot (manual "Şimdi AL/SAT"/"Uygula" and automatic orders), newest first.
         self.history_path = self.config_path.with_name('bot_signal_history.json') if self.config_path else None
         self.signal_history: List[Dict[str, Any]] = self._load_history()
 
@@ -1021,7 +1021,7 @@ class StrategyBot:
             pending = self.mt5.get_pending_orders()
             if any(p['symbol'] == sym and p.get('magic') == HMA_MAGIC for p in owned + pending):
                 self._sym_status(sym, 'SKIPPED', f'{side} kesişimi atlandı: bu sembolde zaten bir bot pozisyonu açık '
-                                 '("Bota Gönder" ile açılanlar dahil). Aynı sembolde tek bot pozisyonu tutulur.')
+                                 '("Şimdi AL/SAT" ile açılanlar dahil). Aynı sembolde tek bot pozisyonu tutulur.')
                 self.log(f'Bot {sym} pozisyonu zaten açık; yeni giriş atlandı.')
                 return
 

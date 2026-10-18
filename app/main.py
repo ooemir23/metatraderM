@@ -1306,7 +1306,7 @@ async def toggle_bot(request: Request):
                 raise HTTPException(status_code=409, detail=(
                     f'Bot emir lotu {bot.lot_size:g}, otomatik bot için tek emir sınırı {mt5_client.max_order_lots:g} lot. '
                     'Lotu düşürün ya da Bot Ayarları > Lot ve risk bölümünden sınırı artırın. '
-                    '"Bota Gönder" ile elle onaylanan sinyallerde bu sınır uygulanmaz.'))
+                    '"Şimdi AL/SAT" ile elle açılan işlemlerde bu sınır uygulanmaz.'))
             config = bot.config_snapshot()
             ready = await asyncio.to_thread(mt5_client.bot_readiness, config)
             if not ready.get('success'):

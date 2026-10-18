@@ -1,4 +1,4 @@
-// "Bota Ekle": added signals appear in their own frame ("Bota Eklenenler").
+// "Botla İzle": handed symbols appear in their own frame ("Botun İzledikleri").
 const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
@@ -33,10 +33,10 @@ ctx.rememberAddedSignal('EURUSD', 15);
 ctx.renderBotSymbolStatus(bot);
 let frame = node('bot-added-signals');
 assert.equal(frame.hidden, false);
-assert.match(frame.innerHTML, /Bota Eklenenler <span class="bot-history-count">1<\/span>/);
+assert.match(frame.innerHTML, /Botun İzledikleri <span class="bot-history-count">1<\/span>/);
 assert.match(frame.innerHTML, /data-side="SELL">SAT</);
 assert.match(frame.innerHTML, /Yeni kesişim · Fiyat <b>1\.16513<\/b> · 0\.05 lot/);
-assert.match(frame.innerHTML, /SL <b>1\.16700<\/b> · TP <b>1\.16233<\/b>/, 'Bota Gönder SL/TP shown');
+assert.match(frame.innerHTML, /"Şimdi SAT" ile: SL <b>1\.16700<\/b> · TP <b>1\.16233<\/b>/, 'Bota Gönder SL/TP shown');
 assert.match(frame.innerHTML, /mevcut sinyali açmaz, sonraki yeni kesişimde 0\.05 lot açar \(SL 200 puan, TP yok\)/,
   'MT5 EA rule: an existing signal is not traded; bot SL/TP settings are shown');
 assert.match(frame.innerHTML, /Bot bu sembolde/);
