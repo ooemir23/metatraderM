@@ -1,6 +1,17 @@
 // Volta Trading Dashboard Client Script
 
-let currentSymbol = "EURUSD";
+// Last chosen symbol survives a reload (MT5 reopens the last chart symbol on restart).
+const LAST_SYMBOL_KEY = 'hma.symbol.last.v1';
+function readLastSymbol() {
+  try {
+    const v = localStorage.getItem(LAST_SYMBOL_KEY);
+    return typeof v === 'string' && /^[A-Za-z0-9._#&+\-]{1,32}$/.test(v) ? v : null;
+  } catch (_) { return null; }
+}
+function saveLastSymbol(symbol) {
+  try { localStorage.setItem(LAST_SYMBOL_KEY, symbol); } catch (_) { /* session-only */ }
+}
+let currentSymbol = readLastSymbol() || "EURUSD";
 let tvWidget = null;
 let chartSelectionBlocked = false;
 let orderSymbolSource = 'panel';
@@ -28,6 +39,10 @@ document.addEventListener("DOMContentLoaded", () => {
   window.MT5Markets?.init({onSelect:switchSymbol, onChange:marketCatalogueChanged});
   window.MT5Markets?.setActive(currentSymbol);
   renderScannerSymbolButton(currentSymbol);
+  const tag = document.getElementById("order-symbol-tag");
+  if (tag) tag.innerText = currentSymbol;
+  const title = document.getElementById("current-symbol-title");
+  if (title) title.innerText = title.innerText.replace(/^[^\s•]+/, currentSymbol);
   updateChartTimeframeButtons(window.MT5Chart?.getTimeframe?.() || 15);
   initTradingView(currentSymbol);
   initChartResizer();
@@ -713,6 +728,7 @@ function switchSymbol(symbol, reloadChart = true) {
     if (entry) entry.value = '';
   }
   currentSymbol = symbol;
+  saveLastSymbol(symbol);
   if (typeof syncBotSymbol === 'function' && latestBotSettings && !latestBotSettings.is_running) syncBotSymbol(symbol, {announce: false});
   if (typeof refreshMarketOpen === 'function') refreshMarketOpen(symbol);
   if (typeof renderScannerSymbolButton === 'function') renderScannerSymbolButton(symbol);
