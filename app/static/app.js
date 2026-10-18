@@ -143,6 +143,7 @@ async function syncBotSymbol(sym, {announce = true} = {}) {
 function onScannerTimeframeChange(tf) {
   const num = Number(tf);
   setChartTimeframe(num);
+  if (typeof scheduleCandleCloseScan === 'function') scheduleCandleCloseScan();
 }
 
 // Initialize / Reload TradingView Widget
@@ -788,7 +789,8 @@ function startPolling() {
   setInterval(refreshTradingStatus, 5000);
   if (typeof refreshSignalScanner === 'function') {
     refreshSignalScanner(false);
-    setInterval(() => refreshSignalScanner(false), 10000);
+    scheduleCandleCloseScan();
+    setInterval(() => { refreshSignalScanner(false); scheduleCandleCloseScan(); }, 10000);
   }
   if (typeof fetchBotLiveSignal === 'function') {
     fetchBotLiveSignal();
@@ -3831,6 +3833,29 @@ async function refreshSignalMtf(sym) {
     signalMtfCache.set(key, {error: true, at: Date.now() - SIGNAL_MTF_TTL + 15000, timeframes: []});   // retry in ~15 s
   }
   paint();
+}
+
+// Scan right when the candle closes on the broker server clock (the EA's new-bar moment), so a new
+// crossover shows within about a second instead of up to 10 s later. MT5 starts the new bar on its
+// first tick, so a few follow-up scans catch a late first tick. The 10 s scan stays as a backup and
+// keeps the forming candle's price/RSI current; it also re-aims this timer after a timeframe or
+// server-clock change.
+let candleCloseScanTimer = null;
+const CANDLE_CLOSE_SCANS_MS = [1000, 3000, 6000];
+function nextCandleCloseDelayMs(tfMinutes, offsetSeconds, nowMs = Date.now()) {
+  const period = (Number(tfMinutes) || 15) * 60;
+  const serverNow = (nowMs + 500) / 1000 + (Number(offsetSeconds) || 0);   // +0.5 s: never re-aim at the close just passed
+  const next = Math.floor(serverNow / period) * period + period;
+  return Math.max(0, Math.round((next - serverNow) * 1000) + 500);
+}
+function scheduleCandleCloseScan() {
+  if (candleCloseScanTimer) clearTimeout(candleCloseScanTimer);
+  const tf = Number(document.getElementById('signal-scan-tf')?.value || 15) || 15;
+  const offset = typeof latestBotSettings !== 'undefined' ? latestBotSettings?.clock_offset_seconds : 0;
+  candleCloseScanTimer = setTimeout(() => {
+    for (const after of CANDLE_CLOSE_SCANS_MS) setTimeout(() => refreshSignalScanner(false), after);
+    scheduleCandleCloseScan();
+  }, nextCandleCloseDelayMs(tf, offset));
 }
 
 async function refreshSignalScanner(manual = false, forceReplace = false) {
