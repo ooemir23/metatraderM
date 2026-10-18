@@ -47,6 +47,7 @@
     ["Sinyalden Açılan İşlemler", "Trades Opened from Signals"],
     ["Botun İzledikleri", "Watched by the Bot"],
     ["Hızlı ayarlar", "Quick settings"],
+    ["Alt panel görünümü", "Lower panel view"],
     ["Teknik ayrıntılar", "Technical details"],
     ["Bu ayarlarla sinyal:", "Signal with these settings:"],
     ["Hazır ayarlar", "Presets"],

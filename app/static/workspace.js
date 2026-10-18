@@ -21,6 +21,12 @@
     signals.toggleAttribute('inert', view !== 'signals');
     $('signals-toggle')?.setAttribute('aria-expanded', String(view === 'signals'));
     $('positions-strip')?.setAttribute('aria-expanded', String(view === 'positions'));
+    (document.querySelectorAll ? document.querySelectorAll('#workspace-switch .ws-tab') : []).forEach(tab => {
+      const active = tab.dataset.view === view;
+      tab.classList.toggle('is-active', active);
+      tab.setAttribute('aria-selected', String(active));
+      tab.tabIndex = active ? 0 : -1;
+    });
     if (persist) { try { localStorage.setItem(KEY, view); } catch (_) { /* session-only */ } }
     if (view === 'signals' && opening) {
       if (typeof refreshSignalScanner === 'function') refreshSignalScanner(true, true);
@@ -37,6 +43,8 @@
     const count = $('positions-strip-count'), pnl = $('positions-strip-pnl');
     const badge = $('pos-count-badge'), profit = $('acc-profit');
     if (count && badge) count.textContent = /^\d+$/.test(badge.textContent.trim()) ? badge.textContent.trim() : '–';
+    const tabCount = $('ws-tab-positions-count');
+    if (tabCount && badge) tabCount.textContent = /^\d+$/.test(badge.textContent.trim()) ? badge.textContent.trim() : '–';
     if (pnl && profit) {
       pnl.textContent = profit.textContent.trim();
       pnl.dataset.tone = profit.className.includes('rose') ? 'loss' : profit.className.includes('emerald') ? 'profit' : '';
@@ -55,10 +63,13 @@
     const {signals = 0, crosses = 0} = event.detail || {};
     setBadge('signals-count', signals, `${signals} sinyal · ${crosses} yeni kesişim`);
     $('signals-count')?.classList.toggle('has-cross', crosses > 0);
+    setBadge('ws-tab-signals-count', signals, `${signals} sinyal · ${crosses} yeni kesişim`);
+    $('ws-tab-signals-count')?.classList.toggle('has-cross', crosses > 0);
   }
   function onPending(event) {
     const count = Number(event.detail?.count) || 0;
     setBadge('signals-pending', count, `${count} bot sinyali onay bekliyor`);
+    setBadge('ws-tab-pending', count, `${count} bot sinyali onay bekliyor`);
   }
 
   // ---- Tools drawer (strategy test, research, market depth, system log) ----
@@ -101,6 +112,14 @@
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && $('tools-drawer')?.classList.contains('open')
           && !document.fullscreenElement && !document.querySelector('dialog[open]')) setToolsDrawer(false);
+    });
+    // Arrow keys move between the two tabs (WAI-ARIA tabs pattern).
+    $('workspace-switch')?.addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const next = ['ArrowLeft', 'Home'].includes(event.key) ? 'positions' : 'signals';
+      setWorkspaceView(next, {focus: false});
+      $(next === 'positions' ? 'ws-tab-positions' : 'ws-tab-signals')?.focus();
     });
     syncStrip(); errorRows().forEach(row => seenErrors.add(row));
     setWorkspaceView(storedView(), {persist: false, focus: false});

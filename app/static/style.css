@@ -693,3 +693,17 @@ html { background: #0b0e14; }
 .bot-tech-body { display:grid; gap:4px; padding-top:8px; }
 .bot-history { margin-bottom:10px; }
 @media (max-width: 480px) { .bot-indicators { grid-template-columns:1fr; } .bot-section-hint { display:none; } }
+
+/* Quick switch between "Pozisyonlar" and "Sinyal & Bot" (between the chart row and the lower card). */
+.workspace-switch { display:flex; gap:6px; width:100%; padding:5px; border-radius:14px; background:#121620; border:1px solid #1f2937; }
+.ws-tab { flex:1; display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:42px; padding:0 14px; border-radius:10px;
+  border:1px solid transparent; background:transparent; color:#94a3b8; font-size:13.5px; font-weight:700; cursor:pointer; transition:background .15s, color .15s; }
+.ws-tab i { font-size:17px; }
+.ws-tab:hover { background:#1a2130; color:#e5e7eb; }
+.ws-tab:focus-visible { outline:2px solid #22d3ee; outline-offset:1px; }
+.ws-tab.is-active { background:#0e74901f; border-color:#0e7490; color:#fff; }
+.ws-tab.is-active i { color:#22d3ee; }
+.ws-tab-count { min-width:22px; padding:0 7px; border-radius:999px; background:#1f2937; color:#cbd5e1; font:700 11.5px/20px ui-monospace, monospace; text-align:center; }
+.ws-tab-count.has-cross { background:#10b98133; color:#6ee7b7; animation:pulse 1.6s ease-in-out infinite; }
+.ws-tab-count.is-pending { background:#f59e0b33; color:#fcd34d; }
+@media (max-width: 480px) { .ws-tab { font-size:12.5px; padding:0 8px; } }
