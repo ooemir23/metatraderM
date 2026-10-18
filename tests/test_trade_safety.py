@@ -886,3 +886,14 @@ def test_close_requote_retries_are_bounded(client):
     client.mt5.order_send.return_value = NS(retcode=10004, order=0, price=0, volume=0, comment='Requote')
     assert not client.close_position(1)['success']
     assert client.mt5.order_send.call_count == 3
+
+
+def test_strategy_position_open_error_names_the_position():
+    from types import SimpleNamespace
+    from app import mt5_bridge as b
+    pos = SimpleNamespace(ticket=353903535, type=1, volume=1.0, time=1792341714, magic=b.HMA_MAGIC)
+    r = b.own_position_error('BTCUSD', b.HMA_MAGIC, 'SELL', [pos])
+    assert r['success'] is False and r['reason_code'] == 'strategy_position_open' and r['position_ticket'] == 353903535
+    assert r['error'] == ('BTCUSD: Botun açık SAT pozisyonu var (#353903535, 1 lot, 18.10 16:41 açıldı). '
+                          'MT5 EA kuralı: aynı yönde ikinci pozisyon açılmaz. Yeni işlem için önce onu kapatın.')
+    assert 'Ters yöndeki' in b.own_position_error('BTCUSD', b.HMA_MAGIC, 'BUY', [pos])['error']

@@ -540,8 +540,9 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
         # Netting/exchange positions combine ownership; do not merge manual and automatic trades.
         if not native and int(account.margin_mode) != 2 and any(int(p.magic) != magic for p in same_symbol):
             return {'success': False, 'error': 'Netting hesabında bu sembol başka işlem kaynağına ait.'}
-        if magic in (HMA_MAGIC, AI_MAGIC) and any(int(p.magic) == magic for p in same_symbol):
-            return {'success': False, 'error': 'Bu stratejinin sembolde açık pozisyonu var.'}
+        own_same = [p for p in same_symbol if int(p.magic) == magic]
+        if magic in (HMA_MAGIC, AI_MAGIC) and own_same:
+            return own_position_error(symbol, magic, order_type, own_same)
         if not mt5.symbol_select(symbol, True):
             return {'success': False, 'error': 'Sembol seçilemedi.'}
         info = mt5.symbol_info(symbol)
@@ -729,6 +730,20 @@ def exposure_limit_error(symbol, magic, committed, count, volume, max_total_lots
                       f'{committed:g} lot ({count} işlem) + bu emir {volume:g} lot = {committed + volume:g} lot; '
                       f'sınır {max_total_lots:g} lot ve {max_open_orders} işlem. {where} sınırı artırın '
                       'ya da açık işlemlerden birini kapatın.')}
+
+
+def own_position_error(symbol, magic, order_type, positions):
+    """One position per symbol for the strategy (HMA_Crossover_EA HasOpenPosition); name the blocking position."""
+    p = max(positions, key=lambda x: int(getattr(x, 'time', 0) or 0))
+    side = 'AL' if int(p.type) == 0 else 'SAT'
+    opened = datetime.fromtimestamp(int(getattr(p, 'time', 0) or 0), timezone.utc).strftime('%d.%m %H:%M')  # MT5 server clock
+    owner = 'Botun' if magic == HMA_MAGIC else 'Yapay zekâ stratejisinin'
+    same = (int(p.type) == 0) == (order_type == 'BUY')
+    rule = ('MT5 EA kuralı: aynı yönde ikinci pozisyon açılmaz.' if same
+            else 'Ters yöndeki işlem için önce bu pozisyon kapanmalı.')
+    return {'success': False, 'reason_code': 'strategy_position_open', 'position_ticket': int(p.ticket),
+            'error': (f'{symbol}: {owner} açık {side} pozisyonu var (#{int(p.ticket)}, {float(p.volume):g} lot, '
+                      f'{opened} açıldı). {rule} Yeni işlem için önce onu kapatın.')}
 
 
 def _exposure_scope(current, pending, magic):
