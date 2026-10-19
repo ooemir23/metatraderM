@@ -735,7 +735,7 @@ html { background: #0b0e14; }
 .scan-symbol-button.is-header { margin:0; padding:4px 8px; border-color:#374151; background:#181d2a; font-size:12px; font-weight:700; color:#fff; }
 
 /* Manuel Stil Sinyali card (manual-style.js) */
-.signals-grid > .ms-card { grid-column:1 / -1; }
+.signals-grid > .ms-card { grid-column:1 / -1; order:1; }  /* full width below the scanner + bot pair */
 .ms-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; padding-bottom:6px; margin-bottom:6px; border-bottom:1px solid #1f2937; }
 .ms-sub { color:#9ca3af; font-size:11.5px; line-height:1.45; }
 .ms-status { color:#d1d5db; font-size:12px; font-weight:600; margin:6px 0; }
