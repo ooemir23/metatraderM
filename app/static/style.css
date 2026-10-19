@@ -733,3 +733,30 @@ html { background: #0b0e14; }
 .scan-symbol-button:hover i { color:#fff; }
 .scan-symbol-button:focus-visible { outline:2px solid #22d3ee; outline-offset:1px; }
 .scan-symbol-button.is-header { margin:0; padding:4px 8px; border-color:#374151; background:#181d2a; font-size:12px; font-weight:700; color:#fff; }
+
+/* Manuel Stil Sinyali card (manual-style.js) */
+.signals-grid > .ms-card { grid-column:1 / -1; }
+.ms-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; padding-bottom:6px; margin-bottom:6px; border-bottom:1px solid #1f2937; }
+.ms-sub { color:#9ca3af; font-size:11.5px; line-height:1.45; }
+.ms-status { color:#d1d5db; font-size:12px; font-weight:600; margin:6px 0; }
+.ms-note { color:#9ca3af; font-size:11.5px; line-height:1.5; margin:6px 0; }
+.ms-verdict { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; color:#d1d5db; margin:4px 0 8px; }
+.ms-badge { font-size:11px; font-weight:800; padding:2px 8px; border-radius:6px; border:1px solid; }
+.ms-badge.is-ok { color:#6ee7b7; background:#064e3b55; border-color:#10b98166; }
+.ms-badge.is-warn { color:#fcd34d; background:#78350f55; border-color:#f59e0b66; }
+.ms-live { display:flex; align-items:center; gap:12px; padding:10px; border-radius:12px; border:1px solid #374151; background:#0f131c; }
+.ms-live[data-side="BUY"] { border-color:#10b98199; background:#052e2b66; }
+.ms-live[data-side="SELL"] { border-color:#f43f5e99; background:#3b0a1466; }
+.ms-side { min-width:64px; text-align:center; font:800 15px/1 ui-monospace, monospace; padding:8px 10px; border-radius:8px; background:#1f2937; color:#e5e7eb; }
+.ms-live[data-side="BUY"] .ms-side { background:#059669; color:#fff; }
+.ms-live[data-side="SELL"] .ms-side { background:#e11d48; color:#fff; }
+.ms-live-text { font-size:12.5px; color:#e5e7eb; line-height:1.45; }
+.ms-details { margin-top:8px; font-size:12px; color:#d1d5db; }
+.ms-details > summary { cursor:pointer; color:#fcd34d; font-weight:700; }
+.ms-table { width:100%; border-collapse:collapse; font-size:11.5px; margin-top:6px; }
+.ms-table th, .ms-table td { text-align:left; padding:4px 6px; border-bottom:1px solid #1f2937; }
+.ms-table th { color:#9ca3af; font-weight:600; }
+.ms-table td:not(:first-child) { font-family:ui-monospace, monospace; }
+.ms-recent { list-style:none; padding:0; margin:6px 0 0; display:grid; gap:3px; font:11.5px ui-monospace, monospace; }
+.ms-recent li { display:flex; gap:10px; }
+.ms-buy { color:#34d399; } .ms-sell { color:#fb7185; }

@@ -629,6 +629,59 @@ async def scan_signals(symbols: str = Query(min_length=1, max_length=320),
 
 
 
+manual_style_guard = threading.Lock()
+_MANUAL_STYLE_CACHE: Dict[Any, Any] = {}
+MANUAL_STYLE_TTL = 60
+
+
+def _manual_style_sync(symbol, timeframe_minutes, days):
+    from app import manual_style, signal_engine
+    s = manual_style.DEFAULTS
+    trades = mt5_client.get_manual_trades(days=days)
+    warmup = signal_engine.history_bars(s) + manual_style.LOOKBACK_RANGE + 10
+    count = min(20000, days * 1440 // timeframe_minutes + warmup + s['horizon'] + 2)
+    rates = mt5_client.get_rates(symbol, timeframe_minutes, count)
+    if not rates or len(rates) < warmup + 10:
+        raise HTTPException(status_code=503, detail='MT5 mum verisi alınamadı; broker bağlantısını kontrol edin.')
+    htf = signal_engine.HTF_AUTO.get(timeframe_minutes)
+    htf_rates = None
+    if htf in TIMEFRAME_NAMES:
+        htf_rates = mt5_client.get_rates(symbol, htf, count * timeframe_minutes // htf + warmup)
+    quote = mt5_client.get_symbol_price(symbol) or {}
+    spread = float(quote.get('spread') or 0) * float(quote.get('point') or 0)
+    result = manual_style.analyze(trades, rates, timeframe_minutes, symbol=symbol, htf_rates=htf_rates,
+                                  utc_offset=mt5_client.tick_clock_offset, spread=spread)
+    symbols = {}
+    for t in trades:
+        symbols[t['symbol']] = symbols.get(t['symbol'], 0) + 1
+    result.update(days=days, manual_symbols=symbols, spread=spread, time_basis='broker',
+                  checked_at=int(time.time()))
+    return result
+
+
+@app.get('/api/manual-style')
+async def manual_style_signal(symbol: str = Query(default='XAUUSD', pattern=r'^[A-Za-z0-9_.#-]+$', max_length=32),
+                              timeframe_minutes: int = Query(default=15),
+                              days: int = Query(default=90, ge=7, le=365),
+                              refresh: bool = Query(default=False)):
+    """Signals learned from positions opened by hand in the original MT5 terminal (closed candles only)."""
+    if timeframe_minutes not in (1, 5, 15, 30, 60, 240):
+        raise HTTPException(status_code=422, detail='Desteklenmeyen zaman dilimi.')
+    key = (mt5_client.login_id, mt5_client.server, symbol, timeframe_minutes, days)
+    hit = _MANUAL_STYLE_CACHE.get(key)
+    if hit and not refresh and time.monotonic() - hit[0] < MANUAL_STYLE_TTL:
+        return hit[1]
+    if not manual_style_guard.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail='Manuel stil analizi zaten çalışıyor; birkaç saniye sonra tekrar deneyin.')
+    try:
+        result = await asyncio.to_thread(_manual_style_sync, symbol, timeframe_minutes, days)
+    finally:
+        manual_style_guard.release()
+    _MANUAL_STYLE_CACHE.clear() if len(_MANUAL_STYLE_CACHE) > 32 else None
+    _MANUAL_STYLE_CACHE[key] = (time.monotonic(), result)
+    return result
+
+
 @app.get('/api/research/history')
 def research_history(symbol: str = Query(default='XAUUSD', pattern=r'^[A-Za-z0-9_.#-]+$', max_length=32),
                      timeframe_minutes: int = Query(default=60),

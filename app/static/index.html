@@ -901,6 +901,26 @@
               </div>
             </div>
 
+            <!-- MANUAL STYLE: signals learned from hand-made trades in the original MT5 terminal -->
+            <div id="manual-style-card" class="ms-card bg-[#121620] p-3.5 sm:p-4 rounded-2xl border border-amber-500/30 shadow-xl text-sm">
+              <div class="ms-head">
+                <div class="flex items-center gap-1.5">
+                  <i class="ph-bold ph-desktop-tower text-amber-300 text-lg" aria-hidden="true"></i>
+                  <h2 class="font-bold text-white text-sm uppercase tracking-wide">Manuel Stil Sinyali</h2>
+                </div>
+                <div class="flex items-center gap-2">
+                  <label class="flex items-center gap-1.5 cursor-pointer select-none text-xs text-gray-300" title="Geçmiş testi geçmeyen sinyallerde de sesli uyarı ver">
+                    <input id="manual-style-exp-sound" type="checkbox" class="rounded bg-gray-800 border-gray-700 w-4 h-4 text-amber-500">
+                    <span>Deneyselde de ses</span>
+                  </label>
+                  <button type="button" id="manual-style-refresh" class="px-3 py-1 rounded-lg bg-amber-700 hover:bg-amber-600 text-white font-bold text-xs">Yeniden incele</button>
+                </div>
+              </div>
+              <p class="ms-sub">Orijinal MT5'te elle açıp kapattığın işlemlerden öğrenir; seçili sembol ve tarama periyodunda, yalnız kapanmış mumda sinyal verir. Emir göndermez.</p>
+              <p id="manual-style-status" role="status" class="ms-status">Manuel işlemler inceleniyor…</p>
+              <div id="manual-style-body" aria-live="polite"></div>
+            </div>
+
             <!-- CARD 2: HMA CROSSOVER STRATEGY BOT -->
             <div id="bot-card" class="bg-[#121620] p-3.5 sm:p-4 rounded-2xl border border-gray-800/80 shadow-xl flex flex-col justify-between">
               <div>
@@ -1558,6 +1578,7 @@
   <script src="/static/operations.js"></script>
   <script src="/static/permissions.js"></script>
   <script src="/static/research.js"></script>
+  <script src="/static/manual-style.js?v=1"></script>
   <script src="/static/workspace.js?v=3"></script>
 </body>
 </html>

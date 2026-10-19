@@ -3,6 +3,13 @@
   const STORAGE_KEY = "hma_ui_language";
   const en = Object.fromEntries([
     ["Canlı Al / Sat Sinyal Tarayıcı", "Live Buy / Sell Signal Scanner"],
+    ["Manuel Stil Sinyali", "Manual Style Signal"],
+    ["Deneyselde de ses", "Sound for experimental too"],
+    ["Geçmiş testi geçmeyen sinyallerde de sesli uyarı ver", "Also sound alerts for signals that did not pass the history test"],
+    ["Yeniden incele", "Re-analyse"],
+    ["Orijinal MT5'te elle açıp kapattığın işlemlerden öğrenir; seçili sembol ve tarama periyodunda, yalnız kapanmış mumda sinyal verir. Emir göndermez.",
+     "Learns from trades you opened and closed by hand in the original MT5; signals only on a closed candle for the selected symbol and scan timeframe. Places no orders."],
+    ["Manuel işlemler inceleniyor…", "Analysing manual trades…"],
     ["Pozisyonlara dön", "Back to positions"],
     ["Araçlar", "Tools"],
     ["Otomatik bot lot sınırı", "Automatic bot lot limit"],

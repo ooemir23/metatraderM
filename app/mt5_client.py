@@ -1167,6 +1167,19 @@ class MT5Client:
             except Exception as exc:
                 raise MT5DataError("Pozisyon detayları okunamadı; hesap ve bağlantıyı kontrol edin.") from exc
 
+    def get_manual_trades(self, days: int = 90) -> List[Dict[str, Any]]:
+        """Closed positions opened by hand in the original MT5 terminal (broker history)."""
+        with self._lock:
+            if not self.ensure_connected():
+                raise MT5DataError("MT5 bağlı değil; manuel işlemler okunamadı.")
+            try:
+                account_scope = self._selected_account()
+                return self._bridge('manual_lifetimes', int(days), int(self.tick_clock_offset), account_scope)
+            except MT5DataError:
+                raise
+            except Exception as exc:
+                raise MT5DataError("Manuel işlem geçmişi okunamadı; hesap ve bağlantıyı kontrol edin.") from exc
+
     def get_reports(self, days: int = 30) -> Dict[str, Any]:
         with self._lock:
             if not self.ensure_connected():

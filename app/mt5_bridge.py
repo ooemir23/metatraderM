@@ -1452,6 +1452,62 @@ def position_details(mt5, position_id, account_scope):
                 currency=str(account.currency), deals=deals)
 
 
+_PANEL_COMMENT = re.compile(r'hma bot|hma web|panel|ai|deepseek|mevo', re.I)
+
+
+def is_terminal_manual(magic, comment):
+    """Opened by hand in the original MT5 terminal: magic 0 and no panel/bot/AI comment
+    (same rule as the "Orijinal MT5 (Manuel)" badge in the panel)."""
+    comment = str(comment or '')
+    return int(magic or 0) == 0 and not comment.startswith('vm:') and not _PANEL_COMMENT.search(comment)
+
+
+def manual_lifetimes(mt5, days, tick_offset, account_scope):
+    """Closed positions opened by hand in the MT5 terminal, one row per position.
+
+    Deal times are broker server time (MT5 History). A position counts only when its opening
+    deal is inside the window and its volume is fully closed."""
+    _account(mt5, *account_scope)
+    end = datetime.now(timezone.utc) + timedelta(seconds=int(tick_offset))
+    start = end - timedelta(days=int(days))
+    deals, current = mt5.history_deals_get(start, end), mt5.positions_get()
+    if deals is None or current is None:
+        raise RuntimeError('Manuel işlem geçmişi okunamadı.')
+    _account(mt5, *account_scope)
+    open_ids = set(int(p.identifier) for p in current)
+    by_position = {}
+    for d in deals:
+        if int(d.type) in (0, 1) and str(d.symbol):
+            by_position.setdefault(int(d.position_id), []).append(d)
+    out = []
+    for position_id, rows in by_position.items():
+        if position_id in open_ids:
+            continue
+        rows.sort(key=lambda d: (int(getattr(d, 'time_msc', int(d.time) * 1000)), int(d.ticket)))
+        opening = [d for d in rows if int(d.entry) == 0]
+        closing = [d for d in rows if int(d.entry) in (1, 3)]
+        if not opening or not closing or rows[0] is not opening[0]:
+            continue
+        first = opening[0]
+        if not is_terminal_manual(getattr(first, 'magic', 0), getattr(first, 'comment', '')):
+            continue
+        side = 1 if int(first.type) == 0 else -1
+        balance = sum(float(d.volume) * (1 if int(d.type) == 0 else -1) for d in rows)
+        if abs(balance) > 1e-7:
+            continue
+        vin = sum(float(d.volume) for d in opening)
+        vout = sum(float(d.volume) for d in closing)
+        out.append(dict(
+            position_id=position_id, symbol=str(first.symbol), side='BUY' if side > 0 else 'SELL',
+            volume=round(vin, 8),
+            open_time=int(first.time), open_price=sum(float(d.price) * float(d.volume) for d in opening) / vin,
+            close_time=max(int(d.time) for d in closing),
+            close_price=sum(float(d.price) * float(d.volume) for d in closing) / vout,
+            net=round(sum(float(d.profit) + float(d.commission) + float(d.swap) + float(d.fee) for d in rows), 2)))
+    out.sort(key=lambda r: (r['open_time'], r['position_id']))
+    return out
+
+
 def risk_lot(mt5, symbol, side, sl_points, risk_pct, expected_login=0, expected_server='', tick_offset=0):
     """Lot size so that hitting the stop loses ~risk_pct of equity (broker profit calculation).
     Rounds DOWN to the broker lot step; never rounds up to the minimum lot."""
