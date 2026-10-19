@@ -638,7 +638,7 @@ def _manual_style_sync(symbol, timeframe_minutes, days):
     from app import manual_style, signal_engine
     s = manual_style.DEFAULTS
     trades = mt5_client.get_manual_trades(days=days)
-    warmup = signal_engine.history_bars(s) + manual_style.LOOKBACK_RANGE + 10
+    warmup = signal_engine.history_bars(s) + manual_style.VOL_BARS + 10
     count = min(20000, days * 1440 // timeframe_minutes + warmup + s['horizon'] + 2)
     rates = mt5_client.get_rates(symbol, timeframe_minutes, count)
     if not rates or len(rates) < warmup + 10:
@@ -647,10 +647,14 @@ def _manual_style_sync(symbol, timeframe_minutes, days):
     htf_rates = None
     if htf in TIMEFRAME_NAMES:
         htf_rates = mt5_client.get_rates(symbol, htf, count * timeframe_minutes // htf + warmup)
+    span_days = count * timeframe_minutes // 1440 + 2
+    h4_rates = mt5_client.get_rates(symbol, 240, span_days * 6 + warmup)
+    d1_rates = mt5_client.get_rates(symbol, 1440, span_days + warmup)
     quote = mt5_client.get_symbol_price(symbol) or {}
     spread = float(quote.get('spread') or 0) * float(quote.get('point') or 0)
     result = manual_style.analyze(trades, rates, timeframe_minutes, symbol=symbol, htf_rates=htf_rates,
-                                  utc_offset=mt5_client.tick_clock_offset, spread=spread)
+                                  utc_offset=mt5_client.tick_clock_offset, spread=spread,
+                                  h4_rates=h4_rates, d1_rates=d1_rates)
     symbols = {}
     for t in trades:
         symbols[t['symbol']] = symbols.get(t['symbol'], 0) + 1

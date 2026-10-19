@@ -760,3 +760,13 @@ html { background: #0b0e14; }
 .ms-recent { list-style:none; padding:0; margin:6px 0 0; display:grid; gap:3px; font:11.5px ui-monospace, monospace; }
 .ms-recent li { display:flex; gap:10px; }
 .ms-buy { color:#34d399; } .ms-sell { color:#fb7185; }
+.ms-badge.is-mid { color:#93c5fd; background:#1e3a8a55; border-color:#3b82f666; }
+.ms-findings { margin-top:10px; }
+.ms-findings h3 { color:#e5e7eb; font-size:12px; font-weight:700; margin:8px 0 4px; }
+.ms-findings ul { list-style:none; padding:0; margin:0; display:grid; gap:4px; font-size:12px; color:#d1d5db; }
+.ms-findings li { display:flex; gap:8px; align-items:baseline; line-height:1.45; }
+.ms-findings li .ms-badge { flex-shrink:0; }
+.ms-table-wrap { max-height:260px; overflow:auto; border:1px solid #1f2937; border-radius:8px; margin-top:6px; }
+.ms-table-wrap .ms-table { margin-top:0; }
+.ms-table-wrap thead th { position:sticky; top:0; background:#121620; }
+.ms-table tr.ms-win td:nth-child(4) { color:#34d399; } .ms-table tr.ms-loss td:nth-child(4) { color:#fb7185; }

@@ -30,9 +30,14 @@ function data(side, candle, {reliable = false} = {}) {
   return {status: 'OK', symbol: 'XAUUSD', timeframe_minutes: 15, days: 90, positions: 216, decisions: 45, wins: 30, net: 162436,
     manual_symbols: {XAUUSD: 183}, verdict: {reliable, reason: 'Geçmiş testte sinyaller her mumda girmekten daha iyi değil.'},
     entry_quality: {hit_rate: 0.4, avg_move: -0.1},
-    profile: {features: [{label: 'HMA/EMA trend yönü', kind: 'share', wins: 0.6, losses: 0.5},
-                         {label: 'RSI', kind: 'median', wins: 48.5, losses: 46.6}]},
-    history_test: {horizon_bars: 8, signals: {count: 40, all_signals: 70, hit_rate: 0.45, avg_move: -0.1},
+    findings: {tested: 22, expected_false: 1.1,
+      win_loss: [{strength: 'olası', text: 'Londra seansında giriş: kazananlarda %70, kaybedenlerde %20 (kazananlarda daha yüksek)'},
+                 {strength: 'yok', text: 'ADX gizli kalmalı'}],
+      habits: [{strength: 'belirgin', text: 'Önceki gün tepesine göre konum: senin girişlerinde -0.40 ATR, sıradan mumlarda -2.10 ATR'}]},
+    cross_check: {count: 43, accuracy: 0.58, majority: 0.65, z: -1.0},
+    trades: [{open_time: 1792429252, side: 'SELL', positions: 5, volume: 25, net: 16735, win: true,
+              features: {trend: -1, london: 0, newyork: 1, asia: 0, rsi: 52}}],
+    history_test: {horizon_bars: 8, test_start: 1791000000, test_bars: 1600, signals: {count: 40, all_signals: 70, hit_rate: 0.45, avg_move: -0.1},
                    baseline: {hit_rate: 0.48, avg_move: 0}, recent: [{candle_time: 1792400000, side: 'SELL', after: {move: 0.5}}]},
     signal: {side, candidate_side: side === 'HOLD' ? 'SELL' : side, score: 0.6, similar: true, win_share: 0.71,
              candle_time: candle, price: 4146.5, experimental: !reliable,
@@ -50,7 +55,13 @@ function data(side, candle, {reliable = false} = {}) {
   assert.match(html, /En benzer 3 geçmiş girişin 2'i kazandı/);
   assert.match(html, /ms-badge is-warn">Deneysel/);
   assert.match(html, /40 bağımsız sinyal \(toplam 70\)/);
-  assert.match(node('manual-style-status').textContent, /216 pozisyon → 45 karar \(30 kazanan\)/);
+  assert.match(node('manual-style-status').textContent, /216 manuel pozisyonun hepsi incelendi → 45 karar \(30 kazanan, 15 kaybeden\)/);
+  assert.match(html, /Olası<\/span> <span>Londra seansında giriş: kazananlarda %70/);
+  assert.doesNotMatch(html, /ADX gizli kalmalı/, 'findings without evidence are hidden');
+  assert.match(html, /Belirgin<\/span> <span>Önceki gün tepesine göre konum/);
+  assert.match(html, /%58 doğru \(hep çoğunluk sonucunu söylemek %65 doğru olurdu\)/);
+  assert.match(html, /İncelenen 45 karar ve geçmiş test/);
+  assert.match(html, /<td>5 poz · 25.00 lot<\/td><td>\+16\.735<\/td><td>trende karşı<\/td><td>New York<\/td>/);
   assert.equal(beeps.length, 0, 'a signal already there when the page opens does not ring');
 
   // 2. A new experimental signal stays silent unless the user allowed it.

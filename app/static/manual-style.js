@@ -53,14 +53,22 @@
     }
   }
 
+  const STRENGTH = {belirgin: ['is-ok', 'Belirgin'], 'olası': ['is-mid', 'Olası'], 'zayıf': ['is-warn', 'Zayıf ipucu']};
+  const SESSION = (f) => (f.london ? 'Londra' : f.newyork ? 'New York' : f.asia ? 'Asya' : 'Seans dışı');
+  function finding(r) {
+    const [cls, txt] = STRENGTH[r.strength] || ['', ''];
+    return `<li><span class="ms-badge ${cls}">${txt}</span> <span>${esc(r.text)}</span></li>`;
+  }
+
   function render(data) {
     const body = $('manual-style-body');
     const status = $('manual-style-status');
     if (!body) return;
     const tfName = TF[data.timeframe_minutes] || `${data.timeframe_minutes} dk`;
     if (status) {
-      status.textContent = `${data.symbol} · ${tfName} · son ${data.days} gün · ${data.positions} pozisyon → `
-        + `${data.decisions} karar (${data.wins} kazanan) · net ${money(data.net)}`;
+      status.textContent = `${data.symbol} · ${tfName} · son ${data.days} gün · ${data.positions} manuel pozisyonun hepsi incelendi → `
+        + `${data.decisions} karar (${data.wins} kazanan, ${data.decisions - data.wins} kaybeden) · net ${money(data.net)}`
+        + (data.skipped_before_history ? ` · ${data.skipped_before_history} karar yüklenen mumlardan eski` : '');
     }
     if (data.status !== 'OK') {
       const others = Object.entries(data.manual_symbols || {}).filter(([s]) => s !== data.symbol)
@@ -72,41 +80,63 @@
     const v = data.verdict || {};
     const sig = data.signal;
     const ht = data.history_test || {};
+    const fd = data.findings || {};
+    const cc = data.cross_check || {};
     const verdict = v.reliable
       ? `<span class="ms-badge is-ok">Geçmiş testi geçti</span>`
       : `<span class="ms-badge is-warn">Deneysel</span>`;
     let live = '<p class="ms-note">Canlı sinyal için yeterli veri yok.</p>';
     if (sig) {
       const wins = sig.neighbours.filter(n => n.win).length;
+      const used = (sig.used_features || []).map(f => esc(f.label)).join(' · ');
       live = `<div class="ms-live" data-side="${esc(sig.side)}">
           <span class="ms-side">${sideLabel(sig.side)}</span>
           <div class="ms-live-text">
             <div>${sig.side === 'HOLD'
               ? `Son kapanmış mum (${esc(brokerTime(sig.candle_time))}) senin girişlerine ${sig.similar ? 'benziyor ama benzer girişlerin çoğu kazanmadı' : 'benzemiyor'}.`
-              : `Son kapanmış mum (${esc(brokerTime(sig.candle_time))}) senin ${sideLabel(sig.side)} girişlerine benziyor.`}</div>
+              : `Son kapanmış mum (${esc(brokerTime(sig.candle_time))}) senin kazanan ${sideLabel(sig.side)} girişlerine benziyor.`}</div>
             <div class="ms-sub">En benzer ${sig.neighbours.length} geçmiş girişin ${wins}'i kazandı · skor ${num(sig.score)} · fiyat ${esc(sig.price)}</div>
+            ${used ? `<div class="ms-sub">Karşılaştırırken baktığı şeyler: ${used}</div>` : ''}
           </div>
         </div>`;
     }
-    const rows = (data.profile?.features || []).map(f => `<tr><td>${esc(f.label)}</td>`
-      + `<td>${f.kind === 'share' ? pct(f.wins) + ' lehte' : num(f.wins)}</td>`
-      + `<td>${f.kind === 'share' ? pct(f.losses) + ' lehte' : num(f.losses)}</td></tr>`).join('');
+    const wl = (fd.win_loss || []).filter(r => r.strength !== 'yok').slice(0, 6);
+    const hb = (fd.habits || []).filter(r => r.strength === 'belirgin' || r.strength === 'olası').slice(0, 6);
+    const ccLine = cc.count
+      ? `Kendi ${cc.count} kararını, her birini diğerlerinden öğrenerek tahmin ettim: %${Math.round(100 * cc.accuracy)} doğru `
+        + `(hep çoğunluk sonucunu söylemek %${Math.round(100 * cc.majority)} doğru olurdu). `
+        + (cc.z != null && cc.z >= 2 ? 'Öğrendiği mantık senin işlemlerinde işe yarıyor.' : 'Bu fark, öğrendiği mantığın henüz işe yaradığını göstermiyor.')
+      : '';
     const s = ht.signals || {}, b = ht.baseline || {};
     const recent = (ht.recent || []).slice(-6).reverse().map(x => `<li><span>${esc(brokerTime(x.candle_time))}</span>`
       + `<b class="ms-${x.side === 'BUY' ? 'buy' : 'sell'}">${sideLabel(x.side)}</b>`
       + `<span>${x.after ? `${num(x.after.move)} ATR` : 'sonuç bekleniyor'}</span></li>`).join('');
+    const trades = (data.trades || []).slice().reverse().map(t => `<tr class="${t.win ? 'ms-win' : 'ms-loss'}">`
+      + `<td>${esc(brokerTime(t.open_time))}</td><td class="ms-${t.side === 'BUY' ? 'buy' : 'sell'}">${sideLabel(t.side)}</td>`
+      + `<td>${t.positions} poz · ${num(t.volume)} lot</td><td>${money(t.net)}</td>`
+      + `<td>${t.features.trend > 0 ? 'trend yönünde' : 'trende karşı'}</td><td>${SESSION(t.features)}</td>`
+      + `<td>RSI ${num(t.features.rsi, 0)}</td></tr>`).join('');
     body.innerHTML = `
       <div class="ms-verdict">${verdict}<span>${esc(v.reason || '')}</span></div>
       ${live}
+      <section class="ms-findings" aria-label="Fark ettiklerim">
+        <h3>Kazanan ve kaybeden girişlerinde fark ettiklerim</h3>
+        ${wl.length ? `<ul>${wl.map(finding).join('')}</ul>`
+          : '<p class="ms-note">Kazanan ve kaybeden girişlerin arasında incelediğim hiçbir bilgide belirgin bir fark bulamadım.</p>'}
+        <h3>Girişlerinin ortak özellikleri (sıradan mumlara göre)</h3>
+        ${hb.length ? `<ul>${hb.map(finding).join('')}</ul>`
+          : '<p class="ms-note">Girişlerin sıradan mumlardan belirgin şekilde ayrılmıyor.</p>'}
+        <p class="ms-note">${esc(ccLine)} ${fd.tested ? `${fd.tested} farklı bilgi test edildi; şans eseri yaklaşık ${num(fd.expected_false, 0)} tanesi "olası" görünebilir.` : ''}</p>
+      </section>
       <details class="ms-details">
-        <summary>Ne öğrendi, nasıl test edildi?</summary>
-        <p class="ms-note">Her girişin öncesindeki son kapanmış ${esc(tfName)} mumu MT5 göstergeleriyle okunur
-          (HMA14, EMA34, RSI14, ATR14, ADX14, üst zaman dilimi trendi, seans). Değerler işlem yönüne göre çevrilir:
-          "lehte" o yön için uygun demek.</p>
-        <table class="ms-table"><thead><tr><th></th><th>Kazanan girişler</th><th>Kaybeden girişler</th></tr></thead><tbody>${rows}</tbody></table>
-        <p class="ms-note">Girişlerin ilk ${ht.horizon_bars} mumu: isabet ${pct(data.entry_quality?.hit_rate)},
+        <summary>İncelenen ${data.decisions} karar ve geçmiş test</summary>
+        <p class="ms-note">Her girişin öncesindeki son kapanmış ${esc(tfName)} mumu okunur: HMA14/EMA34 trendi ve eğimi,
+          H1/H4/D1 trendleri, RSI14, ADX14, ATR14, önceki gün tepe/dip ve gün açılışına uzaklık, yuvarlak fiyatlar,
+          son 20/50 mumun aralığı, son mumun gövde ve fitili, oynaklık ve seans (MT5 sunucu saati).</p>
+        <div class="ms-table-wrap"><table class="ms-table"><thead><tr><th>Giriş (sunucu)</th><th>Yön</th><th>Boyut</th><th>Net</th><th>Trend</th><th>Seans</th><th>RSI</th></tr></thead><tbody>${trades}</tbody></table></div>
+        <p class="ms-note">Girişlerinin ilk ${ht.horizon_bars} mumu: isabet ${pct(data.entry_quality?.hit_rate)},
           ortalama ${num(data.entry_quality?.avg_move)} ATR.</p>
-        <p class="ms-note">Geçmiş test (her mum yalnız o ana kadar kapanmış işlemlerden öğrenir, ${ht.horizon_bars} mum sonrası):
+        <p class="ms-note">Geçmiş test (${esc(brokerTime(ht.test_start))} sonrası ~${ht.test_bars} mum; her mum yalnız o ana kadar kapanmış işlemlerden öğrenir):
           ${s.count || 0} bağımsız sinyal (toplam ${s.all_signals ?? s.count ?? 0}), isabet ${pct(s.hit_rate)}, ortalama ${num(s.avg_move)} ATR ·
           her mumda girmek: isabet ${pct(b.hit_rate)}, ortalama ${num(b.avg_move)} ATR.</p>
         ${recent ? `<ul class="ms-recent">${recent}</ul>` : ''}

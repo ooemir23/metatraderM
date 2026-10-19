@@ -104,9 +104,42 @@ def test_features_use_last_closed_candle_and_mt5_formulas():
     hma, ema = se.hma_series(closes, 14), se.ema_series(closes, 34)
     f_buy, f_sell = m.features(999, 'BUY'), m.features(999, 'SELL')
     assert f_buy['trend'] == (1.0 if hma[999] > ema[999] else -1.0)
-    assert f_sell['trend'] == -f_buy['trend'] and f_sell['rsi'] == -f_buy['rsi']
-    assert math.isclose(f_buy['rsi'], (se.rsi_series(closes, 14)[999] - 50) / 50)
-    assert math.isclose(f_buy['adx'], se.adx_series(rates, 14)[999] / 50)
+    rsi = se.rsi_series(closes, 14)[999]
+    assert f_sell['trend'] == -f_buy['trend']
+    assert math.isclose(f_buy['rsi'], rsi) and math.isclose(f_sell['rsi'], 100 - rsi)
+    assert math.isclose(f_buy['adx'], se.adx_series(rates, 14)[999])
+
+
+def test_previous_day_levels_use_broker_server_days():
+    rates = make_rates(1200)
+    m = ms.Market(rates, TF, ms.DEFAULTS)
+    i = 1000
+    day = rates[i]['time'] // 86400
+    prev = [r for r in rates if r['time'] // 86400 == day - 1]
+    today = [r for r in rates if r['time'] // 86400 == day]
+    assert math.isclose(m.pdh[i], max(r['high'] for r in prev))
+    assert math.isclose(m.pdl[i], min(r['low'] for r in prev))
+    assert math.isclose(m.dopen[i], today[0]['open'])
+    f = m.features(i, 'SELL')
+    a = m.atr[i]
+    assert math.isclose(f['pdl'], max(-10, min(10, (m.pdl[i] - m.close[i]) / a)))
+    assert ms.round_step(4150.3) == 10 and ms.round_step(1.3212) == 0.01
+
+
+def test_findings_name_what_separates_wins_from_losses():
+    rnd = random.Random(1)
+    decisions = []
+    for j in range(40):
+        win = j % 2 == 0
+        f = {k: rnd.gauss(0, 1) for k in ms.NAMES}
+        f['london'] = 1.0 if win else 0.0          # wins all in London, losses never
+        decisions.append(dict(win=win, features=f))
+    base = [ms._vector({k: rnd.gauss(0, 1) for k in ms.NAMES}) for _ in range(300)]
+    out = ms.findings(decisions, base, permutations=500)
+    top = out['win_loss'][0]
+    assert top['feature'] == 'london' and top['strength'] == 'belirgin'
+    assert top['wins'] == 1.0 and top['losses'] == 0.0 and 'kazananlarda' in top['text']
+    assert out['tested'] == len([k for k in ms.NAMES if ms.FEATURES[k][1] != 'hidden'])
 
 
 def test_not_enough_decisions_gives_no_signal():
@@ -147,8 +180,8 @@ def test_learns_a_consistent_habit_and_beats_entering_everywhere():
     assert r['status'] == 'OK' and ht['signals']['count'] >= 20
     assert ht['edge'] > 0.05 and ht['signals']['avg_move'] > ht['baseline']['avg_move']
     assert r['verdict']['reliable'] is True
-    prof = {f['feature']: f for f in r['profile']['features']}
-    assert prof['trend']['wins'] > 0.9          # learned: winners were with the trend
+    assert r['cross_check']['count'] == r['decisions']
+    assert len(r['trades']) == r['decisions'] and r['positions'] == len(trades)
 
 
 def test_walk_forward_never_uses_future_trades():
