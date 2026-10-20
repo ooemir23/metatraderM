@@ -1078,3 +1078,37 @@ dialog, #login-modal > div, #bot-settings-modal > div, #ai-autopilot-modal > div
   .hx-main-grid { align-items:stretch; }
   .hx-main-left > #chart-card { flex:1 1 auto; min-height:520px; }
 }
+
+/* ===== Terminal: chart right-click menu (MT5 sections) ===== */
+.mt5-chart-menu { width:300px; padding:0 0 8px; border:1px solid #2a313d; border-radius:8px; background:#14181f; box-shadow:none; overscroll-behavior:contain; }
+.mt5-menu-title { position:sticky; top:0; z-index:1; display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0; padding:10px 12px; background:#14181f; border-bottom:1px solid #222833; font-family:'IBM Plex Mono', ui-monospace, monospace; font-weight:500; color:#c4cad5; }
+.mt5-menu-title button { width:auto; padding:2px 6px; color:#8f98a8; }
+.mt5-menu-h { margin:10px 12px 4px; padding-top:8px; border-top:1px solid #222833; font-size:11.5px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:#8f98a8; }
+.mt5-menu-title + input + .mt5-menu-h { border-top:0; padding-top:0; }
+.mt5-chart-menu > button, .mt5-menu-more > button { display:block; width:calc(100% - 8px); margin:0 4px; text-align:left; padding:7px 8px; border-radius:4px; color:#e6e9ef; }
+.mt5-chart-menu > button:hover, .mt5-menu-more > button:hover { background:#1a1f28; }
+.mt5-chart-menu > button[hidden] { display:none; }
+.mt5-menu-check::before { content:'☐'; display:inline-block; width:18px; color:#8f98a8; }
+.mt5-menu-check[aria-checked="true"]::before { content:'☑'; color:#4c8dff; }
+.mt5-menu-trade { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:0 12px 4px; }
+.mt5-menu-trade button { padding:9px 6px; border-radius:4px; font-family:'IBM Plex Mono', ui-monospace, monospace; font-weight:600; color:#fff; }
+.mt5-menu-sell { background:#d64545; } .mt5-menu-buy { background:#2f6fd6; }
+html[data-buy-scheme="green"] .mt5-menu-buy { background:#1f9d6a; }
+.mt5-menu-seg { display:flex; flex-wrap:wrap; gap:4px; margin:2px 12px 4px; }
+.mt5-menu-seg button { flex:1 1 0; min-width:0; padding:5px 2px; border:1px solid #222833; border-radius:4px; background:#0f1218; color:#c4cad5; font-size:12px; }
+.mt5-menu-seg button:hover { color:#e6e9ef; border-color:#2a313d; }
+.mt5-menu-seg button[aria-pressed="true"] { background:#1d2a44; border-color:#4c8dff; color:#e6e9ef; font-weight:600; }
+.mt5-menu-row { display:grid; grid-template-columns:1fr 1fr; gap:4px; margin:4px 12px; }
+.mt5-menu-row button { padding:6px; border:1px solid #222833; border-radius:4px; background:#0f1218; color:#c4cad5; font-size:12px; }
+.mt5-menu-row button:hover { color:#e6e9ef; }
+.mt5-menu-more { margin:8px 12px 0; padding-top:8px; border-top:1px solid #222833; }
+.mt5-menu-more summary { cursor:pointer; color:#8f98a8; font-weight:600; padding:4px 0; }
+.mt5-menu-more label { padding:4px 0; }
+.mt5-menu-more > button { width:100%; margin:2px 0; }
+.mt5-menu-note { margin:8px 12px 0; color:#8f98a8; font-size:12px; line-height:1.4; }
+.mt5-chart-menu button:disabled { opacity:.4; cursor:not-allowed; }
+.mt5-chart-canvas { position:relative; }
+.mt5-chart-overlay { position:absolute; inset:0; z-index:3; pointer-events:none; overflow:hidden; }
+.mt5-chart-overlay i { position:absolute; top:0; bottom:28px; width:0; }
+.mt5-chart-overlay .mt5-vline { border-left:1px dashed #38bdf8; }
+.mt5-chart-overlay .mt5-sep { border-left:1px dotted #5b6474; }
