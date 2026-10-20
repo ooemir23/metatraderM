@@ -1124,3 +1124,7 @@ html[data-buy-scheme="green"] .mt5-menu-buy { background:#1f9d6a; }
    only the table area scrolls. */
 .hx-ws > .hx-tabs, .hx-ws #open-actions-bar, .hx-ws #closed-summary-bar, .hx-ws #reports-actions-bar, .hx-ws #ai-actions-bar { flex-shrink:0; }
 .hx-ws > #workspace-split { min-height:0; flex:1 1 auto; }
+
+/* EA-only bot form: two columns */
+#bot-settings-modal .bot-settings-columns { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap:12px; }
+#bot-settings-modal > div { max-width:960px; }

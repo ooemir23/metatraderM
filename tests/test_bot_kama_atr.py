@@ -104,18 +104,20 @@ def test_atr_point_failure_blocks_order_and_stop_clears_candidate(monkeypatch):
     assert b._candidate is None
 
 
-def test_api_kama_settings_validate_without_starting_or_mutating_on_error(monkeypatch):
+def test_api_settings_are_ea_only_and_validate_without_starting_or_mutating_on_error(monkeypatch):
+    # The bot works like HMA_Crossover_EA.mq5: KAMA, ATR stops/filters and confirmation are not EA features.
     import app.main as main
     b=StrategyBot(client(bars()));monkeypatch.setattr(main,'bot',b)
     web=TestClient(main.app);auth=('test','test-panel-password')
-    config={'second_ma_type':'KAMA','second_ma_period':10,'timeframe_minutes':60,
-        'kama_fast':2,'kama_slow':30,'atr_period':14,'use_atr_filter':True,'er_min':.3,
-        'confirmation_bars':2,'min_distance_atr':.1,'risk_mode':'ATR','atr_stop_multiplier':2,
-        'atr_target_multiplier':3,'use_take_profit':True}
+    assert web.post('/api/bot/config',auth=auth,json={'second_ma_type':'KAMA'}).status_code==422
+    config={'second_ma_type':'SMA','second_ma_period':10,'timeframe_minutes':60,'use_atr_filter':True,
+        'confirmation_bars':2,'risk_mode':'ATR','use_take_profit':True,'tp_points':300}
     response=web.post('/api/bot/config',auth=auth,json=config)
     assert response.status_code==200,response.text
-    assert all(response.json()[k]==v for k,v in config.items())
-    assert response.json()['is_running'] is False
+    got=response.json()
+    assert (got['second_ma_type'],got['second_ma_period'],got['use_take_profit'],got['tp_points'])==('SMA',10,True,300)
+    assert (got['use_atr_filter'],got['confirmation_bars'],got['risk_mode'],got['use_h4_filter'])==(False,0,'POINTS',False)
+    assert got['is_running'] is False
     for bad in ({'kama_fast':30},{'confirmation_bars':4},{'er_min':1.1},{'risk_mode':'INVALID'}, {'atr_stop_multiplier':0}):
         previous=b.get_status()
         assert web.post('/api/bot/config',auth=auth,json=bad).status_code==422
@@ -166,10 +168,12 @@ def test_saved_settings_restore_stopped_and_failed_write_preserves_settings(monk
     config={'symbol':'XAUUSD','timeframe_minutes':60,'second_ma_type':'KAMA','use_atr_filter':True,'use_h4_filter':True,'lot_size':.001}
     b.update_config(config);assert json.loads(path.read_text())['lot_size']==.001
     restarted=StrategyBot(client(bars()),config_path=path);monkeypatch.setattr(main,'bot',restarted)
-    main.restore_bot_settings();assert restarted.use_h4_filter and restarted.symbol=='XAUUSD' and not restarted.is_running
+    main.restore_bot_settings()
+    # Old saved non-EA settings are restored as the EA: KAMA -> EMA, filters off.
+    assert not restarted.use_h4_filter and not restarted.use_atr_filter and restarted.second_ma_type=='EMA'
+    assert restarted.symbol=='XAUUSD' and restarted.lot_size==.001 and not restarted.is_running
     def fail(*args):raise OSError('disk full')
     monkeypatch.setattr(restarted,'persist_config',fail)
     previous=restarted.config_snapshot();web=TestClient(main.app)
     assert web.post('/api/bot/config',auth=('test','test-panel-password'),json={'lot_size':.1}).status_code==503
     assert restarted.config_snapshot()==previous
-    assert web.post('/api/bot/config',auth=('test','test-panel-password'),json={'timeframe_minutes':240}).status_code==422

@@ -369,7 +369,8 @@ def trade_preview(mt5, symbol, order_type, volume, sl_points, pending_type, entr
             stop_distance = exit_price - sl if order_type == 'BUY' else sl - exit_price
             if not _stop_distance_valid(info, stop_distance):
                 return {'success': False, 'error': 'SL broker mesafesi uygun değil. ' + stop_distance_error(symbol, guidance), 'stop_guidance': guidance}
-        trade_risk = _trade_risk_guard(mt5, account, symbol, order_type, volume, protection_entry, sl, max_trade_risk_pct, enforce_policy=not native)
+        trade_risk = _trade_risk_guard(mt5, account, symbol, order_type, volume, protection_entry, sl,
+                                     None if magic == HMA_MAGIC else max_trade_risk_pct, enforce_policy=not native)
         if not trade_risk['success']:
             return trade_risk
         broker_type = 0 if order_type == 'BUY' else 1
@@ -584,7 +585,8 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
             guidance['input_mode'] = 'price' if sl_price is not None or tp_price is not None else 'points'
             return {'success': False, 'error': stop_distance_error(symbol, guidance), 'stop_guidance': guidance}
         trade_risk = _trade_risk_guard(mt5, account, symbol, order_type, volume, protection_entry, sl,
-                                     max_trade_risk_pct, ai_max_trade_risk_pct if magic == AI_MAGIC else None,
+                                     None if magic == HMA_MAGIC else max_trade_risk_pct,
+                                     ai_max_trade_risk_pct if magic == AI_MAGIC else None,
                                      enforce_policy=not native)
         if not trade_risk['success']:
             return trade_risk
@@ -752,8 +754,9 @@ def own_position_error(symbol, magic, order_type, positions):
 
 
 def _exposure_scope(current, pending, magic):
-    """Automation caps count only that strategy's own positions/orders; manual trades must not block it."""
-    if magic in (HMA_MAGIC, AI_MAGIC):
+    """HMA bot = MT5 EA CanOpenTrade: lot and order caps count the whole account (all positions and
+    pending orders). The AI autopilot counts only its own."""
+    if magic == AI_MAGIC:
         return ([p for p in current if int(p.magic) == magic], [o for o in pending if int(o.magic) == magic])
     return current, pending
 
@@ -798,8 +801,15 @@ def _trade_risk_guard(mt5, account, symbol, side, volume, price, sl, max_trade_r
               'effective_trade_risk_pct': None, 'trade_risk_limit': None,
               'currency': str(account.currency)}
 
+    if enforce_policy and max_trade_risk_pct is None and ai_max_trade_risk_pct is None:
+        # HMA bot = MT5 EA: no money-risk cap. The EA's only stop rule: a real account needs a Stop Loss.
+        if real and not sl:
+            return {**fields, 'success': False, 'uncertain': False, 'reason_code': 'real_stop_required',
+                    'error': 'Gerçek hesapta otomatik işlem için Stop Loss zorunlu (MT5 EA kuralı).'}
+        enforce_policy = False
+        fields['stop_required'] = real
     if not enforce_policy:
-        fields['stop_required'] = False
+        fields['stop_required'] = fields['stop_required'] if max_trade_risk_pct is None else False
         fields['manual_mode'] = 'MT5'
         try:
             calc = getattr(mt5, 'order_calc_profit', None)
@@ -1126,7 +1136,8 @@ def manage_position(mt5, ticket, operation, values, expected_login, expected_ser
                 # Price movement is already in equity. Bound the extra loss from the
                 # current liquidation quote to the new stop, not from original entry.
                 trade_risk = _trade_risk_guard(mt5, account, str(p.symbol), 'BUY' if buy else 'SELL',
-                                             float(p.volume), exit_price, sl, max_trade_risk_pct,
+                                             float(p.volume), exit_price, sl,
+                                             None if int(p.magic) == HMA_MAGIC else max_trade_risk_pct,
                                              ai_max_trade_risk_pct if int(p.magic) == AI_MAGIC else None)
                 if not trade_risk['success']:
                     return trade_risk

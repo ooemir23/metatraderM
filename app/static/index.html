@@ -45,7 +45,7 @@
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
   <!-- TradingView Widget -->
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=terminal-6">
+  <link rel="stylesheet" href="/static/style.css?v=terminal-7">
   <script src="/static/ui-scale.js?v=1"></script>
   <script src="/static/vendor/lightweight-charts.js"></script>
 </head>
@@ -1000,25 +1000,11 @@
                       </select>
                     </div>
                     <div class="grid grid-cols-2 gap-2 pt-0.5">
-                      <label class="flex items-center gap-2 text-gray-200 font-medium cursor-pointer select-none">
-                        <input id="bot-rsi-filter" type="checkbox" onchange="saveBotSignalRules()" class="rounded bg-gray-800 border-gray-700 w-4 h-4 text-cyan-500">
-                        <span>RSI(14) filtresi</span>
-                      </label>
-                      <label class="flex items-center gap-2 text-gray-200 font-medium cursor-pointer select-none">
-                        <input id="bot-be-toggle" type="checkbox" onchange="saveBotSignalRules()" class="rounded bg-gray-800 border-gray-700 w-4 h-4 text-cyan-500">
-                        <span>Başabaş stop</span>
-                      </label>
-                    </div>
-                    <div class="grid grid-cols-2 gap-2 pt-0.5">
                       <div class="flex items-center justify-between gap-1.5">
                         <label for="bot-quick-lot" class="text-gray-300 font-medium">Emir lotu</label>
                         <input id="bot-quick-lot" type="number" min="0.01" max="100" step="0.01" value="0.01" onchange="saveBotQuickLot()" class="w-20 bg-[#14181f] border border-gray-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs font-bold">
                       </div>
                       <p id="bot-lot-hint" class="bot-lot-hint" hidden></p>
-                      <div class="flex items-center justify-between gap-1.5">
-                        <label for="bot-trail-input" class="text-gray-300 font-medium">İz süren (p)</label>
-                        <input id="bot-trail-input" type="number" min="0" max="100000" step="10" value="0" onchange="saveBotSignalRules()" class="w-20 bg-[#14181f] border border-gray-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs font-bold">
-                      </div>
                     </div>
                   </div>
                 </details>
@@ -1107,7 +1093,7 @@
             <div class="mt-3 flex flex-wrap gap-2">
               <button id="research-run" type="submit" class="rounded bg-cyan-700 px-3 py-2 font-semibold">Karşılaştırmayı Çalıştır</button>
               <button id="research-download" type="button" onclick="downloadResearchReport()" disabled class="rounded bg-gray-700 px-3 py-2 disabled:opacity-40">Raporu İndir (.xlsx)</button>
-              <button id="research-to-bot" type="button" onclick="reviewResearchBotSettings()" disabled class="rounded bg-cyan-800 px-3 py-2 disabled:opacity-40">Bot ayarlarını incele</button>
+              <span id="research-to-bot" hidden></span>
               <button id="research-reset" type="button" onclick="resetResearchSettings()" class="rounded bg-gray-700 px-3 py-2 disabled:opacity-40">Sıfırla</button>
             </div>
           </form>
@@ -1300,7 +1286,7 @@
       <div class="bot-settings-header flex items-center justify-between pb-2 border-b border-gray-800">
         <h3 class="font-bold text-white text-base flex items-center gap-2">
           <i class="ph-bold ph-sliders text-cyan-400"></i>
-          HMA / KAMA / ATR Bot Parametreleri
+          HMA Bot Parametreleri · MT5 EA
         </h3>
         <button onclick="toggleBotSettingsModal()" class="text-gray-400 hover:text-white text-lg">
           <i class="ph-bold ph-x"></i>
@@ -1309,104 +1295,49 @@
 
       <div class="bot-settings-body text-xs">
         <p id="bot-research-transfer-note" class="text-amber-300" role="status"></p>
+        <p class="text-gray-400 mb-2">Bot, MT5'teki <span class="font-mono">HMA_Crossover_EA</span> ile birebir aynı çalışır: yalnız kapanmış mumda HMA × 2. ortalama kesişimi, ters sinyalde kapat, aynı yönde ikinci pozisyon yok, sapma 10 puan. Alanlar EA girişleriyle aynıdır.</p>
         <div class="bot-settings-columns">
         <div class="bot-settings-basics space-y-3">
-        <div>
-          <label for="cfg-symbol" class="block text-gray-400 mb-1">Hedef Sembol</label>
-          <input type="text" id="cfg-symbol" value="EURUSD" class="w-full bg-[#0f1218] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none">
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label for="cfg-hma-period" class="block text-gray-400 mb-1">HMA Periyodu (Hızlı)</label>
-            <input type="number" id="cfg-hma-period" value="14" min="2" class="w-full bg-[#0f1218] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none">
-          </div>
-          <div>
-            <label for="cfg-ma2-type" class="block text-gray-400 mb-1">2. MA Türü</label>
-            <select id="cfg-ma2-type" class="w-full bg-[#0f1218] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none">
-              <option value="KAMA">KAMA (Uyarlamalı)</option>
-              <option value="EMA" selected>EMA (Üstel)</option>
-              <option value="SMA">SMA (Basit)</option>
-              <option value="HMA">HMA (2. Hull)</option>
-              <option value="LWMA">LWMA (Ağırlıklı)</option>
-            </select>
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label for="cfg-ma2-period" class="block text-gray-400 mb-1">2. MA / KAMA ER Periyodu</label>
-            <input type="number" id="cfg-ma2-period" value="34" min="2" class="w-full bg-[#0f1218] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none">
-          </div>
-          <div>
-            <label for="cfg-lot" class="block text-gray-400 mb-1">İşlem Lotu</label>
-            <input type="number" id="cfg-lot" value="0.01" step="0.01" min="0.01" class="w-full bg-[#0f1218] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none">
-          </div>
-        </div>
-        <div>
-          <label for="cfg-timeframe" class="block text-gray-400 mb-1">Zaman dilimi</label>
-          <select id="cfg-timeframe" class="w-full rounded-lg bg-[#0f1218] border border-gray-700 p-2">
-            <option value="1">M1</option><option value="5">M5</option><option value="15">M15</option><option value="30">M30</option><option value="60">H1</option><option value="240">H4</option><option value="1440">D1</option>
-          </select>
-        </div>
-        </div>
         <fieldset class="border border-gray-700 rounded-xl p-3 space-y-2">
-          <legend class="px-1 font-semibold text-cyan-300">KAMA ve ATR</legend>
-          <label class="flex items-center gap-2"><input id="cfg-h4-filter" type="checkbox">H1 girişte kapanmış H4 filtresi kullan</label>
-          <label class="flex items-center gap-2"><input id="cfg-single-position" type="checkbox" checked disabled>Aynı yönde ikinci bot pozisyonu açılmaz (MT5 EA kuralı)</label>
-          <div class="grid grid-cols-2 gap-2">
-            <label>KAMA hızlı periyodu<input id="cfg-kama-fast" type="number" min="2" max="200" value="2" class="block w-full rounded bg-gray-800 p-2"></label>
-            <label>KAMA yavaş periyodu<input id="cfg-kama-slow" type="number" min="2" max="200" value="30" class="block w-full rounded bg-gray-800 p-2"></label>
-            <label>ATR periyodu<input id="cfg-atr-period" type="number" min="2" max="200" value="14" class="block w-full rounded bg-gray-800 p-2"></label>
-            <label>Minimum ER<input id="cfg-er-min" type="number" min="0" max="1" step="0.05" value="0.3" class="block w-full rounded bg-gray-800 p-2"></label>
-            <label>Onay için azami bekleme (mum)<input id="cfg-confirmation-bars" type="number" min="0" max="3" value="0" class="block w-full rounded bg-gray-800 p-2"></label>
-            <label>Minimum MA mesafesi (ATR)<input id="cfg-distance-atr" type="number" min="0" max="2" step="0.01" value="0.05" class="block w-full rounded bg-gray-800 p-2"></label>
-          </div>
-          <label class="flex items-center gap-2"><input id="cfg-atr-filter" type="checkbox">ER, eğim ve ATR mesafesiyle kesişim onayı kullan</label>
-          <p class="text-gray-400">Filtre açıksa süre içinde onay gelmeyen sinyal iptal edilir. Ters kesişim, kapatma seçeneği açıksa mevcut bot pozisyonunu onay beklemeden kapatır. KAMA seçildiğinde ER periyodu yukarıdaki 2. MA periyodudur.</p>
+          <legend class="px-1 font-semibold text-cyan-300">Grafik</legend>
+          <label class="block">Sembol<input type="text" id="cfg-symbol" value="EURUSD" class="block w-full rounded bg-gray-800 p-2 font-mono"></label>
+          <label class="block">Zaman dilimi<select id="cfg-timeframe" class="block w-full rounded bg-gray-800 p-2">
+            <option value="1">M1</option><option value="5">M5</option><option value="15">M15</option><option value="30">M30</option><option value="60">H1</option><option value="240">H4</option><option value="1440">D1</option>
+          </select></label>
         </fieldset>
+        <fieldset class="border border-gray-700 rounded-xl p-3 space-y-2">
+          <legend class="px-1 font-semibold text-cyan-300">1. İndikatör: Hull Moving Average (HMA)</legend>
+          <label class="block">HMA periyodu (InpHMAPeriod)<input type="number" id="cfg-hma-period" value="14" min="2" class="block w-full rounded bg-gray-800 p-2"></label>
+        </fieldset>
+        <fieldset class="border border-gray-700 rounded-xl p-3 space-y-2">
+          <legend class="px-1 font-semibold text-cyan-300">2. İndikatör</legend>
+          <label class="block">Tür (InpSecondMAType)<select id="cfg-ma2-type" class="block w-full rounded bg-gray-800 p-2">
+            <option value="HMA">HMA</option><option value="EMA" selected>EMA</option><option value="SMA">SMA</option><option value="LWMA">LWMA</option>
+          </select></label>
+          <label class="block">Periyot (InpSecondMAPeriod)<input type="number" id="cfg-ma2-period" value="34" min="2" class="block w-full rounded bg-gray-800 p-2"></label>
+        </fieldset>
+        </div>
         <div class="bot-settings-exits space-y-3">
         <fieldset class="border border-gray-700 rounded-xl p-3 space-y-2">
-          <legend class="px-1 font-semibold text-cyan-300">Stop ve hedef</legend>
-          <label class="block">Mesafe hesabı<select id="cfg-risk-mode" class="block w-full rounded bg-gray-800 p-2"><option value="POINTS">Sabit puan</option><option value="ATR">ATR çarpanı</option></select></label>
-          <div class="grid grid-cols-2 gap-2">
-            <label class="flex items-center gap-2"><input id="cfg-use-sl" type="checkbox" checked>Stop kullan</label>
-            <label class="flex items-center gap-2"><input id="cfg-use-tp" type="checkbox">Hedef kullan</label>
-            <label>Stop (puan)<input id="cfg-sl-points" type="number" min="0" value="200" class="block w-full rounded bg-gray-800 p-2"></label>
-            <label>Hedef (puan)<input id="cfg-tp-points" type="number" min="0" value="400" class="block w-full rounded bg-gray-800 p-2"></label>
-            <label>Stop (ATR çarpanı)<input id="cfg-atr-stop" type="number" min="0.1" max="20" step="0.1" value="2" class="block w-full rounded bg-gray-800 p-2"></label>
-            <label>Hedef (ATR; 0 = kapalı)<input id="cfg-atr-target" type="number" min="0" max="50" step="0.1" value="3" class="block w-full rounded bg-gray-800 p-2"></label>
+          <legend class="px-1 font-semibold text-cyan-300">İşlem ve risk yönetimi</legend>
+          <label class="block">İşlem lotu (InpLotSize)<input type="number" id="cfg-lot" value="0.01" step="0.01" min="0.01" class="block w-full rounded bg-gray-800 p-2"></label>
+          <label class="flex items-center gap-2"><input type="checkbox" id="cfg-close-opp" checked>Ters sinyalde mevcut pozisyonu kapat (InpCloseOpposite)</label>
+          <div class="grid grid-cols-3 gap-2">
+            <label>Tek emir üst limiti (InpMaxOrderLots)<input id="cfg-max-order-lots" type="number" min="0.01" max="100" step="0.01" class="block w-full rounded bg-gray-800 p-2"></label>
+            <label>Toplam lot (InpMaxTotalLots)<input id="cfg-max-total-lots" type="number" min="0.01" max="1000" step="0.01" class="block w-full rounded bg-gray-800 p-2"></label>
+            <label>Pozisyon + bekleyen (InpMaxOpenOrders)<input id="cfg-max-open-orders" type="number" min="1" max="200" step="1" class="block w-full rounded bg-gray-800 p-2"></label>
           </div>
-          <p class="text-gray-400">ATR stop/hedefi son kapanmış mumun ATR değerinden hesaplanır ve girişte sabitlenir. Ayarları değiştirmek için botu durdurun.</p>
+          <p class="text-gray-400">Sapma (InpDeviation) 10 puan. Toplam lot ve işlem sayısı EA'daki gibi hesabın tüm pozisyon ve bekleyen emirlerini sayar. Günlük zarar sınırı (InpDailyLossLimit, sunucu günü) <button type="button" class="underline text-cyan-300" onclick="toggleBotSettingsModal();openTradingRiskDialog()">Günlük risk</button> penceresindeki tutardır ve bot için her zaman uygulanır.</p>
         </fieldset>
-        <div class="flex items-center gap-2 pt-1">
-          <input type="checkbox" id="cfg-close-opp" checked class="w-4 h-4 rounded bg-[#0f1218] text-cyan-500 focus:ring-0">
-          <label for="cfg-close-opp" class="text-gray-300">Ters sinyalde açık pozisyonu otomatik kapat</label>
-        </div>
-        <fieldset class="bot-protect">
-          <legend>Lot ve risk</legend>
-          <label>Lot hesabı<select id="cfg-lot-mode" class="block w-full rounded bg-gray-800 p-2">
-            <option value="FIXED">Sabit lot (yukarıdaki emir lotu)</option>
-            <option value="RISK">Özsermayenin %'si (stop mesafesine göre)</option>
-          </select></label>
-          <label>İşlem başına risk (%)<input id="cfg-risk-pct" type="number" min="0.05" max="5" step="0.05" value="0.5" class="block w-full rounded bg-gray-800 p-2"></label>
-          <label>Otomatik bot tek emir sınırı (lot)<input id="cfg-max-order-lots" type="number" min="0.01" max="100" step="0.01" class="block w-full rounded bg-gray-800 p-2"></label>
-          <label>Otomatik bot toplam lot sınırı<input id="cfg-max-total-lots" type="number" min="0.01" max="1000" step="0.01" class="block w-full rounded bg-gray-800 p-2"></label>
-          <label>Otomatik bot en fazla açık işlem<input id="cfg-max-open-orders" type="number" min="1" max="200" step="1" class="block w-full rounded bg-gray-800 p-2"></label>
-          <p class="bot-protect-note">Risk modunda lot, stopa gelindiğinde özsermayenin bu yüzdesi kadar zarar edecek şekilde brokerın hesabıyla bulunur ve lot adımına aşağı yuvarlanır. En küçük lot bile riski aşıyorsa işlem atlanır. Stop açık olmalı. Otomatik botta panelin tek emir lot sınırı ayrıca uygulanır.</p>
-        </fieldset>
-        <fieldset class="bot-protect">
-          <legend>Koruma kuralları (otomatik bot)</legend>
-          <label>Art arda kayıpta botu durdur (0 = kapalı)<input id="cfg-max-losses" type="number" min="0" max="20" step="1" value="0" class="block w-full rounded bg-gray-800 p-2"></label>
-          <label class="flex items-center gap-2 bot-protect-wide"><input id="cfg-hours-enabled" type="checkbox"> Yalnız bu saatler arasında yeni işlem aç</label>
-          <label>Başlangıç<input id="cfg-trade-start" type="time" value="00:00" class="block w-full rounded bg-gray-800 p-2"></label>
-          <label>Bitiş<input id="cfg-trade-end" type="time" value="23:59" class="block w-full rounded bg-gray-800 p-2"></label>
-          <label>Saat dilimi<select id="cfg-utc-offset" class="block w-full rounded bg-gray-800 p-2">
-            <option value="180">Türkiye (UTC+3)</option><option value="0">UTC</option><option value="60">UTC+1 (Londra yaz / Avrupa kış)</option>
-            <option value="120">UTC+2 (Avrupa yaz)</option><option value="-240">UTC−4 (New York yaz)</option><option value="-300">UTC−5 (New York kış)</option>
-          </select></label>
-          <div class="bot-protect-wide"><span class="block text-gray-400 mb-1">İşlem günleri</span><div class="bot-days"><label class="bot-day"><input type="checkbox" id="cfg-day-0" value="0"><span>Pzt</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-1" value="1"><span>Sal</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-2" value="2"><span>Çar</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-3" value="3"><span>Per</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-4" value="4"><span>Cum</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-5" value="5"><span>Cmt</span></label><label class="bot-day"><input type="checkbox" id="cfg-day-6" value="6"><span>Paz</span></label></div></div>
-          <label class="bot-protect-wide">Haber / engelli saatler (her satıra bir aralık)
-            <textarea id="cfg-blocked" rows="3" placeholder="15:25-15:45&#10;2026-11-06 15:20-15:50" class="block w-full rounded bg-gray-800 p-2 font-mono"></textarea></label>
-          <p class="bot-protect-note">"15:25-15:45" her gün, "2026-11-06 15:20-15:50" yalnız o gün geçerlidir; seçilen saat dilimine göre. Kurallar yalnız yeni otomatik girişleri engeller; açık pozisyonlar ve ters sinyalde kapatma etkilenmez. "Şimdi AL/SAT" ile elle açılan işlemlere uygulanmaz. Art arda kayıp sayımı bot başlatıldığında sıfırlanır.</p>
+        <fieldset class="border border-gray-700 rounded-xl p-3 space-y-2">
+          <legend class="px-1 font-semibold text-cyan-300">Stop Loss ve Take Profit</legend>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="flex items-center gap-2"><input id="cfg-use-sl" type="checkbox" checked>Stop Loss (InpUseStopLoss)</label>
+            <label class="flex items-center gap-2"><input id="cfg-use-tp" type="checkbox">Take Profit (InpUseTakeProfit)</label>
+            <label>Stop mesafesi, puan (InpStopLossPoints)<input id="cfg-sl-points" type="number" min="0" value="200" class="block w-full rounded bg-gray-800 p-2"></label>
+            <label>Hedef mesafesi, puan (InpTakeProfitPoints)<input id="cfg-tp-points" type="number" min="0" value="400" class="block w-full rounded bg-gray-800 p-2"></label>
+          </div>
+          <p class="text-gray-400">Alışta SL = Ask − puan, satışta Bid + puan (EA ile aynı). Gerçek hesapta otomatik işlem için Stop Loss zorunludur.</p>
         </fieldset>
         </div>
         </div>
@@ -1610,7 +1541,7 @@
   </script>
   <script src="/static/toast-fix.js?v=terminal-1"></script>
   <script src="/static/period-report.js?v=terminal-1"></script>
-  <script src="/static/app.js?v=terminal-5"></script>
+  <script src="/static/app.js?v=terminal-7"></script>
   <script src="/static/trading.js?v=terminal-1"></script>
   <script src="/static/operations.js?v=terminal-2"></script>
   <script src="/static/permissions.js"></script>

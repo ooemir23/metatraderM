@@ -199,9 +199,10 @@ def broker(monkeypatch):
     return c
 
 
-def test_manual_positions_do_not_block_bot_caps(broker):
+def test_bot_caps_count_the_whole_account_like_ea_canopentrade(broker):
+    # HMA_Crossover_EA CanOpenTrade: committed lots and open count include every position/order.
     result = broker.open_order('EURUSD', 'BUY', .01, sl_points=200, magic=HMA_MAGIC, request_id='bot-cap-scope-1')
-    assert 'Toplam' not in str(result.get('error'))
+    assert not result['success'] and 'Toplam' in result['error']
 
 
 def test_manual_panel_caps_still_count_whole_account(broker):

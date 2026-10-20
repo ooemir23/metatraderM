@@ -557,7 +557,7 @@ class MT5Client:
                 return self._bridge('trade_preview', symbol, order_type, volume, sl_points,
                                     pending_type, entry_price, login, server, self.tick_clock_offset,
                                     self.effective_daily_loss_limit(login, server),
-                                    self.journal.daily_limit_enabled(login, server), self.max_order_lots,
+                                    self.journal.daily_limit_enabled(login, server) or magic == mt5_bridge.HMA_MAGIC, self.max_order_lots,
                                     self.max_total_lots, self.max_open_orders, tp_points, self.max_trade_risk_pct,
                                     sl_price, tp_price, deviation_points, stoplimit_price, time_type, expiration, manual_mode, filling_policy,
                                     *((magic,) if magic is not None else ()))
@@ -899,7 +899,8 @@ class MT5Client:
                 request_id = request_id or str(uuid.uuid4())
                 account_scope = self._bound_account(expected_account)
                 daily_loss_limit = self.effective_daily_loss_limit(*account_scope, magic=magic)
-                enforce_daily_limit = self.journal.daily_limit_enabled(*account_scope)
+                # MT5 EA InpDailyLossLimit is always on for the EA's own orders.
+                enforce_daily_limit = self.journal.daily_limit_enabled(*account_scope) or magic == mt5_bridge.HMA_MAGIC
                 tag = "vm:" + hashlib.sha256((str(account_scope) + request_id).encode()).hexdigest()[:24]
                 order_kind = mt5_bridge.PENDING_TYPES.get(pending_type, 0 if payload['order_type'] == 'BUY' else 1)
                 metadata = {'account': account_scope, 'tag': tag, 'order': {

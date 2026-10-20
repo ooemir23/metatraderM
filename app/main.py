@@ -266,12 +266,28 @@ class LoginRequest(BaseModel):
     server: str = Field(min_length=1)
     account_type: Literal["DEMO", "REAL"]
 
+# The HMA bot works exactly like HMA_Crossover_EA.mq5: features the EA does not have are always off.
+EA_ONLY_BOT_SETTINGS = {
+    'use_atr_filter': False, 'use_h4_filter': False, 'confirmation_bars': 0, 'single_position': True,
+    'risk_mode': 'POINTS', 'lot_mode': 'FIXED', 'max_consecutive_losses': 0,
+    'trade_hours_enabled': False, 'trade_days': [0, 1, 2, 3, 4, 5, 6], 'blocked_windows': [],
+}
+EA_ONLY_SIGNAL_RULES = {'use_rsi_filter': False, 'max_spread_points': 0, 'use_breakeven': False, 'trailing_stop_points': 0}
+
+
+def ea_only(settings: Dict[str, Any]) -> Dict[str, Any]:
+    result = {**settings, **EA_ONLY_BOT_SETTINGS}
+    if result.get('second_ma_type') == 'KAMA':          # the EA's 2nd MA is HMA / EMA / SMA / LWMA
+        result['second_ma_type'] = 'EMA'
+    return result
+
+
 class BotConfigRequest(BaseModel):
     symbol: Optional[str] = None
     symbols: Optional[Union[List[str], str]] = None
     timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=43200)
     hma_period: Optional[int] = Field(default=None, ge=2, le=1000)
-    second_ma_type: Optional[Literal["EMA", "SMA", "LWMA", "HMA", "KAMA"]] = None
+    second_ma_type: Optional[Literal["EMA", "SMA", "LWMA", "HMA", "KAMA"]] = None   # KAMA only in old saved files
     second_ma_period: Optional[int] = Field(default=None, ge=2, le=1000)
     kama_fast: Optional[int] = Field(default=None, ge=2, le=200)
     kama_slow: Optional[int] = Field(default=None, ge=2, le=200)
@@ -1425,6 +1441,9 @@ def update_bot_config(req: BotConfigRequest):
     if bot.is_running or (bot.task is not None and not bot.task.done()):
         raise HTTPException(status_code=409, detail="Ayarları değiştirmeden önce botu durdurun ve mevcut döngünün bitmesini bekleyin.")
     data = req.model_dump(exclude_unset=True, exclude_none=True)
+    if data.get('second_ma_type') == 'KAMA':
+        raise HTTPException(status_code=422, detail='MT5 EA 2. gösterge türü HMA, EMA, SMA veya LWMA olmalı.')
+    data = ea_only(data)
     if data.get("timeframe_minutes", bot.timeframe_minutes) not in TIMEFRAME_NAMES:
         raise HTTPException(status_code=422, detail="Desteklenmeyen zaman dilimi")
     if data.get("kama_fast", bot.kama_fast) >= data.get("kama_slow", bot.kama_slow):
@@ -1454,7 +1473,9 @@ def restore_bot_settings():
             raise ValueError('Invalid saved settings')
         if stored.get('use_h4_filter') and (stored.get('timeframe_minutes') != 60 or stored.get('second_ma_type') != 'KAMA' or not stored.get('use_atr_filter')):
             raise ValueError('Invalid saved H4 filter')
+        stored = ea_only(stored)
         bot.load_config(stored)
+        bot.update_signal_rules(dict(EA_ONLY_SIGNAL_RULES))
     except Exception:
         logger.error('Saved bot settings could not be loaded; bot remains stopped with defaults.')
 
@@ -1480,7 +1501,7 @@ class BotSignalRulesRequest(BaseModel):
 
 @app.post("/api/bot/signal-rules")
 def update_bot_signal_rules(req: BotSignalRulesRequest, request: Request):
-    data = req.model_dump(exclude_none=True)
+    data = {**req.model_dump(exclude_none=True), **EA_ONLY_SIGNAL_RULES}   # no EA equivalent: always off
     # Switching a running bot from signal-only to live orders needs a fresh real-account unlock.
     if data.get('execution_mode') == 'AUTO_TRADE' and bot.is_running and bot.execution_mode != 'AUTO_TRADE':
         require_real_unlock(request)

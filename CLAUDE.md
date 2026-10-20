@@ -36,3 +36,11 @@ Uygulamanın MT5'te olmayan **ek güvenlik korumaları** (günlük zarar sınır
 hesapta TOTP, acil durdurma, otomatik bot için hedging şartı) MT5'in bir kuralını değiştirmez; onlara ek
 olarak çalışır ve kalabilir. Bunları kaldırmak ya da MT5'ten farklı bir davranış eklemek gerekiyorsa
 kullanıcıya bunun MT5'ten farklı olduğunu açıkça söyle ve onay al.
+
+## HMA bot = HMA_Crossover_EA (kullanıcı kararı, 2026-10-20)
+Kullanıcı "EA'da olmayan her şeyi kaldır" dedi. Bot yalnız EA girişleriyle çalışır: HMA periyodu, 2. MA
+(HMA/EMA/SMA/LWMA) ve periyodu, lot, ters sinyalde kapat, sapma 10 puan, günlük zarar sınırı (her zaman),
+tek emir / toplam lot / açık işlem sınırı (hesabın tamamı sayılır), SL/TP puan, gerçek hesapta SL zorunlu.
+KAMA, ATR stop/filtre, H4 filtresi, onay mumu, RISK lotu, %2 parasal risk sınırı, art arda kayıp, saat/gün/haber
+engeli, RSI/spread/başabaş/iz süren kuralları bot için kapalıdır (`main.EA_ONLY_BOT_SETTINGS`); geri eklenmez.
+Başlangıçtan önce kapanmış mumdaki kesişim işlenmez (EA OnInit). "Şimdi AL/SAT" manuel magic (123460) kullanır.

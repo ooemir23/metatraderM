@@ -233,7 +233,8 @@ def test_real_account_requires_stop_for_every_new_order_source(broker, magic, pe
                         **({'pending_type': 'BUY_LIMIT', 'entry_price': 1.08} if pending else {}))
     assert not result['success'] and result['reason_code'] == 'real_stop_required'
     assert result['stop_required']
-    assert result['trade_risk_limit'] == (10. if magic == bridge.AI_MAGIC else 20.)
+    # HMA bot = MT5 EA: real account needs a stop, but there is no money cap.
+    assert result['trade_risk_limit'] == (10. if magic == bridge.AI_MAGIC else None if magic == bridge.HMA_MAGIC else 20.)
     broker.order_check.assert_not_called()
     broker.order_send.assert_not_called()
 
@@ -247,7 +248,7 @@ def test_demo_manual_and_hma_keep_explicit_unprotected_stop_choice(broker, magic
     broker.order_calc_profit.assert_not_called()
 
 
-@pytest.mark.parametrize('magic', [bridge.MANUAL_MAGIC, bridge.HMA_MAGIC, bridge.AI_MAGIC])
+@pytest.mark.parametrize('magic', [bridge.MANUAL_MAGIC, bridge.AI_MAGIC])
 @pytest.mark.parametrize('pending', [False, True])
 def test_broker_money_risk_blocks_small_lot_above_equity_cap(broker, magic, pending):
     broker.order_calc_profit.return_value = -20.01
@@ -260,8 +261,18 @@ def test_broker_money_risk_blocks_small_lot_above_equity_cap(broker, magic, pend
     broker.order_send.assert_not_called()
 
 
+@pytest.mark.parametrize('pending', [False, True])
+def test_hma_bot_has_no_money_risk_cap_like_the_mt5_ea(broker, pending):
+    # HMA_Crossover_EA has no equity-percentage cap: a stop loss of any size is the user's setting.
+    broker.order_calc_profit.return_value = -5000.
+    result = open_order(broker, magic=bridge.HMA_MAGIC,
+                        **({'pending_type': 'BUY_LIMIT', 'entry_price': 1.08} if pending else {}))
+    assert result.get('reason_code') not in ('trade_risk_exceeded', 'trade_risk_unverified')
+    assert result['trade_risk_limit'] is None
+
+
 @pytest.mark.parametrize('outcome', [None, float('nan'), float('inf'), 0., 2.])
-@pytest.mark.parametrize('magic', [bridge.MANUAL_MAGIC, bridge.HMA_MAGIC, bridge.AI_MAGIC])
+@pytest.mark.parametrize('magic', [bridge.MANUAL_MAGIC, bridge.AI_MAGIC])
 def test_every_protected_order_needs_broker_verified_loss(broker, outcome, magic):
     broker.order_calc_profit.return_value = outcome
     result = open_order(broker, magic=magic)

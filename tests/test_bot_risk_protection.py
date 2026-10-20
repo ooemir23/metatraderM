@@ -203,7 +203,7 @@ def test_performance_endpoint(monkeypatch):
     assert web.get('/api/bot/performance', params={'days': 999}).status_code == 422
 
 
-def test_bot_config_api_accepts_protection_fields(monkeypatch):
+def test_bot_config_api_turns_off_protections_the_ea_does_not_have(monkeypatch):
     import base64
     from fastapi.testclient import TestClient
     from app import main
@@ -211,11 +211,17 @@ def test_bot_config_api_accepts_protection_fields(monkeypatch):
     token = base64.b64encode(b'test:test-panel-password').decode()
     web = TestClient(main.app, headers={'Authorization': 'Basic ' + token})
     ok = web.post('/api/bot/config', json={'max_consecutive_losses': 3, 'trade_hours_enabled': True, 'trade_start': '09:00',
-                                           'trade_end': '18:00', 'trade_days': [0, 1, 2, 3, 4], 'blocked_windows': ['15:25-15:45']})
-    assert ok.status_code == 200 and ok.json()['max_consecutive_losses'] == 3 and ok.json()['trade_days'] == [0, 1, 2, 3, 4]
+                                           'trade_end': '18:00', 'trade_days': [0, 1, 2, 3, 4], 'blocked_windows': ['15:25-15:45'],
+                                           'lot_mode': 'RISK'})
+    assert ok.status_code == 200
+    got = ok.json()
+    assert got['max_consecutive_losses'] == 0 and not got['trade_hours_enabled'] and got['blocked_windows'] == []
+    assert got['trade_days'] == [0, 1, 2, 3, 4, 5, 6] and got['lot_mode'] == 'FIXED'
     assert web.post('/api/bot/config', json={'trade_start': '9am'}).status_code == 422
     assert web.post('/api/bot/config', json={'risk_pct': 20}).status_code == 422
-    web.post('/api/bot/config', json={'max_consecutive_losses': 0, 'trade_hours_enabled': False, 'trade_days': [0, 1, 2, 3, 4, 5, 6], 'blocked_windows': []})
+    rules = web.post('/api/bot/signal-rules', json={'use_rsi_filter': True, 'use_breakeven': True, 'trailing_stop_points': 50, 'max_spread_points': 30})
+    assert rules.status_code == 200
+    assert not main.bot.use_rsi_filter and not main.bot.use_breakeven and main.bot.trailing_stop_points == 0 and main.bot.max_spread_points == 0
 
 
 # ---------------- per-symbol "why no trade" status ----------------

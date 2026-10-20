@@ -13,11 +13,9 @@ function researchBotPlan(report) {
     close_opposite:true,single_position:true};
 }
 
-async function reviewResearchBotSettings() {
-  if (!latestResearchReport?.selected) return;
-  if (document.fullscreenElement === document.getElementById('research-panel')) await document.exitFullscreen();
-  exitResearchFallback();
-  await previewResearchBotSettings(researchBotPlan(latestResearchReport), latestResearchReport.assessment?.message || '');
+// The research strategy (KAMA / ATR / H4) is not part of HMA_Crossover_EA, so it is never transferred to the bot.
+function reviewResearchBotSettings() {
+  if (typeof showToast === 'function') showToast('Bu araştırma KAMA/ATR stratejisidir; MT5 EA\'da olmadığı için bota aktarılmaz.', 'info');
 }
 
 function researchConfigLabel(c) {

@@ -2838,19 +2838,13 @@ async function toggleBot() {
 }
 
 // Bot Settings Modal
+// Bot form = HMA_Crossover_EA.mq5 inputs only (plus the chart symbol / timeframe the EA is attached to).
 const botSettingInputs = {
   'cfg-symbol': 'symbol', 'cfg-timeframe': 'timeframe_minutes', 'cfg-hma-period': 'hma_period',
   'cfg-ma2-type': 'second_ma_type', 'cfg-ma2-period': 'second_ma_period', 'cfg-lot': 'lot_size',
-  'cfg-kama-fast': 'kama_fast', 'cfg-kama-slow': 'kama_slow', 'cfg-atr-period': 'atr_period',
-  'cfg-er-min': 'er_min', 'cfg-confirmation-bars': 'confirmation_bars', 'cfg-distance-atr': 'min_distance_atr',
-  'cfg-risk-mode': 'risk_mode', 'cfg-atr-stop': 'atr_stop_multiplier', 'cfg-atr-target': 'atr_target_multiplier',
   'cfg-sl-points': 'sl_points', 'cfg-tp-points': 'tp_points',
-  'cfg-lot-mode': 'lot_mode', 'cfg-risk-pct': 'risk_pct', 'cfg-max-losses': 'max_consecutive_losses',
-  'cfg-trade-start': 'trade_start', 'cfg-trade-end': 'trade_end', 'cfg-utc-offset': 'trade_utc_offset_min'
 };
-const botSettingChecks = {'cfg-close-opp': 'close_opposite', 'cfg-atr-filter': 'use_atr_filter',
-  'cfg-use-sl': 'use_stop_loss', 'cfg-use-tp': 'use_take_profit', 'cfg-h4-filter':'use_h4_filter', 'cfg-single-position':'single_position',
-  'cfg-hours-enabled': 'trade_hours_enabled'};
+const botSettingChecks = {'cfg-close-opp': 'close_opposite', 'cfg-use-sl': 'use_stop_loss', 'cfg-use-tp': 'use_take_profit'};
 // Automation lot limits (MAX_ORDER_LOTS / MAX_TOTAL_OPEN_LOTS / MAX_OPEN_ORDERS), editable from the panel.
 let loadedLotLimits = null;
 async function loadLotLimitsIntoForm() {
@@ -2881,38 +2875,15 @@ async function raiseBotLotLimit() {
     fetchBotStatus();
   } catch (err) { showToast(`❌ ${err.message}`, 'error'); }
 }
-function fillBotProtection(settings) {
-  const days = Array.isArray(settings.trade_days) ? settings.trade_days : [0,1,2,3,4,5,6];
-  for (let i = 0; i < 7; i++) { const box = document.getElementById(`cfg-day-${i}`); if (box) box.checked = days.includes(i); }
-  const blocked = document.getElementById('cfg-blocked');
-  if (blocked) blocked.value = (settings.blocked_windows || []).join('\n');
-}
-function readBotProtection() {
-  const days = [];
-  for (let i = 0; i < 7; i++) if (document.getElementById(`cfg-day-${i}`)?.checked) days.push(i);
-  return {
-    lot_mode: document.getElementById('cfg-lot-mode').value,
-    risk_pct: Number(document.getElementById('cfg-risk-pct').value),
-    max_consecutive_losses: parseInt(document.getElementById('cfg-max-losses').value || '0', 10),
-    trade_hours_enabled: document.getElementById('cfg-hours-enabled').checked,
-    trade_start: document.getElementById('cfg-trade-start').value || '00:00',
-    trade_end: document.getElementById('cfg-trade-end').value || '23:59',
-    trade_utc_offset_min: parseInt(document.getElementById('cfg-utc-offset').value, 10),
-    trade_days: days,
-    blocked_windows: (document.getElementById('cfg-blocked').value || '').split('\n').map(s => s.trim()).filter(Boolean),
-  };
-}
 // HMA_Crossover_EA.mq5 inputs (MT5 EA): fills the bot form with the same values; nothing is saved until "Kaydet".
 // Symbol and timeframe stay as they are (the EA works on the chart it is attached to).
 const EA_INPUTS = {
   'cfg-hma-period': 14, 'cfg-ma2-type': 'EMA', 'cfg-ma2-period': 34,            // InpHMAPeriod, InpSecondMAType, InpSecondMAPeriod
-  'cfg-lot': 0.01, 'cfg-lot-mode': 'FIXED',                                         // InpLotSize
+  'cfg-lot': 0.01,                                                                   // InpLotSize
   'cfg-close-opp': true,                                                            // InpCloseOpposite
-  'cfg-risk-mode': 'POINTS', 'cfg-use-sl': true, 'cfg-sl-points': 200,              // InpUseStopLoss, InpStopLossPoints
+  'cfg-use-sl': true, 'cfg-sl-points': 200,                                         // InpUseStopLoss, InpStopLossPoints
   'cfg-use-tp': false, 'cfg-tp-points': 400,                                        // InpUseTakeProfit, InpTakeProfitPoints
   'cfg-max-order-lots': 0.10, 'cfg-max-total-lots': 0.50, 'cfg-max-open-orders': 10, // InpMaxOrderLots, InpMaxTotalLots, InpMaxOpenOrders
-  // Panel extras the EA does not have: off.
-  'cfg-h4-filter': false, 'cfg-atr-filter': false, 'cfg-confirmation-bars': 0, 'cfg-max-losses': 0, 'cfg-hours-enabled': false,
 };
 function applyEaDefaults() {
   for (const [id, value] of Object.entries(EA_INPUTS)) {
@@ -2934,63 +2905,26 @@ async function toggleBotSettingsModal() {
     if (latestBotSettings[key] != null) document.getElementById(id).value = latestBotSettings[key];
   }
   for (const [id, key] of Object.entries(botSettingChecks)) document.getElementById(id).checked = !!latestBotSettings[key];
-  document.getElementById('cfg-single-position').checked = true;
-  fillBotProtection(latestBotSettings);
+  if (latestBotSettings.second_ma_type === 'KAMA') document.getElementById('cfg-ma2-type').value = 'EMA';
   await loadLotLimitsIntoForm();
   modal.classList.remove('hidden');
 }
 
-async function previewResearchBotSettings(plan, assessment) {
-  try {
-    const response = await fetch('/api/account');
-    if (!response.ok) throw new Error('Hesap riski doğrulanamadı.');
-    const account = await response.json();
-    if (!account.connected || account.account_mismatch || !['DEMO','REAL'].includes(account.account_type)) throw new Error('Aktif broker hesabı doğrulanamadı.');
-    const modal = document.getElementById('bot-settings-modal');
-    if (!modal.classList.contains('hidden')) modal.classList.add('hidden');
-    await toggleBotSettingsModal();
-    if (!latestBotSettings || modal.classList.contains('hidden')) return;
-    if (latestBotSettings.is_running) {
-      modal.classList.add('hidden'); throw new Error('Araştırma ayarlarını aktarmadan önce botu durdurun.');
-    }
-    for (const [id,key] of Object.entries(botSettingInputs)) if (plan[key] != null) document.getElementById(id).value = plan[key];
-    for (const [id,key] of Object.entries(botSettingChecks)) if (plan[key] != null) document.getElementById(id).checked = plan[key];
-    const en = window.MT5I18n?.language() === 'en';
-    const note = en
-      ? `${account.account_type} account · ${plan.symbol} · ${plan.lot_size} lots. Review and save to apply. Saving does not start the bot. Research capital/dates/cost assumptions do not change your account. Live fills may differ; stop-out is enforced by your broker. `
-      : `${account.account_type} hesap · ${plan.symbol} · ${plan.lot_size} lot. Uygulamak için inceleyip kaydedin. Kaydetmek botu başlatmaz. Araştırma sermayesi/tarihleri/maliyet varsayımları hesabınızı değiştirmez. Canlı gerçekleşmeler farklı olabilir; stop-out broker tarafından uygulanır. `;
-    document.getElementById('bot-research-transfer-note').textContent = note + (window.MT5I18n?.translate(assessment) || assessment);
-  } catch (error) { showToast(error.message, 'error'); }
-}
-
 async function saveBotSettings() {
+  // HMA_Crossover_EA inputs only; the server keeps every non-EA feature off.
   const cfg = {
     symbol: document.getElementById("cfg-symbol").value,
     timeframe_minutes: Number(document.getElementById('cfg-timeframe').value),
-    kama_fast: Number(document.getElementById('cfg-kama-fast').value),
-    kama_slow: Number(document.getElementById('cfg-kama-slow').value),
-    atr_period: Number(document.getElementById('cfg-atr-period').value),
-    use_atr_filter: document.getElementById('cfg-atr-filter').checked,
-    use_h4_filter: document.getElementById('cfg-h4-filter').checked,
-    single_position: document.getElementById('cfg-single-position').checked,
-    er_min: Number(document.getElementById('cfg-er-min').value),
-    confirmation_bars: Number(document.getElementById('cfg-confirmation-bars').value),
-    min_distance_atr: Number(document.getElementById('cfg-distance-atr').value),
-    risk_mode: document.getElementById('cfg-risk-mode').value,
-    atr_stop_multiplier: Number(document.getElementById('cfg-atr-stop').value),
-    atr_target_multiplier: Number(document.getElementById('cfg-atr-target').value),
-    use_stop_loss: document.getElementById('cfg-use-sl').checked,
-    use_take_profit: document.getElementById('cfg-use-tp').checked,
-    sl_points: Number(document.getElementById('cfg-sl-points').value),
-    tp_points: Number(document.getElementById('cfg-tp-points').value),
     hma_period: parseInt(document.getElementById("cfg-hma-period").value),
     second_ma_type: document.getElementById("cfg-ma2-type").value,
     second_ma_period: parseInt(document.getElementById("cfg-ma2-period").value),
     lot_size: parseFloat(document.getElementById("cfg-lot").value),
     close_opposite: document.getElementById("cfg-close-opp").checked,
-    ...readBotProtection(),
+    use_stop_loss: document.getElementById('cfg-use-sl').checked,
+    use_take_profit: document.getElementById('cfg-use-tp').checked,
+    sl_points: Number(document.getElementById('cfg-sl-points').value),
+    tp_points: Number(document.getElementById('cfg-tp-points').value),
   };
-  if (!cfg.trade_days.length) { showToast('❌ En az bir işlem günü seçin.', 'error'); return; }
   const limits = {
     max_order_lots: Number(document.getElementById('cfg-max-order-lots').value),
     max_total_lots: Number(document.getElementById('cfg-max-total-lots').value),
