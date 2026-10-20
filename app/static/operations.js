@@ -356,6 +356,7 @@ async function initializeSecurityControl() {
   const en = window.MT5I18n?.language() === 'en';
   const button = document.createElement('button');
   button.type = 'button';
+  button.id = 'security-button';
   button.className = 'px-2.5 py-1 rounded-lg bg-gray-800 border border-gray-700 text-xs text-amber-300';
   button.textContent = en ? 'Trading Security' : 'İşlem Güvenliği';
   selector.parentElement.append(button);

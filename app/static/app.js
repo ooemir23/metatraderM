@@ -3014,13 +3014,15 @@ function showToast(message, type = "info") {
 
   toast.className = `toast px-4 py-3 rounded-xl border shadow-xl text-xs font-medium max-w-sm pointer-events-auto flex items-center gap-2 ${bg}`;
   toast.innerText = message;
+  // Fixable errors: clicking the toast opens the place where the problem is solved.
+  const fixable = window.HMAToastFix?.attach?.(toast, message, type) === true;
 
   container.appendChild(toast);
   setTimeout(() => {
     toast.style.opacity = "0";
     toast.style.transition = "opacity 0.3s";
     setTimeout(() => toast.remove(), 300);
-  }, 4000);
+  }, fixable ? 9000 : 4000);
 }
 
 // Helpers
