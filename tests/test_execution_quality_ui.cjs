@@ -34,5 +34,5 @@ ctx.showPositionExecution(22);
 assert.match(node('position-execution-content').innerHTML,/kaydedilmemiş/);
 ctx.renderPositionsData([]);
 assert.match(node('position-execution-content').textContent,/artık açık listede bulunmuyor/);
-assert.match(node('positions-table-body').innerHTML,/colspan="10"/);
+assert.match(node('positions-table-body').innerHTML,/colspan="12"/);
 console.log('Execution quality UI: live spreads, slippage direction, unknown data and updates PASS');

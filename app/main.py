@@ -1168,7 +1168,13 @@ def get_history(days: int = Query(default=30, ge=1, le=365)):
     return mt5_client.get_history(days=days)
 
 @app.get("/api/reports")
-def get_reports(days: int = Query(default=30, ge=1, le=365)):
+def get_reports(days: int = Query(default=30, ge=1, le=365),
+                period: Optional[str] = Query(default=None, pattern="^(day|week|month|year)$"),
+                limit: int = Query(default=12, ge=1, le=90)):
+    """Without `period`: the existing day/symbol report. With `period`: calendar period table
+    (broker server day, week starts Monday)."""
+    if period:
+        return mt5_client.get_period_report(period, limit)
     return mt5_client.get_reports(days=days)
 
 @app.get("/api/history/position/{position_id}")

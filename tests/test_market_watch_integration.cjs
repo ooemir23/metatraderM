@@ -18,7 +18,7 @@ const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:a
   context.renderPriceData({symbol:'EURUSD.a', bid:1.120159999999, ask:1.120169999999999, spread:1});
   assert.equal(node('header-bid').innerText, '1.12016');
   assert.equal(node('header-ask').innerText, '1.12017', 'catalogue precision suppresses floating-point artefacts');
-  assert.equal(node('btn-ask-price').innerText, '@ 1.12017');
+  assert.equal(node('btn-ask-price').innerText, '1.12017');
   vm.runInContext("currentSymbol='BTCUSD#'", context);
   await context.fetchPrice(true);
   assert.equal(requests[0].url, '/api/price/BTCUSD%23', 'hash suffix is encoded rather than lost as a URL fragment');

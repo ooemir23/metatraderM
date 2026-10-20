@@ -54,13 +54,12 @@ document.addEventListener("DOMContentLoaded", () => {
 function updateChartTimeframeButtons(activeTf) {
   const num = Number(activeTf) || 15;
   document.querySelectorAll('.chart-tf-btn').forEach(btn => {
-    const btnTf = Number(btn.dataset.tf);
-    if (btnTf === num) {
-      btn.className = 'chart-tf-btn px-2.5 py-1 rounded-lg bg-cyan-500/25 text-cyan-300 font-bold border border-cyan-500/40 shadow-sm transition text-xs';
-    } else {
-      btn.className = 'chart-tf-btn px-2.5 py-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 border border-transparent transition font-medium text-xs';
-    }
+    const on = Number(btn.dataset.tf) === num;
+    btn.classList?.toggle('is-active', on);
+    btn.setAttribute?.('aria-pressed', String(on));
   });
+  const tfNode = document.getElementById('chart-tf-code');
+  if (tfNode) tfNode.textContent = window.MT5Chart?.frames?.[num] || '';
   const scanTf = document.getElementById('signal-scan-tf');
   if (scanTf && Number(scanTf.value) !== num) {
     scanTf.value = String(num);
@@ -197,7 +196,7 @@ function initTradingView(symbol) {
       "theme": "dark",
       "style": "1",
       "locale": window.MT5I18n?.language?.() || "tr",
-      "toolbar_bg": "#121620",
+      "toolbar_bg": "#14181f",
       "enable_publishing": false,
       "hide_side_toolbar": false,
       "allow_symbol_change": true,
@@ -431,16 +430,16 @@ function updateFullscreenUI(isFs) {
   const fsText = document.getElementById("chart-fs-text");
 
   if (isFs) {
-    if (fsIcon) fsIcon.className = "ph-bold ph-arrows-in-simple text-amber-400";
+    if (fsIcon) fsIcon.className = "ph-bold ph-arrows-in-simple";
     if (fsText) fsText.innerText = "Küçült (ESC)";
     if (fsBtn) {
-      fsBtn.className = "px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition border border-amber-500/30 active:scale-95 shadow-sm";
+      fsBtn.className = "cx-btn is-active";
     }
   } else {
-    if (fsIcon) fsIcon.className = "ph-bold ph-arrows-out-simple text-cyan-400";
-    if (fsText) fsText.innerText = "Tam Ekran";
+    if (fsIcon) fsIcon.className = "ph-bold ph-arrows-out-simple";
+    if (fsText) fsText.innerText = "Tam ekran";
     if (fsBtn) {
-      fsBtn.className = "px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold flex items-center gap-1.5 transition border border-gray-700 active:scale-95 shadow-sm";
+      fsBtn.className = "cx-btn";
     }
   }
 }
@@ -822,6 +821,9 @@ async function fetchAIPerformance() {
 // Switch between Open, Closed Positions, Reports, and AI tabs
 function switchPositionTab(tab) {
   currentPositionTab = tab;
+  const hxCard = document.getElementById('positions-card');
+  if (tab !== 'open' && hxCard?.dataset) hxCard.dataset.pendingMode = '';
+  setTimeout(() => window.hxSyncTabs?.(), 0);
   const btnOpen = document.getElementById("tab-btn-open");
   const btnClosed = document.getElementById("tab-btn-closed");
   const btnReports = document.getElementById("tab-btn-reports");
@@ -893,10 +895,12 @@ function showAccountConnectionError(message) {
     statusText.innerText = message;
     statusText.className = "text-amber-400";
   }
-  for (const id of ['acc-balance','acc-equity','acc-margin-free','acc-profit']) {
+  for (const id of ['acc-balance','acc-equity','acc-margin-free','acc-profit','acc-margin','acc-margin-level']) {
     const node = document.getElementById(id);
     if (node) node.innerText = '—';
   }
+  const typeBadge = document.getElementById('acc-type-badge');
+  if (typeBadge) typeBadge.hidden = true;
   const preview = document.getElementById('trade-preview');
   if (preview) preview.textContent = 'Hesap doğrulanamadı; risk tahmini kullanılamaz.';
   if (typeof markTradePreview === 'function') markTradePreview('unavailable', '');
@@ -935,6 +939,7 @@ function renderAccountData(data) {
     const identityChanged = JSON.stringify(identity) !== JSON.stringify(currentAccountIdentity);
     if (identity && lastObservedAccountIdentity && JSON.stringify(identity) !== JSON.stringify(lastObservedAccountIdentity)) {
       accountSessionGeneration++;
+      window.HMAPeriodReport?.reset?.();
       if (typeof invalidateAIAdvice === 'function') invalidateAIAdvice(currentSymbol);
     }
     currentAccountIdentity = identity;
@@ -961,19 +966,19 @@ function renderAccountData(data) {
       if (lastSyncText) lastSyncText.innerText = `Son Veri: ${data.server_time || nowStr}`;
       if (uptimeText) {
         uptimeText.innerText = "Hesap doğrulanmadı";
-        uptimeBadge.className = "text-[11px] font-mono px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center gap-1";
+        uptimeBadge.className = "text-xs font-mono px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center gap-1";
       }
     } else if (data.connected && !currentAccountType) {
       showAccountConnectionError('Hesap türü doğrulanamadı; işlem engellendi');
     } else if (data.connected) {
       const real = data.account_type === "REAL";
-      indicator.className = `w-2 h-2 rounded-full ${real ? "bg-rose-400" : "bg-emerald-400"} animate-pulse`;
-      statusText.innerText = `${real ? "GERÇEK" : "DEMO"} Hesap #${data.login}`;
-      statusText.className = `${real ? "text-rose-400" : "text-emerald-400"} font-semibold`;
-      if (lastSyncText) lastSyncText.innerText = `Son Veri: ${data.server_time || nowStr}`;
+      indicator.className = "w-2 h-2 rounded-full bg-emerald-400";
+      statusText.innerText = `Bağlı · ${data.server || 'MT5'} · #${data.login}`;
+      statusText.className = "text-gray-300";
+      if (lastSyncText) lastSyncText.innerText = `Son veri ${data.server_time || nowStr}`;
       if (uptimeText) {
         uptimeText.innerText = `Bağlı: ${data.connected_since || "Aktif"}`;
-        uptimeBadge.className = "text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1";
+        uptimeBadge.className = "text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1";
       }
     } else {
       indicator.className = "w-2 h-2 rounded-full bg-amber-400 animate-pulse";
@@ -982,7 +987,7 @@ function renderAccountData(data) {
       if (lastSyncText) lastSyncText.innerText = `Son Veri: Bekleniyor (${nowStr})`;
       if (uptimeText) {
         uptimeText.innerText = "Bağlantı: Yok";
-        uptimeBadge.className = "text-[11px] font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700 flex items-center gap-1";
+        uptimeBadge.className = "text-xs font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700 flex items-center gap-1";
       }
     }
 
@@ -991,6 +996,7 @@ function renderAccountData(data) {
     document.getElementById("acc-balance").innerText = verifiedMoney(data.balance);
     document.getElementById("acc-equity").innerText = verifiedMoney(data.equity);
     document.getElementById("acc-margin-free").innerText = verifiedMoney(data.margin_free);
+    renderAccountExtras(data);
 
     const profitEl = document.getElementById("acc-profit");
     const profitVal = data.profit || 0;
@@ -1003,6 +1009,29 @@ function renderAccountData(data) {
     } else {
       profitEl.className = "font-bold text-gray-300 tracking-wide";
     }
+}
+
+// Header extras of the terminal design: account type badge, used margin and margin level (MT5 values).
+function renderAccountExtras(data) {
+  const badge = document.getElementById('acc-type-badge');
+  const verified = !!currentAccountType && data && data.connected && !data.account_mismatch;
+  if (badge) {
+    badge.hidden = !verified;
+    if (verified) {
+      const en = window.MT5I18n?.language?.() === 'en';
+      if (badge.dataset) badge.dataset.type = currentAccountType;
+      badge.textContent = currentAccountType === 'REAL' ? (en ? 'REAL ACCOUNT' : 'GERÇEK HESAP') : (en ? 'DEMO ACCOUNT' : 'DEMO HESAP');
+    }
+  }
+  const margin = document.getElementById('acc-margin');
+  if (margin) margin.innerText = verified && Number.isFinite(data.margin) ? `${accountCurrency} ${formatMoney(data.margin)}` : '—';
+  const level = document.getElementById('acc-margin-level');
+  if (level) {
+    // MT5 shows the level only while margin is in use.
+    const value = verified && Number.isFinite(data.margin_level) && data.margin > 0 ? data.margin_level : null;
+    level.innerText = value == null ? '—' : `%${value.toLocaleString('tr-TR', {maximumFractionDigits: 2})}`;
+    if (level.dataset) { if (value != null && value < 200) level.dataset.level = 'low'; else delete level.dataset.level; }
+  }
 }
 
 async function fetchAccount(force = false) {
@@ -1072,7 +1101,7 @@ function renderPositionExecution(position) {
   const quote = position.quote || {};
   const digits = Number.isInteger(position.digits) ? position.digits : 5;
   const price = value => value == null ? '—' : Number(value).toFixed(digits);
-  const card = (label, value) => `<div class="bg-[#1c2230] rounded-xl p-4"><div class="text-xs text-gray-400 mb-2">${label}</div><div class="font-bold text-white tabular-nums">${value}</div></div>`;
+  const card = (label, value) => `<div class="bg-[#1a1f28] rounded-xl p-4"><div class="text-xs text-gray-400 mb-2">${label}</div><div class="font-bold text-white tabular-nums">${value}</div></div>`;
   const change = quality.spread_change_points;
   const changeText = change == null ? 'Karşılaştırılamıyor' : `${executionPoints(change, true)} · ${change > 0 ? 'Genişledi' : change < 0 ? 'Daraldı' : 'Değişmedi'}`;
   const note = quality.state === 'recorded'
@@ -1092,7 +1121,7 @@ function renderPositionExecution(position) {
     <p class="text-xs ${status.state === 'fresh' ? 'text-emerald-400' : 'text-amber-300'} mb-3">${escapeHtml(status.message || 'Güncel kotasyon doğrulanamadı.')}</p>
     <p class="text-xs text-gray-400 mb-3">${note}</p>
     <p class="text-xs text-gray-400 mb-4">BUY işlemleri Ask ile açılır, Bid ile kapanır; SELL işlemleri Bid ile açılır, Ask ile kapanır. Spread değişebilir. Kaymada pozitif değer aleyhe, negatif değer lehe farktır. Spread ve slippage fiyata yansır; komisyon gibi ayrıca düşülmez. Açık pozisyonun gelecekteki kapanış slippage'i henüz bilinmez.</p>
-    ${fills ? `<div class="overflow-x-auto"><table class="w-full text-xs text-left whitespace-nowrap"><thead class="bg-[#1c2230] text-gray-400"><tr><th class="p-3">Açılış emri</th><th class="p-3">Lot</th><th class="p-3">Gönderim Bid / Ask</th><th class="p-3">İstenen</th><th class="p-3">Gerçekleşen</th><th class="p-3">Spread</th><th class="p-3">Slippage</th></tr></thead><tbody>${fills}</tbody></table></div>` : ''}`;
+    ${fills ? `<div class="overflow-x-auto"><table class="w-full text-xs text-left whitespace-nowrap"><thead class="bg-[#1a1f28] text-gray-400"><tr><th class="p-3">Açılış emri</th><th class="p-3">Lot</th><th class="p-3">Gönderim Bid / Ask</th><th class="p-3">İstenen</th><th class="p-3">Gerçekleşen</th><th class="p-3">Spread</th><th class="p-3">Slippage</th></tr></thead><tbody>${fills}</tbody></table></div>` : ''}`;
 }
 
 // Position source, same rules and colours as the badge in the positions table.
@@ -1130,18 +1159,18 @@ function tradeSourceBadge(item) {
   const effectiveMagic = magic || fillMagic;
   const comment = String(item?.comment || '');
   if (effectiveMagic === 123461 || /hma bot/i.test(comment)) {
-    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[10.5px] font-sans font-semibold leading-tight" title="HMA Algoritmik Bot / Otomatik Sinyal Yakalama (Magic #123461)">🤖 Otomatik Sinyal (HMA Bot)</span>`;
+    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-xs font-sans font-semibold leading-tight" title="HMA Algoritmik Bot / Otomatik Sinyal Yakalama (Magic #123461)">🤖 Otomatik Sinyal (HMA Bot)</span>`;
   }
   if (effectiveMagic === 123462 || /ai|deepseek|mevo/i.test(comment)) {
-    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10.5px] font-sans font-semibold leading-tight" title="MevO Yapay Zeka Sinyali (Magic #123462)">🧠 Otomatik Sinyal (MevO AI)</span>`;
+    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 text-xs font-sans font-semibold leading-tight" title="MevO Yapay Zeka Sinyali (Magic #123462)">🧠 Otomatik Sinyal (MevO AI)</span>`;
   }
   if (effectiveMagic === 123460 || comment.startsWith('vm:') || /hma web|panel/i.test(comment)) {
-    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10.5px] font-sans font-semibold leading-tight" title="HMA Web Sitesinden Manuel Açıldı (Magic #123460)">🌐 HMA Sitesi (Manuel)</span>`;
+    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-sans font-semibold leading-tight" title="HMA Web Sitesinden Manuel Açıldı (Magic #123460)">🌐 HMA Sitesi (Manuel)</span>`;
   }
   if (effectiveMagic === 0) {
-    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10.5px] font-sans font-semibold leading-tight" title="Orijinal MetaTrader 5 Terminalinden Manuel Açıldı (Magic #0)">🖥️ Orijinal MT5 (Manuel)</span>`;
+    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-sans font-semibold leading-tight" title="Orijinal MetaTrader 5 Terminalinden Manuel Açıldı (Magic #0)">🖥️ Orijinal MT5 (Manuel)</span>`;
   }
-  return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-gray-800 text-gray-200 border border-gray-700 text-[10.5px] font-sans font-semibold leading-tight" title="Harici Uzman Danışman / EA (Magic #${effectiveMagic})">⚙️ Harici Bot (#${effectiveMagic})</span>`;
+  return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-gray-800 text-gray-200 border border-gray-700 text-xs font-sans font-semibold leading-tight" title="Harici Uzman Danışman / EA (Magic #${effectiveMagic})">⚙️ Harici Bot (#${effectiveMagic})</span>`;
 }
 
 function renderPositionsData(positions) {
@@ -1154,48 +1183,46 @@ function renderPositionsData(positions) {
     if (typeof renderBotSignalHistory === 'function') renderBotSignalHistory();
     if (typeof rememberPositions === "function") rememberPositions(positions);
     seedNettingProtection(positions);
+    window.MT5Chart?.setTradeLevels?.(positions);
     const tbody = document.getElementById("positions-table-body");
     const countBadge = document.getElementById("pos-count-badge");
     if (countBadge) countBadge.innerText = positions.length;
     renderPositionSourceCounts(positions);
 
     if (!positions || positions.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="10" class="py-8 text-center text-gray-400 font-sans text-sm">Henüz açık pozisyon bulunmuyor.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="12" class="py-8 text-center text-gray-400 font-sans text-sm">Henüz açık pozisyon bulunmuyor.</td></tr>`;
       return;
     }
 
     let rowsHtml = "";
     positions.forEach(p => {
-      const isBuy = p.type === "BUY";
-      const typeBadge = isBuy
-        ? `<span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold tracking-wide">BUY</span>`
-        : `<span class="px-2 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-500/30 text-[11px] font-bold tracking-wide">SELL</span>`;
-
-      const profitColor = p.profit >= 0 ? "text-emerald-400" : "text-rose-400";
-      const profitSign = p.profit >= 0 ? "+" : "";
-
+      const digits = Number.isInteger(p.digits) ? p.digits : 5;
+      const price = value => Number(value).toFixed(digits);
+      const money = value => value == null ? "—" : `${value > 0 ? "+" : ""}${accountCurrency} ${formatMoney(value)}`;
+      const side = p.type === "BUY" ? "BUY" : "SELL";
+      const profitClass = p.profit >= 0 ? "hx-profit" : "hx-loss";
+      const ticket = Number(p.ticket);
       rowsHtml += `
-        <tr class="hover:bg-[#151a26]/70 transition border-b border-gray-800/60 group">
-          <td class="py-2 px-2.5 whitespace-nowrap">
-            <span class="block font-mono font-semibold text-[13px] text-gray-100">#${p.ticket}</span>
-            ${tradeSourceBadge(p)}
+        <tr>
+          <td data-label="Bilet" class="whitespace-nowrap">
+            <span class="font-mono font-semibold text-gray-100">#${ticket}</span><button type="button" class="hx-detail" onclick="showPositionExecution(${ticket})" title="Gönderim Bid/Ask, açılış spreadi ve kayma">Detay</button>
+            <div>${tradeSourceBadge(p)}</div>
           </td>
-          <td class="py-2 px-2.5 font-bold text-white text-[13px] whitespace-nowrap tracking-wide">${escapeHtml(p.symbol)}</td>
-          <td class="py-2 px-2.5 whitespace-nowrap">${typeBadge}</td>
-          <td class="py-2 px-2.5 text-white font-semibold text-[13px] whitespace-nowrap">${p.volume}</td>
-          <td class="py-2 px-2.5 text-gray-300 font-mono text-[13px] font-medium whitespace-nowrap tabular-nums">${Number(p.price_open).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
-          <td class="py-2 px-2.5 text-white font-mono text-[13px] font-bold whitespace-nowrap tabular-nums">${Number(p.price_current).toFixed(Number.isInteger(p.digits) ? p.digits : 5)}</td>
-          <td class="py-2 px-2.5 text-gray-300 font-mono text-xs whitespace-nowrap tabular-nums">${p.sl ? Number(p.sl).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "—"} / ${p.tp ? Number(p.tp).toFixed(Number.isInteger(p.digits) ? p.digits : 5) : "—"}</td>
-          <td class="py-2 px-2.5 text-right font-mono font-bold text-[13px] text-amber-400 whitespace-nowrap">${p.commission == null ? "—" : `${p.commission > 0 ? "+" : ""}${accountCurrency} ${formatMoney(p.commission)}`}</td>
-          <td class="py-2 px-2.5 text-right font-mono font-bold text-[13px] whitespace-nowrap ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(p.profit)}</td>
-          <td class="py-2 px-2.5 text-center whitespace-nowrap sticky right-0 bg-[#121620] group-hover:bg-[#151a26] shadow-[-6px_0_12px_rgba(0,0,0,0.35)]">
-            <div class="inline-flex items-center gap-2">
-              <button onclick="showPositionEditor(${p.ticket})" class="px-2.5 py-1 rounded-md bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-xs font-bold transition active:scale-95" title="SL/TP veya kısmi kapatma yönet">Yönet</button>
-              <button onclick="closePosition(${p.ticket})" class="px-2.5 py-1 rounded-md bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold transition active:scale-95 flex items-center gap-1" title="Pozisyon #${p.ticket} kapat">
-                <span>✕</span>
-                <span>Kapat</span>
-              </button>
-            </div>
+          <td data-label="Sembol" class="font-sans font-bold text-white whitespace-nowrap">${escapeHtml(p.symbol)}</td>
+          <td data-label="Yön"><span class="hx-dir" data-side="${side}">${side}</span></td>
+          <td data-label="Hacim" class="num">${p.volume}</td>
+          <td data-label="Açılış" class="num text-gray-300">${price(p.price_open)}</td>
+          <td data-label="Güncel" class="num text-white">${price(p.price_current)}</td>
+          <td data-label="SL" class="num">${p.sl ? price(p.sl) : '<span class="hx-none">Yok</span>'}</td>
+          <td data-label="TP" class="num">${p.tp ? price(p.tp) : '<span class="text-gray-500">—</span>'}</td>
+          <td data-label="Swap" class="num text-gray-300">${p.swap == null ? "—" : money(p.swap)}</td>
+          <td data-label="Komisyon" class="num text-gray-300">${money(p.commission)}</td>
+          <td data-label="Kâr / Zarar" class="num font-semibold ${profitClass}">${p.profit >= 0 ? "+" : ""}${accountCurrency} ${formatMoney(p.profit)}</td>
+          <td data-label="" class="num hx-actions-cell">
+            <span class="hx-row-actions">
+              <button type="button" onclick="showPositionEditor(${ticket})" title="SL/TP değiştir veya kısmi kapat">Değiştir</button>
+              <button type="button" onclick="closePosition(${ticket})" title="Pozisyon #${ticket} kapat">Kapat</button>
+            </span>
           </td>
         </tr>
       `;
@@ -1273,17 +1300,17 @@ function renderHistoryDetails(data, selectedTicket) {
   const selected = deals.find(d => Number(d.ticket) === selectedTicket);
   const side = type => type === 0 ? 'BUY · Alış' : type === 1 ? 'SELL · Satış' : 'Maliyet / diğer';
   const summary = (label, rows) => {
-    if (!rows.length || reversed) return `<div class="bg-[#1c2230] rounded-xl p-4"><div class="text-gray-400 text-xs mb-2">${label}</div><div class="text-sm">${reversed ? 'Tersine dönüş var; hareket listesine bakın.' : 'Broker geçmişinde kayıt bulunamadı.'}</div></div>`;
+    if (!rows.length || reversed) return `<div class="bg-[#1a1f28] rounded-xl p-4"><div class="text-gray-400 text-xs mb-2">${label}</div><div class="text-sm">${reversed ? 'Tersine dönüş var; hareket listesine bakın.' : 'Broker geçmişinde kayıt bulunamadı.'}</div></div>`;
     const volume = rows.reduce((total, d) => total + d.volume, 0);
     const average = volume > 0 ? rows.reduce((total, d) => total + d.price * d.volume, 0) / volume : null;
     const times = rows.length === 1 ? escapeHtml(rows[0].time_text) : `${escapeHtml(rows[0].time_text)} → ${escapeHtml(rows[rows.length - 1].time_text)}`;
-    return `<div class="bg-[#1c2230] rounded-xl p-4"><div class="text-gray-400 text-xs mb-2">${label}${rows.length > 1 ? ' · Lot ağırlıklı ortalama' : ''}</div><div class="font-bold ${rows[0].type === 0 ? 'text-emerald-400' : 'text-rose-400'}">${side(rows[0].type)}</div><div class="text-xl font-mono text-white mt-1">${average === null ? '—' : price(average)}</div><div class="text-xs text-gray-400 mt-2">${times}<br>${volume} lot · ${rows.length} hareket</div></div>`;
+    return `<div class="bg-[#1a1f28] rounded-xl p-4"><div class="text-gray-400 text-xs mb-2">${label}${rows.length > 1 ? ' · Lot ağırlıklı ortalama' : ''}</div><div class="font-bold ${rows[0].type === 0 ? 'text-emerald-400' : 'text-rose-400'}">${side(rows[0].type)}</div><div class="text-xl font-mono text-white mt-1">${average === null ? '—' : price(average)}</div><div class="text-xs text-gray-400 mt-2">${times}<br>${volume} lot · ${rows.length} hareket</div></div>`;
   };
   const entryLabel = entry => ({0:'Açılış / artırma', 1:'Kapanış / azaltma', 2:'Tersine dönüş', 3:'Karşı pozisyonla kapanış'}[entry] || 'Diğer');
   const quality = data.execution_quality || {};
   const recorded = quality.state === 'recorded';
   const observedPrice = value => typeof value === 'number' && Number.isFinite(value) ? price(value) : 'Ölçülemiyor';
-  const executionCard = (label, value) => `<div class="bg-[#1c2230] rounded-xl p-3"><div class="text-gray-400 mb-1">${label}</div><div class="font-mono text-gray-100">${value}</div></div>`;
+  const executionCard = (label, value) => `<div class="bg-[#1a1f28] rounded-xl p-3"><div class="text-gray-400 mb-1">${label}</div><div class="font-mono text-gray-100">${value}</div></div>`;
   const executionDetails = `<div class="border border-gray-700 rounded-xl p-4 mb-4"><div class="text-sm font-bold mb-3">Açılış spreadi ve slippage</div>
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mb-3">
       ${executionCard('Spread (emir gönderimi)', recorded ? executionPoints(quality.opening_spread_points) : 'Ölçülemiyor')}
@@ -1292,7 +1319,7 @@ function renderHistoryDetails(data, selectedTicket) {
       ${executionCard('Açılış slippage', recorded ? slippageText(quality.slippage_points) : 'Ölçülemiyor')}
     </div><p class="text-xs text-gray-400">${recorded ? `Gönderim Bid / Ask: ${observedPrice(quality.opening_bid)} / ${observedPrice(quality.opening_ask)}. Birden fazla açılışta lot ağırlıklı ortalamalar gösterilir.` : 'Bu pozisyonun açılış kotasyonu güvenle eşlenemedi; eksik spread ve slippage sıfır varsayılmaz.'} Kapanış spreadi ve slippage için kayıtlı gönderim kotasyonu bulunmuyor. Pozisyonun broker gerçekleşme fiyatları aşağıdadır.</p></div>`;
   const rows = deals.map(d => `<tr class="border-b border-gray-700/50 ${Number(d.ticket) === selectedTicket ? 'bg-cyan-500/10' : ''}">
-    <td class="p-3 whitespace-nowrap">#${d.ticket}${Number(d.ticket) === selectedTicket ? '<span class="block text-cyan-400 text-[10px]">Seçilen kapanış</span>' : ''}</td>
+    <td class="p-3 whitespace-nowrap">#${d.ticket}${Number(d.ticket) === selectedTicket ? '<span class="block text-cyan-400 text-xs">Seçilen kapanış</span>' : ''}</td>
     <td class="p-3 whitespace-nowrap">${escapeHtml(d.time_text)}</td>
     <td class="p-3 whitespace-nowrap">${entryLabel(d.entry)}<span class="block text-xs ${d.type === 0 ? 'text-emerald-400' : d.type === 1 ? 'text-rose-400' : 'text-gray-400'}">${side(d.type)}</span></td>
     <td class="p-3 text-right">${d.volume}</td><td class="p-3 font-mono text-right">${d.type === 0 || d.type === 1 ? price(d.price) : '—'}</td>
@@ -1308,7 +1335,7 @@ function renderHistoryDetails(data, selectedTicket) {
     </div>
     <p class="text-xs text-gray-400 mb-4">Tüm pozisyon hareketleri aşağıda gösterilir. Net tutarlar açılış ve kapanış maliyetlerini içerir; kısmi kapanışlarda pozisyonun tamamı kapanmış olmayabilir. Saatler broker geçmişindeki saatlerdir.</p>
     ${executionDetails}
-    <div class="overflow-x-auto"><table class="w-full text-xs text-left"><thead class="text-gray-400 bg-[#1c2230]"><tr><th class="p-3">Bilet</th><th class="p-3">Zaman</th><th class="p-3">Hareket / yön</th><th class="p-3 text-right">Lot</th><th class="p-3 text-right">Fiyat</th><th class="p-3 text-right">Net</th><th class="p-3">Açıklama</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    <div class="overflow-x-auto"><table class="w-full text-xs text-left"><thead class="text-gray-400 bg-[#1a1f28]"><tr><th class="p-3">Bilet</th><th class="p-3">Zaman</th><th class="p-3">Hareket / yön</th><th class="p-3 text-right">Lot</th><th class="p-3 text-right">Fiyat</th><th class="p-3 text-right">Net</th><th class="p-3">Açıklama</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 async function fetchHistory() {
@@ -1354,8 +1381,8 @@ async function fetchHistory() {
     history.forEach(d => {
       const isBuy = (d.position_type || d.type) === "BUY";
       const typeBadge = isBuy
-        ? `<span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold tracking-wide">BUY</span>`
-        : `<span class="px-2 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-500/30 text-[11px] font-bold tracking-wide">SELL</span>`;
+        ? `<span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-xs font-bold tracking-wide">BUY</span>`
+        : `<span class="px-2 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-500/30 text-xs font-bold tracking-wide">SELL</span>`;
 
       const netProfit=(d.profit||0)+(d.commission||0)+(d.swap||0)+(d.fee||0);
       const profitColor = netProfit >= 0 ? "text-emerald-400" : "text-rose-400";
@@ -1369,7 +1396,7 @@ async function fetchHistory() {
       const ticket = Number(d.ticket);
 
       rowsHtml += `
-        <tr data-testid="history-deal-${ticket}" onclick="showHistoryDetails(${positionId}, ${ticket}, this)" class="cursor-pointer hover:bg-[#151a26]/70 transition border-b border-gray-800/60" title="Açılış ve kapanış detaylarını göster">
+        <tr data-testid="history-deal-${ticket}" onclick="showHistoryDetails(${positionId}, ${ticket}, this)" class="cursor-pointer hover:bg-[#14181f]/70 transition border-b border-gray-800/60" title="Açılış ve kapanış detaylarını göster">
           <td class="py-2 px-2.5">
             <button type="button" onclick="event.stopPropagation(); showHistoryDetails(${positionId}, ${ticket}, this)" class="text-left font-mono font-bold text-[13px] text-white hover:text-cyan-400 focus:outline focus:outline-2 focus:outline-cyan-400 rounded" aria-label="İşlem #${ticket} detayları">
               #${ticket} <span class="text-xs text-gray-400 block font-normal">Pos: #${positionId} · Detay</span>
@@ -1400,6 +1427,7 @@ async function fetchHistory() {
 let reportsRequestGeneration = 0;
 async function fetchReports() {
   const generation = accountSessionGeneration, request = ++reportsRequestGeneration;
+  window.HMAPeriodReport?.load?.();
   try {
     const daysSelect = document.getElementById("reports-days-select");
     const days = daysSelect ? daysSelect.value : 30;
@@ -1423,7 +1451,7 @@ async function fetchReports() {
       repTodayProfit.innerText = `${isPos ? "+" : ""}${currency} ${formatMoney(s.today_profit)}`;
     }
     if (repTodaySub) {
-      repTodaySub.innerText = `${s.today_trades} pozisyon tamamen kapandı · UTC`;
+      repTodaySub.innerText = `${s.today_trades} pozisyon tamamen kapandı · broker sunucu günü`;
     }
 
     // Total Net Profit
@@ -1492,13 +1520,13 @@ async function fetchReports() {
           const pColor = isPos ? "text-emerald-400" : "text-rose-400";
           const pSign = isPos ? "+" : "";
           const dateBadge = d.is_today 
-            ? `<span class="text-white font-bold">${d.date}</span> <span class="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 text-[9px] uppercase font-sans font-bold">Bugün</span>`
+            ? `<span class="text-white font-bold">${d.date}</span> <span class="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 text-xs uppercase font-sans font-bold">Bugün</span>`
             : `<span class="text-gray-300">${d.date}</span>`;
           
           const wrColor = d.win_rate >= 50 ? "text-emerald-400" : "text-rose-400";
 
           dHtml += `
-            <tr class="hover:bg-[#151a26]/60 transition border-b border-gray-800/40">
+            <tr class="hover:bg-[#14181f]/60 transition border-b border-gray-800/40">
               <td class="py-2.5 px-2.5 whitespace-nowrap">${dateBadge}</td>
               <td class="py-2.5 px-2.5 text-center text-gray-300 font-semibold whitespace-nowrap">${d.trades_count}</td>
               <td class="py-2.5 px-2.5 text-center text-xs text-gray-400 whitespace-nowrap"><span class="text-emerald-400 font-bold">${d.winning_trades}</span> / <span class="text-rose-400 font-bold">${d.losing_trades}</span></td>
@@ -1525,7 +1553,7 @@ async function fetchReports() {
           const pSign = isPos ? "+" : "";
 
           sHtml += `
-            <tr class="hover:bg-[#151a26]/60 transition border-b border-gray-800/40">
+            <tr class="hover:bg-[#14181f]/60 transition border-b border-gray-800/40">
               <td class="py-2 px-2.5 font-bold text-white whitespace-nowrap">${escapeHtml(sym.symbol)}</td>
               <td class="py-2 px-2.5 text-center text-gray-300 whitespace-nowrap">${sym.trades_count}</td>
               <td class="py-2 px-2.5 text-center text-gray-400 whitespace-nowrap">${sym.volume} L</td>
@@ -1570,8 +1598,8 @@ function renderPriceData(tick) {
       document.getElementById("header-bid").innerText = bid;
       document.getElementById("header-ask").innerText = ask;
       document.getElementById("header-spread").innerText = tick.spread;
-      document.getElementById("btn-bid-price").innerText = `@ ${bid}`;
-      document.getElementById("btn-ask-price").innerText = `@ ${ask}`;
+      document.getElementById("btn-bid-price").innerText = String(bid);
+      document.getElementById("btn-ask-price").innerText = String(ask);
       const ticketBid = document.getElementById("ticket-bid-price");
       const ticketAsk = document.getElementById("ticket-ask-price");
       if (ticketBid) ticketBid.innerText = bid;
@@ -1623,12 +1651,12 @@ async function fetchBotStatus() {
     const toggleBtn = document.getElementById("bot-toggle-btn");
 
     if (bot.is_running) {
-      badge.className = "text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 animate-pulse";
+      badge.className = "text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 animate-pulse";
       badge.innerText = "ÇALIŞIYOR";
       toggleBtn.className = "bot-head-btn bot-head-stop";
       toggleBtn.innerHTML = `<i class="ph-bold ph-stop"></i><span>Botu Durdur</span>`;
     } else {
-      badge.className = "text-[11px] font-bold px-2 py-0.5 rounded bg-gray-800 text-gray-400";
+      badge.className = "text-xs font-bold px-2 py-0.5 rounded bg-gray-800 text-gray-400";
       badge.innerText = "DURDURULDU";
       toggleBtn.className = "bot-head-btn bot-head-start";
       toggleBtn.innerHTML = `<i class="ph-bold ph-play"></i><span>Botu Başlat</span>`;
@@ -1764,8 +1792,17 @@ function adjustDeviation(delta) {
   input.value = String(next);
   saveOrderTicketPreferences();
 }
+// Segment buttons of the order panel drive the (hidden) MT5 order-type select.
+function setOrderExecutionType(type) {
+  const select = document.getElementById('order-execution-type');
+  if (!select || !['MARKET', 'PENDING'].includes(type)) return;
+  select.value = type;
+  changeOrderExecutionType();
+}
 function changeOrderExecutionType() {
   const isPending = document.getElementById('order-execution-type')?.value === 'PENDING';
+  document.querySelectorAll?.('[data-order-type]').forEach(btn =>
+    btn.setAttribute('aria-pressed', String(btn.dataset.orderType === (isPending ? 'PENDING' : 'MARKET'))));
   document.getElementById('pending-order-fields')?.classList.toggle('hidden', !isPending);
   document.getElementById('market-filling-row')?.classList.toggle('hidden', isPending);
   document.getElementById('market-order-buttons')?.classList.toggle('hidden', isPending);
@@ -2970,7 +3007,7 @@ function showToast(message, type = "info") {
   if (!container) return;
 
   const toast = document.createElement("div");
-  let bg = "bg-[#181d2a] border-gray-700 text-white";
+  let bg = "bg-[#0f1218] border-gray-700 text-white";
   if (type === "success") bg = "bg-emerald-950 border-emerald-600 text-emerald-200";
   if (type === "error") bg = "bg-rose-950 border-rose-600 text-rose-200";
   if (type === "warning") bg = "bg-amber-950 border-amber-600 text-amber-200";
@@ -3014,7 +3051,7 @@ function updateLoginMode() {
   help.textContent = real
     ? "Gerçek hesapta gönderilen emirler gerçek para ile işlem yapar. Brokerın tam sunucu adını girin."
     : "Demo hesapta sanal bakiye kullanılır. Brokerın tam sunucu adını girin.";
-  help.className = `mt-1 text-[11px] ${real ? "text-rose-300" : "text-gray-400"}`;
+  help.className = `mt-1 text-xs ${real ? "text-rose-300" : "text-gray-400"}`;
 }
 
 async function submitLogin() {
@@ -3038,6 +3075,7 @@ async function submitLogin() {
   button.disabled = true;
   accountSwitching = true;
   accountSessionGeneration++;
+  window.HMAPeriodReport?.reset?.();
   currentAccountType = null;
   if (typeof liveSource !== 'undefined' && liveSource) { liveSource.close(); liveSource = null; }
   if (typeof lastLiveMessage !== 'undefined') lastLiveMessage = 0;
@@ -3087,6 +3125,7 @@ async function submitLogin() {
   } finally {
     accountSwitching = false;
     accountSessionGeneration++;
+    window.HMAPeriodReport?.reset?.();
     if (typeof startLiveFeed === 'function') startLiveFeed();
     fetchAccount(true);
     fetchPositions(true);
@@ -3258,13 +3297,13 @@ function renderAIMemory(memory, config) {
   if (ideasList && Array.isArray(memory.revenue_tips)) {
     if (memory.revenue_tips.length > 0) {
       ideasList.innerHTML = memory.revenue_tips.map(idea => `
-        <li class="flex items-start gap-2 bg-[#11151f] p-2 rounded-lg border border-gray-800/60">
+        <li class="flex items-start gap-2 bg-[#0f1218] p-2 rounded-lg border border-gray-800/60">
           <i class="ph-bold ph-check text-emerald-400 mt-0.5 shrink-0"></i>
           <span>${escapeHtml(idea)}</span>
         </li>
       `).join("");
     } else {
-      ideasList.innerHTML = `<li class="text-gray-500 text-[11px] py-1">İşlem geçmişiniz analiz edildiğinde strateji önerileri burada gösterilecektir.</li>`;
+      ideasList.innerHTML = `<li class="text-gray-500 text-xs py-1">İşlem geçmişiniz analiz edildiğinde strateji önerileri burada gösterilecektir.</li>`;
     }
   }
 
@@ -3275,14 +3314,14 @@ function renderAIMemory(memory, config) {
     const autoPill = document.getElementById("ai-autopilot-pill");
 
     let modeText = "KAPALI";
-    let modeClass = "text-[9px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400 font-mono";
+    let modeClass = "text-xs px-1.5 py-0.5 rounded bg-gray-700 text-gray-400 font-mono";
 
     if (config.mode === "SEMI_AUTO") {
       modeText = "YARI OTOMATİK";
-      modeClass = "text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 font-mono";
+      modeClass = "text-xs px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 font-mono";
     } else if (config.mode === "FULL_AUTO") {
       modeText = "TAM OTOMATİK";
-      modeClass = "text-[9px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30 font-mono animate-pulse";
+      modeClass = "text-xs px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30 font-mono animate-pulse";
     }
 
     if (autoStatus) {
@@ -4022,15 +4061,15 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
       const hmaFmt = fmtNum(item.hma);
       const emaFmt = fmtNum(item.ema);
       const priceFmt = fmtNum(item.price);
-      return `<div class="bg-[#181d2a] border ${isActive ? 'border-cyan-500/70 ring-1 ring-cyan-500/30' : 'border-gray-800/90'} rounded-xl p-3 space-y-2.5" data-scan-symbol="${symEsc}">
+      return `<div class="bg-[#0f1218] border ${isActive ? 'border-cyan-500/70 ring-1 ring-cyan-500/30' : 'border-gray-800/90'} rounded-xl p-3 space-y-2.5" data-scan-symbol="${symEsc}">
         <div class="flex items-center justify-between gap-2">
           <div class="min-w-0">
-            <span class="font-bold text-white text-[13px] block tracking-wide"><button type="button" class="scan-symbol-button" onclick="openScannerSymbolPicker(this)" aria-haspopup="dialog" title="Sembol değiştir (Piyasa Gözlemi)">${symEsc}<i class="ph-bold ph-caret-down" aria-hidden="true"></i></button>${isActive ? ' <span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-600 text-white font-bold align-middle">SEÇİLİ</span>' : ''} <span class="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono font-bold">${tfText} (${tfCode})</span></span>
+            <span class="font-bold text-white text-[13px] block tracking-wide"><button type="button" class="scan-symbol-button" onclick="openScannerSymbolPicker(this)" aria-haspopup="dialog" title="Sembol değiştir (Piyasa Gözlemi)">${symEsc}<i class="ph-bold ph-caret-down" aria-hidden="true"></i></button>${isActive ? ' <span class="text-xs px-1.5 py-0.5 rounded bg-cyan-600 text-white font-bold align-middle">SEÇİLİ</span>' : ''} <span class="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono font-bold">${tfText} (${tfCode})</span></span>
             <span class="text-xs text-gray-200 font-mono">Fiyat: <strong class="text-white">${priceFmt}</strong> · ${rsiLabel}: <strong>${Number(item.rsi || 50).toFixed(1)}</strong> · ATR: <strong>${item.atr}</strong></span>
           </div>
           <span class="px-2.5 py-1.5 rounded-lg text-xs font-bold ${badgeClass}">${badgeText}</span>
         </div>
-        <div class="grid grid-cols-2 gap-2 text-xs font-mono bg-[#121620] p-2.5 rounded-lg border border-gray-800/80">
+        <div class="grid grid-cols-2 gap-2 text-xs font-mono bg-[#14181f] p-2.5 rounded-lg border border-gray-800/80">
           <div class="text-gray-300">${fastLabel}: <span class="text-cyan-300 font-bold">${hmaFmt}</span></div>
           <div class="text-gray-300">${slowLabel}: <span class="text-amber-300 font-bold">${emaFmt}</span></div>
           <div class="text-gray-300">Önerilen SL: <span class="text-rose-300 font-bold">${slFmt}</span></div>
@@ -4118,10 +4157,10 @@ async function fetchBotLiveSignal() {
           list.innerHTML = pendingList.map(p => {
             const sym = escapeHtml(p.symbol);
             const sideClass = p.side === 'BUY' ? 'text-emerald-300' : 'text-rose-300';
-            return `<div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-[#121620] border border-gray-800">
+            return `<div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-[#14181f] border border-gray-800">
               <div class="min-w-0">
                 <span class="font-bold text-white text-xs">${sym} <span class="${sideClass} font-black">${p.side === 'BUY' ? '▲ AL' : '▼ SAT'}</span></span>
-                <span class="text-[11px] text-gray-400 font-mono block">@ ${p.price} · Saat: ${p.time || '--:--'}</span>
+                <span class="text-xs text-gray-400 font-mono block">@ ${p.price} · Saat: ${p.time || '--:--'}</span>
               </div>
               <div class="flex items-center gap-1.5 shrink-0">
                 <button type="button" onclick="sendSignalDirectToBot('${sym}', '${p.side}', ${p.price}, {signalId: '${escapeHtml(p.id)}', slPoints: ${Number(p.sl_points) || 0}, tpPoints: ${Number(p.tp_points) || 0}})" class="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition">Uygula</button>

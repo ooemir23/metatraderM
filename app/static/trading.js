@@ -306,6 +306,8 @@ function renderPendingOrders(orders) {
   pendingRenderRevision++;
   managedPendingOrders.clear();
   orders.forEach(order=>managedPendingOrders.set(Number(order.ticket),{...order}));
+  const pendingCount=document.getElementById('pending-count-badge');
+  if (pendingCount) pendingCount.textContent=String(orders.length);
   root.innerHTML=orders.length ? orders.map(o=>`<div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 py-2"><span><strong>${safeText(o.symbol)}</strong> ${safeText(o.type)}<br><span class="text-gray-400">#${Number(o.ticket)} · ${Number(o.volume)} lot @ ${Number(o.price)} · SL ${Number(o.sl)||0} · TP ${Number(o.tp)||0}${o.stoplimit ? ` · Limit ${Number(o.stoplimit)}` : ''} · ${['GTC','DAY','SPECIFIED','SPECIFIED_DAY'][o.type_time||0]} · ${safeText(o.filling_policy||'RETURN')}${o.expiration ? ` · ${safeText(new Date(o.expiration*1000).toLocaleString())}` : ''}</span></span><button onclick="showPendingOrderEditor(${Number(o.ticket)})" class="px-2 py-1 rounded bg-cyan-500/10 text-cyan-300">Değiştir</button><button onclick="cancelPendingOrder(${Number(o.ticket)})" class="px-2 py-1 rounded bg-rose-500/10 text-rose-300">İptal et</button></div>`).join('') : '<p class="text-gray-500 py-2">Bekleyen emir yok.</p>';
 }
 let fetchingPending=false;

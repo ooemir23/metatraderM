@@ -36,6 +36,41 @@
     if (focus && opening) (view === 'signals' ? signals.querySelector('.signals-back') : $('signals-toggle'))?.focus({preventScroll: true});
     // Chart / table widths change after the transition.
     setTimeout(() => window.dispatchEvent(new Event('resize')), 320);
+    hxSyncTabs();
+  }
+
+  // ---- Terminal design: one tab bar (Pozisyonlar · Bekleyen emirler · Geçmiş · Rapor · Sinyal & Bot) ----
+  const HX_TABS = ['positions', 'pending', 'history', 'reports', 'signals'];
+  function hxActive() {
+    if ($('workspace-split')?.dataset.view === 'signals') return 'signals';
+    const tab = typeof currentPositionTab === 'string' ? currentPositionTab : 'open';
+    if (tab === 'closed') return 'history';
+    if (tab === 'reports') return 'reports';
+    return $('positions-card')?.dataset?.pendingMode === '1' ? 'pending' : 'positions';
+  }
+  function hxSyncTabs() {
+    const active = hxActive();
+    const card = $('positions-card');
+    if (card?.dataset) card.dataset.hxTab = active;
+    (document.querySelectorAll ? document.querySelectorAll('#workspace-switch .hx-tab') : []).forEach(tab => {
+      const on = tab.dataset.hx === active;
+      tab.classList?.toggle('is-active', on);
+      tab.setAttribute('aria-selected', String(on));
+      tab.tabIndex = on ? 0 : -1;
+    });
+  }
+  function hxTab(name) {
+    if (!HX_TABS.includes(name)) return;
+    const card = $('positions-card');
+    if (card?.dataset) card.dataset.pendingMode = name === 'pending' ? '1' : '';
+    if (name === 'signals') {
+      setWorkspaceView('signals', {focus: false});
+    } else {
+      setWorkspaceView('positions', {focus: false});
+      if (typeof switchPositionTab === 'function') switchPositionTab(name === 'history' ? 'closed' : name === 'reports' ? 'reports' : 'open');
+      if (name === 'pending' && typeof fetchPendingOrders === 'function') fetchPendingOrders();
+    }
+    hxSyncTabs();
   }
 
   // Mirror position count and floating P&L into the folded strip.
@@ -113,19 +148,23 @@
       if (event.key === 'Escape' && $('tools-drawer')?.classList.contains('open')
           && !document.fullscreenElement && !document.querySelector('dialog[open]')) setToolsDrawer(false);
     });
-    // Arrow keys move between the two tabs (WAI-ARIA tabs pattern).
+    // Arrow keys move between the tabs (WAI-ARIA tabs pattern).
     $('workspace-switch')?.addEventListener('keydown', (event) => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
       event.preventDefault();
-      const next = ['ArrowLeft', 'Home'].includes(event.key) ? 'positions' : 'signals';
-      setWorkspaceView(next, {focus: false});
-      $(next === 'positions' ? 'ws-tab-positions' : 'ws-tab-signals')?.focus();
+      const i = HX_TABS.indexOf(hxActive());
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? HX_TABS.length - 1
+        : (i + (event.key === 'ArrowRight' ? 1 : HX_TABS.length - 1)) % HX_TABS.length;
+      hxTab(HX_TABS[next]);
+      document.querySelector?.(`#workspace-switch [data-hx="${HX_TABS[next]}"]`)?.focus();
     });
     syncStrip(); errorRows().forEach(row => seenErrors.add(row));
     setWorkspaceView(storedView(), {persist: false, focus: false});
   }
 
   window.setWorkspaceView = setWorkspaceView;
+  window.hxTab = hxTab;
+  window.hxSyncTabs = hxSyncTabs;
   window.setToolsDrawer = setToolsDrawer;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();

@@ -1181,6 +1181,20 @@ class MT5Client:
                 raise MT5DataError("Manuel işlem geçmişi okunamadı; hesap ve bağlantıyı kontrol edin.") from exc
 
     def get_reports(self, days: int = 30) -> Dict[str, Any]:
+        activity, histories = self._report_inputs(days)
+        return build_report(activity, histories)
+
+    def get_period_report(self, period: str, limit: int) -> Dict[str, Any]:
+        """Day/week/month/year report; periods are broker-server calendar periods."""
+        from app.reports import PERIODS, period_window_days, build_period_report
+        if period not in PERIODS:
+            raise ValueError('period day, week, month veya year olmalı.')
+        limit = max(1, min(int(limit), PERIODS[period]))
+        days = period_window_days(time.time() + self.tick_clock_offset, period, limit)
+        activity, histories = self._report_inputs(days)
+        return build_period_report(activity, histories, period, limit)
+
+    def _report_inputs(self, days):
         with self._lock:
             if not self.ensure_connected():
                 raise MT5DataError("MT5 bağlı değil.")
@@ -1209,7 +1223,7 @@ class MT5Client:
                     raise MT5DataError("Pozisyon geçmişi tamamlanamadı; rapor gösterilmedi.") from exc
                 cached[position_id] = (time.monotonic(), rows)
                 histories[position_id] = rows
-        return build_report(activity, histories)
+        return activity, histories
 
     def get_pending_orders(self):
         with self._lock:
