@@ -1119,3 +1119,8 @@ html[data-buy-scheme="green"] .mt5-menu-buy { background:#1f9d6a; }
 .toast-fix:focus-visible { outline:2px solid #4c8dff; outline-offset:2px; }
 .toast-fix-hint { display:block; margin-top:4px; font-weight:600; text-decoration:underline; text-underline-offset:3px; opacity:.9; }
 .fix-highlight { outline:2px solid #f0b44c !important; outline-offset:2px; transition:outline-color .3s; }
+
+/* Workspace card with a saved (dragged) height: the tab bar and action bars never shrink;
+   only the table area scrolls. */
+.hx-ws > .hx-tabs, .hx-ws #open-actions-bar, .hx-ws #closed-summary-bar, .hx-ws #reports-actions-bar, .hx-ws #ai-actions-bar { flex-shrink:0; }
+.hx-ws > #workspace-split { min-height:0; flex:1 1 auto; }
