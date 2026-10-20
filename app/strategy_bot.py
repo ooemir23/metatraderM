@@ -1167,6 +1167,15 @@ class StrategyBot:
             raise ValueError("Bot ayarlarında Stop Loss açık; geçerli bir stop mesafesi gerekli.")
         if self.mt5.has_unresolved_bot_order(symbol):
             raise ValueError("Önceki bot emrinin sonucu belirsiz; MT5 mutabakatını bekleyin.")
+        # A crossover the bot caught in "Sadece Sinyal" mode, approved by the user, is the bot's own
+        # trade: the EA's reverse-signal rule applies (close the opposite bot position first).
+        # Scanner "Şimdi AL/SAT" clicks are manual one-click orders and leave other positions alone.
+        with self._state_lock:
+            close_opposite = self.close_opposite
+        if close_opposite and str(signal_id).startswith('bot-'):
+            opposite = "SELL" if side == "BUY" else "BUY"
+            if not self.close_positions_by_type(opposite, sym=symbol, expected_account=expected_account):
+                raise ValueError("Ters yöndeki bot pozisyonu kapatılamadı; yeni emir gönderilmedi.")
         lot, risk_money, lot_error = self.order_lot(symbol, side, sl_pts, expected_account)
         if lot is None:
             self.record_signal(source='MANUAL', symbol=symbol, side=side, lot=None, sl_points=sl_pts, tp_points=tp_pts,

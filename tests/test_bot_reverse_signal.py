@@ -118,3 +118,30 @@ def test_reward_risk_pays_the_spread_once_per_side():
     assert abs(ctx.reward_risk(atr, 'BUY') - (3 * atr - spread) / (2 * atr + spread)) < 1e-12
     # Sell: opens at Bid, SL/TP trigger on Ask -> distances stay 3/2; the spread is in the trigger.
     assert abs(ctx.reward_risk(atr, 'SELL') - 1.5) < 1e-12
+
+
+def test_approving_a_caught_signal_closes_the_opposite_bot_position():
+    bot, client = running_bot(SELL_BOT_POSITION, mode='SIGNAL_ONLY')
+    bot.is_running = False
+    bot.execute_signal('EURUSD', 'BUY', signal_id='bot-EURUSD-60-BUY-1', expected_account=[7, 'demo', 'DEMO'],
+                       sl_points=200)
+    assert client.close_position.call_args.args[0] == 5
+    assert client.open_order.call_args.args[:2] == ('EURUSD', 'BUY')
+
+
+def test_scanner_click_leaves_other_positions_alone():
+    bot, client = running_bot(SELL_BOT_POSITION)
+    bot.execute_signal('EURUSD', 'BUY', signal_id='scan-EURUSD-60-BUY-1-abc', expected_account=[7, 'demo', 'DEMO'],
+                       sl_points=200)
+    client.close_position.assert_not_called()
+    client.open_order.assert_called_once()
+
+
+def test_approval_is_refused_when_the_opposite_cannot_be_closed():
+    import pytest
+    bot, client = running_bot(SELL_BOT_POSITION, mode='SIGNAL_ONLY')
+    client.close_position.return_value = {'success': False, 'error': 'Market closed'}
+    with pytest.raises(ValueError, match='kapatılamadı'):
+        bot.execute_signal('EURUSD', 'BUY', signal_id='bot-EURUSD-60-BUY-1', expected_account=[7, 'demo', 'DEMO'],
+                           sl_points=200)
+    client.open_order.assert_not_called()
