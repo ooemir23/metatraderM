@@ -3615,7 +3615,8 @@ function announceBotSignals(bot) {
   lastAnnouncedBotHistory = Math.max(lastAnnouncedBotHistory, newest);
   if (!fresh.length || !signalAutoAlertEnabled) return;
   const r = fresh[0];
-  playSignalBeep(r.side === 'BUY', false);
+  // A trade the bot actually sent has its own sound, so it is never mistaken for a scanner signal.
+  playBotTradeSound(r.success ? 'opened' : 'failed');
   if (typeof showToast === 'function') showToast(r.success
     ? `🤖 Bot ${r.symbol} ${r.side === 'BUY' ? 'AL' : 'SAT'} ${r.lot} lot açtı${r.ticket != null ? ` (#${r.ticket})` : ''}`
     : `🤖 Bot ${r.symbol} ${r.side === 'BUY' ? 'AL' : 'SAT'} sinyali açılamadı: ${botHistoryReason(r.error)}`, r.success ? 'success' : 'error');
@@ -3627,6 +3628,38 @@ function announceBotPending(list) {
   if (!fresh.length || !signalAutoAlertEnabled) return;
   playSignalBeep(fresh[0].side === 'BUY', false);
   if (typeof showToast === 'function') showToast(`🔔 Bot sinyali: ${fresh[0].symbol} ${fresh[0].side === 'BUY' ? 'AL' : 'SAT'} · onayın bekleniyor`, 'info');
+}
+
+// Automatic bot order: a longer square-wave "cash register" chord (C-E-G-C, twice) for an opened
+// trade and a falling low buzz for a refused one. Scanner signals keep the short three-note beep.
+function playBotTradeSound(kind = 'opened', isTest = false) {
+  try {
+    const ctx = ensureSignalAudioCtx();
+    if (!ctx) return;
+    if (ctx.state !== 'running' && !isTest && !signalAudioHintShown && !navigator.userActivation?.hasBeenActive) {
+      signalAudioHintShown = true;
+      if (typeof showToast === 'function') showToast('🔇 Tarayıcı sesi engelledi. Bot sesleri için sayfada bir kez herhangi bir yere tıklayın.', 'info');
+    }
+    const now = ctx.currentTime;
+    const notes = kind === 'failed'
+      ? [[220, 0, 0.35, 'sawtooth', 150]]
+      : [[523.25, 0, .12], [659.25, .1, .12], [783.99, .2, .12], [1046.5, .3, .28],
+         [523.25, .7, .12], [659.25, .8, .12], [783.99, .9, .12], [1046.5, 1.0, .35]];
+    for (const [freq, at, length, type = 'square', endFreq] of notes) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      const start = now + at;
+      osc.frequency.setValueAtTime(freq, start);
+      if (endFreq) osc.frequency.exponentialRampToValueAtTime?.(endFreq, start + length);
+      gain.gain.setValueAtTime(0.12, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + length);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + length + 0.02);
+    }
+  } catch (_) {}
 }
 
 function toggleSignalAutoAlert(enabled) {

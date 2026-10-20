@@ -4,6 +4,7 @@
   const en = Object.fromEntries([
     ["Canlı Al / Sat Sinyal Tarayıcı", "Live Buy / Sell Signal Scanner"],
     ["Manuel Stil Sinyali", "Manual Style Signal"],
+    ["Bot otomatik işlem açtığında çalan sesi dinle", "Play the sound used when the bot opens a trade automatically"],
     ["Deneyselde de ses", "Sound for experimental too"],
     ["Geçmiş testi geçmeyen sinyallerde de sesli uyarı ver", "Also sound alerts for signals that did not pass the history test"],
     ["Yeniden incele", "Re-analyse"],
