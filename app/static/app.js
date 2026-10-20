@@ -54,13 +54,12 @@ document.addEventListener("DOMContentLoaded", () => {
 function updateChartTimeframeButtons(activeTf) {
   const num = Number(activeTf) || 15;
   document.querySelectorAll('.chart-tf-btn').forEach(btn => {
-    const btnTf = Number(btn.dataset.tf);
-    if (btnTf === num) {
-      btn.className = 'chart-tf-btn px-2.5 py-1 rounded-lg bg-cyan-500/25 text-cyan-300 font-bold border border-cyan-500/40 shadow-sm transition text-xs';
-    } else {
-      btn.className = 'chart-tf-btn px-2.5 py-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 border border-transparent transition font-medium text-xs';
-    }
+    const on = Number(btn.dataset.tf) === num;
+    btn.classList?.toggle('is-active', on);
+    btn.setAttribute?.('aria-pressed', String(on));
   });
+  const tfNode = document.getElementById('chart-tf-code');
+  if (tfNode) tfNode.textContent = window.MT5Chart?.frames?.[num] || '';
   const scanTf = document.getElementById('signal-scan-tf');
   if (scanTf && Number(scanTf.value) !== num) {
     scanTf.value = String(num);
@@ -431,16 +430,16 @@ function updateFullscreenUI(isFs) {
   const fsText = document.getElementById("chart-fs-text");
 
   if (isFs) {
-    if (fsIcon) fsIcon.className = "ph-bold ph-arrows-in-simple text-amber-400";
+    if (fsIcon) fsIcon.className = "ph-bold ph-arrows-in-simple";
     if (fsText) fsText.innerText = "Küçült (ESC)";
     if (fsBtn) {
-      fsBtn.className = "px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition border border-amber-500/30 active:scale-95 shadow-sm";
+      fsBtn.className = "cx-btn is-active";
     }
   } else {
-    if (fsIcon) fsIcon.className = "ph-bold ph-arrows-out-simple text-cyan-400";
-    if (fsText) fsText.innerText = "Tam Ekran";
+    if (fsIcon) fsIcon.className = "ph-bold ph-arrows-out-simple";
+    if (fsText) fsText.innerText = "Tam ekran";
     if (fsBtn) {
-      fsBtn.className = "px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold flex items-center gap-1.5 transition border border-gray-700 active:scale-95 shadow-sm";
+      fsBtn.className = "cx-btn";
     }
   }
 }
@@ -1183,6 +1182,7 @@ function renderPositionsData(positions) {
     if (typeof renderBotSignalHistory === 'function') renderBotSignalHistory();
     if (typeof rememberPositions === "function") rememberPositions(positions);
     seedNettingProtection(positions);
+    window.MT5Chart?.setTradeLevels?.(positions);
     const tbody = document.getElementById("positions-table-body");
     const countBadge = document.getElementById("pos-count-badge");
     if (countBadge) countBadge.innerText = positions.length;

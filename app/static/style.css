@@ -973,3 +973,44 @@ html[data-buy-scheme="green"] { --hx-buy:#1f9d62; }
 
 /* header row 1 fits on one line */
 #uptime-badge{display:none!important}
+
+/* ===== Terminal: chart card ===== */
+.cx-card { width:100%; display:flex; flex-direction:column; overflow:hidden; height:520px; background:var(--hx-card,#14181f); border:1px solid #222833; border-radius:8px; }
+@media (min-width:1100px) { .cx-card { height:680px; } }
+.cx-head { display:flex; flex-direction:column; gap:8px; padding:10px 14px; border-bottom:1px solid #222833; }
+.cx-row { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; }
+.cx-symbol { flex-direction:column; align-items:flex-start; gap:0; margin:-4px -8px; text-align:left; }
+.cx-symbol-line { display:inline-flex; align-items:center; gap:6px; }
+.cx-symbol-name { font-size:16px; font-weight:600; color:#e6e9ef; }
+.cx-symbol-desc { font-size:12px; color:#8f98a8; }
+.cx-symbol-desc:empty { display:none; }
+.cx-seg { display:inline-flex; align-items:center; gap:2px; padding:3px; background:#0f1218; border:1px solid #222833; border-radius:6px; }
+.cx-seg > button { min-height:30px; padding:4px 10px; border-radius:4px; font-size:12px; font-weight:500; color:#8f98a8; background:transparent; border:0; cursor:pointer; }
+.cx-seg > button:hover { color:#e6e9ef; background:#1a1f28; }
+.cx-seg > button[aria-pressed="true"], .cx-seg > button.is-active { color:#e6e9ef; background:#222833; font-weight:600; }
+.cx-seg-mono > button, .cx-zoom-count, .cx-quote strong { font-family:'IBM Plex Mono', ui-monospace, monospace; }
+.cx-zoom-count { min-width:64px; text-align:center; font-size:12px; color:#8f98a8; }
+.cx-quote { margin-left:auto; display:flex; gap:14px; font-size:12px; color:#8f98a8; }
+.cx-quote strong { color:#e6e9ef; font-weight:500; margin-left:4px; }
+.cx-spacer { flex:1; }
+.cx-btn { display:inline-flex; align-items:center; gap:6px; min-height:32px; padding:4px 12px; font-size:12px; font-weight:600; color:#c4cad5; background:#1a1f28; border:1px solid #222833; border-radius:6px; cursor:pointer; }
+.cx-btn:hover { color:#e6e9ef; border-color:#2a313d; }
+.cx-btn.is-active { color:#e6e9ef; border-color:#4c8dff; }
+.cx-btn[hidden] { display:none; }
+#chart-card[data-chart-mode="tradingview"] .cx-mt5-only { display:none; }
+.cx-body { position:relative; flex:1; width:100%; min-height:0; background:#14181f; }
+.cx-resizer { height:14px; display:flex; align-items:center; justify-content:center; cursor:ns-resize; border-top:1px solid #222833; user-select:none; }
+.cx-resizer:hover { background:#1a1f28; }
+.cx-resizer-grip { width:48px; height:4px; border-radius:4px; background:#2a313d; }
+.cx-resizer:hover .cx-resizer-grip { background:#4c8dff; }
+/* in-chart toolbar becomes the legend row */
+.mt5-chart-toolbar { flex-wrap:wrap; justify-content:flex-start; gap:4px 14px; padding:8px 14px; border-bottom:0; background:transparent; }
+.mt5-chart-legend { display:flex; flex-direction:column; gap:4px; font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:12px; color:#c4cad5; min-width:0; flex:1 1 360px; }
+.mt5-legend-lines { display:flex; flex-wrap:wrap; gap:4px 16px; }
+.mt5-legend-item { display:inline-flex; align-items:center; gap:6px; }
+.mt5-legend-item i { width:14px; height:2px; background:#f0b44c; display:inline-block; }
+.mt5-legend-item[data-line="slow"] i { background:#a78bfa; }
+.mt5-legend-ohlc { color:#8f98a8; }
+.mt5-chart-status { font-size:12px; color:#8f98a8; margin-left:auto; }
+.mt5-settings-button { display:none; }
+.mt5-chart-signal { background:#1a1f28 !important; }

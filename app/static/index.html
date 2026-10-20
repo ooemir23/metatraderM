@@ -119,51 +119,63 @@
         
         <!-- INTERACTIVE TRADINGVIEW CHART -->
 
-      <div id="chart-card" class="w-full bg-[#14181f] rounded-2xl border border-gray-800/80 overflow-hidden flex flex-col h-[480px] lg:h-[520px] xl:h-[580px] shadow-xl">
-        <div class="px-3.5 py-2 border-b border-gray-800 flex items-center justify-between bg-[#14181f] flex-wrap gap-2">
-          <button type="button" id="chart-symbol-button" class="chart-symbol-button" aria-haspopup="dialog" title="Sembol değiştir (Piyasa Gözlemi)">
-            <i class="ph-bold ph-chart-line text-emerald-400"></i>
-            <span id="current-symbol-title" class="font-bold text-white text-xs">EURUSD • 15 dk (M15)</span>
-            <i class="ph-bold ph-caret-down chart-symbol-caret" aria-hidden="true"></i>
-          </button>
-
-          <!-- QUICK CANDLE TIMEFRAME SELECTOR BAR -->
-          <div id="chart-timeframe-toolbar" class="flex items-center bg-[#0f1218] p-1 rounded-xl border border-gray-800 text-xs font-mono select-none" role="toolbar" aria-label="Grafik Mum Zaman Dilimi">
-            <button type="button" data-tf="1" onclick="setChartTimeframe(1)" class="chart-tf-btn px-2.5 py-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 transition font-medium text-xs" title="1 Dakikalık Mumlar (M1)">1 dk</button>
-            <button type="button" data-tf="5" onclick="setChartTimeframe(5)" class="chart-tf-btn px-2.5 py-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 transition font-medium text-xs" title="5 Dakikalık Mumlar (M5)">5 dk</button>
-            <button type="button" data-tf="15" onclick="setChartTimeframe(15)" class="chart-tf-btn px-2.5 py-1 rounded-lg bg-cyan-500/25 text-cyan-300 font-bold border border-cyan-500/40 shadow-sm transition text-xs" title="15 Dakikalık Mumlar (M15)">15 dk</button>
-            <button type="button" data-tf="30" onclick="setChartTimeframe(30)" class="chart-tf-btn px-2.5 py-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 transition font-medium text-xs" title="30 Dakikalık Mumlar (M30)">30 dk</button>
-            <button type="button" data-tf="60" onclick="setChartTimeframe(60)" class="chart-tf-btn px-2.5 py-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 transition font-medium text-xs" title="1 Saatlik Mumlar (H1)">1 sa</button>
-            <button type="button" data-tf="240" onclick="setChartTimeframe(240)" class="chart-tf-btn px-2.5 py-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 transition font-medium text-xs" title="4 Saatlik Mumlar (H4)">4 sa</button>
-            <button type="button" data-tf="1440" onclick="setChartTimeframe(1440)" class="chart-tf-btn px-2.5 py-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 transition font-medium text-xs" title="1 Günlük Mumlar (D1)">1 gün</button>
+      <div id="chart-card" class="cx-card" data-chart-mode="mt5">
+        <div class="cx-head">
+          <div class="cx-row">
+            <button type="button" id="chart-symbol-button" class="chart-symbol-button cx-symbol" aria-haspopup="dialog" title="Sembol değiştir (Piyasa Gözlemi)">
+              <span class="cx-symbol-line"><span id="current-symbol-title" class="cx-symbol-name">EURUSD • 15 dk (M15)</span><i class="ph-bold ph-caret-down chart-symbol-caret" aria-hidden="true"></i></span>
+              <span id="chart-symbol-desc" class="cx-symbol-desc"></span>
+            </button>
+            <div id="chart-timeframe-toolbar" class="cx-seg cx-seg-mono" role="toolbar" aria-label="Grafik Mum Zaman Dilimi">
+            <button type="button" data-tf="1" onclick="setChartTimeframe(1)" class="chart-tf-btn" aria-pressed="false" title="1 Dakikalık Mumlar (M1)">M1</button>
+            <button type="button" data-tf="5" onclick="setChartTimeframe(5)" class="chart-tf-btn" aria-pressed="false" title="5 Dakikalık Mumlar (M5)">M5</button>
+            <button type="button" data-tf="15" onclick="setChartTimeframe(15)" class="chart-tf-btn is-active" aria-pressed="true" title="15 Dakikalık Mumlar (M15)">M15</button>
+            <button type="button" data-tf="30" onclick="setChartTimeframe(30)" class="chart-tf-btn" aria-pressed="false" title="30 Dakikalık Mumlar (M30)">M30</button>
+            <button type="button" data-tf="60" onclick="setChartTimeframe(60)" class="chart-tf-btn" aria-pressed="false" title="1 Saatlik Mumlar (H1)">H1</button>
+            <button type="button" data-tf="240" onclick="setChartTimeframe(240)" class="chart-tf-btn" aria-pressed="false" title="4 Saatlik Mumlar (H4)">H4</button>
+            <button type="button" data-tf="1440" onclick="setChartTimeframe(1440)" class="chart-tf-btn" aria-pressed="false" title="1 Günlük Mumlar (D1)">D1</button>
+            </div>
+            <div class="cx-quote">
+              <span>Bid <strong id="header-bid">--</strong></span>
+              <span>Ask <strong id="header-ask">--</strong></span>
+              <span>Spread <strong id="header-spread">--</strong></span>
+            </div>
           </div>
-
-          <div class="flex items-center gap-2 sm:gap-3 text-xs">
-            <span class="text-gray-400 hidden sm:inline">Bid: <strong id="header-bid" class="text-white font-mono">--</strong></span>
-            <span class="text-gray-400 hidden sm:inline">Ask: <strong id="header-ask" class="text-white font-mono">--</strong></span>
-            <span class="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-300 font-mono">Spr: <span id="header-spread">--</span></span>
-            
-            <!-- FULLSCREEN TOGGLE BUTTON -->
-            <label class="text-gray-400">Grafik
-              <select id="chart-engine" aria-label="Grafik kaynağı" onchange="MT5Chart.setMode(this.value)" class="bg-gray-800 text-gray-200 rounded border border-gray-700 px-2 py-1">
-                <option value="mt5">MT5 · Sağ tuş</option><option value="tradingview">TradingView · Gömülü</option>
-              </select>
-            </label>
-            <a id="chart-tradingview-link" hidden href="https://www.tradingview.com/chart/?symbol=FX%3AEURUSD&amp;interval=15" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-cyan-300 text-xs font-semibold border border-gray-700">TradingView’de aç ↗</a>
-            <button id="chart-fs-btn" onclick="toggleChartFullscreen()" class="px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold flex items-center gap-1.5 transition border border-gray-700 active:scale-95 shadow-sm" title="Grafiği Tam Ekran Yap (ESC ile Çıkış)">
-              <i id="chart-fs-icon" class="ph-bold ph-arrows-out-simple text-cyan-400"></i>
-              <span id="chart-fs-text">Tam Ekran</span>
+          <div class="cx-row cx-row-tools">
+            <div class="cx-seg" role="group" aria-label="Grafik kaynağı">
+              <button type="button" data-chart-mode="mt5" aria-pressed="true" onclick="MT5Chart.setMode('mt5')">MT5 grafiği</button>
+              <button type="button" data-chart-mode="tradingview" aria-pressed="false" onclick="MT5Chart.setMode('tradingview')">TradingView</button>
+            </div>
+            <select id="chart-engine" class="sr-only" tabindex="-1" aria-hidden="true" onchange="MT5Chart.setMode(this.value)"><option value="mt5">MT5</option><option value="tradingview">TradingView</option></select>
+            <div class="cx-seg cx-mt5-only" role="group" aria-label="Grafik türü">
+              <button type="button" data-chart-type="candles" aria-pressed="true" onclick="MT5Chart.setType('candles')">Mum</button>
+              <button type="button" data-chart-type="bars" aria-pressed="false" onclick="MT5Chart.setType('bars')">Çubuk</button>
+              <button type="button" data-chart-type="line" aria-pressed="false" onclick="MT5Chart.setType('line')">Çizgi</button>
+              <button type="button" data-chart-type="area" aria-pressed="false" onclick="MT5Chart.setType('area')">Alan</button>
+            </div>
+            <div class="cx-seg cx-zoom cx-mt5-only" role="group" aria-label="Yakınlaştırma">
+              <button type="button" onclick="MT5Chart.zoom(-1)" aria-label="Uzaklaştır" title="Uzaklaştır">−</button>
+              <span id="chart-zoom-count" class="cx-zoom-count">— mum</span>
+              <button type="button" onclick="MT5Chart.zoom(1)" aria-label="Yakınlaştır" title="Yakınlaştır">+</button>
+            </div>
+            <button type="button" class="cx-btn cx-mt5-only" onclick="MT5Chart.latest()" title="Son muma dön">Son muma dön</button>
+            <span class="cx-spacer"></span>
+            <a id="chart-tradingview-link" hidden href="https://www.tradingview.com/chart/?symbol=FX%3AEURUSD&amp;interval=15" target="_blank" rel="noopener noreferrer" class="cx-btn">TradingView’de aç ↗</a>
+            <button type="button" class="cx-btn cx-mt5-only" onclick="MT5Chart.openMenu()" title="Grafik ayarları (sağ tuş)">Grafik ayarları</button>
+            <button id="chart-fs-btn" type="button" onclick="toggleChartFullscreen()" class="cx-btn" title="Grafiği Tam Ekran Yap (ESC ile Çıkış)">
+              <i id="chart-fs-icon" class="ph-bold ph-arrows-out-simple"></i>
+              <span id="chart-fs-text">Tam ekran</span>
             </button>
           </div>
         </div>
         <p id="chart-source-notice" hidden class="chart-source-notice" role="status"></p>
-        <div id="tradingview-container" class="flex-1 w-full bg-[#0b0e13] relative">
+        <div id="tradingview-container" class="cx-body">
           <!-- TradingView Widget iframe will be mounted here -->
         </div>
 
         <!-- RESIZE HANDLE AT THE BOTTOM -->
-        <div id="chart-resizer" class="h-3 w-full bg-[#14181f] hover:bg-cyan-500/20 active:bg-cyan-500/30 cursor-ns-resize flex items-center justify-center transition border-t border-gray-800/80 group select-none" title="Grafik yüksekliğini ayarlamak için basılı tutup yukarı/aşağı sürükleyin (Çift tıklama: Sıfırla)">
-          <div class="w-12 h-1 rounded-full bg-gray-600 group-hover:bg-cyan-400 transition-colors"></div>
+        <div id="chart-resizer" class="cx-resizer" title="Grafik yüksekliğini ayarlamak için basılı tutup yukarı/aşağı sürükleyin (Çift tıklama: Sıfırla)">
+          <div class="cx-resizer-grip"></div>
         </div>
       </div>
 
@@ -340,7 +352,7 @@
       </nav>
           <!-- TOP RESIZE HANDLE (PULL UP TO EXPAND POSITIONS / DOWN TO SHRINK) -->
           <div id="positions-top-resizer" class="h-3.5 -mx-3 sm:-mx-4 -mt-3 sm:-mt-4 mb-2.5 bg-[#14181f] hover:bg-cyan-500/20 active:bg-cyan-500/30 cursor-ns-resize flex items-center justify-center transition border-b border-gray-800/80 group select-none rounded-t-2xl shrink-0" title="Yukarı/Aşağı sürükleyerek Grafik ve Pozisyonlar boyutunu ayarlayın (Çift tıklama: Sıfırla)">
-            <div class="w-12 h-1 rounded-full bg-gray-600 group-hover:bg-cyan-400 transition-colors"></div>
+            <div class="cx-resizer-grip"></div>
           </div>
 
         <div id="workspace-split" class="workspace-split" data-view="positions">
@@ -1023,7 +1035,7 @@
 
         <!-- RESIZE HANDLE AT THE BOTTOM OF POSITIONS CARD -->
         <div id="positions-resizer" class="h-3.5 -mx-3 sm:-mx-4 -mb-3 sm:-mb-4 mt-3 bg-[#14181f] hover:bg-cyan-500/20 active:bg-cyan-500/30 cursor-ns-resize flex items-center justify-center transition border-t border-gray-800/80 group select-none rounded-b-2xl shrink-0" title="Pozisyonlar & Rapor panelinin yüksekliğini ayarlamak için basılı tutup yukarı/aşağı sürükleyin (Çift tıklama: Sıfırla)">
-          <div class="w-12 h-1 rounded-full bg-gray-600 group-hover:bg-cyan-400 transition-colors"></div>
+          <div class="cx-resizer-grip"></div>
         </div>
       </div>
 
@@ -1549,10 +1561,10 @@
   <script src="/static/i18n.js"></script>
   <script src="/static/notifications.js"></script>
   <script src="/static/chart-wheel-guard.js?v=1"></script>
-  <script src="/static/mt5-chart.js?v=4"></script>
+  <script src="/static/mt5-chart.js?v=terminal-1"></script>
   <script src="/static/market-watch.js"></script>
   <script src="/static/signal-settings.js?v=1"></script>
-  <script src="/static/app.js?v=terminal-1"></script>
+  <script src="/static/app.js?v=terminal-2"></script>
   <script src="/static/trading.js?v=terminal-1"></script>
   <script src="/static/operations.js?v=terminal-1"></script>
   <script src="/static/permissions.js"></script>
