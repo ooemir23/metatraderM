@@ -511,7 +511,7 @@
 
         <!-- REPORTS & ANALYTICS CONTAINER -->
         <div id="reports-container" class="flex-1 flex flex-col gap-3 hidden overflow-y-auto pr-1">
-          <p id="reports-basis" class="text-xs text-gray-400">Net hesap hareketleri ve kapanmış pozisyon istatistikleri · UTC</p>
+          <p id="reports-basis" class="text-xs text-gray-400">Net hesap hareketleri ve kapanmış pozisyon istatistikleri · broker sunucu günü</p>
           <!-- TOP 4 KPI CARDS -->
           <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
             <!-- TODAY P/L -->
@@ -578,6 +578,21 @@
               <span id="rep-total-fee" class="font-bold font-mono text-gray-400">$0.00</span>
             </div>
           </div>
+
+          <!-- PERIOD REPORT (day / week / month / year, broker server day) -->
+          <section id="period-report" class="pr-card" aria-labelledby="period-report-title">
+            <div class="pr-head">
+              <h3 id="period-report-title">Dönem raporu</h3>
+              <div class="cx-seg" role="group" aria-label="Rapor dönemi">
+                <button type="button" data-period="day" aria-pressed="true" onclick="HMAPeriodReport.setPeriod('day')">Günlük</button>
+                <button type="button" data-period="week" aria-pressed="false" onclick="HMAPeriodReport.setPeriod('week')">Haftalık</button>
+                <button type="button" data-period="month" aria-pressed="false" onclick="HMAPeriodReport.setPeriod('month')">Aylık</button>
+                <button type="button" data-period="year" aria-pressed="false" onclick="HMAPeriodReport.setPeriod('year')">Yıllık</button>
+              </div>
+              <button type="button" id="period-report-csv" class="cx-btn" onclick="HMAPeriodReport.exportCsv()" disabled>CSV</button>
+            </div>
+            <div id="period-report-body"><p class="pr-note" role="status">Dönem raporu yükleniyor…</p></div>
+          </section>
 
           <!-- DAILY & SYMBOL BREAKDOWN TABLES -->
           <div class="grid grid-cols-1 xl:grid-cols-12 gap-3">
@@ -1564,7 +1579,8 @@
   <script src="/static/mt5-chart.js?v=terminal-1"></script>
   <script src="/static/market-watch.js"></script>
   <script src="/static/signal-settings.js?v=1"></script>
-  <script src="/static/app.js?v=terminal-2"></script>
+  <script src="/static/period-report.js?v=terminal-1"></script>
+  <script src="/static/app.js?v=terminal-3"></script>
   <script src="/static/trading.js?v=terminal-1"></script>
   <script src="/static/operations.js?v=terminal-1"></script>
   <script src="/static/permissions.js"></script>

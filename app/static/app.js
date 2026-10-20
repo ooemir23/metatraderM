@@ -939,6 +939,7 @@ function renderAccountData(data) {
     const identityChanged = JSON.stringify(identity) !== JSON.stringify(currentAccountIdentity);
     if (identity && lastObservedAccountIdentity && JSON.stringify(identity) !== JSON.stringify(lastObservedAccountIdentity)) {
       accountSessionGeneration++;
+      window.HMAPeriodReport?.reset?.();
       if (typeof invalidateAIAdvice === 'function') invalidateAIAdvice(currentSymbol);
     }
     currentAccountIdentity = identity;
@@ -1426,6 +1427,7 @@ async function fetchHistory() {
 let reportsRequestGeneration = 0;
 async function fetchReports() {
   const generation = accountSessionGeneration, request = ++reportsRequestGeneration;
+  window.HMAPeriodReport?.load?.();
   try {
     const daysSelect = document.getElementById("reports-days-select");
     const days = daysSelect ? daysSelect.value : 30;
@@ -1449,7 +1451,7 @@ async function fetchReports() {
       repTodayProfit.innerText = `${isPos ? "+" : ""}${currency} ${formatMoney(s.today_profit)}`;
     }
     if (repTodaySub) {
-      repTodaySub.innerText = `${s.today_trades} pozisyon tamamen kapandı · UTC`;
+      repTodaySub.innerText = `${s.today_trades} pozisyon tamamen kapandı · broker sunucu günü`;
     }
 
     // Total Net Profit
@@ -3073,6 +3075,7 @@ async function submitLogin() {
   button.disabled = true;
   accountSwitching = true;
   accountSessionGeneration++;
+  window.HMAPeriodReport?.reset?.();
   currentAccountType = null;
   if (typeof liveSource !== 'undefined' && liveSource) { liveSource.close(); liveSource = null; }
   if (typeof lastLiveMessage !== 'undefined') lastLiveMessage = 0;
@@ -3122,6 +3125,7 @@ async function submitLogin() {
   } finally {
     accountSwitching = false;
     accountSessionGeneration++;
+    window.HMAPeriodReport?.reset?.();
     if (typeof startLiveFeed === 'function') startLiveFeed();
     fetchAccount(true);
     fetchPositions(true);
