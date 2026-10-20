@@ -367,16 +367,24 @@ class BacktestRequest(BaseModel):
     sl_points: int = Field(default=200, ge=0, le=10000)
     tp_points: int = Field(default=0, ge=0, le=10000)
     commission_points: float = Field(default=0, ge=0, le=1000, allow_inf_nan=False)
+    # ATR risk mode of the bot: stop/target = ATR(atr_period) x multiplier at the signal candle.
+    sl_atr: float = Field(default=0, ge=0, le=20, allow_inf_nan=False)
+    tp_atr: float = Field(default=0, ge=0, le=50, allow_inf_nan=False)
+    atr_period: int = Field(default=14, ge=2, le=200)
 
 @app.post('/api/backtest')
 def run_backtest(req: BacktestRequest):
     if req.timeframe_minutes not in TIMEFRAME_NAMES:
         raise HTTPException(status_code=422, detail='Desteklenmeyen zaman dilimi.')
-    rates = mt5_client.get_rates(req.symbol, req.timeframe_minutes, req.candles + 1)
+    from app import signal_engine
+    warmup = signal_engine.history_bars({'hma_period': req.hma_period, 'ema_period': req.second_ma_period,
+                                         'ma_type': req.second_ma_type, 'atr_period': req.atr_period})
+    rates = mt5_client.get_rates(req.symbol, req.timeframe_minutes, req.candles + warmup + 1)
     if not rates or len(rates) < 2:
         raise HTTPException(status_code=503, detail='Mum verisi alınamadı.')
     # Last candle is still forming; never use it as historical evidence.
     rates = rates[:-1]
+    first = max(0, len(rates) - req.candles)   # test window: the requested candles after the warm-up
     price = mt5_client.get_symbol_price(req.symbol)
     info = mt5_client.get_symbol_spec(req.symbol)
     if not info or not info.get('point') or not price.get('bid'):
@@ -384,7 +392,8 @@ def run_backtest(req: BacktestRequest):
     try:
         return simulate(rates, req.hma_period, req.second_ma_type, req.second_ma_period,
                         req.sl_points, req.tp_points, float(info['point']), float(price.get('spread', 0)),
-                        req.commission_points)
+                        req.commission_points, start=first, sl_atr=req.sl_atr, tp_atr=req.tp_atr,
+                        atr_period=req.atr_period)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -476,7 +485,9 @@ def _scan_symbols_sync(symbol_list, timeframe_minutes, hma_period, ema_period, m
                 'tp_atr': tp_atr, 'confirm_close': confirm_close, 'rsi_filter': rsi_filter,
                 'rsi_buy_max': rsi_buy_max, 'rsi_sell_min': rsi_sell_min}
     need = signal_engine.required_bars(settings)
-    count = max(120, need + 30, signal_engine.history_bars(settings), (stats_bars + need + 2) if stats else 0)
+    # Recursive indicators (EMA, RSI, ADX) need their MT5 warm-up before the FIRST candle that is
+    # evaluated, so the history test window comes on top of it.
+    count = max(120, need + 30, signal_engine.history_bars(settings) + ((stats_bars + 2) if stats else 0))
     htf = signal_engine.htf_minutes_for(timeframe_minutes, settings['htf_minutes']) if settings['htf_filter'] else None
     wants_spread = bool(settings['max_spread_points'] or settings['min_rr'] or stats)
     items = []
@@ -1531,7 +1542,8 @@ def bot_performance_report(days: int = Query(default=30, ge=1, le=365)):
         open_ids = [p.get('identifier', p.get('ticket')) for p in mt5_client.get_positions(fresh=True)]
     except Exception as exc:
         raise HTTPException(status_code=503, detail='MT5 işlem geçmişi okunamadı.') from exc
-    rows = bot_performance.closed_positions(deals, bot.signal_history, open_ids)
+    rows = bot_performance.closed_positions(deals, bot.signal_history, open_ids,
+                                            clock_offset=mt5_client.tick_clock_offset)
     return {'days': days, **bot_performance.summarize(rows, bot.trade_utc_offset_min)}
 
 

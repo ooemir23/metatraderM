@@ -20,9 +20,13 @@ def _num(value):
         return 0.0
 
 
-def closed_positions(deals, history=(), open_position_ids=()):
-    """Group deals by position; keep closed HMA positions, oldest first."""
+def closed_positions(deals, history=(), open_position_ids=(), clock_offset=0):
+    """Group deals by position; keep closed HMA positions, oldest first.
+
+    MT5 deal times are broker server time; `clock_offset` (server - UTC, seconds) turns them into
+    UTC epoch seconds, the clock of the bot's own records (signal history, start time)."""
     open_ids = {int(x) for x in open_position_ids}
+    offset = int(clock_offset or 0)
     by_ticket = {}
     for entry in history or ():
         ticket = entry.get('ticket')
@@ -47,10 +51,10 @@ def closed_positions(deals, history=(), open_position_ids=()):
             continue
         net = sum(_num(d.get('profit')) + sum(_num(d.get(k)) for k in COST_KEYS) for d in deals_)
         costs = sum(sum(_num(d.get(k)) for k in COST_KEYS) for d in deals_)
-        closed_at = max(int(d.get('timestamp') or 0) for d in exits)
+        closed_at = max(int(d.get('timestamp') or 0) for d in exits) - offset
         entries = [d for d in deals_ if d.get('entry') == 0]
         opened_at = int(sent['time']) if sent and sent.get('time') else (
-            min(int(d.get('timestamp') or 0) for d in entries) if entries else None)
+            min(int(d.get('timestamp') or 0) for d in entries) - offset if entries else None)
         side = (sent or {}).get('side') or next((d.get('position_type') for d in exits if d.get('position_type') in ('BUY', 'SELL')), None)
         risk = _num((sent or {}).get('risk_money'))
         rows.append({

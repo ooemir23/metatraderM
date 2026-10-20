@@ -249,7 +249,10 @@ class StrategyBot:
             from app import bot_performance
             deals = self.mt5.get_history(days=7)
             open_ids = [p.get('identifier', p.get('ticket')) for p in self.mt5.get_positions(fresh=True)]
-            rows = bot_performance.closed_positions(deals, self.signal_history, open_ids)
+            offset = getattr(self.mt5, 'tick_clock_offset', 0)
+            offset = offset if isinstance(offset, (int, float)) and not isinstance(offset, bool) else 0
+            # Deal times are broker server time, started_at is UTC: compare on one clock.
+            rows = bot_performance.closed_positions(deals, self.signal_history, open_ids, clock_offset=offset)
             streak = bot_performance.loss_streak(rows, since=started)
         except Exception as exc:
             self.log(f'Art arda kayıp kontrolü yapılamadı: {exc}', 'ERROR')

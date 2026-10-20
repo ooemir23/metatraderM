@@ -290,19 +290,33 @@ async function runStrategyBacktest() {
   const en = window.MT5I18n?.language() === 'en';
   const candles = Number(document.getElementById('backtest-candles')?.value);
   const commission_points = Number(document.getElementById('backtest-commission')?.value);
+  // Test the bot as it is configured: its timeframe, indicators and stop/target rules.
+  const bot = (typeof latestBotSettings !== 'undefined' && latestBotSettings) || {};
+  const atrMode = bot.risk_mode === 'ATR';
   const payload = {symbol:currentSymbol, candles, commission_points,
-    timeframe_minutes:15,
-    hma_period:Number(document.getElementById('cfg-hma-period')?.value || 14),
-    second_ma_type:document.getElementById('cfg-ma2-type')?.value || 'EMA',
-    second_ma_period:Number(document.getElementById('cfg-ma2-period')?.value || 34),
-    sl_points:200, tp_points:0};
+    timeframe_minutes:Number(bot.timeframe_minutes || window.MT5Chart?.getTimeframe?.() || 15),
+    hma_period:Number(bot.hma_period || document.getElementById('cfg-hma-period')?.value || 14),
+    second_ma_type:bot.second_ma_type || document.getElementById('cfg-ma2-type')?.value || 'EMA',
+    second_ma_period:Number(bot.second_ma_period || document.getElementById('cfg-ma2-period')?.value || 34),
+    sl_points:!atrMode && bot.use_stop_loss !== false ? Number(bot.sl_points ?? 200) : 0,
+    tp_points:!atrMode && bot.use_take_profit ? Number(bot.tp_points || 0) : 0,
+    sl_atr:atrMode && bot.use_stop_loss !== false ? Number(bot.atr_stop_multiplier || 0) : 0,
+    tp_atr:atrMode && bot.use_take_profit ? Number(bot.atr_target_multiplier || 0) : 0,
+    atr_period:Number(bot.atr_period || 14)};
+  if (payload.second_ma_type === 'KAMA') {
+    target.textContent = en ? 'This test supports EMA/SMA/LWMA/HMA; use Strategy Research for KAMA.'
+      : 'Bu test EMA/SMA/LWMA/HMA içindir; KAMA için Strateji Araştırması bölümünü kullanın.';
+    return;
+  }
   target.textContent = en ? 'Running historical simulation…' : 'Geçmiş veri testi çalışıyor…';
   try {
     const response = await fetch('/api/backtest', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'Test failed');
     const line = (label, part) => `${label}: ${part.count} ${en?'trades':'işlem'}, ${part.net_points} ${en?'net points':'net puan'}, ${part.win_rate_pct ?? '—'}% ${en?'wins':'kazanç'}, ${part.max_drawdown_points} ${en?'max drawdown points':'azami düşüş puanı'}`;
-    target.textContent = line(en?'First 70%':'İlk %70',data.in_sample) + ' · ' + line(en?'Last 30%':'Son %30',data.out_of_sample);
+    const tf = {1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'}[payload.timeframe_minutes] || `M${payload.timeframe_minutes}`;
+    const stops = atrMode ? `SL ${payload.sl_atr || '—'}×ATR · TP ${payload.tp_atr || '—'}×ATR` : `SL ${payload.sl_points || '—'} · TP ${payload.tp_points || '—'} ${en?'points':'puan'}`;
+    target.textContent = `${currentSymbol} ${tf} · ${stops} — ` + line(en?'First 70%':'İlk %70',data.in_sample) + ' · ' + line(en?'Last 30%':'Son %30',data.out_of_sample);
   } catch (error) { target.textContent = error.message; }
 }
 
