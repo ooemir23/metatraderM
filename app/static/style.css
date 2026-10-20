@@ -431,7 +431,7 @@ html { background: #0b0e13; }
 .tools-error-badge { position:absolute; top:-6px; right:-6px; min-width:18px; padding:0 5px; border-radius:999px; background:#d64545; color:#fff;
   font:700 12px/16px 'IBM Plex Mono', ui-monospace, monospace; text-align:center; box-shadow:0 0 0 2px #14181f; }
 .tools-backdrop { position:fixed; inset:0; z-index:60; background:#0008; }
-.tools-drawer { position:fixed; top:0; bottom:0; right:calc(-1 * min(560px, 100vw)); width:min(560px, 100vw); z-index:61;
+.tools-drawer { position:fixed; top:0; bottom:0; right:calc(-1 * min(620px, 100vw)); width:min(620px, 100vw); z-index:61;
   display:flex; flex-direction:column; background:#0f1218; border-left:1px solid #222833; box-shadow:-18px 0 40px #0009;
   visibility:hidden; transition:right .28s ease, visibility 0s linear .28s; }
 .tools-drawer.open { right:0; visibility:visible; transition:right .28s ease, visibility 0s; }
@@ -1014,3 +1014,13 @@ html[data-buy-scheme="green"] { --hx-buy:#1f9d62; }
 .mt5-chart-status { font-size:12px; color:#8f98a8; margin-left:auto; }
 .mt5-settings-button { display:none; }
 .mt5-chart-signal { background:#1a1f28 !important; }
+
+/* ===== Terminal: dialogs, drawer (stage 5) ===== */
+dialog::backdrop, .trade-confirm::backdrop, .market-dialog::backdrop { background:rgba(5,7,10,.72) !important; backdrop-filter:none !important; }
+#login-modal, #bot-settings-modal, #ai-autopilot-modal { background:rgba(5,7,10,.72) !important; backdrop-filter:none !important; }
+dialog, #login-modal > div, #bot-settings-modal > div, #ai-autopilot-modal > div { background:#14181f !important; border:1px solid #2a313d !important; border-radius:8px !important; box-shadow:none !important; color:#e6e9ef; }
+.trade-confirm { width:min(420px, calc(100vw - 32px)); padding:20px; font-family:'IBM Plex Sans', system-ui, sans-serif; }
+.trade-confirm h2, dialog > h2, dialog h3:first-child, dialog header h2, #bot-settings-modal h2, #bot-settings-modal h3:first-of-type, #login-modal h2, #login-modal h3:first-of-type { font-size:16px !important; font-weight:700 !important; color:#e6e9ef; }
+.trade-confirm-icon { border-radius:6px; }
+.tools-drawer { background:#14181f; border-left-color:#2a313d; box-shadow:none; }
+.tools-drawer-title { font-size:16px; font-weight:700; }
