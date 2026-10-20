@@ -154,7 +154,7 @@ def test_bot_closes_only_its_own_positions(client):
     client.mt5.positions_get.return_value = [pos(HMA_MAGIC), pos(MANUAL_MAGIC, ticket=2), pos(AI_MAGIC, ticket=3)]
     client.close_position = Mock(return_value={'success': True})
     assert StrategyBot(client).close_positions_by_type('SELL')
-    client.close_position.assert_called_once_with(1, expected_magic=HMA_MAGIC)
+    client.close_position.assert_called_once_with(1, expected_magic=HMA_MAGIC, deviation_points=10)
 
 
 def test_filtered_close_uses_profit_plus_swap(client):

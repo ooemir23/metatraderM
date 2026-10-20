@@ -143,3 +143,22 @@ def test_signal_only_mode_catches_but_never_trades():
         bot._check_strategy_once()
     assert client.opened == [] and client.closed == []
     assert bot.pending_signal_actions, 'caught signals wait for approval'
+
+
+def test_crossover_closed_before_start_is_not_traded_like_ea_oninit():
+    # HMA_Crossover_EA OnInit sets m_lastBarTime to the current bar: a crossover on a candle that
+    # closed before the EA started is never traded; the next crossover is.
+    rows = market()
+    closes = [r['close'] for r in rows]
+    fast, slow = se.hma_series(closes, 14), se.ema_series(closes, 34)
+    crosses = [i for i in range(450, len(rows) - 1) if se.cross_at(fast, slow, i)]
+    first, second = crosses[0], crosses[1]
+    client = FakeMT5(rows)
+    bot = live_bot(client)
+    client.now = first + 1                 # candle `first` (a crossover) has just closed; bot starts now
+    bot._check_strategy_once()
+    assert client.opened == [], 'old crossover at start is not traded'
+    for now in range(first + 2, second + 2):
+        client.now = now
+        bot._check_strategy_once()
+    assert [o['candle'] - 1 for o in client.opened] == [second]

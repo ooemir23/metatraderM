@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
-from app.mt5_bridge import HMA_MAGIC
+from app.mt5_bridge import HMA_MAGIC, MANUAL_MAGIC
 from app.strategy_bot import StrategyBot
 
 ACCOUNT = [7, 'demo', 'DEMO']
@@ -26,8 +26,19 @@ def test_signal_points_are_not_treated_as_prices_and_use_panel_risk_mode():
     args, kwargs = client.open_order.call_args
     assert args[:3] == ('EURUSD', 'BUY', bot.lot_size)
     assert (kwargs['sl_points'], kwargs['tp_points']) == (200, 400)
-    assert kwargs['magic'] == HMA_MAGIC and kwargs['expected_account'] == ACCOUNT
+    # "Şimdi AL/SAT" is a manual one-click order: like a hand-opened MT5 trade the EA does not manage it.
+    assert kwargs['magic'] == MANUAL_MAGIC and kwargs['expected_account'] == ACCOUNT
+    assert 'deviation_points' not in kwargs   # manual ticket deviation
     assert kwargs['manual_mode'] == 'MT5'  # manually confirmed: broker rules, like the MT5 order ticket
+
+
+def test_approved_bot_signal_is_the_bots_own_trade_with_ea_deviation():
+    bot, client = make_bot()
+    client.get_positions.return_value = []
+    bot.execute_signal('EURUSD', 'BUY', signal_id='bot-EURUSD-15-BUY-1', expected_account=ACCOUNT,
+                       price=1.1, sl_points=200, tp_points=400)
+    kwargs = client.open_order.call_args.kwargs
+    assert kwargs['magic'] == HMA_MAGIC and kwargs['deviation_points'] == 10   # EA InpDeviation
 
 
 def test_signal_prices_are_converted_and_wrong_side_stops_rejected():

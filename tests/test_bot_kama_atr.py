@@ -80,7 +80,7 @@ def test_reverse_closes_only_owned_positions_even_without_entry_confirmation(mon
     c.get_positions.return_value=[{'ticket':1,'symbol':'EURUSD','type':'SELL','magic':HMA_MAGIC},
         {'ticket':2,'symbol':'EURUSD','type':'SELL','magic':77}]
     b._check_strategy()
-    c.close_position.assert_called_once_with(1,expected_magic=HMA_MAGIC)
+    c.close_position.assert_called_once_with(1,expected_magic=HMA_MAGIC,deviation_points=10)
     c.open_order.assert_not_called()
 
 

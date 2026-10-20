@@ -12,7 +12,10 @@ import tempfile
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from app.mt5_bridge import HMA_MAGIC
+from app.mt5_bridge import HMA_MAGIC, MANUAL_MAGIC
+
+# HMA_Crossover_EA InpDeviation: maximum slippage of the EA's own orders and closes (points).
+EA_DEVIATION = 10
 from app.mt5_client import MT5DataError, TIMEFRAME_NAMES
 from app.strategy_research import Settings as IndicatorSettings, indicators
 from app import signal_engine
@@ -828,17 +831,14 @@ class StrategyBot:
             hma2_init = self.calc_hma(closes, self.hma_period, shift=2)
             ma2_1_init = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=1)
             ma2_2_init = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=2)
-            fresh_cross_on_last_bar = (
-                self.second_ma_type != "KAMA"
-                and not self.use_atr_filter
-                and ((hma2_init <= ma2_2_init and hma1_init > ma2_1_init) or (hma2_init >= ma2_2_init and hma1_init < ma2_1_init))
-            )
-            if not fresh_cross_on_last_bar:
+            # HMA_Crossover_EA OnInit: m_lastBarTime = current bar, so a crossover on a candle that closed
+            # before the start is never traded; the first signal is the candle that closes after the start.
+            if True:
                 bars, way = self._bars_since_cross(closes)
                 trend = 'AL' if hma1_init > ma2_1_init else 'SAT'
                 since = f'son kesişim {bars} mum önce' if bars is not None else 'yakın zamanda kesişim yok'
                 self._sym_status(sym, 'WAITING_CROSS',
-                    f"Mevcut {trend} trendine geç girilmez ({since}); bir sonraki kesişim bekleniyor: "
+                    f"Başlangıçtan önce kapanmış mumdaki sinyal işlenmez (MT5 EA ile aynı); mevcut {trend} trendi ({since}). Bir sonraki kesişim bekleniyor: "
                     f"{'SAT (aşağı)' if trend == 'AL' else 'AL (yukarı)'}.", candle_time=latest_closed_candle_time, trend=trend)
                 self.last_candle_times[sym] = latest_closed_candle_time
                 if sym == self.symbol:
@@ -1059,7 +1059,8 @@ class StrategyBot:
             self.runtime_state, self.runtime_detail = 'SUBMITTING', f'{sym} emir sonucu bekleniyor.'
 
         res = self.mt5.open_order(sym, side, lot, sl_points=sl, tp_points=tp,
-            comment=f"HMA Bot {side}", magic=HMA_MAGIC, request_id=self.order_id(side, sym=sym), stop_event=self._stop_event, **kwargs)
+            comment=f"HMA Bot {side}", magic=HMA_MAGIC, request_id=self.order_id(side, sym=sym), stop_event=self._stop_event,
+            deviation_points=EA_DEVIATION, **kwargs)
         self.record_signal(source='AUTO', symbol=sym, side=side, lot=lot, result=res, sl_points=sl, tp_points=tp,
                            risk_money=risk_money)
 
@@ -1123,7 +1124,7 @@ class StrategyBot:
                 if self._stop_event.is_set():
                     return False
                 kwargs = {'expected_account': expected_account, 'stop_event': self._stop_event} if expected_account is not None else {}
-                result = self.mt5.close_position(p["ticket"], expected_magic=HMA_MAGIC, **kwargs)
+                result = self.mt5.close_position(p["ticket"], expected_magic=HMA_MAGIC, deviation_points=EA_DEVIATION, **kwargs)
                 if result.get('uncertain') or result.get('pending') or result.get('partial'):
                     self.stop()
                     self.runtime_state, self.runtime_detail = 'ORDER_UNRESOLVED', 'Ters pozisyonun kapatılması kesinleşmedi; MT5 durumunu kontrol edin.'
@@ -1186,8 +1187,14 @@ class StrategyBot:
             raise ValueError(lot_error)
         identity = (tuple(expected_account), symbol, side, signal_id)
         request_id = "sig-" + hashlib.sha256(repr(identity).encode()).hexdigest()
+        bot_trade = str(signal_id).startswith('bot-')
+        # A signal the bot caught and the user approved is the bot's own trade (bot magic, EA deviation).
+        # "Şimdi AL/SAT" from the scanner is a manual one-click order: like a trade opened by hand in MT5,
+        # the EA does not manage it (manual magic) and it never blocks or gets closed by bot signals.
+        extra = {'deviation_points': EA_DEVIATION} if bot_trade else {}
         res = self.mt5.open_order(symbol, side, lot, sl_points=sl_pts, tp_points=tp_pts,
-                                  comment=f"HMA Sinyal {side}", magic=HMA_MAGIC,
+                                  comment=f"HMA Sinyal {side}" if bot_trade else f"Web Sinyal {side}",
+                                  magic=HMA_MAGIC if bot_trade else MANUAL_MAGIC, **extra,
                                   request_id=request_id, expected_account=expected_account,
                                   # Manually confirmed: same broker-only rules as the MT5 order ticket.
                                   manual_mode="MT5")

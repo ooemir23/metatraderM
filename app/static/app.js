@@ -2770,7 +2770,7 @@ function renderBotPerformance(d) {
       ${table(`Giriş saatine göre (UTC${d.utc_offset_min >= 0 ? '+' : ''}${d.utc_offset_min / 60})`, d.by_hour, 'Saat')}
       ${table('Kaynağa göre', d.by_source, 'Kaynak')}
     </div>
-    <p class="bot-protect-note">Geçmiş sonuçlardır, gelecek tahmini değildir. Sayılar MT5 geçmişindeki kapanmış HMA botu pozisyonlarından (otomatik ve "Şimdi AL/SAT") hesaplanır.</p>`;
+    <p class="bot-protect-note">Geçmiş sonuçlardır, gelecek tahmini değildir. Sayılar MT5 geçmişindeki kapanmış HMA botu pozisyonlarından hesaplanır ("Şimdi AL/SAT" manuel işlemdir, dahil değildir).</p>`;
 }
 
 async function clearBotSignalHistory() {
@@ -2901,6 +2901,27 @@ function readBotProtection() {
     trade_days: days,
     blocked_windows: (document.getElementById('cfg-blocked').value || '').split('\n').map(s => s.trim()).filter(Boolean),
   };
+}
+// HMA_Crossover_EA.mq5 inputs (MT5 EA): fills the bot form with the same values; nothing is saved until "Kaydet".
+// Symbol and timeframe stay as they are (the EA works on the chart it is attached to).
+const EA_INPUTS = {
+  'cfg-hma-period': 14, 'cfg-ma2-type': 'EMA', 'cfg-ma2-period': 34,            // InpHMAPeriod, InpSecondMAType, InpSecondMAPeriod
+  'cfg-lot': 0.01, 'cfg-lot-mode': 'FIXED',                                         // InpLotSize
+  'cfg-close-opp': true,                                                            // InpCloseOpposite
+  'cfg-risk-mode': 'POINTS', 'cfg-use-sl': true, 'cfg-sl-points': 200,              // InpUseStopLoss, InpStopLossPoints
+  'cfg-use-tp': false, 'cfg-tp-points': 400,                                        // InpUseTakeProfit, InpTakeProfitPoints
+  'cfg-max-order-lots': 0.10, 'cfg-max-total-lots': 0.50, 'cfg-max-open-orders': 10, // InpMaxOrderLots, InpMaxTotalLots, InpMaxOpenOrders
+  // Panel extras the EA does not have: off.
+  'cfg-h4-filter': false, 'cfg-atr-filter': false, 'cfg-confirmation-bars': 0, 'cfg-max-losses': 0, 'cfg-hours-enabled': false,
+};
+function applyEaDefaults() {
+  for (const [id, value] of Object.entries(EA_INPUTS)) {
+    const node = document.getElementById(id);
+    if (!node) continue;
+    if (node.type === 'checkbox') node.checked = value; else node.value = String(value);
+    node.dispatchEvent?.(new Event('change', {bubbles: true}));
+  }
+  showToast('MT5 EA değerleri forma yüklendi (lot 0.01, SL 200 puan, TP kapalı, ters sinyalde kapat, sınırlar 0.10 / 0.50 / 10). Uygulamak için Kaydet\'e basın.', 'info');
 }
 async function toggleBotSettingsModal() {
   const modal = document.getElementById("bot-settings-modal");
@@ -3833,7 +3854,7 @@ function nowTradeLabel(item, tradable) {
 function nowTradeTitle(item, sl, tp) {
   const digits = Number.isInteger(item.digits) ? item.digits : 5;
   const fmt = v => Number(v) > 0 ? Number(v).toFixed(digits) : 'yok';
-  return `Bu sinyalin yönünde hemen piyasa emri açar · SL ${fmt(sl)} · TP ${fmt(tp)} · pozisyonu bot yönetir`;
+  return `Bu sinyalin yönünde hemen piyasa emri açar · SL ${fmt(sl)} · TP ${fmt(tp)} · MT5'te elle açılan işlem gibi manueldir; bot yönetmez`;
 }
 // Past signals of the history test, as a list (time on the MT5 server clock, like MT5's chart).
 const openSignalTradeLists = new Set();

@@ -4,6 +4,8 @@
   const en = Object.fromEntries([
     ["Canlı Al / Sat Sinyal Tarayıcı", "Live Buy / Sell Signal Scanner"],
     ["Manuel Stil Sinyali", "Manual Style Signal"],
+    ["MT5 EA değerlerini yükle", "Load MT5 EA values"],
+    ["Formu HMA_Crossover_EA.mq5 giriş değerleriyle doldurur; kaydetmek için Kaydet'e basın", "Fills the form with the HMA_Crossover_EA.mq5 inputs; press Save to apply"],
     ["Alım satım", "Trading"],
     ["Piyasa derinliği", "Market depth"],
     ["Göstergeler", "Indicators"],
