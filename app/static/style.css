@@ -1053,3 +1053,22 @@ dialog, #login-modal > div, #bot-settings-modal > div, #ai-autopilot-modal > div
   .pr-table td::before { content:attr(data-label); color:#8f98a8; font-family:'IBM Plex Sans', system-ui, sans-serif; }
   .pr-table td:first-child { font-weight:700; color:#e6e9ef; }
 }
+
+/* ===== Terminal: mobile (<760px) ===== */
+.mx-bar { display:none; }
+@media (max-width: 759px) {
+  .hx-header { position:static; }
+  .hx-metrics { grid-template-columns:repeat(2, minmax(0, 1fr)) !important; }
+  .mx-bar { display:grid; grid-template-columns:1fr 84px 1fr; gap:6px; position:fixed; left:0; right:0; bottom:0; z-index:45;
+    padding:6px 12px calc(6px + env(safe-area-inset-bottom)); background:#0f1218; border-top:1px solid #222833; }
+  .mx-bar button { height:52px; border-radius:6px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:0; font-size:12px; font-weight:700; color:#fff; border:0; }
+  .mx-bar button span:last-child { font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:16px; font-weight:600; }
+  .mx-sell { background:#d64545; } .mx-buy { background:#2f6fd6; }
+  html[data-buy-scheme="green"] .mx-buy { background:#1f9d6a; }
+  .mx-lot { background:#1a1f28 !important; border:1px solid #2a313d !important; color:#c4cad5 !important; }
+  .mx-bar button:disabled { opacity:.45; }
+  body { padding-bottom:calc(64px + env(safe-area-inset-bottom)); }
+  .hx-pos-table td, .hx-pos-table td > div { min-width:0; flex-wrap:wrap; }
+  .hx-pos-table td span.inline-block { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+}
+@media (max-width: 759px) { .hx-pos-table tbody td { padding-top:5px !important; padding-bottom:5px !important; } }

@@ -1579,6 +1579,34 @@
   <script src="/static/mt5-chart.js?v=terminal-1"></script>
   <script src="/static/market-watch.js"></script>
   <script src="/static/signal-settings.js?v=1"></script>
+  <!-- MOBILE QUICK TRADE BAR (<760px): mirrors the order panel buttons; same submitOrder path and confirmation -->
+  <div id="mobile-trade-bar" class="mx-bar" aria-label="Hızlı emir">
+    <button id="mobile-sell-btn" type="button" class="mx-sell" disabled onclick="submitOrder('SELL')"><span>SAT</span><span id="mobile-bid-price">--</span></button>
+    <button id="mobile-lot-btn" type="button" class="mx-lot" onclick="document.getElementById('order-card')?.scrollIntoView({behavior:'smooth'})" title="Hacmi emir panelinde değiştir"><span>Lot</span><span id="mobile-lot">--</span></button>
+    <button id="mobile-buy-btn" type="button" class="mx-buy" disabled onclick="submitOrder('BUY')"><span>AL</span><span id="mobile-ask-price">--</span></button>
+  </div>
+  <script>
+    // Mirror the order panel: text, prices, lot and the disabled state (all gating stays in the order panel / submitOrder).
+    (() => {
+      const pairs = [['order-sell-btn','mobile-sell-btn'],['order-buy-btn','mobile-buy-btn']];
+      const text = [['btn-bid-price','mobile-bid-price'],['btn-ask-price','mobile-ask-price']];
+      function sync() {
+        for (const [a, b] of pairs) { const src = document.getElementById(a), dst = document.getElementById(b); if (src && dst) dst.disabled = src.disabled || !!src.closest('.hidden'); }
+        for (const [a, b] of text) { const src = document.getElementById(a), dst = document.getElementById(b); if (src && dst && dst.textContent !== src.textContent) dst.textContent = src.textContent; }
+        const lot = document.getElementById('lot-input'), out = document.getElementById('mobile-lot');
+        if (lot && out) out.textContent = lot.value || '--';
+      }
+      document.addEventListener('DOMContentLoaded', () => {
+        const watch = ['order-sell-btn','order-buy-btn','btn-bid-price','btn-ask-price','market-order-buttons'].map(id => document.getElementById(id)).filter(Boolean);
+        const mo = new MutationObserver(sync);
+        watch.forEach(el => mo.observe(el, {attributes: true, childList: true, characterData: true, subtree: true}));
+        document.getElementById('lot-input')?.addEventListener('input', sync);
+        document.getElementById('lot-input')?.addEventListener('change', sync);
+        setInterval(sync, 1000);
+        sync();
+      });
+    })();
+  </script>
   <script src="/static/period-report.js?v=terminal-1"></script>
   <script src="/static/app.js?v=terminal-3"></script>
   <script src="/static/trading.js?v=terminal-1"></script>

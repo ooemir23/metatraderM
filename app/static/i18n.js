@@ -4,6 +4,8 @@
   const en = Object.fromEntries([
     ["Canlı Al / Sat Sinyal Tarayıcı", "Live Buy / Sell Signal Scanner"],
     ["Manuel Stil Sinyali", "Manual Style Signal"],
+    ["Hızlı emir", "Quick order"],
+    ["Hacmi emir panelinde değiştir", "Change volume in the order panel"],
     ["Dönem raporu", "Period report"],
     ["Günlük", "Daily"],
     ["Haftalık", "Weekly"],
