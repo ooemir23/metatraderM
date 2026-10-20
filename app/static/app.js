@@ -4162,7 +4162,7 @@ async function saveBotSignalRules() {
 async function executePendingBotSignal() {
   if (!latestPendingBotSignal) return;
   const sig = latestPendingBotSignal;
-  await sendSignalDirectToBot(sig.symbol, sig.side, sig.price, {signalId: sig.id, slPoints: sig.sl_points || 0, tpPoints: sig.tp_points || 0});
+  await sendSignalDirectToBot(sig.symbol, sig.side, sig.price, {signalId: sig.id, slPoints: sig.sl_points || 0, tpPoints: sig.tp_points || 0, once: true});
 }
 
 async function executeAllPendingBotSignals() {
@@ -4173,7 +4173,7 @@ async function executeAllPendingBotSignals() {
     ? data.pending_signal_actions
     : (data.pending_signal_action ? [data.pending_signal_action] : []);
   for (const p of list) {
-    await sendSignalDirectToBot(p.symbol, p.side, p.price, {signalId: p.id, slPoints: p.sl_points || 0, tpPoints: p.tp_points || 0});
+    await sendSignalDirectToBot(p.symbol, p.side, p.price, {signalId: p.id, slPoints: p.sl_points || 0, tpPoints: p.tp_points || 0, once: true});
   }
 }
 
@@ -4243,11 +4243,13 @@ async function sendSignalDirectToBot(symbol, side, price, opts = {}) {
   try {
     const sym = String(symbol || currentSymbol || '').trim();
     if (!base) throw new Error('Sinyal kimliği eksik; listeyi yenileyin.');
-    // One request at a time per signal (double-click guard). Each completed click is a new order,
-    // like MT5 one-click trading, so it gets its own id.
+    // One request at a time per signal (double-click guard). A scanner click is a new order each time,
+    // like MT5 one-click trading, so it gets its own id. A signal the bot caught ("Sadece Sinyal") is one
+    // order: its id is kept, so approving it twice ("Uygula" + "Tümünü Uygula") maps to the same request.
     if (signalSendsInFlight.has(base)) { showToast(`⏳ ${sym} ${side} emri zaten gönderiliyor.`, 'info'); return; }
     signalSendsInFlight.add(base);
-    const signalId = `${base.slice(0, 80)}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    const signalId = opts.once ? base.slice(0, 100)
+      : `${base.slice(0, 80)}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     showToast(`⚡ ${sym} ${side} sinyali bota gönderiliyor...`, 'info');
     // SL/TP is sent either as prices (scanner) or as points (bot signal), never mixed.
     const body = {symbol: sym, side, signal_id: signalId, price: Number(price) || undefined};

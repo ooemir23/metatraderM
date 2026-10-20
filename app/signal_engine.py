@@ -277,7 +277,7 @@ class Context:
             if average > 0 and self.volume[i] < s['volume_mult'] * average:
                 out.append(('volume', f"Tick hacmi {self.volume[i]:.0f} < {s['volume_mult']:g} × ortalama {average:.0f}: filtrelendi"))
         if s['min_rr'] and s['sl_atr'] > 0 and s['tp_atr'] > 0 and atr:
-            rr = self.reward_risk(atr)
+            rr = self.reward_risk(atr, side)
             if rr < s['min_rr']:
                 out.append(('rr', f"Risk/ödül 1:{rr:.2f} < 1:{s['min_rr']:g} (spread dahil): filtrelendi"))
         return out
@@ -287,9 +287,13 @@ class Context:
             return float(self.spread_points) * float(self.point)
         return 0.0
 
-    def reward_risk(self, atr):
-        """TP distance / SL distance after paying the spread once (entry at ask/bid)."""
-        spread = self.spread_price()
+    def reward_risk(self, atr, side='BUY'):
+        """TP distance / SL distance with SL/TP placed from the candle close (Bid), as suggested.
+
+        MT5: a buy opens at Ask and its SL/TP trigger on Bid, so the spread widens the risk and
+        shrinks the reward. A sell opens at Bid and its SL/TP trigger on Ask: the spread only makes
+        them trigger earlier (modelled in the history test), the distances stay SL/TP × ATR."""
+        spread = self.spread_price() if side == 'BUY' else 0.0
         risk, reward = self.s['sl_atr'] * atr + spread, self.s['tp_atr'] * atr - spread
         return max(0.0, reward) / risk if risk > 0 else 0.0
 
@@ -328,7 +332,7 @@ def history_stats(ctx, bars=None):
         close = ctx.closes[i]
         sl = close - s['sl_atr'] * atr if side == 'BUY' else close + s['sl_atr'] * atr
         tp = close + s['tp_atr'] * atr if side == 'BUY' else close - s['tp_atr'] * atr
-        win_r = ctx.reward_risk(atr)
+        win_r = ctx.reward_risk(atr, side)
         outcome, exit_j = None, None
         for j in range(i + 1, last_closed + 1):
             high, low = float(rates[j]['high']), float(rates[j]['low'])
@@ -411,6 +415,7 @@ def analyze(rates, s, tf_minutes, *, htf_rates=None, utc_offset=0, spread_points
         reason += f" · {fast_label} {slow_label}'ü {'aşağıdan yukarı' if side == 'BUY' else 'yukarıdan aşağı'} kesti"
     elif bars_ago is not None:
         reason += f" · son kesişim {bars_ago} mum önce ({_side_tr(cross_side)})"
+    direction = side  # kept for the reward/risk of a filtered signal
     blocked = ctx.filters(idx, side, bool(cross), atr, live=True) if side in ('BUY', 'SELL') else []
     filtered = '; '.join(text for _, text in blocked) or None
     passed = []
@@ -435,7 +440,7 @@ def analyze(rates, s, tf_minutes, *, htf_rates=None, utc_offset=0, spread_points
         'rsi': round(rsi, 1) if rsi is not None else None, 'atr': round(atr, digits),
         'adx': round(ctx.adx[idx], 1) if ctx.adx is not None and ctx.adx[idx] is not None else None,
         'spread_points': spread_points,
-        'reward_risk': round(ctx.reward_risk(atr), 2) if atr and s['sl_atr'] > 0 and s['tp_atr'] > 0 else None,
+        'reward_risk': round(ctx.reward_risk(atr, direction), 2) if atr and s['sl_atr'] > 0 and s['tp_atr'] > 0 else None,
         'suggested_sl': max(0.0, sl), 'suggested_tp': max(0.0, tp), 'digits': digits,
         'candle_time': int(rates[idx]['time']), 'reason': reason, 'filtered': filtered,
         'filters': [k for k, _ in blocked],

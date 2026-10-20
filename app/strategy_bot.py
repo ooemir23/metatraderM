@@ -482,10 +482,11 @@ class StrategyBot:
                 m2 = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=shift + 1)
                 if not all(math.isfinite(v) and v > 0 for v in (h1, h2, m1, m2)):
                     return None, 0
+                # Same count as the scanner: 1 = the last closed candle.
                 if h2 <= m2 and h1 > m1:
-                    return shift - 1, 1
+                    return shift, 1
                 if h2 >= m2 and h1 < m1:
-                    return shift - 1, -1
+                    return shift, -1
         except Exception:
             pass
         return None, 0
@@ -893,20 +894,27 @@ class StrategyBot:
                              f"Bot yeni kesişimde işlem açar: {'SAT (aşağı)' if trend == 'AL' else 'AL (yukarı)'} bekleniyor.",
                              candle_time=latest_closed_candle_time, trend=trend)
 
+        # MT5 EA ProcessSignal: a reverse crossover first closes the opposite bot position, then the
+        # entry rules decide. Entry-only filters (RSI, spread, ER/ATR confirmation, hours) must not keep
+        # a position open against the new crossover. "Sadece Sinyal" never sends anything.
+        if cross and self.close_opposite and self.execution_mode == "AUTO_TRADE" and not self._stop_event.is_set():
+            if self.mt5.has_unresolved_bot_order(sym):
+                self.log(f'[{sym}] Önceki bot emri belirsiz; MT5 mutabakatı bekleniyor.', 'ERROR')
+                self.stop()
+                self.runtime_state, self.runtime_detail = 'ORDER_UNRESOLVED', f'{sym} bot emri belirsiz; MT5 mutabakatı bekleniyor.'
+                return
+            if not self.close_positions_by_type("SELL" if cross == 1 else "BUY", sym=sym, expected_account=expected_account):
+                self._sym_status(sym, 'SKIPPED', f"{'AL' if cross == 1 else 'SAT'} kesişimi: ters bot pozisyonu kapatılamadı, yeni emir gönderilmedi.")
+                self.log(f"[{sym}] Ters pozisyon kapatılamadı; yeni emir gönderilmedi.", "ERROR")
+                return
+            closed_on_cross = True
+
         if self.use_atr_filter:
             direction = 0
             if cross:
                 self._candidates[sym] = {'side': cross, 'time': latest_closed_candle_time}
                 if sym == self.symbol:
                     self._candidate = self._candidates[sym]
-                if self.close_opposite:
-                    if not self.close_positions_by_type("SELL" if cross == 1 else "BUY", sym=sym, expected_account=expected_account):
-                        self._candidates.pop(sym, None)
-                        if sym == self.symbol:
-                            self._candidate = None
-                        self.log(f"[{sym}] Ters pozisyon kapatılamadı; yeni emir gönderilmedi.", "ERROR")
-                        return
-                    closed_on_cross = True
 
             cand = self._candidates.get(sym)
             if cand:
@@ -980,7 +988,7 @@ class StrategyBot:
 
         if self.execution_mode == "SIGNAL_ONLY":
             action = {
-                "id": f"{sym}-{side}-{int(time.time())}",
+                "id": f"bot-{sym}-{self.timeframe_minutes}-{side}-{latest_closed_candle_time}",
                 "symbol": sym,
                 "side": side,
                 "price": closes[1],
