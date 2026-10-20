@@ -57,6 +57,18 @@ function markTradePreview(state, text) {
   if (status) status.textContent = text;
   if (typeof updateOrderButtons === 'function') updateOrderButtons();
 }
+// Order panel risk box: broker stop loss for each side and required margin (order_calc_profit /
+// order_calc_margin via /api/trade/preview). Information only; it never blocks an order.
+function renderRiskBox(buy, sell) {
+  const en = window.MT5I18n?.language?.() === 'en';
+  const money = r => n => `${Number(n).toLocaleString(en ? 'en-US' : 'tr-TR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${r.currency || ''}`.trim();
+  const stop = r => !r || !r.success ? '—' : r.stop_risk == null ? (en ? 'No stop' : 'Stop yok') : money(r)(r.stop_risk);
+  const set = (id, text) => { const node = document.getElementById(id); if (node) node.textContent = text; };
+  set('risk-stop-buy', stop(buy));
+  set('risk-stop-sell', stop(sell));
+  const ref = buy?.success ? buy : sell?.success ? sell : null;
+  set('risk-margin', ref && ref.margin_required != null ? money(ref)(ref.margin_required) : '—');
+}
 function renderTradePolicy(result) {
   const label = document.getElementById('trade-risk-policy');
   if (!label) return;
@@ -115,6 +127,7 @@ async function refreshTradePreview(scheduledGeneration) {
   const accountUnavailable = () => (typeof accountSwitching !== 'undefined' && accountSwitching)
     || (typeof accountVerificationKnown !== 'undefined' && accountVerificationKnown && !currentAccountIdentity);
   if (accountUnavailable()) {
+    renderRiskBox(null, null);
     label.textContent = 'Hesap doğrulanamadı; risk tahmini kullanılamaz.';
     markTradePreview('unavailable', '');
     renderStopGuidance(null, tradePreviewIdentity());
@@ -164,6 +177,7 @@ async function refreshTradePreview(scheduledGeneration) {
     tradePreviewResults.clear();
     identities.forEach((value, index) => tradePreviewResults.set(value.key, {at:Date.now(), result:results[index]}));
     const result = results[side === 'BUY' ? 0 : 1];
+    renderRiskBox(results[0], results[1]);
     renderStopGuidance(result.stop_guidance, identity);
     renderTradePolicy(result);
     receivedGuidance = !!result.stop_guidance;
@@ -346,7 +360,7 @@ async function initializeSecurityControl() {
   button.textContent = en ? 'Trading Security' : 'İşlem Güvenliği';
   selector.parentElement.append(button);
   const dialog = document.createElement('dialog');
-  dialog.className = 'rounded-2xl border border-gray-700 bg-[#1e2430] p-5 text-gray-100 shadow-2xl backdrop:bg-black/70 w-[min(92vw,420px)]';
+  dialog.className = 'rounded-2xl border border-gray-700 bg-[#14181f] p-5 text-gray-100 shadow-2xl backdrop:bg-black/70 w-[min(92vw,420px)]';
   dialog.innerHTML = `<h2 class="text-lg font-bold">${en?'Real-account verification':'Gerçek hesap doğrulaması'}</h2>
     <p class="mt-2 text-sm text-gray-300">${en?'Enter the six-digit code from your authenticator. Access lasts 15 minutes.':'Kimlik doğrulama uygulamanızdaki altı haneli kodu girin. Erişim 15 dakika sürer.'}</p>
     <p class="mt-1 text-xs text-gray-400">${en?'The setup key is available only on the server.':'Kurulum anahtarı yalnızca sunucuda bulunur.'}</p>
