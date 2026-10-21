@@ -52,7 +52,7 @@
 <body class="bg-[#0b0e13] text-gray-200 min-h-screen flex flex-col font-sans antialiased selection:bg-emerald-500 selection:text-white">
 
   <!-- TOP BAR (HMA Terminal design): brand + status, account metrics, instruments -->
-  <header class="hx-header">
+  <header id="hx-header" class="hx-header">
     <div class="hx-wrap hx-row1 ui-scale-width">
       <div class="hx-brand">
         <div class="hx-logo" aria-hidden="true">H</div>
@@ -95,16 +95,6 @@
       <div class="hx-metric"><span>Kullanılan teminat</span><span id="acc-margin">—</span></div>
       <div class="hx-metric"><span>Serbest teminat</span><span id="acc-margin-free">—</span></div>
       <div class="hx-metric"><span>Teminat seviyesi</span><span id="acc-margin-level">—</span></div>
-    </div>
-    <div class="hx-wrap hx-market ui-scale-width">
-      <div class="market-watch" aria-label="Broker ürünleri ve favoriler">
-        <button id="market-open" type="button" class="market-open" aria-haspopup="dialog" aria-controls="market-dialog">
-          <i class="ph-bold ph-magnifying-glass" aria-hidden="true"></i><span>Ürün ara</span>
-        </button>
-        <div id="market-favorites" class="market-favorites" aria-label="Favori ürünler">
-          <span class="market-empty">Hesap doğrulandığında ürünler gösterilir.</span>
-        </div>
-      </div>
     </div>
   </header>
 
@@ -1548,5 +1538,6 @@
   <script src="/static/research.js"></script>
   <script src="/static/manual-style.js?v=2"></script>
   <script src="/static/workspace.js?v=terminal-1"></script>
+  <script src="/static/header-autohide.js?v=1"></script>
 </body>
 </html>

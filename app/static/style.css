@@ -799,7 +799,12 @@ button:focus-visible, a:focus-visible, [role="tab"]:focus-visible { outline:2px 
 .backdrop-blur-sm { backdrop-filter:none !important; }
 
 /* ---------------- Header (sticky): brand row, account metrics, instruments ---------------- */
-.hx-header { position:sticky; top:0; z-index:50; background:var(--hx-bar); border-bottom:1px solid var(--hx-line); }
+.hx-header { position:sticky; top:0; z-index:50; background:var(--hx-bar); border-bottom:1px solid var(--hx-line);
+  transition:transform .22s ease; will-change:transform; }
+/* Scrolling down hides the top bar, scrolling up brings it back (header-autohide.js). */
+.hx-header.hx-header-hidden { transform:translateY(-100%); }
+.hx-header:focus-within { transform:none; }
+@media (prefers-reduced-motion: reduce) { .hx-header { transition:none; } }
 .hx-wrap { max-width:1760px; margin:0 auto; padding:10px 16px; }
 .hx-row1 { display:flex; flex-wrap:wrap; align-items:center; gap:12px 20px; }
 .hx-brand { display:flex; align-items:center; gap:10px; }
@@ -840,8 +845,6 @@ button:focus-visible, a:focus-visible, [role="tab"]:focus-visible { outline:2px 
 .hx-metric #acc-profit.text-emerald-400 { color:var(--hx-profit) !important; }
 .hx-metric #acc-profit.text-rose-400 { color:var(--hx-loss) !important; }
 .hx-metric [data-level="low"] { color:var(--hx-warn) !important; }
-.hx-market { border-top:1px solid var(--hx-line); padding-top:8px; padding-bottom:8px; }
-.hx-market .market-watch { margin:0; }
 @media (max-width: 760px) {
   .hx-wrap { padding:8px 12px; }
   .hx-sub, .hx-sync, .hx-actions .hx-label { display:none; }
