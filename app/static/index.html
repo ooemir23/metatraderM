@@ -62,11 +62,6 @@
         </div>
       </div>
       <div class="hx-pills">
-        <button type="button" class="hx-pill" onclick="toggleLoginModal()" title="Broker hesabı bağlantısı">
-          <span id="status-indicator" class="w-2 h-2 rounded-full bg-amber-400"></span>
-          <span id="status-text">MT5 Bağlanıyor...</span>
-        </button>
-        <span id="acc-type-badge" class="hx-acct" hidden></span>
         <span id="last-sync-badge" class="hx-sync" title="Son veri güncelleme saati (broker sunucu saati)">
           <i class="ph-bold ph-arrows-clockwise"></i><span id="last-sync-text">Son veri: --:--:--</span>
         </span>
@@ -79,7 +74,16 @@
           <i class="ph-bold ph-toolbox"></i><span>Araçlar</span><span id="tools-error-badge" class="tools-error-badge" hidden>0</span>
         </button>
         <a href="/ai" target="_blank" class="hx-btn" title="MevO AI Danışmanı ve Otopilot"><span class="hx-ai-dot" aria-hidden="true"></span><span>MevO AI</span></a>
-        <button type="button" onclick="toggleLoginModal()" class="hx-btn"><i class="ph-bold ph-user-circle"></i><span>Hesap</span></button>
+        <div class="hx-account">
+          <button type="button" onclick="toggleLoginModal()" class="hx-btn"><i class="ph-bold ph-user-circle"></i><span>Hesap</span></button>
+          <div class="hx-account-status">
+            <button type="button" class="hx-pill" onclick="toggleLoginModal()" title="Broker hesabı bağlantısı">
+              <span id="status-indicator" class="w-2 h-2 rounded-full bg-amber-400"></span>
+              <span id="status-text">MT5 Bağlanıyor...</span>
+            </button>
+            <span id="acc-type-badge" class="hx-acct" hidden></span>
+          </div>
+        </div>
         <div class="ui-scale" data-ui-scale-slot></div>
         <select id="language-select" aria-label="Display language" onchange="MT5I18n.setLanguage(this.value)">
           <option value="tr">Türkçe</option>
