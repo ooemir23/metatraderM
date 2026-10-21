@@ -364,6 +364,7 @@
     ["Açık Kâr/Zarar", "Floating P&L"],
     ["Serbest Teminat", "Free Margin"],
     ["Hesap", "Account"],
+    ["Hesap bağlantısı", "Account connection"],
     ["Hesap / Bakiye", "Account / Balance"],
     ["MevO AI Danışmanı ve Otopilot", "MevO AI Advisor and Autopilot"],
     ["İşlem öncesi risk", "Pre-Trade Risk"],

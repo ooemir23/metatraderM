@@ -9,6 +9,7 @@ assert.ok(!html.includes('id="market-open"'), 'symbol search button removed from
 assert.ok(!html.includes('id="market-favorites"'), 'favourite symbol strip removed from the top bar');
 assert.ok(html.includes('id="chart-symbol-button"'), 'chart symbol button still opens the instrument list');
 assert.ok(html.includes('header-autohide.js'), 'auto-hide script is loaded');
+assert.ok(/id="hx-account-menu"[^>]*hidden/.test(html), "account status lives in the Hesap menu, hidden until opened");
 
 const classes = new Set();
 const header = {offsetHeight:150, classList:{add:c => classes.add(c), remove:c => classes.delete(c)}, contains:() => false};

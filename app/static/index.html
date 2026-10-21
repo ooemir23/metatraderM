@@ -45,7 +45,7 @@
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
   <!-- TradingView Widget -->
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=terminal-7">
+  <link rel="stylesheet" href="/static/style.css?v=terminal-8">
   <script src="/static/ui-scale.js?v=1"></script>
   <script src="/static/vendor/lightweight-charts.js"></script>
 </head>
@@ -74,14 +74,15 @@
           <i class="ph-bold ph-toolbox"></i><span>Araçlar</span><span id="tools-error-badge" class="tools-error-badge" hidden>0</span>
         </button>
         <a href="/ai" target="_blank" class="hx-btn" title="MevO AI Danışmanı ve Otopilot"><span class="hx-ai-dot" aria-hidden="true"></span><span>MevO AI</span></a>
-        <div class="hx-account">
-          <button type="button" onclick="toggleLoginModal()" class="hx-btn"><i class="ph-bold ph-user-circle"></i><span>Hesap</span></button>
-          <div class="hx-account-status">
+        <div class="hx-account" id="hx-account">
+          <button type="button" id="hx-account-toggle" class="hx-btn" aria-haspopup="true" aria-expanded="false" aria-controls="hx-account-menu"><i class="ph-bold ph-user-circle"></i><span>Hesap</span></button>
+          <div id="hx-account-menu" class="hx-account-menu" hidden>
             <button type="button" class="hx-pill" onclick="toggleLoginModal()" title="Broker hesabı bağlantısı">
               <span id="status-indicator" class="w-2 h-2 rounded-full bg-amber-400"></span>
               <span id="status-text">MT5 Bağlanıyor...</span>
             </button>
             <span id="acc-type-badge" class="hx-acct" hidden></span>
+            <button type="button" class="hx-account-manage" onclick="toggleLoginModal()"><i class="ph-bold ph-gear"></i><span>Hesap bağlantısı</span></button>
           </div>
         </div>
         <div class="ui-scale" data-ui-scale-slot></div>
@@ -1543,5 +1544,6 @@
   <script src="/static/manual-style.js?v=2"></script>
   <script src="/static/workspace.js?v=terminal-1"></script>
   <script src="/static/header-autohide.js?v=1"></script>
+  <script src="/static/account-menu.js?v=1"></script>
 </body>
 </html>

@@ -837,9 +837,13 @@ button:focus-visible, a:focus-visible, [role="tab"]:focus-visible { outline:2px 
 .hx-actions #operator-role:empty { display:none; }
 .hx-actions { align-items:flex-start; }
 /* Connection status and account type sit under the Hesap button. */
-.hx-account { position:relative; margin-bottom:26px; }
-.hx-account-status { position:absolute; top:calc(100% + 4px); right:0; display:flex; align-items:center; gap:4px; white-space:nowrap; }
-.hx-account-status .hx-pill, .hx-account-status .hx-acct { height:22px; font-size:11px; padding:0 8px; }
+.hx-account { position:relative; }
+.hx-account-menu { position:absolute; top:calc(100% + 6px); right:0; z-index:60; display:flex; flex-direction:column; align-items:flex-start;
+  gap:8px; padding:10px; min-width:240px; background:var(--hx-card); border:1px solid var(--hx-input-line); border-radius:8px; }
+.hx-account-menu[hidden] { display:none; }
+.hx-account-menu .hx-pill { white-space:nowrap; }
+.hx-account-manage { background:none; border:0; cursor:pointer; display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--hx-text-2); padding:4px 2px; }
+.hx-account-manage:hover { color:var(--hx-text); }
 .hx-ai-dot { width:7px; height:7px; border-radius:2px; background:#c3a6ff; }
 .hx-actions .tools-toggle { margin-left:0; height:36px; border-radius:6px; background:var(--hx-btn); border-color:var(--hx-input-line); color:var(--hx-text); font-size:13px; }
 .hx-metrics { display:grid; grid-template-columns:repeat(auto-fit, minmax(128px, 1fr)); gap:8px; padding-top:0; }
