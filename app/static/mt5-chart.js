@@ -2,7 +2,7 @@
 (() => {
   const defaults = {timeframe:15, type:'candles', theme:'dark', grid:true, volume:true,
     log:false, scale:0, invert:false, crosshair:true, priceLine:true,
-    sma:false, ema:true, hma:true, signals:true, rsi:false, rsiPeriod:14, tradeLevels:true, askLine:false, separators:false, shift:true, autoscroll:true, period:50, emaPeriod:34, hmaPeriod:14, slowType:'EMA', confirmClose:true, up:'#10b981', down:'#ef4444'};
+    sma:false, ema:true, hma:true, signals:true, rsi:false, rsiPeriod:14, tradeLevels:true, askLine:false, separators:false, shift:true, autoscroll:true, period:50, emaPeriod:34, hmaPeriod:14, fastType:'HMA', slowType:'EMA', confirmClose:true, up:'#10b981', down:'#ef4444'};
   const SLOW_TYPES = ['EMA','SMA','LWMA','HMA'];
   // MT5 recursive indicators (EMA) depend on the whole chart history; load enough bars that the
   // seed no longer affects the value, like MT5's own long chart history.
@@ -23,6 +23,7 @@
     if (Number.isInteger(raw.rsiPeriod) && raw.rsiPeriod >= 2 && raw.rsiPeriod <= 200) result.rsiPeriod = raw.rsiPeriod;
     if (Number.isInteger(raw.hmaPeriod) && raw.hmaPeriod >= 2 && raw.hmaPeriod <= 200) result.hmaPeriod = raw.hmaPeriod;
     if (SLOW_TYPES.includes(raw.slowType)) result.slowType = raw.slowType;
+    if (SLOW_TYPES.includes(raw.fastType)) result.fastType = raw.fastType;
     if (typeof raw.confirmClose === 'boolean') result.confirmClose = raw.confirmClose;
     for (const key of ['up','down']) if (/^#[0-9a-f]{6}$/i.test(raw[key])) result[key] = raw[key];
     return result;
@@ -101,12 +102,12 @@
     const ema = slowValues(rows, prefs.slowType, prefs.emaPeriod);
     state.exponential.setData(ema);
     state.exponential.applyOptions({title: prefs.slowType});
-    const hma = hmaValues(rows,prefs.hmaPeriod);
-    if (state.hma) state.hma.setData(hma);
+    const hma = slowValues(rows, prefs.fastType || 'HMA', prefs.hmaPeriod);   // fast line (HMA = the MT5 EA)
+    if (state.hma) { state.hma.setData(hma); state.hma.applyOptions({title: prefs.fastType || 'HMA'}); }
     if (state.rsi) state.rsi.setData(rsiValues(rows, prefs.rsiPeriod));
     state.legendData = {hma, ema};
     renderLegend(state);
-    const markers = prefs.signals ? signalMarkers(rows, prefs.hmaPeriod, prefs.emaPeriod, prefs.slowType, prefs.confirmClose) : [];
+    const markers = prefs.signals ? signalMarkers(rows, prefs.hmaPeriod, prefs.emaPeriod, prefs.slowType, prefs.confirmClose, prefs.fastType) : [];
     if (state.markersPlugin && typeof state.markersPlugin.setMarkers === 'function') {
       state.markersPlugin.setMarkers(markers);
     }
@@ -213,11 +214,11 @@
     }
     return result;
   }
-  function signalMarkers(rows, hmaPeriod = 14, emaPeriod = 34, slowType = 'EMA', confirmClose = true) {
+  function signalMarkers(rows, hmaPeriod = 14, emaPeriod = 34, slowType = 'EMA', confirmClose = true, fastType = 'HMA') {
     // Same rule as the scanner/bot: HMA x selected slow MA; with confirmation only closed candles
     // (the forming candle can still change, so an arrow there could disappear).
     if (confirmClose) rows = rows.slice(0, -1);
-    const hma = hmaValues(rows, hmaPeriod);
+    const hma = slowValues(rows, SLOW_TYPES.includes(fastType) ? fastType : 'HMA', hmaPeriod);
     const ema = slowValues(rows, SLOW_TYPES.includes(slowType) ? slowType : 'EMA', emaPeriod);
     if (!hma.length || !ema.length) return [];
     const hMap = new Map(hma.map(x => [x.time, x.value]));
@@ -245,7 +246,7 @@
     const rows = state.rows, row = time ? rows.find(r => r.time === time) : rows.at(-1);
     const at = list => (time ? list?.find(x => x.time === time) : list?.at(-1))?.value;
     const parts = [];
-    if (prefs.hma) parts.push(`<span class="mt5-legend-item" data-line="hma"><i></i>HMA ${prefs.hmaPeriod} · ${fmt(state, at(state.legendData?.hma))}</span>`);
+    if (prefs.hma) parts.push(`<span class="mt5-legend-item" data-line="hma"><i></i>${prefs.fastType || 'HMA'} ${prefs.hmaPeriod} · ${fmt(state, at(state.legendData?.hma))}</span>`);
     if (prefs.ema) parts.push(`<span class="mt5-legend-item" data-line="slow"><i></i>${prefs.slowType} ${prefs.emaPeriod} · ${fmt(state, at(state.legendData?.ema))}</span>`);
     const ohlc = row ? `<span class="mt5-legend-ohlc">${state.symbol},${frames[state.timeframe]||''} &nbsp;O ${fmt(state,row.open)} &nbsp;H ${fmt(state,row.high)} &nbsp;L ${fmt(state,row.low)} &nbsp;C ${fmt(state,row.close)} &nbsp;V ${row.tick_volume}</span>` : '';
     node.innerHTML = `<div class="mt5-legend-lines">${parts.join('')}</div>${ohlc}`;
@@ -652,8 +653,9 @@
     change('timeframe', num);
   }
   // Keep the chart's HMA / EMA lines and AL/SAT markers on the scanner's signal settings.
-  function setSignalPeriods(hma, slow, type = 'EMA', confirmClose = true) {
+  function setSignalPeriods(hma, slow, type = 'EMA', confirmClose = true, fastType = 'HMA') {
     const valid = n => Number.isInteger(n) && n >= 2 && n <= 200;
+    if (SLOW_TYPES.includes(fastType) && (prefs.fastType || 'HMA') !== fastType) change('fastType', fastType);
     if (valid(hma) && prefs.hmaPeriod !== hma) change('hmaPeriod', hma);
     if (valid(slow) && prefs.emaPeriod !== slow) change('emaPeriod', slow);
     if (SLOW_TYPES.includes(type) && prefs.slowType !== type) change('slowType', type);

@@ -91,7 +91,7 @@ function setChartTimeframe(tf) {
 // inputs change: positions stay open and the next closed-candle crossover is traded. The server runs the
 // same readiness checks as a bot start; if they fail the bot keeps its current settings and the reason is shown.
 const BOT_TIMEFRAMES = [1, 5, 15, 30, 60, 240, 1440];
-const BOT_FOLLOW_KEYS = ['symbol', 'timeframe_minutes', 'hma_period', 'second_ma_type', 'second_ma_period'];
+const BOT_FOLLOW_KEYS = ['symbol', 'timeframe_minutes', 'fast_ma_type', 'hma_period', 'second_ma_type', 'second_ma_period'];
 let botFollowSyncing = null;
 let botFollowError = null;   // {key, message}: a failed change is not retried on every status poll
 
@@ -102,8 +102,8 @@ function desiredBotSelection(overrides = {}) {
   const tf = Number(overrides.timeframe_minutes ?? window.MT5Chart?.getTimeframe?.());
   if (BOT_TIMEFRAMES.includes(tf)) want.timeframe_minutes = tf;
   const sig = window.HMASignalSettings?.get?.();
-  if (sig) Object.assign(want, {hma_period: sig.hma_period, second_ma_type: sig.ma_type, second_ma_period: sig.ema_period});
-  for (const key of ['hma_period', 'second_ma_type', 'second_ma_period']) if (overrides[key] != null) want[key] = overrides[key];
+  if (sig) Object.assign(want, {fast_ma_type: sig.fast_type || 'HMA', hma_period: sig.hma_period, second_ma_type: sig.ma_type, second_ma_period: sig.ema_period});
+  for (const key of ['fast_ma_type', 'hma_period', 'second_ma_type', 'second_ma_period']) if (overrides[key] != null) want[key] = overrides[key];
   return want;
 }
 
@@ -144,7 +144,7 @@ async function syncBotToSelection(overrides = {}, {announce = true, retry = true
       botFollowError = null;
       latestBotSettings = data && typeof data === 'object' && data.symbol ? data : {...before, ...diff, ...(diff.symbol ? {symbols: [diff.symbol], symbol_status: {}} : {})};
       const now = latestBotSettings;
-      const label = `${now.symbol} ${botTfCode(now.timeframe_minutes)} · HMA(${now.hma_period}) × ${now.second_ma_type}(${now.second_ma_period})`;
+      const label = `${now.symbol} ${botTfCode(now.timeframe_minutes)} · ${now.fast_ma_type || 'HMA'}(${now.hma_period}) × ${now.second_ma_type}(${now.second_ma_period})`;
       if (running) {
         const kept = diff.symbol ? `${before.symbol} pozisyonları açık kalır` : 'açık pozisyonlar olduğu gibi kalır';
         showToast(`🎯 Bot seçimi izledi: ${label}. ${kept}; yeni kesişim bekleniyor.`, 'success');
@@ -1714,6 +1714,8 @@ async function fetchBotStatus() {
     }
 
     document.getElementById("bot-disp-hma-p").innerText = bot.hma_period;
+    const fastT = document.getElementById("bot-disp-fast-t");
+    if (fastT) fastT.innerText = bot.fast_ma_type || "HMA";
     document.getElementById("bot-disp-hma-val").innerText = bot.current_hma || "0.00000";
     document.getElementById("bot-disp-ma2-t").innerText = bot.second_ma_type;
     document.getElementById("bot-disp-ma2-p").innerText = bot.second_ma_period;
@@ -3935,7 +3937,7 @@ const signalMtfCache = new Map();
 const SIGNAL_MTF_TTL = 60000;
 function signalMtfKey(sym) {
   const s = window.HMASignalSettings?.get?.() || {};
-  return `${sym}|${s.hma_period ?? 14}|${s.ema_period ?? 34}|${s.ma_type || 'EMA'}|${s.confirm_close !== false}`;
+  return `${sym}|${s.fast_type || 'HMA'}|${s.hma_period ?? 14}|${s.ema_period ?? 34}|${s.ma_type || 'EMA'}|${s.confirm_close !== false}`;
 }
 function signalMtfHtml(data) {
   if (!data) return '<span class="signal-mtf-label">Zaman dilimleri yükleniyor…</span>';
@@ -3964,7 +3966,7 @@ async function refreshSignalMtf(sym) {
   signalMtfCache.set(key, {...(cached || {}), loading: true, at: cached?.at || 0, timeframes: cached?.timeframes || []});
   const s = window.HMASignalSettings?.get?.() || {};
   try {
-    const q = new URLSearchParams({symbol: sym, timeframes: '5,15,60,240', hma_period: s.hma_period ?? 14,
+    const q = new URLSearchParams({symbol: sym, timeframes: '5,15,60,240', hma_period: s.hma_period ?? 14, fast_type: s.fast_type || 'HMA',
       ema_period: s.ema_period ?? 34, ma_type: s.ma_type || 'EMA', confirm_close: String(s.confirm_close !== false)});
     const res = await fetch(`/api/signals/mtf?${q}`);
     const data = await res.json();
@@ -4065,7 +4067,7 @@ async function refreshSignalScanner(manual = false, forceReplace = false) {
     const tfText = {1:'1 dk',5:'5 dk',15:'15 dk',30:'30 dk',60:'1 sa',240:'4 sa',1440:'1 gün'}[tf] || `${tf} dk`;
     const tfCode = {1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'}[tf] || `M${tf}`;
     const used = data.settings || {};
-    const fastLabel = `HMA(${used.hma_period || data.hma_period || 14})`;
+    const fastLabel = `${used.fast_type || "HMA"}(${used.hma_period || data.hma_period || 14})`;
     const slowLabel = `${used.ma_type || 'EMA'}(${used.ema_period || data.ema_period || 34})`;
     const rsiLabel = `RSI(${used.rsi_period || 14})`;
     if (statusNode) {

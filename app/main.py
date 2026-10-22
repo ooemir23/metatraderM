@@ -286,6 +286,7 @@ class BotConfigRequest(BaseModel):
     symbol: Optional[str] = None
     # User decisions 2026-10-23 (not EA inputs): trend entry on start, lot/SL/TP from profitable manual trades.
     trend_entry_on_start: Optional[bool] = None
+    fast_ma_type: Optional[Literal["HMA", "EMA", "SMA", "LWMA"]] = None
     extra_timeframes: Optional[List[int]] = None
     copy_manual_trades: Optional[bool] = None
     copy_manual_since: Optional[str] = Field(default=None, pattern=r'^20\d\d-[01]\d-[0-3]\d$')
@@ -418,6 +419,65 @@ def run_backtest(req: BacktestRequest):
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
+_PRESET_CACHE: Dict[Any, Any] = {}
+
+
+@app.get('/api/strategy-presets')
+async def strategy_presets(symbol: str = Query(min_length=1, max_length=32, pattern=r'^[A-Za-z0-9_.#-]+$'),
+                           timeframe_minutes: int = Query(default=15),
+                           candles: int = Query(default=2000, ge=300, le=3000),
+                           commission_points: float = Query(default=0, ge=0, le=1000, allow_inf_nan=False)):
+    """Widely used MA crossovers tested on this broker's candles with the bot's exits (app.strategy_presets)."""
+    if timeframe_minutes not in TIMEFRAME_NAMES:
+        raise HTTPException(status_code=422, detail='Desteklenmeyen zaman dilimi.')
+    from app import signal_engine, strategy_presets as sp
+
+    def run():
+        # The bot's own exits: manual copy SL/TP when that is on and available, else its SL/TP settings.
+        sl = bot.sl_points if bot.use_stop_loss else 0
+        tp = bot.tp_points if bot.use_take_profit else 0
+        exit_source = 'bot'
+        if bot.copy_manual_trades:
+            try:
+                prof = mt5_client.manual_copy_profile(symbol, bot.copy_manual_since)
+            except Exception:
+                prof = {}
+            if prof.get('available'):
+                sl = prof.get('sl_points') or sl
+                tp = prof.get('tp_points') or tp
+                exit_source = 'manual_copy'
+        warmup = max(signal_engine.history_bars({'hma_period': p['fast'], 'fast_type': p['fast_type'],
+                                                 'ema_period': p['slow'], 'ma_type': p['slow_type']}) for p in sp.PRESETS)
+        rates = mt5_client.get_rates(symbol, timeframe_minutes, candles + warmup + 1)
+        if not rates or len(rates) < 300:
+            raise HTTPException(status_code=503, detail='MT5 mum verisi alınamadı.')
+        rates = rates[:-1]                          # the forming candle is never evidence
+        start = max(0, len(rates) - candles)
+        info = mt5_client.get_symbol_spec(symbol) or {}
+        price = mt5_client.get_symbol_price(symbol) or {}
+        if not info.get('point'):
+            raise HTTPException(status_code=503, detail='Broker sembol özellikleri doğrulanamadı.')
+        rows = sp.run_presets(rates, start, float(info['point']), float(price.get('spread') or 0),
+                              sl_points=int(min(sl, 10000)), tp_points=int(min(tp, 10000)),
+                              commission_points=commission_points)
+        first, last = rates[start]['time'], rates[-1]['time']
+        return {'symbol': symbol, 'timeframe_minutes': timeframe_minutes, 'candles': len(rates) - start,
+                'from_time': first, 'to_time': last, 'sl_points': sl, 'tp_points': tp, 'exit_source': exit_source,
+                'spread_points': float(price.get('spread') or 0), 'commission_points': commission_points,
+                'presets': rows, 'checked_at': int(time.time()),
+                'disclaimer': 'Geçmiş test sonucudur; gelecekteki kârı garanti etmez. Swap ve kayma dahil değildir.'}
+
+    key = (symbol, timeframe_minutes, candles, commission_points, bot.sl_points, bot.tp_points, bot.use_stop_loss,
+           bot.use_take_profit, bot.copy_manual_trades)
+    hit = _PRESET_CACHE.get(key)
+    if hit and time.monotonic() - hit[0] < 60:
+        return hit[1]
+    result = await asyncio.to_thread(run)
+    _PRESET_CACHE.clear()
+    _PRESET_CACHE[key] = (time.monotonic(), result)
+    return result
+
+
 class ResearchRequest(BaseModel):
     symbol: str = Field(default='XAUUSD', pattern=r'^[A-Za-z0-9_.#-]+$', max_length=32)
     start: int = Field(ge=946684800)
@@ -502,6 +562,7 @@ def _scan_symbols_sync(symbol_list, timeframe_minutes, hma_period, ema_period, m
     MT5 EA); otherwise the forming candle is also checked."""
     from app import signal_engine
     settings = {**signal_engine.DEFAULTS, **filters, 'hma_period': hma_period, 'ema_period': ema_period,
+                'fast_type': filters.get('fast_type') or 'HMA',
                 'ma_type': ma_type, 'rsi_period': rsi_period, 'atr_period': atr_period, 'sl_atr': sl_atr,
                 'tp_atr': tp_atr, 'confirm_close': confirm_close, 'rsi_filter': rsi_filter,
                 'rsi_buy_max': rsi_buy_max, 'rsi_sell_min': rsi_sell_min}
@@ -568,6 +629,7 @@ MTF_TIMEFRAMES = (5, 15, 60, 240)
 async def signals_multi_timeframe(symbol: str = Query(min_length=1, max_length=32, pattern=r'^[A-Za-z0-9_.#-]+$'),
                                   timeframes: str = Query(default='5,15,60,240', max_length=40),
                                   hma_period: int = Query(default=14, ge=2, le=200),
+                                  fast_type: Literal['HMA', 'EMA', 'SMA', 'LWMA'] = Query(default='HMA'),
                                   ema_period: int = Query(default=34, ge=2, le=200),
                                   ma_type: Literal['EMA', 'SMA', 'LWMA', 'HMA'] = Query(default='EMA'),
                                   confirm_close: bool = Query(default=True)):
@@ -578,7 +640,7 @@ async def signals_multi_timeframe(symbol: str = Query(min_length=1, max_length=3
         raise HTTPException(status_code=422, detail='Geçersiz zaman dilimi listesi.')
     if not tfs or len(tfs) > 6 or any(tf not in TIMEFRAME_NAMES for tf in tfs):
         raise HTTPException(status_code=422, detail='Desteklenmeyen zaman dilimi.')
-    settings = dict(hma_period=hma_period, ema_period=ema_period, ma_type=ma_type, confirm_close=confirm_close)
+    settings = dict(hma_period=hma_period, fast_type=fast_type, ema_period=ema_period, ma_type=ma_type, confirm_close=confirm_close)
 
     def run():
         rows = []
@@ -589,7 +651,7 @@ async def signals_multi_timeframe(symbol: str = Query(min_length=1, max_length=3
                          **({k: item.get(k) for k in ('signal', 'side', 'bars_ago', 'cross_side', 'hma', 'ema',
                                                       'price', 'digits', 'candle_time')} if item else {})})
         return rows
-    key = (symbol, tuple(tfs), hma_period, ema_period, ma_type, confirm_close)
+    key = (symbol, tuple(tfs), fast_type, hma_period, ema_period, ma_type, confirm_close)
     cached = _MTF_CACHE.get(key)
     if cached and time.monotonic() - cached[0] < 30:
         rows = cached[1]
@@ -608,6 +670,7 @@ async def signals_multi_timeframe(symbol: str = Query(min_length=1, max_length=3
 async def scan_signals(symbols: str = Query(min_length=1, max_length=320),
                        timeframe_minutes: int = Query(default=15),
                        hma_period: int = Query(default=14, ge=2, le=200),
+                       fast_type: Literal['HMA', 'EMA', 'SMA', 'LWMA'] = Query(default='HMA'),
                        ema_period: int = Query(default=34, ge=2, le=200),
                        ma_type: Literal['EMA', 'SMA', 'LWMA', 'HMA'] = Query(default='EMA'),
                        rsi_period: int = Query(default=14, ge=2, le=100),
@@ -648,7 +711,7 @@ async def scan_signals(symbols: str = Query(min_length=1, max_length=320),
             break
     if not symbol_list:
         raise HTTPException(status_code=422, detail='Taranacak sembol seçilmedi.')
-    settings = dict(hma_period=hma_period, ema_period=ema_period, ma_type=ma_type, rsi_period=rsi_period,
+    settings = dict(hma_period=hma_period, fast_type=fast_type, ema_period=ema_period, ma_type=ma_type, rsi_period=rsi_period,
                     atr_period=atr_period, sl_atr=sl_atr, tp_atr=tp_atr, confirm_close=confirm_close,
                     rsi_filter=rsi_filter, rsi_buy_max=rsi_buy_max, rsi_sell_min=rsi_sell_min,
                     htf_filter=htf_filter, htf_minutes=htf_minutes, adx_filter=adx_filter, adx_period=adx_period,
@@ -1590,6 +1653,7 @@ class BotFollowRequest(BaseModel):
     hma_period: Optional[int] = Field(default=None, ge=2, le=1000)
     second_ma_type: Optional[Literal["EMA", "SMA", "LWMA", "HMA"]] = None
     second_ma_period: Optional[int] = Field(default=None, ge=2, le=1000)
+    fast_ma_type: Optional[Literal["HMA", "EMA", "SMA", "LWMA"]] = None
     # More EA instances on other timeframes (MT5: the same EA attached to more charts of the symbol).
     extra_timeframes: Optional[List[Literal[1, 5, 15, 30, 60, 240, 1440]]] = Field(default=None, max_length=6)
 

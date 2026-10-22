@@ -50,6 +50,7 @@ class StrategyBot:
         self.symbols: List[str] = ["EURUSD"]
         self.timeframe_minutes = 15
         self.hma_period = 14
+        self.fast_ma_type = "HMA"  # HMA (MT5 EA) or EMA / SMA / LWMA (user-approved presets, 2026-10-23)
         self.second_ma_type = "EMA" # EMA, SMA, LWMA, HMA
         self.second_ma_period = 34
         self.kama_fast = 2
@@ -291,7 +292,7 @@ class StrategyBot:
         self.update_config(data, persist=False)
 
     def config_snapshot(self):
-        keys = ('symbol','timeframe_minutes','hma_period','second_ma_type','second_ma_period',
+        keys = ('symbol','timeframe_minutes','hma_period','fast_ma_type','second_ma_type','second_ma_period',
                 'kama_fast','kama_slow','atr_period','use_atr_filter','use_h4_filter','single_position',
                 'er_min','confirmation_bars','min_distance_atr','risk_mode','atr_stop_multiplier',
                 'atr_target_multiplier','lot_size','use_stop_loss','sl_points','use_take_profit','tp_points','close_opposite',
@@ -405,7 +406,7 @@ class StrategyBot:
             return [sym]
 
     # Settings a running bot may change: the chart it is attached to and the EA crossover inputs.
-    LIVE_KEYS = ('symbol', 'symbols', 'timeframe_minutes', 'hma_period', 'second_ma_type', 'second_ma_period', 'extra_timeframes')
+    LIVE_KEYS = ('symbol', 'symbols', 'timeframe_minutes', 'fast_ma_type', 'hma_period', 'second_ma_type', 'second_ma_period', 'extra_timeframes')
 
     def reinit_live(self, data: Dict[str, Any], expected_config=None, timeout: float = 30.0) -> Dict[str, Any]:
         """Running bot follows the panel selection, like an MT5 EA: a chart symbol/period change
@@ -456,7 +457,7 @@ class StrategyBot:
                 self.runtime_state, self.runtime_detail, self.last_error = 'WAITING_DATA', f'{self.symbol}: Yeni kapanmış mum verisi bekleniyor.', None
                 tf = TIMEFRAME_NAMES.get(self.timeframe_minutes, f'M{self.timeframe_minutes}').replace('TIMEFRAME_', '')
                 note = (f"{before['symbol']} pozisyonları olduğu gibi kalır; " if before['symbol'] != self.symbol else 'Açık pozisyonlar olduğu gibi kalır; ')
-                self.log(f"🎯 Bot seçimi izledi (çalışırken): {self.symbol} {tf} · HMA({self.hma_period}) × "
+                self.log(f"🎯 Bot seçimi izledi (çalışırken): {self.symbol} {tf} · {self.fast_ma_type}({self.hma_period}) × "
                          f"{self.second_ma_type}({self.second_ma_period}). {note}bir sonraki kapanmış mumdaki kesişim bekleniyor.")
                 return candidate
         finally:
@@ -508,6 +509,8 @@ class StrategyBot:
             if not isinstance(data, dict) or set(data) - set(candidate):
                 raise ValueError('Bilinmeyen bot ayarı.')
             candidate.update(data)
+            if candidate.get('fast_ma_type') not in ('HMA', 'EMA', 'SMA', 'LWMA'):
+                raise ValueError('Geçersiz bot ayarı: fast_ma_type')
             for key in ('symbol', 'second_ma_type', 'risk_mode'):
                 if not isinstance(candidate[key], str):
                     raise ValueError(f'Geçersiz bot ayarı: {key}')
@@ -597,7 +600,7 @@ class StrategyBot:
         """(bars since last HMA x MA crossover on closed candles, direction 1/-1) or (None, 0)."""
         try:
             for shift in range(1, limit):
-                h1, h2 = self.calc_hma(closes, self.hma_period, shift=shift), self.calc_hma(closes, self.hma_period, shift=shift + 1)
+                h1, h2 = self.calc_fast(closes, shift=shift), self.calc_fast(closes, shift=shift + 1)
                 m1 = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=shift)
                 m2 = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=shift + 1)
                 if not all(math.isfinite(v) and v > 0 for v in (h1, h2, m1, m2)):
@@ -637,6 +640,7 @@ class StrategyBot:
             "symbols": getattr(self, "symbols", [self.symbol]),
             "timeframe_minutes": self.timeframe_minutes,
             "hma_period": self.hma_period,
+            "fast_ma_type": self.fast_ma_type,
             "second_ma_type": self.second_ma_type,
             "second_ma_period": self.second_ma_period,
             "lot_size": self.lot_size,
@@ -681,6 +685,8 @@ class StrategyBot:
                 signal_engine.wilder_warmup(14)]
         if self.second_ma_type == "EMA":
             need.append(signal_engine.ema_warmup(self.second_ma_period))
+        if self.fast_ma_type == "EMA":
+            need.append(signal_engine.ema_warmup(self.hma_period))
         if self.second_ma_type == "KAMA":
             slow = 2.0 / (self.kama_slow + 1.0)
             need.append(int(math.ceil(23.0 / (slow * slow))) + self.second_ma_period)
@@ -717,6 +723,13 @@ class StrategyBot:
         if len(diff_array) < sqrt_period + shift:
             return 0.0
         return cls.calc_wma(diff_array, sqrt_period, shift)
+
+    def calc_fast(self, close_prices: List[float], shift: int = 0) -> float:
+        """Fast line of the crossover: HMA like the MT5 EA, or EMA / SMA / LWMA (fast_ma_type) for the
+        common MA-crossover presets. Same formulas as the scanner (signal_engine.fast_series)."""
+        if self.fast_ma_type == 'HMA':
+            return self.calc_hma(close_prices, self.hma_period, shift)
+        return self.calc_second_ma(close_prices, self.fast_ma_type, self.hma_period, shift)
 
     # Secondary MA
     @classmethod
@@ -778,7 +791,7 @@ class StrategyBot:
                 hma1 = float(study["hma"][-1] or 0.0)
                 ma2_1 = float(study["kama"][-1] or 0.0)
             else:
-                hma1 = self.calc_hma(rev_closes, self.hma_period, shift=1)
+                hma1 = self.calc_fast(rev_closes, shift=1)
                 ma2_1 = self.calc_second_ma(rev_closes, self.second_ma_type, self.second_ma_period, shift=1)
             rsi = self.calc_rsi([float(r["close"]) for r in closed], 14)
             with self._state_lock:
@@ -967,8 +980,8 @@ class StrategyBot:
             last_t = max(last_t, self.last_candle_time or 0)
         start_trend = 0
         if self.is_running and not last_t:
-            hma1_init = self.calc_hma(closes, self.hma_period, shift=1)
-            hma2_init = self.calc_hma(closes, self.hma_period, shift=2)
+            hma1_init = self.calc_fast(closes, shift=1)
+            hma2_init = self.calc_fast(closes, shift=2)
             ma2_1_init = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=1)
             ma2_2_init = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=2)
             # HMA_Crossover_EA OnInit: m_lastBarTime = current bar, so a crossover on a candle that closed
@@ -1021,8 +1034,8 @@ class StrategyBot:
             hma1, hma2 = study['hma'][-1], study['hma'][-2]
             ma2_1, ma2_2 = study['kama'][-1], study['kama'][-2]
         else:
-            hma1 = self.calc_hma(closes, self.hma_period, shift=1)
-            hma2 = self.calc_hma(closes, self.hma_period, shift=2)
+            hma1 = self.calc_fast(closes, shift=1)
+            hma2 = self.calc_fast(closes, shift=2)
             ma2_1 = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=1)
             ma2_2 = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=2)
 

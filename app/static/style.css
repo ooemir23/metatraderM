@@ -1147,3 +1147,28 @@ html[data-buy-scheme="green"] .mt5-menu-buy { background:#1f9d6a; }
 .bot-tfs button[aria-pressed="true"] { background:#0e7490; border-color:#22d3ee; color:#fff; }
 .bot-tfs button[data-primary="true"] { cursor:default; background:#1d4ed8; border-color:#60a5fa; color:#fff; }
 .bot-tfs button:disabled { opacity:.6; }
+
+/* Strategy presets dialog (globe button) */
+.strategy-presets-dialog { width:min(96vw,820px); max-height:calc(100dvh - 32px); overflow-y:auto; background:#14181f; color:#e5e7eb; border:1px solid #2a3140; border-radius:16px; padding:18px; }
+.sp-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.sp-head h2 { font-weight:700; color:#fff; display:flex; align-items:center; gap:8px; font-size:16px; }
+.sp-close { color:#9aa4b2; font-size:18px; }
+.sp-intro { margin:8px 0 12px; font-size:12px; color:#9aa4b2; line-height:1.5; }
+.sp-controls { display:flex; flex-wrap:wrap; align-items:end; gap:10px; font-size:12px; margin-bottom:10px; }
+.sp-controls label { display:grid; gap:4px; color:#9aa4b2; }
+.sp-controls select, .sp-controls input { background:#1f2530; border:1px solid #2a3140; border-radius:8px; padding:6px 8px; color:#e5e7eb; width:150px; }
+#sp-context { font-weight:700; color:#fff; margin-right:auto; align-self:center; }
+.sp-status { font-size:12px; color:#9aa4b2; margin-bottom:10px; line-height:1.5; }
+.sp-list { display:grid; gap:8px; }
+.sp-row { display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:center; padding:10px 12px; border-radius:12px; border:1px solid #222833; background:#181d26; }
+.sp-row[data-tone="good"] { border-color:#065f4655; }
+.sp-row[data-tone="bad"] { border-color:#7f1d1d55; }
+.sp-rank { font-weight:800; color:#64748b; width:22px; text-align:center; }
+.sp-name { font-weight:700; color:#fff; }
+.sp-note { font-size:12px; color:#9aa4b2; margin-top:2px; }
+.sp-stats { display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:6px; font-size:12px; color:#cbd5e1; }
+.sp-stats .good { color:#34d399; font-weight:700; }
+.sp-stats .bad { color:#f87171; font-weight:700; }
+.sp-warn { color:#fbbf24; }
+.sp-current { font-size:11px; padding:1px 6px; border-radius:999px; background:#1d4ed8; color:#fff; margin-left:6px; }
+@media (max-width: 560px) { .sp-row { grid-template-columns:1fr; } .sp-rank { display:none; } }

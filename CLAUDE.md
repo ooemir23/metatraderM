@@ -74,3 +74,9 @@ Kullanıcı ikisini de MT5'ten farklı olduğunu bilerek seçti; varsayılan aç
   Sahiplik emir yorumundan (`HMA Bot M5 BUY`); etiketsiz eski bot pozisyonları ana zaman dilimine (grafik) aittir.
   Durum anahtarı: ana dilim `SYM`, ek dilim `SYM@M5`. Bot kartındaki çiplerle çalışırken de eklenir/çıkarılır
   (çalışan örnekler sıfırlanmaz). Lot ve açık işlem sınırları hesabın tamamına uygulanır.
+- `fast_ma_type` (2026-10-23, kullanıcı "en mantıklısını yap" dedi): hızlı çizgi HMA (EA) ya da EMA/SMA/LWMA.
+  Tarayıcı (`signal_engine.fast_series`, `fast_type`), bot (`calc_fast`), grafik (`fastType`), geçmiş testi
+  (`simulate(fast_type=)`) aynı formülü kullanır.
+- Stratejiler (dünya) düğmesi: `app/strategy_presets.py` yaygın, yayımlanmış MA kesişimlerini (EMA 9×21, 12×26, 20×50,
+  SMA 50×200 …) brokerın mumlarında botun kurallarıyla test eder (`/api/strategy-presets`) ve net sonuca göre sıralar.
+  "Dünyanın en kârlısı" iddiası yoktur; doğrulanamaz. Seçilen ayar tarayıcıya yazılır, bot onu izler.

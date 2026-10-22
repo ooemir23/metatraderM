@@ -5,7 +5,7 @@ from app import signal_engine as se
 
 def simulate(rates, hma_period=14, ma_type='EMA', ma_period=34, sl_points=200,
              tp_points=0, point=.00001, spread_points=0, commission_points=0, *, start=0,
-             sl_atr=0.0, tp_atr=0.0, atr_period=14):
+             sl_atr=0.0, tp_atr=0.0, atr_period=14, fast_type='HMA'):
     """Bot rules on closed candles: crossover on candle i, order at candle i+1 open.
 
     MT5 candles are Bid prices. A buy opens at Ask (Bid + spread) and its SL/TP trigger on Bid; a
@@ -15,7 +15,8 @@ def simulate(rates, hma_period=14, ma_type='EMA', ma_period=34, sl_points=200,
     EMA/ATR on the whole chart)."""
     if len(rates) - start < max(hma_period, ma_period) + 20:
         raise ValueError('Yeterli kapanmış mum yok.')
-    if not 2 <= hma_period <= 100 or not 2 <= ma_period <= 100 or ma_type not in ('EMA','SMA','LWMA','HMA'):
+    if not 2 <= hma_period <= 200 or not 2 <= ma_period <= 200 or ma_type not in ('EMA','SMA','LWMA','HMA') \
+            or fast_type not in ('EMA','SMA','LWMA','HMA'):
         raise ValueError('Geçersiz strateji parametresi.')
     if not all(math.isfinite(x) and x >= 0 for x in (point, spread_points, commission_points, sl_atr, tp_atr)) or point <= 0:
         raise ValueError('Geçersiz fiyat veya maliyet.')
@@ -25,7 +26,7 @@ def simulate(rates, hma_period=14, ma_type='EMA', ma_period=34, sl_points=200,
         if not all(math.isfinite(float(r[k])) for k in ('open','high','low','close')) or float(r['low']) > float(r['high']):
             raise ValueError('Geçersiz mum verisi.')
     closes = [float(r['close']) for r in rates]
-    fast = se.hma_series(closes, hma_period)
+    fast = se.ma_series(closes, fast_type, hma_period)   # HMA = the MT5 EA; EMA/SMA/LWMA for presets
     slow = se.ma_series(closes, ma_type, ma_period)
     atr = se.atr_series(rates, atr_period) if (sl_atr or tp_atr) else None
     spread = spread_points * point

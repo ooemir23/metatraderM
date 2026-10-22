@@ -4,7 +4,7 @@
   const KEY = 'hma.signal.settings.v1';
   const PRESET_KEY = 'hma.signal.presets.v1';
   const SESSIONS = {ASIA: 'Asya', LONDON: 'Londra', NEWYORK: 'New York'};
-  const DEFAULTS = {hma_period: 14, ma_type: 'EMA', ema_period: 34, confirm_close: true,
+  const DEFAULTS = {hma_period: 14, fast_type: 'HMA', ma_type: 'EMA', ema_period: 34, confirm_close: true,
     rsi_period: 14, rsi_filter: false, rsi_buy_max: 70, rsi_sell_min: 30,
     atr_period: 14, sl_atr: 2, tp_atr: 3, only_crosses: false,
     htf_filter: false, htf_minutes: 0, adx_filter: false, adx_period: 14, adx_min: 20,
@@ -40,6 +40,7 @@
       if (raw[key] !== '' && raw[key] != null && Number.isFinite(n) && n >= min && n <= max && (!integer || Number.isInteger(n))) out[key] = n;
     }
     if (TYPES.includes(raw.ma_type)) out.ma_type = raw.ma_type;
+    if (TYPES.includes(raw.fast_type)) out.fast_type = raw.fast_type;
     if (HTF.includes(Number(raw.htf_minutes))) out.htf_minutes = Number(raw.htf_minutes);
     for (const key of BOOLS) if (typeof raw[key] === 'boolean') out[key] = raw[key];
     if (Array.isArray(raw.sessions)) out.sessions = Object.keys(SESSIONS).filter((k) => raw.sessions.includes(k));
@@ -64,14 +65,14 @@
 
   function query(s = settings, {stats = s.show_stats} = {}) {
     const p = new URLSearchParams();
-    for (const key of ['hma_period', 'ema_period', 'ma_type', 'rsi_period', 'atr_period', 'sl_atr', 'tp_atr',
+    for (const key of ['hma_period', 'ema_period', 'ma_type', 'fast_type', 'rsi_period', 'atr_period', 'sl_atr', 'tp_atr',
       'confirm_close', 'rsi_filter', 'rsi_buy_max', 'rsi_sell_min', 'htf_filter', 'htf_minutes', 'adx_filter',
       'adx_period', 'adx_min', 'max_spread_points', 'cooldown_bars', 'min_rr', 'volume_filter', 'volume_mult']) p.set(key, String(s[key]));
     if (s.sessions.length) p.set('sessions', s.sessions.join(','));
     if (stats) { p.set('stats', 'true'); p.set('stats_bars', String(s.stats_bars)); }
     return p.toString();
   }
-  const fastLabel = (s = settings) => `HMA(${s.hma_period})`;
+  const fastLabel = (s = settings) => `${s.fast_type || 'HMA'}(${s.hma_period})`;
   const slowLabel = (s = settings) => `${s.ma_type}(${s.ema_period})`;
   const htfLabel = (s = settings) => s.htf_minutes ? TF_CODES[s.htf_minutes] : 'otomatik üst zaman dilimi';
 
@@ -207,7 +208,7 @@
     try { localStorage.setItem(KEY, JSON.stringify(settings)); } catch (_) { /* session-only */ }
     renderSummary();
     // Chart lines/markers use exactly the scanner rule: HMA × selected slow MA, closed candles if confirmed.
-    window.MT5Chart?.setSignalPeriods?.(settings.hma_period, settings.ema_period, settings.ma_type, settings.confirm_close !== false);
+    window.MT5Chart?.setSignalPeriods?.(settings.hma_period, settings.ema_period, settings.ma_type, settings.confirm_close !== false, settings.fast_type);
     close();
     if (typeof refreshSignalScanner === 'function') refreshSignalScanner(true, true);
     if (typeof showToast === 'function') showToast(`✅ Sinyal ayarları kaydedildi: ${fastLabel()} × ${slowLabel()}`, 'success');
@@ -216,14 +217,15 @@
     return true;
   }
   // Bot settings dialog edits the same crossover: keep scanner, chart and bot on one HMA × MA.
-  function setPeriods({hma_period, ma_type, ema_period} = {}) {
-    const next = sanitize({...settings, hma_period: hma_period ?? settings.hma_period,
+  function setPeriods({hma_period, ma_type, ema_period, fast_type} = {}) {
+    const next = sanitize({...settings, hma_period: hma_period ?? settings.hma_period, fast_type: fast_type ?? settings.fast_type,
       ma_type: ma_type ?? settings.ma_type, ema_period: ema_period ?? settings.ema_period});
-    if (next.hma_period === settings.hma_period && next.ma_type === settings.ma_type && next.ema_period === settings.ema_period) return false;
+    if (next.hma_period === settings.hma_period && next.ma_type === settings.ma_type && next.ema_period === settings.ema_period
+        && next.fast_type === settings.fast_type) return false;
     settings = next;
     try { localStorage.setItem(KEY, JSON.stringify(settings)); } catch (_) { /* session-only */ }
     renderSummary();
-    window.MT5Chart?.setSignalPeriods?.(settings.hma_period, settings.ema_period, settings.ma_type, settings.confirm_close !== false);
+    window.MT5Chart?.setSignalPeriods?.(settings.hma_period, settings.ema_period, settings.ma_type, settings.confirm_close !== false, settings.fast_type);
     if (typeof refreshSignalScanner === 'function') refreshSignalScanner(true, true);
     return true;
   }
@@ -329,7 +331,7 @@
     }
     renderSummary();
     // Chart AL/SAT markers follow the same HMA × slow MA rule as the scanner.
-    window.MT5Chart?.setSignalPeriods?.(settings.hma_period, settings.ema_period, settings.ma_type, settings.confirm_close !== false);
+    window.MT5Chart?.setSignalPeriods?.(settings.hma_period, settings.ema_period, settings.ma_type, settings.confirm_close !== false, settings.fast_type);
   }
 
   window.HMASignalSettings = {get: () => ({...settings, sessions: [...settings.sessions]}), query, open, close, save, reset, applyToBot, setPeriods,

@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
   const requests = [];
   const toasts = [];
   let botState = {is_running: false, symbol: 'XAUUSD', symbols: ['XAUUSD'], timeframe_minutes: 1,
-    hma_period: 75, second_ma_type: 'EMA', second_ma_period: 34};
+    fast_ma_type: 'HMA', hma_period: 75, second_ma_type: 'EMA', second_ma_period: 34};
   let signal = {hma_period: 14, ma_type: 'EMA', ema_period: 34};
   let failNext = null;
   const ctx = vm.createContext({

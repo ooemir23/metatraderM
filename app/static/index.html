@@ -936,6 +936,9 @@
                     <button id="bot-toggle-btn" onclick="toggleBot()" class="bot-head-btn bot-head-start">
                       <i class="ph-bold ph-play"></i><span>Botu Başlat</span>
                     </button>
+                    <button type="button" onclick="StrategyPresets.open()" class="bot-head-btn bot-head-settings" title="Yaygın stratejiler: seçili sembolde geçmiş test" aria-label="Yaygın stratejiler">
+                      <i class="ph-bold ph-globe-hemisphere-west"></i><span>Stratejiler</span>
+                    </button>
                     <button onclick="toggleBotSettingsModal()" class="bot-head-btn bot-head-settings" title="Bot ayarları" aria-label="Bot ayarları">
                       <i class="ph-bold ph-gear"></i><span>Ayarlar</span>
                     </button>
@@ -952,7 +955,7 @@
                   <div id="bot-timeframes" class="bot-tfs" role="group" aria-label="Botun zaman dilimleri"></div>
                   <div id="bot-symbol-status" class="bot-symstat" aria-live="polite" hidden></div>
                   <div class="bot-indicators">
-                    <div><span>HMA (<span id="bot-disp-hma-p">14</span>)</span><b id="bot-disp-hma-val" class="is-fast">0.00000</b></div>
+                    <div><span><span id="bot-disp-fast-t">HMA</span> (<span id="bot-disp-hma-p">14</span>)</span><b id="bot-disp-hma-val" class="is-fast">0.00000</b></div>
                     <div><span><span id="bot-disp-ma2-t">EMA</span> (<span id="bot-disp-ma2-p">34</span>)</span><b id="bot-disp-ma2-val" class="is-slow">0.00000</b></div>
                   </div>
                   <p id="bot-live-trend-status" class="bot-line">RSI(14): — · Trend: —</p>
@@ -1137,7 +1140,8 @@
         </fieldset>
         <fieldset>
           <legend>Kesişim</legend>
-          <label>Hızlı ortalama: HMA periyodu<input name="hma_period" type="number" min="2" max="200" step="1" required></label>
+          <label>Hızlı ortalama türü<select name="fast_type"><option value="HMA">HMA (MT5 EA)</option><option value="EMA">EMA</option><option value="SMA">SMA</option><option value="LWMA">LWMA</option></select></label>
+          <label>Hızlı ortalama periyodu<input name="hma_period" type="number" min="2" max="200" step="1" required></label>
           <label>Yavaş ortalama türü<select name="ma_type"><option value="EMA">EMA</option><option value="SMA">SMA</option><option value="LWMA">LWMA</option><option value="HMA">HMA</option></select></label>
           <label>Yavaş ortalama periyodu<input name="ema_period" type="number" min="2" max="200" step="1" required></label>
           <label class="signal-check"><input name="confirm_close" type="checkbox"> Sinyali mum kapanışında onayla (önerilen)</label>
@@ -1411,6 +1415,22 @@
     </div>
   </div>
 
+  <dialog id="strategy-presets-dialog" aria-labelledby="strategy-presets-title" class="strategy-presets-dialog backdrop:bg-black/70">
+    <div class="sp-head">
+      <h2 id="strategy-presets-title"><i class="ph-bold ph-globe-hemisphere-west"></i> Yaygın stratejiler</h2>
+      <button type="button" class="sp-close" onclick="StrategyPresets.close()" aria-label="Kapat">✕</button>
+    </div>
+    <p class="sp-intro">Dünyada yaygın kullanılan hareketli ortalama kesişimleri, <b>senin brokerının mumlarında</b> ve botun kurallarıyla (kapanmış mum, ters sinyalde kapat, botun SL/TP'si, spread) test edilir. Sıralama geçmiş sonuca göredir; gelecekteki kârı garanti etmez.</p>
+    <div class="sp-controls">
+      <span id="sp-context"></span>
+      <label>Test mumu<select id="sp-candles"><option value="1000">1000</option><option value="2000" selected>2000</option><option value="3000">3000</option></select></label>
+      <label>Komisyon (puan, gidiş-dönüş)<input id="sp-commission" type="number" min="0" step="0.1" value="0"></label>
+      <button type="button" class="signal-btn-primary" onclick="StrategyPresets.load(true)">Test et</button>
+    </div>
+    <div id="sp-status" class="sp-status" role="status" aria-live="polite"></div>
+    <div id="sp-list" class="sp-list"></div>
+  </dialog>
+
   <dialog id="pending-editor" class="bg-[#14181f] text-gray-200 rounded-2xl border border-gray-700 p-5 w-[min(94vw,480px)] backdrop:bg-black/70">
     <h2 id="pending-editor-title" class="font-bold text-white mb-3"></h2>
     <div class="grid grid-cols-2 gap-3 text-xs">
@@ -1545,6 +1565,7 @@
   <script src="/static/permissions.js"></script>
   <script src="/static/research.js"></script>
   <script src="/static/manual-style.js?v=2"></script>
+  <script src="/static/strategy-presets.js?v=1"></script>
   <script src="/static/workspace.js?v=terminal-1"></script>
   <script src="/static/header-autohide.js?v=1"></script>
   <script src="/static/account-menu.js?v=1"></script>

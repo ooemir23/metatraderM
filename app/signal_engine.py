@@ -23,7 +23,7 @@ HTF_AUTO = {1: 15, 5: 60, 15: 60, 30: 240, 60: 240, 240: 1440, 1440: 10080}
 TF_CODES = {1: 'M1', 5: 'M5', 15: 'M15', 30: 'M30', 60: 'H1', 240: 'H4', 1440: 'D1', 10080: 'W1'}
 VOLUME_LOOKBACK = 20
 
-DEFAULTS = dict(hma_period=14, ema_period=34, ma_type='EMA', rsi_period=14, atr_period=14, sl_atr=2.0,
+DEFAULTS = dict(hma_period=14, fast_type='HMA', ema_period=34, ma_type='EMA', rsi_period=14, atr_period=14, sl_atr=2.0,
                 tp_atr=3.0, confirm_close=True, rsi_filter=False, rsi_buy_max=70.0, rsi_sell_min=30.0,
                 htf_filter=False, htf_minutes=0, adx_filter=False, adx_period=14, adx_min=20.0,
                 max_spread_points=0, cooldown_bars=0, min_rr=0.0, volume_filter=False, volume_mult=1.0,
@@ -78,6 +78,11 @@ def ema_series(closes, period):
         if i >= period - 1:
             out[i] = ema
     return out
+
+
+def fast_series(closes, s):
+    """Fast line: HMA (the MT5 EA) by default; EMA / SMA / LWMA for the common MA-crossover presets."""
+    return ma_series(closes, s.get('fast_type') or 'HMA', s['hma_period'])
 
 
 def ma_series(closes, ma_type, period):
@@ -193,7 +198,7 @@ class HtfTrend:
         self.rates = htf_rates or []
         self.seconds = int(htf_minutes) * 60
         closes = [float(r['close']) for r in self.rates]
-        self.fast = hma_series(closes, s['hma_period'])
+        self.fast = fast_series(closes, s)
         self.slow = ma_series(closes, s['ma_type'], s['ema_period'])
 
     def at(self, close_time):
@@ -222,7 +227,7 @@ class Context:
     def __init__(self, rates, s, tf_minutes, *, htf_rates=None, utc_offset=0, spread_points=None, point=None):
         self.rates, self.s, self.tf = rates, s, tf_minutes
         self.closes = [float(r['close']) for r in rates]
-        self.fast = hma_series(self.closes, s['hma_period'])
+        self.fast = fast_series(self.closes, s)
         self.slow = ma_series(self.closes, s['ma_type'], s['ema_period'])
         self.atr = atr_series(rates, s['atr_period'])
         self.rsi = rsi_series(self.closes, s['rsi_period'])
@@ -468,6 +473,8 @@ def history_bars(s):
     need = [required_bars(s), wilder_warmup(s['rsi_period'])]
     if s['ma_type'] == 'EMA':
         need.append(ema_warmup(s['ema_period']))
+    if s.get('fast_type') == 'EMA':
+        need.append(ema_warmup(s['hma_period']))
     if s['adx_filter']:
         need.append(2 * ema_warmup(s['adx_period']))
     return min(MAX_HISTORY_BARS, max(need))
