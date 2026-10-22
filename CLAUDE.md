@@ -56,3 +56,16 @@ değişiklik yapılmaz (`_check_lock` beklenir). Çalışan botta yalnız `Strat
 bot durdurulur. Tarayıcının RSI/ADX/üst zaman dilimi gibi filtreleri bota taşınmaz (EA'da yok). Bot Ayarları'nda
 HMA/2. MA/sembol/zaman dilimi kaydedilirse tarayıcıya, grafiğe ve seçime de yazılır; ortak periyot sınırı 2–200.
 Sinyal, EA gibi yeni mumun ilk tick'inde (0,5 sn döngü) kapanmış mumda işlenir.
+
+## MT5 EA'dan bilerek farklı iki bot seçeneği (kullanıcı onayı, 2026-10-23)
+Kullanıcı ikisini de MT5'ten farklı olduğunu bilerek seçti; varsayılan açık, Bot Ayarları'ndan kapatılabilir.
+- `trend_entry_on_start`: bot başlarken ya da seçim değişince (OnInit anı) son kapanmış mumdaki HMA × 2. MA trendi
+  yönünde hemen işlem açar; EA yeni kesişimi beklerdi. Reddedilirse (piyasa kapalı vb.) yeni kesişim gelene kadar
+  sonraki kapanmış mumda tekrar dener (`_trend_pending`); aynı yönde bot pozisyonu varsa açmaz. Sonrası EA kuralı.
+- `copy_manual_trades` / `copy_manual_since` (2026-10-08): lot ve SL/TP, o tarihten sonra açılmış kârlı manuel
+  (orijinal MT5) pozisyonlardan gelir (`app/manual_copy.py`, `MT5Client.manual_copy_profile`): lot = 120 sn içinde
+  açılan aynı yönlü pozisyonların toplamının (karar) ortancası, lot adımına aşağı yuvarlanır; SL/TP = açılış
+  deal'inin sl/tp mesafesinin ortancası; TP kaydı olmayanlarda gerçekleşen çıkış mesafesinin ortancası; SL kaydı
+  yoksa botun SL ayarı. En az 3 kârlı pozisyon yoksa bot kendi ayarını kullanır. Otomatik bot lot sınırı aşılmaz
+  (sınırda açılır ve loga yazılır). Giriş kuralı yine EA kesişimidir.
+- Çalışan bot yalnız bu paneldeki açık seçimle değişir; durum yenilemesi çalışan botu yeniden başlatmaz.

@@ -2751,7 +2751,17 @@ function renderBotSymbolStatus(bot) {
 function renderBotProtection(bot) {
   const node = document.getElementById('bot-protect-status');
   if (!node || !bot) return;
-  const parts = [bot.lot_mode === 'RISK' ? `Lot: özsermayenin %${bot.risk_pct} riski` : `Lot: sabit ${bot.lot_size}`];
+  const copy = bot.copy_manual_trades ? bot.manual_copy : null;
+  const parts = [];
+  if (bot.copy_manual_trades && copy?.available) {
+    const lot = copy.applied_lot ?? copy.lot;
+    parts.push(`Lot/SL/TP: manuel kopya (${copy.since} sonrası ${copy.count} kârlı işlem) · ${lot} lot · SL ${copy.sl_points ?? `bot ${bot.sl_points}`} p · TP ${copy.tp_points ?? 'bot'} p${copy.capped ? ' · lot sınırda' : ''}`);
+  } else if (bot.copy_manual_trades) {
+    parts.push(`Lot: sabit ${bot.lot_size} (manuel kopya ${copy?.reason ? 'yok: ' + copy.reason : 'ilk sinyalde okunacak'})`);
+  } else {
+    parts.push(bot.lot_mode === 'RISK' ? `Lot: özsermayenin %${bot.risk_pct} riski` : `Lot: sabit ${bot.lot_size}`);
+  }
+  if (bot.trend_entry_on_start) parts.push('Başlarken trend yönünde girer');
   if (bot.max_consecutive_losses) parts.push(`${bot.max_consecutive_losses} kayıpta dur`);
   if (bot.trade_hours_enabled) parts.push(`Saat ${bot.trade_start}–${bot.trade_end}`);
   if (Array.isArray(bot.trade_days) && bot.trade_days.length < 7) parts.push(`${bot.trade_days.length} gün`);
@@ -2880,9 +2890,10 @@ async function toggleBot() {
 const botSettingInputs = {
   'cfg-symbol': 'symbol', 'cfg-timeframe': 'timeframe_minutes', 'cfg-hma-period': 'hma_period',
   'cfg-ma2-type': 'second_ma_type', 'cfg-ma2-period': 'second_ma_period', 'cfg-lot': 'lot_size',
-  'cfg-sl-points': 'sl_points', 'cfg-tp-points': 'tp_points',
+  'cfg-sl-points': 'sl_points', 'cfg-tp-points': 'tp_points', 'cfg-copy-since': 'copy_manual_since',
 };
-const botSettingChecks = {'cfg-close-opp': 'close_opposite', 'cfg-use-sl': 'use_stop_loss', 'cfg-use-tp': 'use_take_profit'};
+const botSettingChecks = {'cfg-close-opp': 'close_opposite', 'cfg-use-sl': 'use_stop_loss', 'cfg-use-tp': 'use_take_profit',
+  'cfg-trend-entry': 'trend_entry_on_start', 'cfg-copy-manual': 'copy_manual_trades'};
 // Automation lot limits (MAX_ORDER_LOTS / MAX_TOTAL_OPEN_LOTS / MAX_OPEN_ORDERS), editable from the panel.
 let loadedLotLimits = null;
 async function loadLotLimitsIntoForm() {
@@ -2968,6 +2979,13 @@ async function saveBotSettings() {
     sl_points: Number(document.getElementById('cfg-sl-points').value),
     tp_points: Number(document.getElementById('cfg-tp-points').value),
   };
+  // User options on top of the EA (sent only when the form has them).
+  const trendEntry = document.getElementById('cfg-trend-entry');
+  if (trendEntry) cfg.trend_entry_on_start = Boolean(trendEntry.checked);
+  const copyManual = document.getElementById('cfg-copy-manual');
+  if (copyManual) cfg.copy_manual_trades = Boolean(copyManual.checked);
+  const copySince = document.getElementById('cfg-copy-since')?.value;
+  if (copySince) cfg.copy_manual_since = copySince;
   const limits = {
     max_order_lots: Number(document.getElementById('cfg-max-order-lots').value),
     max_total_lots: Number(document.getElementById('cfg-max-total-lots').value),

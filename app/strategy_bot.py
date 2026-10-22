@@ -58,12 +58,20 @@ class StrategyBot:
         self.current_er = 0.0
         self._candidate = None
         self._candidates: Dict[str, Any] = {}
+        self._trend_pending: Dict[str, bool] = {}
         self.lot_size = 0.01
         self.use_stop_loss = True
         self.sl_points = 200
         self.use_take_profit = False
         self.tp_points = 400
         self.close_opposite = True
+        # User decisions (2026-10-23), not HMA_Crossover_EA behaviour:
+        # - on start / settings change open the current trend side at once (the EA waits for a new crossover);
+        # - lot and SL/TP come from the profitable hand-opened MT5 positions since copy_manual_since.
+        self.trend_entry_on_start = True
+        self.copy_manual_trades = True
+        self.copy_manual_since = "2026-10-08"
+        self.manual_copy: Optional[Dict[str, Any]] = None
         # Position sizing: FIXED = lot_size; RISK = risk_pct of equity lost at the stop.
         self.lot_mode = "FIXED"
         self.risk_pct = 0.5
@@ -276,7 +284,7 @@ class StrategyBot:
                 'er_min','confirmation_bars','min_distance_atr','risk_mode','atr_stop_multiplier',
                 'atr_target_multiplier','lot_size','use_stop_loss','sl_points','use_take_profit','tp_points','close_opposite',
                 'lot_mode','risk_pct','max_consecutive_losses','trade_hours_enabled','trade_start','trade_end',
-                'trade_utc_offset_min','trade_days','blocked_windows')
+                'trade_utc_offset_min','trade_days','blocked_windows','trend_entry_on_start','copy_manual_trades','copy_manual_since')
         with self._state_lock:
             snap = {key: (list(getattr(self, key)) if isinstance(getattr(self, key), list) else getattr(self, key)) for key in keys}
             snap['symbols'] = list(getattr(self, 'symbols', [self.symbol]))
@@ -413,6 +421,7 @@ class StrategyBot:
                     setattr(self, key, value)
                 self.last_candle_time, self.last_candle_times = 0, {}
                 self._candidate, self._candidates = None, {}
+                self._trend_pending = {}
                 self.symbol_status = {}
                 self.current_hma = self.current_ma2 = 0.0
                 self.current_atr = self.current_er = 0.0
@@ -507,7 +516,14 @@ class StrategyBot:
                 value = candidate[key]
                 if isinstance(value, bool) or not isinstance(value, int) or value < low or (high is not None and value > high):
                     raise ValueError(f'Geçersiz bot ayarı: {key}')
-            for key in ('use_stop_loss', 'use_take_profit', 'close_opposite', 'use_atr_filter', 'use_h4_filter', 'single_position'):
+            if not isinstance(candidate.get('copy_manual_since'), str) or not re.fullmatch(r'20\d\d-[01]\d-[0-3]\d', candidate['copy_manual_since']):
+                raise ValueError('Geçersiz bot ayarı: copy_manual_since (YYYY-AA-GG)')
+            try:
+                datetime.strptime(candidate['copy_manual_since'], '%Y-%m-%d')
+            except ValueError as exc:
+                raise ValueError('Geçersiz bot ayarı: copy_manual_since (YYYY-AA-GG)') from exc
+            for key in ('use_stop_loss', 'use_take_profit', 'close_opposite', 'use_atr_filter', 'use_h4_filter', 'single_position',
+                        'trend_entry_on_start', 'copy_manual_trades'):
                 if not isinstance(candidate[key], bool):
                     raise ValueError(f'Geçersiz bot ayarı: {key}')
             for key, low, high, inclusive in (('lot_size', 0, None, False), ('er_min', 0, 1, True),
@@ -590,6 +606,10 @@ class StrategyBot:
             "use_take_profit": self.use_take_profit,
             "tp_points": self.tp_points,
             "close_opposite": self.close_opposite,
+            "trend_entry_on_start": self.trend_entry_on_start,
+            "copy_manual_trades": self.copy_manual_trades,
+            "copy_manual_since": self.copy_manual_since,
+            "manual_copy": dict(self.manual_copy) if isinstance(self.manual_copy, dict) else None,
             **{key: (list(getattr(self, key)) if isinstance(getattr(self, key), list) else getattr(self, key)) for key in (
                 "lot_mode", "risk_pct", "max_consecutive_losses", "trade_hours_enabled", "trade_start", "trade_end",
                 "trade_utc_offset_min", "trade_days", "blocked_windows")},
@@ -881,6 +901,7 @@ class StrategyBot:
             # The single-symbol marker is still reset/advanced by older code paths;
             # never process a candle older than either marker.
             last_t = max(last_t, self.last_candle_time or 0)
+        start_trend = 0
         if self.is_running and not last_t:
             hma1_init = self.calc_hma(closes, self.hma_period, shift=1)
             hma2_init = self.calc_hma(closes, self.hma_period, shift=2)
@@ -888,20 +909,33 @@ class StrategyBot:
             ma2_2_init = self.calc_second_ma(closes, self.second_ma_type, self.second_ma_period, shift=2)
             # HMA_Crossover_EA OnInit: m_lastBarTime = current bar, so a crossover on a candle that closed
             # before the start is never traded; the first signal is the candle that closes after the start.
-            if True:
-                bars, way = self._bars_since_cross(closes)
-                trend = 'AL' if hma1_init > ma2_1_init else 'SAT'
-                since = f'son kesişim {bars} mum önce' if bars is not None else 'yakın zamanda kesişim yok'
+            # User decision (2026-10-23, differs from the EA): with trend_entry_on_start the bot opens the
+            # current trend side (HMA vs 2nd MA on the last closed candle) right away instead of waiting.
+            trend_way = 1 if hma1_init > ma2_1_init else -1 if hma1_init < ma2_1_init else 0
+            bars, way = self._bars_since_cross(closes)
+            trend = 'AL' if hma1_init > ma2_1_init else 'SAT'
+            since = f'son kesişim {bars} mum önce' if bars is not None else 'yakın zamanda kesişim yok'
+            self.last_candle_times[sym] = latest_closed_candle_time
+            if sym == self.symbol:
+                self.last_candle_time = latest_closed_candle_time
+            if self.trend_entry_on_start and trend_way and not self.use_atr_filter:
+                # Kept until the trend position is opened (or one already is): a rejected first try (market
+                # closed, broker reject) is retried on the next closed candle while no new crossover appears.
+                self._trend_pending[sym] = True
+                start_trend = trend_way
+                self._sym_status(sym, 'TREND_ENTRY',
+                    f"Başlangıç: mevcut {trend} trendi ({since}) yönünde hemen işlem açılıyor "
+                    "(ayarınız: başlangıçta trend yönünde gir; MT5 EA yeni kesişimi beklerdi).",
+                    candle_time=latest_closed_candle_time, trend=trend)
+            else:
                 self._sym_status(sym, 'WAITING_CROSS',
                     f"Başlangıçtan önce kapanmış mumdaki sinyal işlenmez (MT5 EA ile aynı); mevcut {trend} trendi ({since}). Bir sonraki kesişim bekleniyor: "
                     f"{'SAT (aşağı)' if trend == 'AL' else 'AL (yukarı)'}.", candle_time=latest_closed_candle_time, trend=trend)
-                self.last_candle_times[sym] = latest_closed_candle_time
                 if sym == self.symbol:
-                    self.last_candle_time = latest_closed_candle_time
                     self.runtime_state, self.runtime_detail = 'WAITING_SIGNAL', 'Yeni kapanmış mumdaki sinyal bekleniyor.'
                 return
 
-        if latest_closed_candle_time <= last_t:
+        if not start_trend and latest_closed_candle_time <= last_t:
             return
 
         study = None
@@ -942,9 +976,13 @@ class StrategyBot:
 
         self.last_candle_times[sym] = latest_closed_candle_time
         cross = 1 if hma2 <= ma2_2 and hma1 > ma2_1 else -1 if hma2 >= ma2_2 and hma1 < ma2_1 else 0
-        direction = cross
+        if cross:
+            self._trend_pending.pop(sym, None)
+        elif self._trend_pending.get(sym) and self.trend_entry_on_start:
+            start_trend = 1 if hma1 > ma2_1 else -1 if hma1 < ma2_1 else 0
+        direction = cross or start_trend
         closed_on_cross = False
-        if not cross:
+        if not cross and not start_trend:
             trend = 'AL' if hma1 > ma2_1 else 'SAT'
             bars, _ = self._bars_since_cross(closes)
             since = f'son kesişim {bars} mum önce' if bars is not None else 'yakın zamanda kesişim yok'
@@ -1036,13 +1074,16 @@ class StrategyBot:
         if sl is None:
             self._sym_status(sym, 'SKIPPED', f'{side} kesişimi: ATR stop/hedef mesafesi hesaplanamadı.')
             return
+        copied_lot, sl, tp, copy_note = self.copied_order_settings(sym, sl, tp)
+        entry_kind = 'trend girişi' if start_trend and not cross else 'kesişim'
 
         if sym == self.symbol:
             self.last_signal = side
             self.last_signal_time = time.strftime("%H:%M:%S")
             self.last_signal_price = closes[1]
 
-        self.log(f"[{sym} {side} SİNYALİ] HMA({hma1:.5f}) / {self.second_ma_type}({ma2_1:.5f}) | RSI: {rsi:.1f}", "SIGNAL")
+        self.log(f"[{sym} {side} SİNYALİ · {entry_kind}] HMA({hma1:.5f}) / {self.second_ma_type}({ma2_1:.5f}) | RSI: {rsi:.1f}"
+                 + (f" | {copy_note}" if copy_note else ''), "SIGNAL")
 
         if self.execution_mode == "SIGNAL_ONLY":
             action = {
@@ -1052,7 +1093,7 @@ class StrategyBot:
                 "price": closes[1],
                 "sl_points": sl,
                 "tp_points": tp,
-                "lot_size": self.lot_size,
+                "lot_size": copied_lot if copied_lot is not None else self.lot_size,
                 "time": time.strftime("%H:%M:%S"),
                 "rsi": round(rsi, 1),
             }
@@ -1062,6 +1103,7 @@ class StrategyBot:
             if len(self.pending_signal_actions) > 20:
                 self.pending_signal_actions.pop()
             self.pending_signal_action = action
+            self._trend_pending.pop(sym, None)
             self._sym_status(sym, 'AWAITING_APPROVAL', f'{side} sinyali yakalandı; "Sadece Sinyal" modunda onayınız bekleniyor.')
             if sym == self.symbol:
                 self.runtime_state, self.runtime_detail = 'WAITING_SIGNAL', f'{sym} {side} sinyali yakalandı; onayınız bekleniyor.'
@@ -1090,6 +1132,7 @@ class StrategyBot:
                 self._sym_status(sym, 'SKIPPED', f'{side} kesişimi atlandı: bu sembolde aynı yönde bir bot pozisyonu açık '
                                  '("Şimdi AL/SAT" ile açılanlar dahil). MT5 EA kuralı: aynı yönde ikinci pozisyon açılmaz.')
                 self.log(f'Bot {sym} {side} pozisyonu zaten açık; yeni giriş atlandı.')
+                self._trend_pending.pop(sym, None)
                 return
 
         issue = self.trading_window_issue()
@@ -1100,8 +1143,11 @@ class StrategyBot:
                 self.runtime_state, self.runtime_detail = 'OUTSIDE_HOURS', issue
             return
 
-        lot, risk_money, lot_error = self.order_lot(sym, side, sl, expected_account,
-                                                    cap=getattr(self.mt5, 'max_order_lots', None))
+        if copied_lot is not None:
+            lot, risk_money, lot_error = copied_lot, None, None
+        else:
+            lot, risk_money, lot_error = self.order_lot(sym, side, sl, expected_account,
+                                                        cap=getattr(self.mt5, 'max_order_lots', None))
         if lot is None:
             self._sym_status(sym, 'SKIPPED', f'{side} kesişimi: {lot_error}')
             self.log(f'⚠️ [{sym} {side}] {lot_error}', 'ERROR')
@@ -1120,6 +1166,7 @@ class StrategyBot:
                            risk_money=risk_money)
 
         if res.get("success"):
+            self._trend_pending.pop(sym, None)
             self._sym_status(sym, 'ORDER_OPENED', f"{side} emri açıldı: #{res.get('ticket')} @ {res.get('price')} ({lot} lot).")
             if sym == self.symbol:
                 self.runtime_state, self.runtime_detail = 'WAITING_SIGNAL', f'{sym} emir kabul edildi; yeni sinyal bekleniyor.'
@@ -1147,6 +1194,39 @@ class StrategyBot:
         er, kama = study['er'], study['kama']
         return (er[-1] is not None and kama[-1] is not None and kama[-2] is not None
                 and er[-1] >= self.er_min and side*(kama[-1]-kama[-2]) > 0)
+
+    def copied_order_settings(self, sym, sl, tp):
+        """(lot or None, sl, tp, note): lot / SL / TP of the profitable hand-opened MT5 positions
+        (app.manual_copy). Falls back to the bot settings when there is no usable profile."""
+        if not self.copy_manual_trades:
+            self.manual_copy = None
+            return None, sl, tp, ''
+        try:
+            prof = self.mt5.manual_copy_profile(sym, self.copy_manual_since)
+        except Exception as exc:
+            prof = {'available': False, 'reason': f'Manuel işlem geçmişi okunamadı ({exc}).'}
+        if not isinstance(prof, dict):
+            prof = {'available': False, 'reason': 'Manuel işlem profili doğrulanamadı.'}
+        if not prof.get('available'):
+            self.manual_copy = dict(prof)
+            note = f"manuel kopya yok: {prof.get('reason', '')} Bot ayarı kullanıldı."
+            return None, sl, tp, note
+        lot = float(prof['lot'])
+        cap = getattr(self.mt5, 'max_order_lots', None)
+        capped = ''
+        if isinstance(cap, (int, float)) and not isinstance(cap, bool) and math.isfinite(cap) and 0 < cap < lot:
+            capped = f' (manuel {lot:g} lot, otomatik bot sınırı {cap:g} lot)'
+            lot = float(cap)
+        if prof.get('sl_points') and (self.use_stop_loss or sl):
+            sl = int(prof['sl_points'])
+        if prof.get('tp_points'):
+            tp = int(prof['tp_points'])
+        self.manual_copy = {**prof, 'applied_lot': lot, 'applied_sl': sl, 'applied_tp': tp, 'capped': bool(capped)}
+        note = (f"manuel kopya ({prof['count']} kârlı pozisyon, {prof['since']} sonrası): {lot:g} lot{capped}, "
+                f"SL {sl or 'yok'} p, TP {tp or 'yok'} p")
+        if capped:
+            self.log(f'⚠️ [{sym}] Kopyalanan lot sınırda tutuldu{capped}.', 'WARNING')
+        return lot, sl, tp, note
 
     def order_distances(self, sym=None):
         target_sym = sym or self.symbol
@@ -1291,6 +1371,7 @@ class StrategyBot:
                 self.last_candle_time = 0
                 self.last_candle_times = {}
                 self._candidates = {}
+                self._trend_pending = {}
                 self.started_at = int(time.time())
                 self.symbol_status = {}
                 self._loss_check_at = 0.0

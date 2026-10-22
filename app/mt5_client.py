@@ -1181,6 +1181,37 @@ class MT5Client:
             except Exception as exc:
                 raise MT5DataError("Manuel işlem geçmişi okunamadı; hesap ve bağlantıyı kontrol edin.") from exc
 
+    MANUAL_COPY_TTL = 300
+
+    def manual_copy_profile(self, symbol: str, since: str) -> Dict[str, Any]:
+        """Lot / SL / TP of profitable hand-opened MT5 positions since `since` (see app.manual_copy).
+        Cached for MANUAL_COPY_TTL seconds per account+symbol: closed history changes only when a trade closes."""
+        import time as _time
+        from app import manual_copy
+        key = (getattr(self, 'login_id', None), getattr(self, 'server', None), symbol, since)
+        cache = self.__dict__.setdefault('_manual_copy_cache', {})
+        hit = cache.get(key)
+        if hit and _time.monotonic() - hit[0] < self.MANUAL_COPY_TTL:
+            return hit[1]
+        start = manual_copy.since_epoch(since)
+        days = max(7, int((_time.time() + self.tick_clock_offset - start) // 86400) + 2)
+        trades = self.get_manual_trades(days=days)
+        spec = self.get_symbol_spec(symbol) or {}
+        result = manual_copy.profile(trades, symbol, since, spec.get('point'))
+        if result.get('available'):
+            step, vmin, vmax = (float(spec.get(k) or 0) for k in ('volume_step', 'volume_min', 'volume_max'))
+            lot = result['lot']
+            if step > 0:
+                lot = math.floor(lot / step + 1e-9) * step       # never round a copied lot up
+                lot = round(lot, max(0, -int(math.floor(math.log10(step)))) + 2)
+            if vmin > 0 and lot < vmin:
+                lot = vmin
+            if vmax > 0 and lot > vmax:
+                lot = vmax
+            result['lot'] = lot
+        cache[key] = (_time.monotonic(), result)
+        return result
+
     def get_reports(self, days: int = 30) -> Dict[str, Any]:
         activity, histories = self._report_inputs(days)
         return build_report(activity, histories)

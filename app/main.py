@@ -284,6 +284,10 @@ def ea_only(settings: Dict[str, Any]) -> Dict[str, Any]:
 
 class BotConfigRequest(BaseModel):
     symbol: Optional[str] = None
+    # User decisions 2026-10-23 (not EA inputs): trend entry on start, lot/SL/TP from profitable manual trades.
+    trend_entry_on_start: Optional[bool] = None
+    copy_manual_trades: Optional[bool] = None
+    copy_manual_since: Optional[str] = Field(default=None, pattern=r'^20\d\d-[01]\d-[0-3]\d$')
     symbols: Optional[Union[List[str], str]] = None
     timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=43200)
     hma_period: Optional[int] = Field(default=None, ge=2, le=1000)
@@ -1434,6 +1438,10 @@ async def toggle_bot(request: Request):
                 except RuntimeError as exc:
                     raise HTTPException(status_code=409, detail=str(exc)) from exc
                 bot.set_start_warnings(ready.get('warnings') or [])
+            # Outside the MT5 lock: reading the manual history takes that lock in a worker thread.
+            notes = await manual_copy_warnings()
+            if notes:
+                bot.set_start_warnings(list(bot.start_warnings) + notes)
         return bot.get_status()
 
 @app.post("/api/bot/config")
@@ -1514,6 +1522,23 @@ def update_bot_signal_rules(req: BotSignalRulesRequest, request: Request):
 class BotSymbolActionRequest(BaseModel):
     symbol: str = Field(min_length=1, max_length=32, pattern=r'^[A-Za-z0-9_.#-]+$')
 
+async def manual_copy_warnings():
+    """Start note: which lot / SL / TP the bot copies from the profitable manual MT5 positions."""
+    if not bot.copy_manual_trades:
+        return []
+    try:
+        prof = await asyncio.to_thread(mt5_client.manual_copy_profile, bot.symbol, bot.copy_manual_since)
+    except Exception as exc:
+        return [f'Manuel işlem kopyası okunamadı ({exc}); bot kendi lot/SL/TP ayarını kullanır.']
+    bot.manual_copy = dict(prof)
+    if not prof.get('available'):
+        return [f"Manuel kopya kullanılamıyor: {prof.get('reason')} Bot kendi lot/SL/TP ayarını kullanır."]
+    cap = mt5_client.max_order_lots
+    capped = f' (otomatik bot sınırı {cap:g} lot; sınırda açılır)' if cap and prof['lot'] > cap else ''
+    return [f"Manuel kopya: {prof['since']} sonrası {prof['count']} kârlı {bot.symbol} pozisyonu → {prof['lot']:g} lot{capped}, "
+            f"SL {prof['sl_points'] or 'bot ayarı'} p, TP {prof['tp_points'] or 'bot ayarı'} p."]
+
+
 async def follow_selection(data: Dict[str, Any], request: Request) -> Dict[str, Any]:
     """The bot trades what the panel shows: selected symbol, chart timeframe and the scanner's HMA × MA.
     A running bot changes like an MT5 EA re-initialised on a chart/input change; the new settings pass the
@@ -1543,7 +1568,7 @@ async def follow_selection(data: Dict[str, Any], request: Request) -> Dict[str, 
                     if require_real_unlock(request) != account or ready.get('account') != account:
                         raise HTTPException(status_code=409, detail='Hazırlık kontrolü sırasında hesap değişti; bot ayarları değiştirilmedi.')
                 await asyncio.to_thread(bot.reinit_live, data, old_config)
-                bot.set_start_warnings(ready.get('warnings') or [])
+                bot.set_start_warnings((ready.get('warnings') or []) + await manual_copy_warnings())
             elif bot.task is not None and not bot.task.done():
                 raise HTTPException(status_code=409, detail='Önceki bot döngüsü bitiyor; tamamlanmasını bekleyin.')
             else:

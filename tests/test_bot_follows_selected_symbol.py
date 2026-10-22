@@ -39,6 +39,7 @@ def test_running_bot_switches_and_reinitialises_like_mt5_chart_change():
 
 def test_first_check_after_switch_does_not_trade_an_already_closed_crossover():
     bot, client = running_bot()
+    bot.trend_entry_on_start = False      # pure EA OnInit behaviour
     bot.switch_symbol_live('XAUUSD')
     closes = [100 + i * 0.1 for i in range(200)]
     rates = [{'time': 1_700_000_000 + i * 900, 'close': c} for i, c in enumerate(closes)]

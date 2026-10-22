@@ -77,6 +77,8 @@ def live_bot(client):
     bot.risk_mode, bot.atr_stop_multiplier, bot.atr_target_multiplier = 'ATR', 2.0, 3.0
     bot.use_stop_loss = bot.use_take_profit = True
     bot.close_opposite = bot.single_position = True
+    # These tests pin the pure HMA_Crossover_EA behaviour; the user's start/copy options are tested separately.
+    bot.trend_entry_on_start = bot.copy_manual_trades = False
     bot.is_running = True
     return bot
 

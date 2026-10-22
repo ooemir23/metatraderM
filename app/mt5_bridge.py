@@ -1514,7 +1514,11 @@ def manual_lifetimes(mt5, days, tick_offset, account_scope):
             open_time=int(first.time), open_price=sum(float(d.price) * float(d.volume) for d in opening) / vin,
             close_time=max(int(d.time) for d in closing),
             close_price=sum(float(d.price) * float(d.volume) for d in closing) / vout,
-            net=round(sum(float(d.profit) + float(d.commission) + float(d.swap) + float(d.fee) for d in rows), 2)))
+            net=round(sum(float(d.profit) + float(d.commission) + float(d.swap) + float(d.fee) for d in rows), 2),
+            # SL/TP the position was opened with (MT5 TradeDeal.sl/.tp of the opening deal; 0 = none) and
+            # why it closed (DEAL_REASON_SL = 4, DEAL_REASON_TP = 5, client/mobile/web = manual).
+            sl=float(getattr(first, 'sl', 0) or 0), tp=float(getattr(first, 'tp', 0) or 0),
+            close_reason=int(getattr(closing[-1], 'reason', -1) if getattr(closing[-1], 'reason', None) is not None else -1)))
     out.sort(key=lambda r: (r['open_time'], r['position_id']))
     return out
 
