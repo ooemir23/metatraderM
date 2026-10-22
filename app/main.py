@@ -1600,7 +1600,8 @@ async def manual_copy_warnings():
     cap = mt5_client.max_order_lots
     capped = f' (otomatik bot sınırı {cap:g} lot; sınırda açılır)' if cap and prof['lot'] > cap else ''
     return [f"Manuel kopya: {prof['since']} sonrası {prof['count']} kârlı {bot.symbol} pozisyonu → {prof['lot']:g} lot{capped}, "
-            f"SL {prof['sl_points'] or 'bot ayarı'} p, TP {prof['tp_points'] or 'bot ayarı'} p."]
+            f"SL {str(prof['sl_points']) + ' p' if prof.get('sl_points') else f'bot ayarı ({bot.sl_points} p)' if bot.use_stop_loss else 'yok'}, "
+            f"TP {str(prof['tp_points']) + ' p' if prof.get('tp_points') else f'bot ayarı ({bot.tp_points} p)' if bot.use_take_profit else 'yok'}."]
 
 
 async def follow_selection(data: Dict[str, Any], request: Request) -> Dict[str, Any]:
