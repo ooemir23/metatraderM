@@ -44,3 +44,11 @@ tek emir / toplam lot / açık işlem sınırı (hesabın tamamı sayılır), SL
 KAMA, ATR stop/filtre, H4 filtresi, onay mumu, RISK lotu, %2 parasal risk sınırı, art arda kayıp, saat/gün/haber
 engeli, RSI/spread/başabaş/iz süren kuralları bot için kapalıdır (`main.EA_ONLY_BOT_SETTINGS`); geri eklenmez.
 Başlangıçtan önce kapanmış mumdaki kesişim işlenmez (EA OnInit). "Şimdi AL/SAT" manuel magic (123460) kullanır.
+
+## Bot sembolü = seçili sembol (kullanıcı kararı, 2026-10-22)
+Panelde hangi sembol seçiliyse bot onu işler; bot çalışırken de geçer (`/api/bot/add-symbol` →
+`StrategyBot.switch_symbol_live`). MT5'te EA'nın grafik sembolü değişince olduğu gibi: OnDeinit(REASON_CHARTCHANGE)
++ OnInit — eski sembolün pozisyonları açık kalır, geçişten önce kapanmış mumdaki kesişim işlenmez. Yeni sembol
+bot başlangıcıyla aynı hazırlık kontrolünden (`bot_readiness`) ve gerçek hesapta ikinci doğrulamadan geçer;
+geçemezse bot eski sembolde çalışmaya devam eder ve sebep bot kartında gösterilir. Emir gönderilirken geçiş yapılmaz
+(`_check_lock` beklenir). Sinyal, EA gibi yeni mumun ilk tick'inde (0,5 sn döngü) kapanmış mumda işlenir.

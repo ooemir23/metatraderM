@@ -384,6 +384,42 @@ class StrategyBot:
                 self.persist_config(self.config_snapshot())
             return [sym]
 
+    def switch_symbol_live(self, sym: str, expected_config=None, timeout: float = 30.0) -> List[str]:
+        """Running bot follows the selected symbol, like an MT5 EA when its chart symbol changes:
+        OnDeinit(REASON_CHARTCHANGE) + OnInit on the new symbol. Positions on the old symbol are left
+        as they are; a crossover on a candle that closed before the switch is not traded (EA OnInit)."""
+        sym = sym.strip()
+        if not re.fullmatch(r'[A-Za-z0-9_.#-]{1,32}', sym):
+            raise ValueError("Geçersiz sembol.")
+        # Wait for the current check (it may be sending an order) so the switch never lands mid-order.
+        if not self._check_lock.acquire(timeout=timeout):
+            raise RuntimeError('Bot döngüsü meşgul (emir gönderiliyor olabilir); sembol değiştirilmedi.')
+        try:
+            with self._state_lock:
+                if not self.is_running:
+                    raise RuntimeError('Bot çalışmıyor.')
+                if expected_config is not None and self.config_snapshot() != expected_config:
+                    raise RuntimeError('Hazırlık kontrolü sırasında bot ayarları değişti; sembol değiştirilmedi.')
+                old = self.symbol
+                if old == sym and list(self.symbols) == [sym]:
+                    return [sym]
+                snapshot = self.config_snapshot()
+                snapshot.update(symbol=sym, symbols=[sym])
+                self.persist_config(snapshot)        # OSError: nothing changed in memory
+                self.symbol, self.symbols = sym, [sym]
+                self.last_candle_time, self.last_candle_times = 0, {}
+                self._candidate, self._candidates = None, {}
+                self.symbol_status = {}
+                self.current_hma = self.current_ma2 = 0.0
+                self.current_atr = self.current_er = 0.0
+                self.last_signal, self.last_signal_time, self.last_signal_price = "YOK", "", 0.0
+                self.runtime_state, self.runtime_detail, self.last_error = 'WAITING_DATA', f'{sym}: Yeni kapanmış mum verisi bekleniyor.', None
+                self.log(f"🎯 Bot sembolü {old} → {sym} (çalışırken). {old} pozisyonları olduğu gibi kalır; "
+                         f"{sym} için bir sonraki kapanmış mumdaki kesişim bekleniyor.")
+                return [sym]
+        finally:
+            self._check_lock.release()
+
     def remove_symbol(self, sym: str) -> List[str]:
         with self._state_lock:
             if self.is_running or self._check_lock.locked() or (self.task is not None and not self.task.done()):

@@ -114,25 +114,39 @@ async function syncBotTimeframe(tf, {announce = true} = {}) {
 }
 
 // The bot follows the selected symbol (one symbol, like an MT5 EA attached to that chart).
+// A running bot switches too, like an MT5 EA re-initialised when its chart symbol changes:
+// positions on the old symbol stay open and the next closed-candle crossover on the new symbol is traded.
 let botSymbolSyncing = null;
-async function syncBotSymbol(sym, {announce = true} = {}) {
+let botSymbolSyncError = null;   // {symbol, message}: a failed switch is not retried on every status poll
+async function syncBotSymbol(sym, {announce = true, retry = true} = {}) {
   sym = String(sym || '').trim();
   const bot = latestBotSettings;
-  if (!sym || !bot || bot.is_running) return bot?.symbol === sym;
+  if (!sym || !bot) return bot?.symbol === sym;
   const symbols = Array.isArray(bot.symbols) ? bot.symbols : [bot.symbol];
-  if (bot.symbol === sym && symbols.length === 1 && symbols[0] === sym) return true;
-  if (botSymbolSyncing) return botSymbolSyncing;
+  if (bot.symbol === sym && symbols.length === 1 && symbols[0] === sym) { botSymbolSyncError = null; return true; }
+  if (!retry && botSymbolSyncError?.symbol === sym) return false;
+  if (botSymbolSyncing) {
+    const pending = botSymbolSyncing;
+    await pending.catch(() => {});
+    if (latestBotSettings?.symbol === sym) return true;
+    if (botSymbolSyncing && botSymbolSyncing !== pending) return botSymbolSyncing;
+  }
+  const running = Boolean(bot.is_running);
+  const previous = bot.symbol;
   botSymbolSyncing = (async () => {
     try {
       const res = await fetch('/api/bot/add-symbol', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({symbol: sym})});
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Bot sembolü güncellenemedi.');
+      botSymbolSyncError = null;
       if (latestBotSettings) latestBotSettings = {...latestBotSettings, symbol: sym, symbols: [sym], symbol_status: {}};
-      if (announce) showToast(`🎯 Bot sembolü: ${sym}`, 'info');
+      if (running) showToast(`🎯 Bot ${previous} → ${sym} geçti. ${previous} pozisyonları açık kalır; ${sym} için yeni kesişim bekleniyor.`, 'success');
+      else if (announce) showToast(`🎯 Bot sembolü: ${sym}`, 'info');
       if (typeof renderBotSymbolStatus === 'function' && latestBotSettings) renderBotSymbolStatus(latestBotSettings);
       return true;
     } catch (err) {
-      if (announce) showToast(`❌ ${err.message}`, 'error');
+      botSymbolSyncError = {symbol: sym, message: err.message};
+      if (announce || running) showToast(`❌ ${err.message}`, 'error');
       return false;
     } finally { botSymbolSyncing = null; }
   })();
@@ -729,7 +743,7 @@ function switchSymbol(symbol, reloadChart = true) {
   }
   currentSymbol = symbol;
   saveLastSymbol(symbol);
-  if (typeof syncBotSymbol === 'function' && latestBotSettings && !latestBotSettings.is_running) syncBotSymbol(symbol, {announce: false});
+  if (typeof syncBotSymbol === 'function' && latestBotSettings) syncBotSymbol(symbol, {announce: false});
   if (typeof refreshMarketOpen === 'function') refreshMarketOpen(symbol);
   if (typeof renderScannerSymbolButton === 'function') renderScannerSymbolButton(symbol);
   if(document.getElementById('market-depth-panel')?.open&&typeof refreshMarketDepth==='function')refreshMarketDepth();
@@ -1691,12 +1705,13 @@ async function fetchBotStatus() {
     const botSym = bot.symbol || 'EURUSD';
     if (symbolsCount) symbolsCount.textContent = botSym;
     if (symbolsBadges) {
-      const differs = bot.is_running && currentSymbol && currentSymbol !== botSym;
-      // The symbol name is in the heading; this line only explains a mismatch with the chart.
-      symbolsBadges.innerHTML = differs ? `<span class="bot-symbol-differs">Seçili sembol ${escapeHtml(currentSymbol)}. Botu durdurunca ${escapeHtml(currentSymbol)}'a geçer.</span>` : '';
+      const failed = botSymbolSyncError && botSymbolSyncError.symbol === currentSymbol ? botSymbolSyncError.message : '';
+      const differs = Boolean(currentSymbol && currentSymbol !== botSym && failed);
+      // The symbol name is in the heading; this line only explains why the bot could not follow the selection.
+      symbolsBadges.innerHTML = differs ? `<span class="bot-symbol-differs">Seçili sembol ${escapeHtml(currentSymbol)}; bot geçemedi: ${escapeHtml(failed)}</span>` : '';
       symbolsBadges.hidden = !differs;
     }
-    if (!bot.is_running) syncBotSymbol(currentSymbol, {announce: false});
+    if (currentSymbol && currentSymbol !== botSym) syncBotSymbol(currentSymbol, {announce: false, retry: false});
 
     document.getElementById("bot-atr-status").textContent = `ATR(${bot.atr_period || 14}): ${Number(bot.current_atr || 0).toFixed(5)} · ER: ${Number(bot.current_er || 0).toFixed(2)} · ${bot.use_atr_filter ? (bot.pending_confirmation ? 'Onay bekleniyor' : 'Filtre açık') : 'Filtre kapalı'} · ${bot.risk_mode === 'ATR' ? 'ATR stop/hedef' : 'Sabit puan stop/hedef'}`;
     const lastSigEl = document.getElementById("bot-last-signal");
@@ -4241,8 +4256,9 @@ async function assignScannerSymbolToBot(symbol, timeframeMinutes) {
   const sym = String(symbol || currentSymbol || 'EURUSD').trim();
   rememberAddedSignal(sym, timeframeMinutes);
   if (latestBotSettings?.is_running && latestBotSettings.symbol !== sym) {
-    showToast(`❌ Bot ${latestBotSettings.symbol} üzerinde çalışıyor. ${sym} için önce botu durdurun.`, 'error');
-    focusBotSymbol(latestBotSettings.symbol, {flashToggle: true});
+    // Running bot follows the selection (MT5 EA re-init on chart symbol change).
+    if (sym !== currentSymbol) switchSymbol(sym);
+    if (await syncBotSymbol(sym, {announce: false})) { await fetchBotStatus(); focusBotSymbol(sym); fetchBotLiveSignal(); }
     return;
   }
   if (sym !== currentSymbol) switchSymbol(sym);

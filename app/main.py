@@ -1515,10 +1515,30 @@ class BotSymbolActionRequest(BaseModel):
     symbol: str = Field(min_length=1, max_length=32, pattern=r'^[A-Za-z0-9_.#-]+$')
 
 @app.post("/api/bot/add-symbol")
-def add_bot_symbol(req: BotSymbolActionRequest):
+async def add_bot_symbol(req: BotSymbolActionRequest, request: Request):
+    """The bot trades the selected symbol. A running bot switches like an MT5 EA whose chart symbol changes
+    (re-init on the new symbol); the new symbol passes the same readiness checks as a bot start."""
     try:
-        symbols = bot.add_symbol(req.symbol)
-        return {"success": True, "symbols": symbols, "symbol": bot.symbol}
+        async with bot_toggle_guard:
+            if bot.is_running and bot.symbol != req.symbol.strip():
+                account = require_real_unlock(request)
+                old_config = bot.config_snapshot()
+                config = {**old_config, 'symbol': req.symbol.strip(), 'symbols': [req.symbol.strip()]}
+                ready = await asyncio.to_thread(mt5_client.bot_readiness, config)
+                if not ready.get('success'):
+                    raise HTTPException(status_code=409, detail=(
+                        f"{req.symbol} için bot hazır değil: {ready.get('error', 'hazırlık kontrolü geçmedi')} "
+                        f"Bot {bot.symbol} üzerinde çalışmaya devam ediyor."))
+                with mt5_client._lock:
+                    if require_real_unlock(request) != account or ready.get('account') != account:
+                        raise HTTPException(status_code=409, detail='Hazırlık kontrolü sırasında hesap değişti; bot sembolü değiştirilmedi.')
+                symbols = await asyncio.to_thread(bot.switch_symbol_live, req.symbol, old_config)
+                bot.set_start_warnings(ready.get('warnings') or [])
+            elif bot.is_running:
+                symbols = list(bot.symbols)
+            else:
+                symbols = bot.add_symbol(req.symbol)
+        return {"success": True, "symbols": symbols, "symbol": bot.symbol, "is_running": bot.is_running}
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
