@@ -1,6 +1,6 @@
 """Risk-% lot sizing, protection rules (hours, blocked windows, loss streak) and bot performance."""
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace as NS
 from unittest.mock import Mock
 
@@ -133,7 +133,9 @@ def test_automatic_entry_skipped_outside_hours():
     bot.calc_hma = Mock(side_effect=[2., 0.])
     bot.calc_second_ma = Mock(return_value=1.)
     bot.last_candle_time = 1
-    bot.trade_days = [((datetime.now(timezone.utc).weekday()) + 1) % 7]  # not today
+    # "Today" in the bot's own trading clock (UTC+3 by default), not UTC: between 00:00 and 03:00 they differ.
+    today = (datetime.now(timezone.utc) + timedelta(minutes=bot.trade_utc_offset_min)).weekday()
+    bot.trade_days = [(today + 1) % 7]  # not today
     bot._check_strategy()
     client.open_order.assert_not_called()
     assert any('işlem günü değil' in entry['message'] for entry in bot.logs)

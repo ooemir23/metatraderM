@@ -172,6 +172,12 @@ assert.ok(html.includes('id="bot-execute-all-signals-btn"'), 'Missing bot-execut
   assert.ok(node('bot-symbols-badges').innerHTML.includes('hazır değil'), 'reason is shown');
   vm.runInContext("botFollowError = null;", ctx);
 
+  // Test 3c: a status poll never re-initialises a running bot (another tab may show another selection)
+  const beforePassive = sentRequests.filter((r) => r.url === '/api/bot/follow').length;
+  await ctx.fetchBotStatus();
+  assert.equal(sentRequests.filter((r) => r.url === '/api/bot/follow').length, beforePassive, 'passive poll does not switch a running bot');
+  vm.runInContext("currentSymbol = 'EURUSD';", ctx);
+
   // Test 4: sendSignalDirectToBot calls /api/bot/execute-signal
   await ctx.sendSignalDirectToBot('XAUUSD', 'SELL', 2650.5, {signalId: 'scan-XAUUSD-15-SELL-1700000000', slPrice: 2680.0, tpPrice: 2600.0});
   const execReq = sentRequests.find((r) => r.url === '/api/bot/execute-signal');

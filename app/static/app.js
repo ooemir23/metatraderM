@@ -1732,7 +1732,10 @@ async function fetchBotStatus() {
       symbolsBadges.innerHTML = failed ? `<span class="bot-symbol-differs">Bot seçimi izleyemedi: ${escapeHtml(failed)}</span>` : '';
       symbolsBadges.hidden = !failed;
     }
-    syncBotToSelection({}, {announce: false, retry: false});
+    // A running bot changes only on an explicit selection in this panel (symbol, timeframe, scanner settings).
+    // A status poll never re-initialises it: two open tabs with different selections would otherwise reset
+    // the bot back and forth (each reset skips the last closed candle, like MT5 OnInit) and it would never trade.
+    if (!bot.is_running) syncBotToSelection({}, {announce: false, retry: false});
 
     document.getElementById("bot-atr-status").textContent = `ATR(${bot.atr_period || 14}): ${Number(bot.current_atr || 0).toFixed(5)} · ER: ${Number(bot.current_er || 0).toFixed(2)} · ${bot.use_atr_filter ? (bot.pending_confirmation ? 'Onay bekleniyor' : 'Filtre açık') : 'Filtre kapalı'} · ${bot.risk_mode === 'ATR' ? 'ATR stop/hedef' : 'Sabit puan stop/hedef'}`;
     const lastSigEl = document.getElementById("bot-last-signal");
