@@ -2800,7 +2800,7 @@ function renderBotProtection(bot) {
   const parts = [];
   if (bot.copy_manual_trades && copy?.available) {
     const lot = copy.applied_lot ?? copy.lot;
-    parts.push(`Lot/SL/TP: manuel kopya (${copy.since} sonrası ${copy.count} kârlı işlem) · ${lot} lot · SL ${copy.sl_points ?? `bot ${bot.sl_points}`} p · TP ${copy.tp_points ?? 'bot'} p${copy.capped ? ' · lot sınırda' : ''}`);
+    parts.push(`Lot/SL/TP: manuel kopya (${copy.since} sonrası ${copy.count} kârlı işlem) · ${lot} lot · SL ${copy.sl_points ?? `bot ${bot.sl_points}`} p · TP ${copy.tp_points ?? 'bot'} p${copy.capped ? ' · lot sınırda' : copy.demo_full_lot ? ' · demo: tam lot' : ''}`);
   } else if (bot.copy_manual_trades) {
     parts.push(`Lot: sabit ${bot.lot_size} (manuel kopya ${copy?.reason ? 'yok: ' + copy.reason : 'ilk sinyalde okunacak'})`);
   } else {
@@ -2938,7 +2938,7 @@ const botSettingInputs = {
   'cfg-sl-points': 'sl_points', 'cfg-tp-points': 'tp_points', 'cfg-copy-since': 'copy_manual_since',
 };
 const botSettingChecks = {'cfg-close-opp': 'close_opposite', 'cfg-use-sl': 'use_stop_loss', 'cfg-use-tp': 'use_take_profit',
-  'cfg-trend-entry': 'trend_entry_on_start', 'cfg-copy-manual': 'copy_manual_trades'};
+  'cfg-trend-entry': 'trend_entry_on_start', 'cfg-copy-manual': 'copy_manual_trades', 'cfg-auto-lot-demo': 'auto_lot_limits_demo'};
 // Automation lot limits (MAX_ORDER_LOTS / MAX_TOTAL_OPEN_LOTS / MAX_OPEN_ORDERS), editable from the panel.
 let loadedLotLimits = null;
 async function loadLotLimitsIntoForm() {
@@ -3029,6 +3029,8 @@ async function saveBotSettings() {
   if (trendEntry) cfg.trend_entry_on_start = Boolean(trendEntry.checked);
   const copyManual = document.getElementById('cfg-copy-manual');
   if (copyManual) cfg.copy_manual_trades = Boolean(copyManual.checked);
+  const autoLot = document.getElementById('cfg-auto-lot-demo');
+  if (autoLot) cfg.auto_lot_limits_demo = Boolean(autoLot.checked);
   const copySince = document.getElementById('cfg-copy-since')?.value;
   if (copySince) cfg.copy_manual_since = copySince;
   const limits = {

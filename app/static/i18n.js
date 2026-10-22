@@ -31,6 +31,7 @@
     ["Dünyada yaygın kullanılan hareketli ortalama kesişimleri,", "Widely used moving-average crossovers,"],
     ["senin brokerının mumlarında", "on your broker's candles"],
     ["ve botun kurallarıyla (kapanmış mum, ters sinyalde kapat, botun SL/TP'si, spread) test edilir. Sıralama geçmiş sonuca göredir; gelecekteki kârı garanti etmez.", "tested with the bot's rules (closed candle, close on reverse signal, the bot's SL/TP, spread). Ranked by past result; it does not guarantee future profit."],
+    ["Demo hesapta kopya lotun tamamını aç (lot sınırı bot emirleri için otomatik yükselir; gerçek hesapta uygulanmaz)", "On a demo account open the full copied lot (the lot limit is raised for bot orders only; never on a real account)"],
     ["Ters sinyalde mevcut pozisyonu kapat (InpCloseOpposite)", "Close the open position on the opposite signal (InpCloseOpposite)"],
     ["Başlarken mevcut trend yönünde hemen işlem aç", "Open the current trend side right away on start"],
     ["(MT5 EA'da yok: EA yeni kesişimi bekler)", "(not in the MT5 EA: the EA waits for a new crossover)"],

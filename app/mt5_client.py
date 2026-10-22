@@ -219,6 +219,7 @@ class MT5Client:
         self.max_order_lots = float(os.getenv("MAX_ORDER_LOTS", "0.10"))
         self.max_total_lots = float(os.getenv("MAX_TOTAL_OPEN_LOTS", "0.50"))
         self.max_open_orders = int(os.getenv("MAX_OPEN_ORDERS", "10"))
+        self.bot_lot_override = None   # DEMO only: (order, total) lots for HMA bot orders, see _limits_for
         # Panel-set overrides (admin, TOTP on real accounts) survive restarts; env values are the defaults.
         self.lot_limits_defaults = {'max_order_lots': self.max_order_lots, 'max_total_lots': self.max_total_lots,
                                     'max_open_orders': self.max_open_orders}
@@ -557,8 +558,8 @@ class MT5Client:
                 return self._bridge('trade_preview', symbol, order_type, volume, sl_points,
                                     pending_type, entry_price, login, server, self.tick_clock_offset,
                                     self.effective_daily_loss_limit(login, server),
-                                    self.journal.daily_limit_enabled(login, server) or magic == mt5_bridge.HMA_MAGIC, self.max_order_lots,
-                                    self.max_total_lots, self.max_open_orders, tp_points, self.max_trade_risk_pct,
+                                    self.journal.daily_limit_enabled(login, server) or magic == mt5_bridge.HMA_MAGIC,
+                                    *self._limits_for(magic), tp_points, self.max_trade_risk_pct,
                                     sl_price, tp_price, deviation_points, stoplimit_price, time_type, expiration, manual_mode, filling_policy,
                                     *((magic,) if magic is not None else ()))
             except (MT5DataError, Exception) as exc:
@@ -762,6 +763,16 @@ class MT5Client:
             merged['max_order_lots'], merged['max_total_lots'], merged['max_open_orders'])
         return merged
 
+    def _limits_for(self, magic):
+        """(max_order_lots, max_total_lots, max_open_orders) for one order. On a DEMO account only, the HMA
+        bot's manual-copy lot may raise the lot limits for its own orders (user decision 2026-10-23, not
+        persisted and never on a real account); every other order uses the saved panel limits."""
+        order, total, count = self.max_order_lots, self.max_total_lots, self.max_open_orders
+        override = getattr(self, 'bot_lot_override', None)
+        if override and magic == mt5_bridge.HMA_MAGIC and self.account_type == 'DEMO':
+            order, total = max(order, float(override[0])), max(total, float(override[1]))
+        return order, total, count
+
     def lot_limits(self):
         return {'max_order_lots': self.max_order_lots, 'max_total_lots': self.max_total_lots,
                 'max_open_orders': self.max_open_orders}
@@ -908,7 +919,7 @@ class MT5Client:
                 res = self.journal.run(request_id, payload, lambda: self._bridge(
                     "open_deal", payload["symbol"], payload["order_type"], volume, sl_points, tp_points,
                     tag, magic, daily_loss_limit, account_scope[0], account_scope[1], 10, pending_type, entry_price,
-                    self.max_order_lots, self.max_total_lots, self.max_open_orders, self.tick_clock_offset,
+                    *self._limits_for(magic), self.tick_clock_offset,
                     self.ai_max_trade_risk_pct, enforce_daily_limit, self.max_trade_risk_pct,
                     sl_price, tp_price, deviation_points, stoplimit_price, time_type, expiration, manual_mode, filling_policy),
                     metadata=metadata, queue_ms=queue_ms)

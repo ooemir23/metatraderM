@@ -286,6 +286,7 @@ class BotConfigRequest(BaseModel):
     symbol: Optional[str] = None
     # User decisions 2026-10-23 (not EA inputs): trend entry on start, lot/SL/TP from profitable manual trades.
     trend_entry_on_start: Optional[bool] = None
+    auto_lot_limits_demo: Optional[bool] = None
     fast_ma_type: Optional[Literal["HMA", "EMA", "SMA", "LWMA"]] = None
     extra_timeframes: Optional[List[int]] = None
     copy_manual_trades: Optional[bool] = None
@@ -1598,7 +1599,13 @@ async def manual_copy_warnings():
     if not prof.get('available'):
         return [f"Manuel kopya kullanılamıyor: {prof.get('reason')} Bot kendi lot/SL/TP ayarını kullanır."]
     cap = mt5_client.max_order_lots
-    capped = f' (otomatik bot sınırı {cap:g} lot; sınırda açılır)' if cap and prof['lot'] > cap else ''
+    if bot.auto_lot_limits_demo and mt5_client.account_type == 'DEMO':
+        n = len(bot.instance_timeframes())
+        capped = (f' (demo hesap: lot sınırı bot emirleri için otomatik {prof["lot"]:g} lot, toplam {prof["lot"] * n + mt5_client.max_total_lots:g} lot yapıldı; '
+                  'kayıtlı sınırlar değişmedi, gerçek hesapta uygulanmaz)') if cap and prof['lot'] > cap else ''
+        mt5_client.bot_lot_override = (prof['lot'], prof['lot'] * n + mt5_client.max_total_lots)
+    else:
+        capped = f' (otomatik bot sınırı {cap:g} lot; sınırda açılır)' if cap and prof['lot'] > cap else ''
     return [f"Manuel kopya: {prof['since']} sonrası {prof['count']} kârlı {bot.symbol} pozisyonu → {prof['lot']:g} lot{capped}, "
             f"SL {str(prof['sl_points']) + ' p' if prof.get('sl_points') else f'bot ayarı ({bot.sl_points} p)' if bot.use_stop_loss else 'yok'}, "
             f"TP {str(prof['tp_points']) + ' p' if prof.get('tp_points') else f'bot ayarı ({bot.tp_points} p)' if bot.use_take_profit else 'yok'}."]

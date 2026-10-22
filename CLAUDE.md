@@ -80,3 +80,7 @@ Kullanıcı ikisini de MT5'ten farklı olduğunu bilerek seçti; varsayılan aç
 - Stratejiler (dünya) düğmesi: `app/strategy_presets.py` yaygın, yayımlanmış MA kesişimlerini (EMA 9×21, 12×26, 20×50,
   SMA 50×200 …) brokerın mumlarında botun kurallarıyla test eder (`/api/strategy-presets`) ve net sonuca göre sıralar.
   "Dünyanın en kârlısı" iddiası yoktur; doğrulanamaz. Seçilen ayar tarayıcıya yazılır, bot onu izler.
+- `auto_lot_limits_demo` (2026-10-23, kullanıcı: hesap demo, "en mantıklısını yap"): yalnız DEMO hesapta bot, manuel
+  kopya lotunun tamamını açar; `MT5Client._limits_for(HMA_MAGIC)` bot emirleri için tek emir sınırını kopya lota,
+  toplamı kopya lot × zaman dilimi sayısı + kayıtlı toplama çıkarır (`bot_lot_override`). Kayıtlı sınırlar değişmez;
+  diğer emirler ve gerçek hesap her zaman kayıtlı sınırları kullanır. Canlıya geçişte sınırlar kullanıcıyla belirlenir.

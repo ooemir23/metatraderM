@@ -1324,6 +1324,7 @@
           <label class="flex items-center gap-2"><input type="checkbox" id="cfg-trend-entry" checked>Başlarken mevcut trend yönünde hemen işlem aç <span class="text-amber-300 text-xs">(MT5 EA'da yok: EA yeni kesişimi bekler)</span></label>
           <label class="flex items-center gap-2"><input type="checkbox" id="cfg-copy-manual" checked>Lot ve SL/TP'yi kârlı manuel MT5 işlemlerinden al <span class="text-amber-300 text-xs">(MT5 EA'da yok)</span></label>
           <label class="block">Manuel işlemler şu tarihten itibaren<input type="date" id="cfg-copy-since" value="2026-10-08" class="block w-full rounded bg-gray-800 p-2"></label>
+          <label class="flex items-center gap-2"><input type="checkbox" id="cfg-auto-lot-demo" checked>Demo hesapta kopya lotun tamamını aç (lot sınırı bot emirleri için otomatik yükselir; gerçek hesapta uygulanmaz)</label>
           <div class="grid grid-cols-3 gap-2">
             <label>Tek emir üst limiti (InpMaxOrderLots)<input id="cfg-max-order-lots" type="number" min="0.01" max="100" step="0.01" class="block w-full rounded bg-gray-800 p-2"></label>
             <label>Toplam lot (InpMaxTotalLots)<input id="cfg-max-total-lots" type="number" min="0.01" max="1000" step="0.01" class="block w-full rounded bg-gray-800 p-2"></label>

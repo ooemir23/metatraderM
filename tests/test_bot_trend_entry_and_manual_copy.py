@@ -110,6 +110,7 @@ def test_profile_uses_recorded_sl_tp_and_needs_enough_trades():
 def test_bot_order_uses_copied_lot_sl_tp_and_respects_lot_cap():
     rows, client, bot, fast, slow = trend_run()
     bot.copy_manual_trades = True
+    bot.auto_lot_limits_demo = False      # saved limits apply (always so on a real account)
     client.max_order_lots = 3.0
     client.manual_copy_profile = lambda sym, since: {'available': True, 'symbol': sym, 'since': since, 'count': 9,
         'decisions': 4, 'lot': 5.0, 'sl_points': 1300, 'tp_points': 700, 'sl_source': 'manual_sl', 'tp_source': 'manual_exit'}
@@ -128,3 +129,30 @@ def test_bot_falls_back_to_its_settings_without_manual_profile():
     bot._check_strategy_once()
     assert client.opened[0]['lot'] == 1.0
     assert bot.manual_copy == {'available': False, 'reason': 'az işlem'}
+
+
+def test_demo_account_opens_full_copied_lot_without_changing_saved_limits():
+    rows, client, bot, fast, slow = trend_run()
+    bot.copy_manual_trades = bot.auto_lot_limits_demo = True
+    bot.extra_timeframes = [240]
+    client.max_order_lots, client.max_total_lots = 2.0, 2.0
+    client.manual_copy_profile = lambda sym, since: {'available': True, 'symbol': sym, 'since': since, 'count': 152,
+        'decisions': 40, 'lot': 22.5, 'sl_points': None, 'tp_points': 289}
+    client.now = 450
+    bot._check_strategy_for_symbol('XAUUSD', tf=60)
+    assert client.opened[0]['lot'] == 22.5
+    assert client.bot_lot_override == (22.5, 22.5 * 2 + 2.0)       # one copied lot per timeframe + saved total
+    assert (client.max_order_lots, client.max_total_lots) == (2.0, 2.0)
+    assert bot.manual_copy['demo_full_lot'] and not bot.manual_copy['capped']
+
+
+def test_lot_override_only_for_demo_bot_orders():
+    from app.mt5_client import MT5Client
+    from app.mt5_bridge import MANUAL_MAGIC
+    c = object.__new__(MT5Client)
+    c.max_order_lots, c.max_total_lots, c.max_open_orders = 2.0, 2.0, 10
+    c.bot_lot_override, c.account_type = (22.5, 47.0), 'DEMO'
+    assert c._limits_for(HMA_MAGIC) == (22.5, 47.0, 10)
+    assert c._limits_for(MANUAL_MAGIC) == (2.0, 2.0, 10)        # manual/other orders keep the saved limits
+    c.account_type = 'REAL'
+    assert c._limits_for(HMA_MAGIC) == (2.0, 2.0, 10)          # never on a real account

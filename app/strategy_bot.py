@@ -84,6 +84,8 @@ class StrategyBot:
         self.extra_timeframes: List[int] = []
         self.copy_manual_trades = True
         self.copy_manual_since = "2026-10-08"
+        # DEMO only: open the full copied lot (the lot limits are raised for the bot's own orders, not saved).
+        self.auto_lot_limits_demo = True
         self.manual_copy: Optional[Dict[str, Any]] = None
         # Position sizing: FIXED = lot_size; RISK = risk_pct of equity lost at the stop.
         self.lot_mode = "FIXED"
@@ -297,7 +299,7 @@ class StrategyBot:
                 'er_min','confirmation_bars','min_distance_atr','risk_mode','atr_stop_multiplier',
                 'atr_target_multiplier','lot_size','use_stop_loss','sl_points','use_take_profit','tp_points','close_opposite',
                 'lot_mode','risk_pct','max_consecutive_losses','trade_hours_enabled','trade_start','trade_end',
-                'trade_utc_offset_min','trade_days','blocked_windows','trend_entry_on_start','copy_manual_trades','copy_manual_since','extra_timeframes')
+                'trade_utc_offset_min','trade_days','blocked_windows','trend_entry_on_start','copy_manual_trades','copy_manual_since','extra_timeframes','auto_lot_limits_demo')
         with self._state_lock:
             snap = {key: (list(getattr(self, key)) if isinstance(getattr(self, key), list) else getattr(self, key)) for key in keys}
             snap['symbols'] = list(getattr(self, 'symbols', [self.symbol]))
@@ -556,7 +558,7 @@ class StrategyBot:
             except ValueError as exc:
                 raise ValueError('Geçersiz bot ayarı: copy_manual_since (YYYY-AA-GG)') from exc
             for key in ('use_stop_loss', 'use_take_profit', 'close_opposite', 'use_atr_filter', 'use_h4_filter', 'single_position',
-                        'trend_entry_on_start', 'copy_manual_trades'):
+                        'trend_entry_on_start', 'copy_manual_trades', 'auto_lot_limits_demo'):
                 if not isinstance(candidate[key], bool):
                     raise ValueError(f'Geçersiz bot ayarı: {key}')
             for key, low, high, inclusive in (('lot_size', 0, None, False), ('er_min', 0, 1, True),
@@ -657,6 +659,8 @@ class StrategyBot:
             "extra_timeframes": list(self.extra_timeframes),
             "instance_timeframes": self.instance_timeframes(),
             "copy_manual_trades": self.copy_manual_trades,
+            "auto_lot_limits_demo": self.auto_lot_limits_demo,
+            "bot_lot_override": (lambda o: list(o) if isinstance(o, (list, tuple)) else None)(getattr(self.mt5, 'bot_lot_override', None)),
             "copy_manual_since": self.copy_manual_since,
             "manual_copy": dict(self.manual_copy) if isinstance(self.manual_copy, dict) else None,
             **{key: (list(getattr(self, key)) if isinstance(getattr(self, key), list) else getattr(self, key)) for key in (
@@ -1291,14 +1295,24 @@ class StrategyBot:
         lot = float(prof['lot'])
         cap = getattr(self.mt5, 'max_order_lots', None)
         capped = ''
-        if isinstance(cap, (int, float)) and not isinstance(cap, bool) and math.isfinite(cap) and 0 < cap < lot:
+        demo_full = bool(self.auto_lot_limits_demo) and getattr(self.mt5, 'account_type', None) == 'DEMO'
+        base_total = getattr(self.mt5, 'max_total_lots', None)
+        if demo_full and isinstance(base_total, (int, float)) and not isinstance(base_total, bool):
+            # Room for one copied lot per timeframe instance on top of the saved total (other positions).
+            self.mt5.bot_lot_override = (lot, lot * len(self.instance_timeframes()) + float(base_total))
+        else:
+            demo_full = False
+            if getattr(self.mt5, 'bot_lot_override', None) is not None:
+                self.mt5.bot_lot_override = None
+        if not demo_full and isinstance(cap, (int, float)) and not isinstance(cap, bool) and math.isfinite(cap) and 0 < cap < lot:
             capped = f' (manuel {lot:g} lot, otomatik bot sınırı {cap:g} lot)'
             lot = float(cap)
         if prof.get('sl_points') and (self.use_stop_loss or sl):
             sl = int(prof['sl_points'])
         if prof.get('tp_points'):
             tp = int(prof['tp_points'])
-        self.manual_copy = {**prof, 'applied_lot': lot, 'applied_sl': sl, 'applied_tp': tp, 'capped': bool(capped)}
+        self.manual_copy = {**prof, 'applied_lot': lot, 'applied_sl': sl, 'applied_tp': tp, 'capped': bool(capped),
+                            'demo_full_lot': demo_full}
         note = (f"manuel kopya ({prof['count']} kârlı pozisyon, {prof['since']} sonrası): {lot:g} lot{capped}, "
                 f"SL {sl or 'yok'} p, TP {tp or 'yok'} p")
         if capped:
