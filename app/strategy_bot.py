@@ -24,6 +24,7 @@ logger = logging.getLogger("StrategyBot")
 logger.setLevel(logging.INFO)
 
 BOT_TIMEFRAMES = (1, 5, 15, 30, 60, 240, 1440)
+MANUAL_STYLE_TIMEFRAMES = (1, 5, 15, 30, 60, 240)
 _TF_CODES = {1: 'M1', 5: 'M5', 15: 'M15', 30: 'M30', 60: 'H1', 240: 'H4', 1440: 'D1'}
 _TF_FROM_CODE = {v: k for k, v in _TF_CODES.items()}
 _COMMENT_TF = re.compile(r'^HMA Bot (M1|M5|M15|M30|H1|H4|D1)\b')
@@ -86,6 +87,11 @@ class StrategyBot:
         self.copy_manual_since = "2026-10-08"
         # DEMO only: open the full copied lot (the lot limits are raised for the bot's own orders, not saved).
         self.auto_lot_limits_demo = True
+        # Entry rule: CROSSOVER (HMA_Crossover_EA) or MANUAL_STYLE (signals learned from the hand-opened MT5
+        # trades, app.manual_style; the "Manuel işlemlerim" choice in the Strategies dialog, 2026-10-23).
+        self.entry_mode = "CROSSOVER"
+        self.manual_style_provider = None      # set by app.main: (symbol, tf) -> manual_style.analyze result
+        self._ms_prev: Dict[str, Optional[str]] = {}
         self.manual_copy: Optional[Dict[str, Any]] = None
         # Position sizing: FIXED = lot_size; RISK = risk_pct of equity lost at the stop.
         self.lot_mode = "FIXED"
@@ -299,7 +305,7 @@ class StrategyBot:
                 'er_min','confirmation_bars','min_distance_atr','risk_mode','atr_stop_multiplier',
                 'atr_target_multiplier','lot_size','use_stop_loss','sl_points','use_take_profit','tp_points','close_opposite',
                 'lot_mode','risk_pct','max_consecutive_losses','trade_hours_enabled','trade_start','trade_end',
-                'trade_utc_offset_min','trade_days','blocked_windows','trend_entry_on_start','copy_manual_trades','copy_manual_since','extra_timeframes','auto_lot_limits_demo')
+                'trade_utc_offset_min','trade_days','blocked_windows','trend_entry_on_start','copy_manual_trades','copy_manual_since','extra_timeframes','auto_lot_limits_demo','entry_mode')
         with self._state_lock:
             snap = {key: (list(getattr(self, key)) if isinstance(getattr(self, key), list) else getattr(self, key)) for key in keys}
             snap['symbols'] = list(getattr(self, 'symbols', [self.symbol]))
@@ -408,7 +414,7 @@ class StrategyBot:
             return [sym]
 
     # Settings a running bot may change: the chart it is attached to and the EA crossover inputs.
-    LIVE_KEYS = ('symbol', 'symbols', 'timeframe_minutes', 'fast_ma_type', 'hma_period', 'second_ma_type', 'second_ma_period', 'extra_timeframes')
+    LIVE_KEYS = ('symbol', 'symbols', 'timeframe_minutes', 'entry_mode', 'fast_ma_type', 'hma_period', 'second_ma_type', 'second_ma_period', 'extra_timeframes')
 
     def reinit_live(self, data: Dict[str, Any], expected_config=None, timeout: float = 30.0) -> Dict[str, Any]:
         """Running bot follows the panel selection, like an MT5 EA: a chart symbol/period change
@@ -451,6 +457,7 @@ class StrategyBot:
                 self.last_candle_time, self.last_candle_times = 0, {}
                 self._candidate, self._candidates = None, {}
                 self._trend_pending = {}
+                self._ms_prev = {}
                 self.symbol_status = {}
                 self.current_hma = self.current_ma2 = 0.0
                 self.current_atr = self.current_er = 0.0
@@ -511,6 +518,11 @@ class StrategyBot:
             if not isinstance(data, dict) or set(data) - set(candidate):
                 raise ValueError('Bilinmeyen bot ayarı.')
             candidate.update(data)
+            if candidate.get('entry_mode') not in ('CROSSOVER', 'MANUAL_STYLE'):
+                raise ValueError('Geçersiz bot ayarı: entry_mode')
+            if candidate['entry_mode'] == 'MANUAL_STYLE' and any(t not in MANUAL_STYLE_TIMEFRAMES for t in
+                    [candidate['timeframe_minutes'], *(candidate.get('extra_timeframes') or [])]):
+                raise ValueError('Manuel işlem stili M1, M5, M15, M30, H1 ve H4 zaman dilimlerinde çalışır.')
             if candidate.get('fast_ma_type') not in ('HMA', 'EMA', 'SMA', 'LWMA'):
                 raise ValueError('Geçersiz bot ayarı: fast_ma_type')
             for key in ('symbol', 'second_ma_type', 'risk_mode'):
@@ -643,6 +655,7 @@ class StrategyBot:
             "timeframe_minutes": self.timeframe_minutes,
             "hma_period": self.hma_period,
             "fast_ma_type": self.fast_ma_type,
+            "entry_mode": self.entry_mode,
             "second_ma_type": self.second_ma_type,
             "second_ma_period": self.second_ma_period,
             "lot_size": self.lot_size,
@@ -999,7 +1012,9 @@ class StrategyBot:
             self.last_candle_times[key] = latest_closed_candle_time
             if primary:
                 self.last_candle_time = latest_closed_candle_time
-            if self.trend_entry_on_start and trend_way and not self.use_atr_filter:
+            if self.entry_mode == 'MANUAL_STYLE':
+                start_trend = 0   # the manual-style signal of this candle decides below (an active one opens at start)
+            elif self.trend_entry_on_start and trend_way and not self.use_atr_filter:
                 # Kept until the trend position is opened (or one already is): a rejected first try (market
                 # closed, broker reject) is retried on the next closed candle while no new crossover appears.
                 self._trend_pending[key] = True
@@ -1016,7 +1031,7 @@ class StrategyBot:
                     self.runtime_state, self.runtime_detail = 'WAITING_SIGNAL', 'Yeni kapanmış mumdaki sinyal bekleniyor.'
                 return
 
-        if not start_trend and latest_closed_candle_time <= last_t:
+        if not start_trend and latest_closed_candle_time <= last_t and not (self.entry_mode == 'MANUAL_STYLE' and not last_t):
             return
 
         study = None
@@ -1057,6 +1072,14 @@ class StrategyBot:
 
         self.last_candle_times[key] = latest_closed_candle_time
         cross = 1 if hma2 <= ma2_2 and hma1 > ma2_1 else -1 if hma2 >= ma2_2 and hma1 < ma2_1 else 0
+        if self.entry_mode == 'MANUAL_STYLE':
+            cross = self._manual_style_cross(sym, tf, key, latest_closed_candle_time, status)
+            if cross is None:
+                return
+            start_trend = 0
+            self._trend_pending.pop(key, None)
+            if not cross:
+                return
         if cross:
             self._trend_pending.pop(key, None)
         elif self._trend_pending.get(key) and self.trend_entry_on_start:
@@ -1276,6 +1299,52 @@ class StrategyBot:
         return (er[-1] is not None and kama[-1] is not None and kama[-2] is not None
                 and er[-1] >= self.er_min and side*(kama[-1]-kama[-2]) > 0)
 
+    def _ms_retry(self, key, candle_time):
+        """Evaluate this closed candle again on the next loop (marker just below it, not a re-init)."""
+        self.last_candle_times[key] = int(candle_time) - 1
+        if '@' not in key and self.last_candle_time == candle_time:
+            self.last_candle_time = int(candle_time) - 1
+
+    def _manual_style_cross(self, sym, tf, key, candle_time, status):
+        """1 / -1 when the manual-style signal (app.manual_style, the same result as the 'Manuel Stil Sinyali'
+        card) turns to BUY / SELL on this closed candle, like a new crossover arrow; 0 when it holds;
+        None when it cannot be evaluated (status says why). One signal per setup: the same side again only
+        after the signal went back to HOLD."""
+        provider = self.manual_style_provider
+        if provider is None:
+            self._ms_retry(key, candle_time)
+            status('WAITING_DATA', 'Manuel işlem stili hesaplanamıyor (servis hazır değil).', candle_time=candle_time)
+            return None
+        try:
+            result = provider(sym, tf, candle_time)
+        except Exception as exc:
+            status('WAITING_DATA', f'Manuel işlem stili hesaplanamadı: {exc}', candle_time=candle_time)
+            self._ms_retry(key, candle_time)
+            return None
+        sig = (result or {}).get('signal')
+        if not sig:
+            status('WAITING_DATA', (result or {}).get('message') or 'Manuel işlem stili için yeterli karar yok.', candle_time=candle_time)
+            return None
+        if int(sig.get('candle_time') or 0) != int(candle_time):
+            status('WAITING_DATA', 'Manuel işlem stili son kapanmış mumu henüz değerlendirmedi; tekrar denenecek.', candle_time=candle_time)
+            self._ms_retry(key, candle_time)
+            return None
+        side = sig.get('side') if sig.get('side') in ('BUY', 'SELL') else None
+        prev = self._ms_prev.get(key)
+        self._ms_prev[key] = side
+        tag = ' (deneysel)' if sig.get('experimental') else ''
+        if not side:
+            status('WAITING_CROSS', f"Manuel stil{tag}: sinyal yok (bekle). Benzer durumda manuel işlemlerinin skoru "
+                   f"{sig.get('score', 0):.2f}; senin tarzına benzeyen bir AL/SAT kurulumu bekleniyor.", candle_time=candle_time)
+            return 0
+        if side == prev:
+            status('WAITING_CROSS', f"Manuel stil{tag}: {'AL' if side == 'BUY' else 'SAT'} kurulumu sürüyor; aynı kurulumda yeni işlem açılmaz.",
+                   candle_time=candle_time)
+            return 0
+        self.log(f"🧠 [{sym} {tf_code(tf)}] Manuel stil{tag} {'AL' if side == 'BUY' else 'SAT'} sinyali "
+                 f"(skor {sig.get('score', 0):.2f}, benzer kârlı oran {sig.get('win_share', 0):.0%}).", 'SIGNAL')
+        return 1 if side == 'BUY' else -1
+
     def copied_order_settings(self, sym, sl, tp):
         """(lot or None, sl, tp, note): lot / SL / TP of the profitable hand-opened MT5 positions
         (app.manual_copy). Falls back to the bot settings when there is no usable profile."""
@@ -1467,6 +1536,7 @@ class StrategyBot:
                 self.last_candle_times = {}
                 self._candidates = {}
                 self._trend_pending = {}
+                self._ms_prev = {}
                 self.started_at = int(time.time())
                 self.symbol_status = {}
                 self._loss_check_at = 0.0

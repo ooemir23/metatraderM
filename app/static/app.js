@@ -2806,7 +2806,8 @@ function renderBotProtection(bot) {
   } else {
     parts.push(bot.lot_mode === 'RISK' ? `Lot: özsermayenin %${bot.risk_pct} riski` : `Lot: sabit ${bot.lot_size}`);
   }
-  if (bot.trend_entry_on_start) parts.push('Başlarken trend yönünde girer');
+  if (bot.entry_mode === 'MANUAL_STYLE') parts.unshift('Giriş: manuel işlemlerinden öğrenilen sinyal');
+  else if (bot.trend_entry_on_start) parts.push('Başlarken trend yönünde girer');
   if (bot.max_consecutive_losses) parts.push(`${bot.max_consecutive_losses} kayıpta dur`);
   if (bot.trade_hours_enabled) parts.push(`Saat ${bot.trade_start}–${bot.trade_end}`);
   if (Array.isArray(bot.trade_days) && bot.trade_days.length < 7) parts.push(`${bot.trade_days.length} gün`);

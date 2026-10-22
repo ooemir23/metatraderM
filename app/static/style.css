@@ -1172,3 +1172,6 @@ html[data-buy-scheme="green"] .mt5-menu-buy { background:#1f9d6a; }
 .sp-warn { color:#fbbf24; }
 .sp-current { font-size:11px; padding:1px 6px; border-radius:999px; background:#1d4ed8; color:#fff; margin-left:6px; }
 @media (max-width: 560px) { .sp-row { grid-template-columns:1fr; } .sp-rank { display:none; } }
+.sp-manual-wrap { margin-bottom:14px; }
+.sp-manual { border-color:#7c3aed66 !important; background:#1a1726; }
+.sp-subhead { font-size:13px; font-weight:700; color:#e5e7eb; margin:4px 0 6px; }

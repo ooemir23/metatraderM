@@ -15,7 +15,83 @@
   const pts = (v) => (v == null ? '—' : `${v > 0 ? '+' : ''}${Number(v).toLocaleString('tr-TR', {maximumFractionDigits: 1})} p`);
   const date = (t) => new Date(Number(t) * 1000).toISOString().slice(0, 16).replace('T', ' ');
 
+  async function setEntryMode(mode) {
+    const bot = (typeof latestBotSettings !== 'undefined' && latestBotSettings) || {};
+    if (bot.entry_mode === mode) return true;
+    const res = await fetch('/api/bot/follow', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({entry_mode: mode})});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Bot giriş kuralı değiştirilemedi.');
+    if (data && data.symbol && typeof latestBotSettings !== 'undefined') latestBotSettings = data;
+    return true;
+  }
+  const botMode = () => ((typeof latestBotSettings !== 'undefined' && latestBotSettings) || {}).entry_mode || 'CROSSOVER';
+
+  // Top card: the bot enters on the signal learned from the hand-opened MT5 trades (Manuel Stil Sinyali).
+  let manual = null;
+  async function loadManual(force = false) {
+    const node = $('sp-manual');
+    if (!node) return;
+    const {symbol, tf} = context();
+    if (![1, 5, 15, 30, 60, 240].includes(tf)) {
+      node.innerHTML = manualCard(null, `Manuel işlem stili ${esc(TF[tf] || tf)} zaman diliminde çalışmaz; M1–H4 seçin.`);
+      return;
+    }
+    if (!force && manual && manual.symbol === symbol && manual.timeframe_minutes === tf) { node.innerHTML = manualCard(manual); return; }
+    node.innerHTML = manualCard(null, 'Manuel işlemlerin inceleniyor…');
+    try {
+      const res = await fetch(`/api/manual-style?${new URLSearchParams({symbol, timeframe_minutes: String(tf)})}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Manuel işlemler okunamadı.');
+      manual = data;
+      node.innerHTML = manualCard(data);
+    } catch (err) {
+      node.innerHTML = manualCard(null, '❌ ' + esc(err.message));
+    }
+  }
+  function manualCard(data, message = '') {
+    const bot = (typeof latestBotSettings !== 'undefined' && latestBotSettings) || {};
+    const current = botMode() === 'MANUAL_STYLE';
+    const copy = bot.copy_manual_trades && bot.manual_copy?.available ? bot.manual_copy : null;
+    let body = message ? `<div class="sp-note">${message}</div>` : '';
+    let usable = false;
+    if (data) {
+      const ht = data.history_test || {};
+      const sig = ht.signals || {}, base = ht.baseline || {};
+      const pct = (v) => (v == null ? '—' : `%${Math.round(v * 100)}`);
+      usable = data.status === 'OK';
+      body = `<div class="sp-note">${esc(data.symbol)} ${esc(TF[data.timeframe_minutes] || '')}: ${data.decisions} manuel karar (${data.wins} kârlı) öğrenildi.
+        Bot, senin tarzına benzeyen kurulum çıktığında girer; lot ve SL/TP ${copy ? `kârlı manuel işlemlerinden (${copy.applied_lot ?? copy.lot} lot)` : 'bot ayarından'} gelir.</div>
+        <div class="sp-stats">
+          ${usable ? `<span>Geçmiş test: ${sig.count ?? 0} sinyal · isabet ${pct(sig.hit_rate)} (her mumda girmek ${pct(base.hit_rate)})</span>` : ''}
+          <span class="${data.verdict?.reliable ? 'good' : 'sp-warn'}">${esc(data.verdict?.reason || data.message || '')}</span>
+          ${data.signal ? `<span>Şu an: ${data.signal.side === 'HOLD' ? 'bekle' : data.signal.side === 'BUY' ? 'AL' : 'SAT'}</span>` : ''}
+        </div>`;
+    }
+    return `<div class="sp-row sp-manual" data-tone="${current ? 'good' : 'idle'}">
+      <div class="sp-rank">🧠</div>
+      <div class="sp-main">
+        <div class="sp-name">Manuel işlemlerim (orijinal MT5)${current ? ' <span class="sp-current">şu an kullanılıyor</span>' : ''}
+          ${data && !data.verdict?.reliable ? ' <span class="sp-warn">deneysel</span>' : ''}</div>
+        ${body}
+      </div>
+      <button type="button" class="signal-btn-primary" ${current || (data && !usable) ? 'disabled' : ''} onclick="StrategyPresets.applyManual()">${current ? 'Seçili' : 'Bunu kullan'}</button>
+    </div>`;
+  }
+  async function applyManual() {
+    try {
+      await setEntryMode('MANUAL_STYLE');
+      if (typeof showToast === 'function') showToast('🧠 Bot artık manuel işlemlerinden öğrenilen sinyalle giriyor; lot ve SL/TP kârlı manuel işlemlerinden.' +
+        (latestBotSettings?.is_running ? ' Bot çalışırken geçti; açık pozisyonlar kalır.' : ''), 'success');
+    } catch (err) {
+      if (typeof showToast === 'function') showToast('❌ ' + err.message, 'error');
+    }
+    if (typeof fetchBotStatus === 'function') fetchBotStatus();
+    loadManual(false);
+    if (last) render(last);
+  }
+
   function isCurrent(p) {
+    if (botMode() !== 'CROSSOVER') return false;
     const s = window.HMASignalSettings?.get?.() || {};
     return (s.fast_type || 'HMA') === p.fast_type && Number(s.hma_period) === p.fast && s.ma_type === p.slow_type && Number(s.ema_period) === p.slow;
   }
@@ -63,6 +139,7 @@
     if ($('sp-list')) $('sp-list').innerHTML = '';
     try {
       const q = new URLSearchParams({symbol, timeframe_minutes: String(tf), candles: String(candles), commission_points: String(commission)});
+      if (force) loadManual(true);
       const res = await fetch(`/api/strategy-presets?${q}`, controller ? {signal: controller.signal} : undefined);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Stratejiler test edilemedi.');
@@ -81,7 +158,8 @@
     if (!p) return false;
     const changed = window.HMASignalSettings?.setPeriods?.({fast_type: p.fast_type, hma_period: p.fast, ma_type: p.slow_type, ema_period: p.slow});
     let ok = true;
-    if (typeof syncBotToSelection === 'function') ok = await syncBotToSelection({}, {announce: false});
+    try { await setEntryMode('CROSSOVER'); } catch (err) { ok = false; if (typeof showToast === 'function') showToast('❌ ' + err.message, 'error'); }
+    if (ok && typeof syncBotToSelection === 'function') ok = await syncBotToSelection({}, {announce: false});
     if (typeof showToast === 'function') {
       showToast(ok ? `🌐 ${p.name} seçildi: tarayıcı, grafik ve bot bu kesişimi kullanıyor.${latestBotSettings?.is_running ? ' Bot çalışırken geçti; açık pozisyonlar kalır.' : ''}`
         : `⚠️ ${p.name} tarayıcıya uygulandı ama bot geçemedi; sebebi bot kartında.`, ok ? 'success' : 'warning');
@@ -95,9 +173,10 @@
     const dialog = $('strategy-presets-dialog');
     if (!dialog) return;
     if (!dialog.open) dialog.showModal?.();
+    loadManual(false);
     load(false);
   }
   function close() { $('strategy-presets-dialog')?.close?.(); }
 
-  window.StrategyPresets = {open, close, load, apply, render};
+  window.StrategyPresets = {open, close, load, apply, render, applyManual, loadManual};
 })();

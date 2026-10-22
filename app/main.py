@@ -286,6 +286,7 @@ class BotConfigRequest(BaseModel):
     symbol: Optional[str] = None
     # User decisions 2026-10-23 (not EA inputs): trend entry on start, lot/SL/TP from profitable manual trades.
     trend_entry_on_start: Optional[bool] = None
+    entry_mode: Optional[Literal["CROSSOVER", "MANUAL_STYLE"]] = None
     auto_lot_limits_demo: Optional[bool] = None
     fast_ma_type: Optional[Literal["HMA", "EMA", "SMA", "LWMA"]] = None
     extra_timeframes: Optional[List[int]] = None
@@ -780,6 +781,29 @@ async def manual_style_signal(symbol: str = Query(default='XAUUSD', pattern=r'^[
     _MANUAL_STYLE_CACHE.clear() if len(_MANUAL_STYLE_CACHE) > 32 else None
     _MANUAL_STYLE_CACHE[key] = (time.monotonic(), result)
     return result
+
+
+def bot_manual_style(symbol, timeframe_minutes, candle_time, days=90):
+    """Manual-style result for the bot (same analysis and cache as the card); recomputed once its live signal
+    is older than the bot's last closed candle."""
+    key = (mt5_client.login_id, mt5_client.server, symbol, timeframe_minutes, days)
+    hit = _MANUAL_STYLE_CACHE.get(key)
+    if hit and ((hit[1].get('signal') or {}).get('candle_time') == candle_time or
+                (hit[1].get('status') == 'NOT_ENOUGH' and time.monotonic() - hit[0] < MANUAL_STYLE_TTL)):
+        return hit[1]
+    if not manual_style_guard.acquire(timeout=120):
+        raise RuntimeError('manuel stil analizi meşgul')
+    try:
+        result = _manual_style_sync(symbol, timeframe_minutes, days)
+    except HTTPException as exc:
+        raise RuntimeError(str(exc.detail)) from exc
+    finally:
+        manual_style_guard.release()
+    _MANUAL_STYLE_CACHE[key] = (time.monotonic(), result)
+    return result
+
+
+bot.manual_style_provider = bot_manual_style
 
 
 @app.get('/api/research/history')
@@ -1662,6 +1686,7 @@ class BotFollowRequest(BaseModel):
     second_ma_type: Optional[Literal["EMA", "SMA", "LWMA", "HMA"]] = None
     second_ma_period: Optional[int] = Field(default=None, ge=2, le=1000)
     fast_ma_type: Optional[Literal["HMA", "EMA", "SMA", "LWMA"]] = None
+    entry_mode: Optional[Literal["CROSSOVER", "MANUAL_STYLE"]] = None
     # More EA instances on other timeframes (MT5: the same EA attached to more charts of the symbol).
     extra_timeframes: Optional[List[Literal[1, 5, 15, 30, 60, 240, 1440]]] = Field(default=None, max_length=6)
 

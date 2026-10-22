@@ -84,3 +84,9 @@ Kullanıcı ikisini de MT5'ten farklı olduğunu bilerek seçti; varsayılan aç
   kopya lotunun tamamını açar; `MT5Client._limits_for(HMA_MAGIC)` bot emirleri için tek emir sınırını kopya lota,
   toplamı kopya lot × zaman dilimi sayısı + kayıtlı toplama çıkarır (`bot_lot_override`). Kayıtlı sınırlar değişmez;
   diğer emirler ve gerçek hesap her zaman kayıtlı sınırları kullanır. Canlıya geçişte sınırlar kullanıcıyla belirlenir.
+- `entry_mode` (2026-10-23): `CROSSOVER` (EA kesişimi) ya da `MANUAL_STYLE`. Stratejiler penceresinin en üstündeki
+  "Manuel işlemlerim" kartı bunu seçer; yaygın kesişimlerden biri seçilince `CROSSOVER`a döner. MANUAL_STYLE'da bot,
+  `app/manual_style.py` canlı sinyali (kart ile aynı analiz ve önbellek, `main.bot_manual_style`) kapanmış mumda
+  AL/SAT'a döndüğünde girer (aynı kurulumda tekrar girmez, BEKLE'den sonra yeni kurulum), ters sinyalde kendi
+  pozisyonunu kapatır; lot/SL/TP manuel kopyadan. Analiz hesaplanamazsa aynı mum sonraki döngüde tekrar denenir.
+  M1–H4'te çalışır. Sinyal deneyseldir (geçmiş testte her mumdan anlamlı farkı yok); kartta bu yazılır.
