@@ -2717,6 +2717,46 @@ function brokerCandleText(candleTime, clockOffsetSeconds = 0) {
     : candle.toLocaleString('tr-TR', {timeZone: 'UTC', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
 }
 let lastRenderedBotStatus = null;
+// Timeframe chips: the chart timeframe is the bot timeframe; more chips attach the same EA to other charts
+// of the symbol (each one opens and closes only its own position), also while the bot runs.
+let botTimeframesSaving = false;
+function renderBotTimeframes(bot) {
+  const node = document.getElementById('bot-timeframes');
+  if (!node || !bot) return;
+  const extras = new Set((bot.extra_timeframes || []).map(Number));
+  const primary = Number(bot.timeframe_minutes);
+  node.innerHTML = '<span>Zaman dilimleri:</span>' + BOT_TIMEFRAMES.map(tf => {
+    const isPrimary = tf === primary;
+    const on = isPrimary || extras.has(tf);
+    return `<button type="button" data-tf="${tf}" aria-pressed="${on}" data-primary="${isPrimary}" ${botTimeframesSaving ? 'disabled' : ''}
+      title="${isPrimary ? 'Grafiğin zaman dilimi (bot bunu her zaman izler)' : on ? 'Bu zaman dilimini bottan çıkar' : 'Bu zaman diliminde de sinyal yakalayıp kendi pozisyonunu açsın'}"
+      onclick="toggleBotTimeframe(${tf})">${botTfCode(tf)}</button>`;
+  }).join('');
+}
+async function toggleBotTimeframe(tf) {
+  const bot = latestBotSettings;
+  tf = Number(tf);
+  if (!bot || botTimeframesSaving || tf === Number(bot.timeframe_minutes)) return;
+  const extras = new Set((bot.extra_timeframes || []).map(Number));
+  if (extras.has(tf)) extras.delete(tf); else extras.add(tf);
+  botTimeframesSaving = true;
+  renderBotTimeframes(bot);
+  try {
+    const res = await fetch('/api/bot/follow', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({extra_timeframes: [...extras].sort((a, b) => a - b)})});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Zaman dilimi güncellenemedi.');
+    latestBotSettings = data && data.symbol ? data : {...bot, extra_timeframes: [...extras]};
+    const list = (latestBotSettings.instance_timeframes || [bot.timeframe_minutes, ...extras]).map(botTfCode).join(', ');
+    showToast(`🧩 Bot zaman dilimleri: ${list}. Her biri kendi sinyalinde kendi pozisyonunu açar.`, 'success');
+  } catch (err) {
+    showToast(`❌ ${err.message}`, 'error');
+  } finally {
+    botTimeframesSaving = false;
+    renderBotSymbolStatus(latestBotSettings || bot);
+  }
+}
+
 function renderBotSymbolStatus(bot) {
   const node = document.getElementById('bot-symbol-status');
   if (!node || !bot) return;
@@ -2732,11 +2772,14 @@ function renderBotSymbolStatus(bot) {
     notes.push(bot.is_running
       ? `Bot ${tfCode(bot.timeframe_minutes)} ile çalışıyor, grafik ${tfCode(scanTf)} gösteriyor. Botu durdurup yeniden başlatınca grafikle eşitlenir.`
       : `Bot ${tfCode(bot.timeframe_minutes)}, grafik ${tfCode(scanTf)}; bot başlatılırken grafikle eşitlenir.`);
-  const rows = symbols.map(sym => {
-    const row = status[sym] || {};
+  renderBotTimeframes(bot);
+  const instances = Array.isArray(bot.instance_timeframes) && bot.instance_timeframes.length ? bot.instance_timeframes : [bot.timeframe_minutes];
+  const keys = symbols.flatMap(sym => instances.map(tf => [sym, Number(tf) === Number(bot.timeframe_minutes) ? sym : `${sym}@${tfCode(Number(tf))}`, Number(tf)]));
+  const rows = keys.map(([sym, key, tf]) => {
+    const row = status[key] || {timeframe_minutes: tf};
     const [label, tone] = BOT_STATE_LABELS[row.state] || (bot.is_running ? ['Kontrol ediliyor', 'idle'] : ['Bot durdu', 'idle']);
     const candleText = row.candle_time ? ` · son mum ${brokerCandleText(row.candle_time, bot.clock_offset_seconds)}` : '';
-    return `<div class="bot-symstat-row" data-tone="${tone}" data-bot-symbol="${escapeHtml(sym)}">
+    return `<div class="bot-symstat-row" data-tone="${tone}" data-bot-symbol="${escapeHtml(sym)}" data-bot-tf="${tf}">
       <span class="bot-symstat-sym">${escapeHtml(sym)} <small>${tfCode(row.timeframe_minutes || bot.timeframe_minutes)}${candleText}</small></span>
       <span class="bot-symstat-state">${label}</span>
       <span class="bot-symstat-detail">${escapeHtml(row.detail || (bot.is_running ? 'İlk kapanmış mum değerlendiriliyor…' : 'Botu başlatınca burada ne beklediği görünür.'))}</span>

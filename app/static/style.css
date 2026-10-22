@@ -1140,3 +1140,10 @@ html[data-buy-scheme="green"] .mt5-menu-buy { background:#1f9d6a; }
 /* EA-only bot form: two columns */
 #bot-settings-modal .bot-settings-columns { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap:12px; }
 #bot-settings-modal > div { max-width:960px; }
+
+/* Bot timeframe instances (one EA per chart timeframe) */
+.bot-tfs { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:0 0 10px; font-size:12px; color:#9aa4b2; }
+.bot-tfs button { padding:3px 9px; border-radius:999px; border:1px solid #2a3140; background:#14181f; color:#cbd5e1; font-weight:600; cursor:pointer; }
+.bot-tfs button[aria-pressed="true"] { background:#0e7490; border-color:#22d3ee; color:#fff; }
+.bot-tfs button[data-primary="true"] { cursor:default; background:#1d4ed8; border-color:#60a5fa; color:#fff; }
+.bot-tfs button:disabled { opacity:.6; }

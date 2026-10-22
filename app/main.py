@@ -286,6 +286,7 @@ class BotConfigRequest(BaseModel):
     symbol: Optional[str] = None
     # User decisions 2026-10-23 (not EA inputs): trend entry on start, lot/SL/TP from profitable manual trades.
     trend_entry_on_start: Optional[bool] = None
+    extra_timeframes: Optional[List[int]] = None
     copy_manual_trades: Optional[bool] = None
     copy_manual_since: Optional[str] = Field(default=None, pattern=r'^20\d\d-[01]\d-[0-3]\d$')
     symbols: Optional[Union[List[str], str]] = None
@@ -1589,6 +1590,8 @@ class BotFollowRequest(BaseModel):
     hma_period: Optional[int] = Field(default=None, ge=2, le=1000)
     second_ma_type: Optional[Literal["EMA", "SMA", "LWMA", "HMA"]] = None
     second_ma_period: Optional[int] = Field(default=None, ge=2, le=1000)
+    # More EA instances on other timeframes (MT5: the same EA attached to more charts of the symbol).
+    extra_timeframes: Optional[List[Literal[1, 5, 15, 30, 60, 240, 1440]]] = Field(default=None, max_length=6)
 
 
 @app.post("/api/bot/follow")

@@ -69,3 +69,8 @@ Kullanıcı ikisini de MT5'ten farklı olduğunu bilerek seçti; varsayılan aç
   yoksa botun SL ayarı. En az 3 kârlı pozisyon yoksa bot kendi ayarını kullanır. Otomatik bot lot sınırı aşılmaz
   (sınırda açılır ve loga yazılır). Giriş kuralı yine EA kesişimidir.
 - Çalışan bot yalnız bu paneldeki açık seçimle değişir; durum yenilemesi çalışan botu yeniden başlatmaz.
+- `extra_timeframes` (2026-10-23): aynı sembolde ek zaman dilimleri = MT5'te aynı EA'yı birden çok grafiğe takmak.
+  Her zaman dilimi ayrı örnek: kendi kesişiminde kendi pozisyonunu açar, ters sinyalde yalnız kendisininkini kapatır.
+  Sahiplik emir yorumundan (`HMA Bot M5 BUY`); etiketsiz eski bot pozisyonları ana zaman dilimine (grafik) aittir.
+  Durum anahtarı: ana dilim `SYM`, ek dilim `SYM@M5`. Bot kartındaki çiplerle çalışırken de eklenir/çıkarılır
+  (çalışan örnekler sıfırlanmaz). Lot ve açık işlem sınırları hesabın tamamına uygulanır.
