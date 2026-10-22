@@ -90,3 +90,5 @@ Kullanıcı ikisini de MT5'ten farklı olduğunu bilerek seçti; varsayılan aç
   AL/SAT'a döndüğünde girer (aynı kurulumda tekrar girmez, BEKLE'den sonra yeni kurulum), ters sinyalde kendi
   pozisyonunu kapatır; lot/SL/TP manuel kopyadan. Analiz hesaplanamazsa aynı mum sonraki döngüde tekrar denenir.
   M1–H4'te çalışır. Sinyal deneyseldir (geçmiş testte her mumdan anlamlı farkı yok); kartta bu yazılır.
+- Emir kimliği (`order_id`) her bot başlatma/yeniden başlatmada yeni bir çalışma numarası (`_run_nonce`) içerir; aynı
+  çalışmada aynı sinyal tek emirdir. Manuel kopya değerleri başlangıçta bilgi (`start_notes`) olarak gösterilir, uyarı değil.

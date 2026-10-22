@@ -1528,9 +1528,7 @@ async def toggle_bot(request: Request):
                     raise HTTPException(status_code=409, detail=str(exc)) from exc
                 bot.set_start_warnings(ready.get('warnings') or [])
             # Outside the MT5 lock: reading the manual history takes that lock in a worker thread.
-            notes = await manual_copy_warnings()
-            if notes:
-                bot.set_start_warnings(list(bot.start_warnings) + notes)
+            bot.set_start_notes(await manual_copy_warnings())
         return bot.get_status()
 
 @app.post("/api/bot/config")
@@ -1625,8 +1623,7 @@ async def manual_copy_warnings():
     cap = mt5_client.max_order_lots
     if bot.auto_lot_limits_demo and mt5_client.account_type == 'DEMO':
         n = len(bot.instance_timeframes())
-        capped = (f' (demo hesap: lot sınırı bot emirleri için otomatik {prof["lot"]:g} lot, toplam {prof["lot"] * n + mt5_client.max_total_lots:g} lot yapıldı; '
-                  'kayıtlı sınırlar değişmedi, gerçek hesapta uygulanmaz)') if cap and prof['lot'] > cap else ''
+        capped = (f' (demo: bot emirleri için tam lot açılır; kayıtlı ayarlar değişmedi, gerçek hesapta uygulanmaz)') if cap and prof['lot'] > cap else ''
         mt5_client.bot_lot_override = (prof['lot'], prof['lot'] * n + mt5_client.max_total_lots)
     else:
         capped = f' (otomatik bot sınırı {cap:g} lot; sınırda açılır)' if cap and prof['lot'] > cap else ''
@@ -1664,7 +1661,8 @@ async def follow_selection(data: Dict[str, Any], request: Request) -> Dict[str, 
                     if require_real_unlock(request) != account or ready.get('account') != account:
                         raise HTTPException(status_code=409, detail='Hazırlık kontrolü sırasında hesap değişti; bot ayarları değiştirilmedi.')
                 await asyncio.to_thread(bot.reinit_live, data, old_config)
-                bot.set_start_warnings((ready.get('warnings') or []) + await manual_copy_warnings())
+                bot.set_start_warnings(ready.get('warnings') or [])
+                bot.set_start_notes(await manual_copy_warnings())
             elif bot.task is not None and not bot.task.done():
                 raise HTTPException(status_code=409, detail='Önceki bot döngüsü bitiyor; tamamlanmasını bekleyin.')
             else:

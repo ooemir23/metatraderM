@@ -106,6 +106,8 @@ class StrategyBot:
         self.blocked_windows: List[str] = []     # "HH:MM-HH:MM" daily or "YYYY-MM-DD HH:MM-HH:MM"
         self.started_at = 0
         self.start_warnings: List[str] = []
+        self.start_notes: List[str] = []      # information at start (manual copy values), not problems
+        self._run_nonce = 0
         # Per-symbol "what is the bot waiting for / why no trade" (shown in the bot card).
         self.symbol_status: Dict[str, Dict[str, Any]] = {}
         self._loss_check_at = 0.0
@@ -458,6 +460,7 @@ class StrategyBot:
                 self._candidate, self._candidates = None, {}
                 self._trend_pending = {}
                 self._ms_prev = {}
+                self._run_nonce = time.time_ns()
                 self.symbol_status = {}
                 self.current_hma = self.current_ma2 = 0.0
                 self.current_atr = self.current_er = 0.0
@@ -628,6 +631,12 @@ class StrategyBot:
             pass
         return None, 0
 
+    def set_start_notes(self, notes):
+        with self._state_lock:
+            self.start_notes = [str(n)[:400] for n in notes][:10]
+        for note in self.start_notes:
+            self.log(f'ℹ️ {note}')
+
     def set_start_warnings(self, warnings):
         with self._state_lock:
             self.start_warnings = [str(w)[:300] for w in warnings][:20]
@@ -681,6 +690,7 @@ class StrategyBot:
                 "trade_utc_offset_min", "trade_days", "blocked_windows")},
             "trading_window_issue": self._safe_window_issue(),
             "start_warnings": list(self.start_warnings) if self.is_running else [],
+            "start_notes": list(self.start_notes) if self.is_running else [],
             "execution_mode": self.execution_mode,
             "max_order_lots": (lambda cap: cap if isinstance(cap, (int, float)) and not isinstance(cap, bool) else None)(getattr(self.mt5, "max_order_lots", None)),
             "max_total_lots": (lambda cap: cap if isinstance(cap, (int, float)) and not isinstance(cap, bool) else None)(getattr(self.mt5, "max_total_lots", None)),
@@ -1521,8 +1531,10 @@ class StrategyBot:
         tf = int(tf or self.timeframe_minutes)
         key = self._instance_key(target_sym, tf)
         last_t = self.last_candle_times.get(key, self.last_candle_time if key == target_sym else 0)
+        # One order per signal within a run; a restart / re-init is a new EA run (MT5 OnInit), so a signal on the
+        # same candle after a restart gets a new id instead of colliding with the earlier run's journal entry.
         identity = (self.mt5.login_id, self.mt5.server, target_sym, tf,
-                    last_t, direction)
+                    last_t, direction) + ((self._run_nonce,) if self._run_nonce else ())
         return "hma-" + hashlib.sha256(repr(identity).encode()).hexdigest()
 
     def start(self, expected_config=None):
@@ -1538,6 +1550,7 @@ class StrategyBot:
                 self._trend_pending = {}
                 self._ms_prev = {}
                 self.started_at = int(time.time())
+                self._run_nonce = time.time_ns()
                 self.symbol_status = {}
                 self._loss_check_at = 0.0
                 self.is_running = True

@@ -156,3 +156,27 @@ def test_lot_override_only_for_demo_bot_orders():
     assert c._limits_for(MANUAL_MAGIC) == (2.0, 2.0, 10)        # manual/other orders keep the saved limits
     c.account_type = 'REAL'
     assert c._limits_for(HMA_MAGIC) == (2.0, 2.0, 10)          # never on a real account
+
+
+def test_restart_on_same_candle_gets_a_new_order_id():
+    """Stop + start within one candle: the trend entry of the new run must not reuse the earlier run's id
+    (the order journal rejects an id with different lot/SL/TP: 'Aynı emir kimliği farklı işlem için kullanılamaz')."""
+    import asyncio
+    import threading
+    rows, client, bot, fast, slow = trend_run()
+    client.automation_stopped = threading.Event()
+    client.now = 450
+    ids = []
+
+    async def run_twice():
+        for _ in range(2):
+            bot.is_running = False
+            bot.task = None
+            bot.start()
+            bot.task.cancel()
+            ids.append(bot.order_id('SELL', sym='XAUUSD', tf=60))
+            await asyncio.sleep(0)
+    asyncio.run(run_twice())
+    assert ids[0] != ids[1]
+    same_run = bot.order_id('SELL', sym='XAUUSD', tf=60)
+    assert same_run == ids[1]          # within one run the id stays the same (one order per signal)

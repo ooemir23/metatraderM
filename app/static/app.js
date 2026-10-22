@@ -2526,9 +2526,11 @@ async function deleteBotHistoryEntry(id) {
   }
 }
 // Plain-language reason for a signal that did not open a trade.
-function botHistoryReason(error) {
+function botHistoryReason(error, source) {
   const text = String(error || 'Emir gönderilemedi.');
-  if (/Aynı emir kimliği farklı işlem/.test(text)) return 'Aynı sinyal farklı ayarla tekrar gönderilmişti; artık her tıklama yeni emir olarak gönderiliyor.';
+  if (/Aynı emir kimliği farklı işlem/.test(text)) return source === 'AUTO'
+    ? 'Bot aynı mumda yeniden başlatıldığı için bu sinyalin emir kimliği önceki farklı lot/SL/TP kaydıyla çakıştı; güvenlik için emir gönderilmedi (düzeltildi: her başlatma yeni kimlik kullanır).'
+    : 'Aynı sinyal farklı ayarla tekrar gönderilmişti; artık her tıklama yeni emir olarak gönderiliyor.';
   return text;
 }
 function renderBotSignalHistory(rows) {
@@ -2550,7 +2552,7 @@ function renderBotSignalHistory(rows) {
     const buy = r.side === 'BUY';
     const open = r.success && r.ticket != null ? executionPositions.get(Number(r.ticket)) || executionPositions.get(r.ticket) : null;
     let status, tone, reason = '';
-    if (!r.success && !r.pending) { status = 'Açılmadı'; tone = 'error'; reason = botHistoryReason(r.error); }
+    if (!r.success && !r.pending) { status = 'Açılmadı'; tone = 'error'; reason = botHistoryReason(r.error, r.source); }
     else if (r.pending) { status = 'Sonuç bekleniyor'; tone = 'pending'; reason = 'MT5 işlem geçmişini kontrol edin.'; }
     else if (open) {
       const profit = Number(open.profit);
@@ -2919,6 +2921,8 @@ async function toggleBot() {
       showToast("🚀 HMA Algoritmik Bot Başlatıldı!", "success");
       for (const warning of (data.start_warnings || []))
         showToast(`⚠️ Başlangıç uyarısı · ${warning}`, 'warning');
+      for (const note of (data.start_notes || []))
+        showToast(`ℹ️ ${note}`, 'info');
     } else {
       showToast("🛑 HMA Algoritmik Bot Durduruldu.", "info");
     }
@@ -3732,7 +3736,7 @@ function announceBotSignals(bot) {
   playBotTradeSound(r.success ? 'opened' : 'failed');
   if (typeof showToast === 'function') showToast(r.success
     ? `🤖 Bot ${r.symbol} ${r.side === 'BUY' ? 'AL' : 'SAT'} ${r.lot} lot açtı${r.ticket != null ? ` (#${r.ticket})` : ''}`
-    : `🤖 Bot ${r.symbol} ${r.side === 'BUY' ? 'AL' : 'SAT'} sinyali açılamadı: ${botHistoryReason(r.error)}`, r.success ? 'success' : 'error');
+    : `🤖 Bot ${r.symbol} ${r.side === 'BUY' ? 'AL' : 'SAT'} sinyali açılamadı: ${botHistoryReason(r.error, r.source)}`, r.success ? 'success' : 'error');
 }
 function announceBotPending(list) {
   const fresh = (list || []).filter(p => p && p.id && !announcedBotPending.has(p.id));
