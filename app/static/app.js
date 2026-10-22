@@ -82,75 +82,95 @@ function setChartTimeframe(tf) {
   if (botTf && [1,5,15,30,60,240,1440].includes(num)) {
     botTf.value = String(num);
   }
-  // Bot follows the chart timeframe (applied now if the bot is stopped, otherwise at next start).
+  // Bot follows the chart timeframe, also while running (MT5 EA re-init on a chart period change).
   if (typeof syncBotTimeframe === 'function') syncBotTimeframe(num);
 }
 
-// Keep the HMA bot on the chart's timeframe so chart, scanner and bot see the same candles.
-// Settings can only change while the bot is stopped; a running bot is synced at its next start.
-let botTimeframeSyncing = null;
-async function syncBotTimeframe(tf, {announce = true} = {}) {
-  tf = Number(tf || window.MT5Chart?.getTimeframe?.());
-  if (![1, 5, 15, 30, 60, 240, 1440].includes(tf)) return false;
-  const bot = latestBotSettings;
-  if (!bot || bot.is_running || bot.timeframe_minutes === tf) return bot?.timeframe_minutes === tf;
-  if (botTimeframeSyncing) await botTimeframeSyncing.catch(() => {});
-  const run = (async () => {
-    const body = {timeframe_minutes: tf};
-    if (bot.use_h4_filter && tf !== 60) body.use_h4_filter = false;   // H4 filter is only valid on H1
-    const res = await fetch('/api/bot/config', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Bot zaman dilimi güncellenemedi.');
-    latestBotSettings = data;
-    const code = {1:'M1',5:'M5',15:'M15',30:'M30',60:'H1',240:'H4',1440:'D1'}[tf];
-    if (announce) showToast(`⏱️ Bot zaman dilimi grafikle eşitlendi: ${code}${body.use_h4_filter === false ? ' (H4 filtresi yalnız H1\'de geçerli olduğu için kapatıldı)' : ''}`, 'info');
-    if (typeof renderBotSymbolStatus === 'function') renderBotSymbolStatus(data);
-    return true;
-  })();
-  botTimeframeSyncing = run;
-  try { return await run; }
-  catch (err) { showToast(`❌ ${err.message}`, 'error'); return false; }
-  finally { if (botTimeframeSyncing === run) botTimeframeSyncing = null; }
+// The HMA bot trades what the panel shows: the selected symbol, the chart timeframe and the scanner's
+// HMA × slow MA. A running bot follows too, like an MT5 EA re-initialised when its chart symbol/period or
+// inputs change: positions stay open and the next closed-candle crossover is traded. The server runs the
+// same readiness checks as a bot start; if they fail the bot keeps its current settings and the reason is shown.
+const BOT_TIMEFRAMES = [1, 5, 15, 30, 60, 240, 1440];
+const BOT_FOLLOW_KEYS = ['symbol', 'timeframe_minutes', 'hma_period', 'second_ma_type', 'second_ma_period'];
+let botFollowSyncing = null;
+let botFollowError = null;   // {key, message}: a failed change is not retried on every status poll
+
+function desiredBotSelection(overrides = {}) {
+  const want = {};
+  const sym = String(overrides.symbol ?? (typeof currentSymbol === 'string' ? currentSymbol : '') ?? '').trim();
+  if (sym) want.symbol = sym;
+  const tf = Number(overrides.timeframe_minutes ?? window.MT5Chart?.getTimeframe?.());
+  if (BOT_TIMEFRAMES.includes(tf)) want.timeframe_minutes = tf;
+  const sig = window.HMASignalSettings?.get?.();
+  if (sig) Object.assign(want, {hma_period: sig.hma_period, second_ma_type: sig.ma_type, second_ma_period: sig.ema_period});
+  for (const key of ['hma_period', 'second_ma_type', 'second_ma_period']) if (overrides[key] != null) want[key] = overrides[key];
+  return want;
 }
 
-// The bot follows the selected symbol (one symbol, like an MT5 EA attached to that chart).
-// A running bot switches too, like an MT5 EA re-initialised when its chart symbol changes:
-// positions on the old symbol stay open and the next closed-candle crossover on the new symbol is traded.
-let botSymbolSyncing = null;
-let botSymbolSyncError = null;   // {symbol, message}: a failed switch is not retried on every status poll
-async function syncBotSymbol(sym, {announce = true, retry = true} = {}) {
-  sym = String(sym || '').trim();
-  const bot = latestBotSettings;
-  if (!sym || !bot) return bot?.symbol === sym;
-  const symbols = Array.isArray(bot.symbols) ? bot.symbols : [bot.symbol];
-  if (bot.symbol === sym && symbols.length === 1 && symbols[0] === sym) { botSymbolSyncError = null; return true; }
-  if (!retry && botSymbolSyncError?.symbol === sym) return false;
-  if (botSymbolSyncing) {
-    const pending = botSymbolSyncing;
-    await pending.catch(() => {});
-    if (latestBotSettings?.symbol === sym) return true;
-    if (botSymbolSyncing && botSymbolSyncing !== pending) return botSymbolSyncing;
+function botSelectionDiff(bot, want) {
+  const diff = {};
+  for (const key of BOT_FOLLOW_KEYS) {
+    if (want[key] == null) continue;
+    if (key === 'symbol') {
+      const symbols = Array.isArray(bot.symbols) ? bot.symbols : [bot.symbol];
+      if (bot.symbol !== want.symbol || symbols.length !== 1 || symbols[0] !== want.symbol) diff.symbol = want.symbol;
+    } else if (bot[key] !== want[key]) diff[key] = want[key];
   }
-  const running = Boolean(bot.is_running);
-  const previous = bot.symbol;
-  botSymbolSyncing = (async () => {
+  return diff;
+}
+
+const botTfCode = (tf) => ({1: 'M1', 5: 'M5', 15: 'M15', 30: 'M30', 60: 'H1', 240: 'H4', 1440: 'D1'}[tf] || `${tf} dk`);
+
+async function syncBotToSelection(overrides = {}, {announce = true, retry = true} = {}) {
+  const bot = latestBotSettings;
+  if (!bot) return false;
+  if (overrides.timeframe_minutes != null && !BOT_TIMEFRAMES.includes(Number(overrides.timeframe_minutes))) return false;
+  if (botFollowSyncing) {
+    await botFollowSyncing.catch(() => {});
+    return syncBotToSelection(overrides, {announce, retry});
+  }
+  const want = desiredBotSelection(overrides);
+  const diff = botSelectionDiff(latestBotSettings, want);
+  if (!Object.keys(diff).length) { botFollowError = null; return true; }
+  const key = JSON.stringify(want);
+  if (!retry && botFollowError?.key === key) return false;
+  const running = Boolean(latestBotSettings.is_running);
+  const before = latestBotSettings;
+  const run = (async () => {
     try {
-      const res = await fetch('/api/bot/add-symbol', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({symbol: sym})});
+      const res = await fetch('/api/bot/follow', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(diff)});
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Bot sembolü güncellenemedi.');
-      botSymbolSyncError = null;
-      if (latestBotSettings) latestBotSettings = {...latestBotSettings, symbol: sym, symbols: [sym], symbol_status: {}};
-      if (running) showToast(`🎯 Bot ${previous} → ${sym} geçti. ${previous} pozisyonları açık kalır; ${sym} için yeni kesişim bekleniyor.`, 'success');
-      else if (announce) showToast(`🎯 Bot sembolü: ${sym}`, 'info');
-      if (typeof renderBotSymbolStatus === 'function' && latestBotSettings) renderBotSymbolStatus(latestBotSettings);
+      if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Bot ayarları seçime göre güncellenemedi.');
+      botFollowError = null;
+      latestBotSettings = data && typeof data === 'object' && data.symbol ? data : {...before, ...diff, ...(diff.symbol ? {symbols: [diff.symbol], symbol_status: {}} : {})};
+      const now = latestBotSettings;
+      const label = `${now.symbol} ${botTfCode(now.timeframe_minutes)} · HMA(${now.hma_period}) × ${now.second_ma_type}(${now.second_ma_period})`;
+      if (running) {
+        const kept = diff.symbol ? `${before.symbol} pozisyonları açık kalır` : 'açık pozisyonlar olduğu gibi kalır';
+        showToast(`🎯 Bot seçimi izledi: ${label}. ${kept}; yeni kesişim bekleniyor.`, 'success');
+      } else if (announce) showToast(`🎯 Bot seçimi izliyor: ${label}`, 'info');
+      if (typeof renderBotSymbolStatus === 'function') renderBotSymbolStatus(latestBotSettings);
       return true;
     } catch (err) {
-      botSymbolSyncError = {symbol: sym, message: err.message};
+      botFollowError = {key, message: err.message};
       if (announce || running) showToast(`❌ ${err.message}`, 'error');
       return false;
-    } finally { botSymbolSyncing = null; }
+    }
   })();
-  return botSymbolSyncing;
+  botFollowSyncing = run;
+  try { return await run; } finally { if (botFollowSyncing === run) botFollowSyncing = null; }
+}
+
+// Older call sites: symbol and timeframe changes go through the same follow path.
+function syncBotTimeframe(tf, opts = {}) {
+  const num = Number(tf ?? window.MT5Chart?.getTimeframe?.());
+  if (!BOT_TIMEFRAMES.includes(num)) return Promise.resolve(false);
+  return syncBotToSelection({timeframe_minutes: num}, opts);
+}
+function syncBotSymbol(sym, opts = {}) {
+  sym = String(sym || '').trim();
+  if (!sym) return Promise.resolve(false);
+  return syncBotToSelection({symbol: sym}, opts);
 }
 
 function onScannerTimeframeChange(tf) {
@@ -1705,13 +1725,14 @@ async function fetchBotStatus() {
     const botSym = bot.symbol || 'EURUSD';
     if (symbolsCount) symbolsCount.textContent = botSym;
     if (symbolsBadges) {
-      const failed = botSymbolSyncError && botSymbolSyncError.symbol === currentSymbol ? botSymbolSyncError.message : '';
-      const differs = Boolean(currentSymbol && currentSymbol !== botSym && failed);
+      const want = desiredBotSelection();
+      const pendingDiff = Object.keys(botSelectionDiff(bot, want)).length > 0;
+      const failed = pendingDiff && botFollowError && botFollowError.key === JSON.stringify(want) ? botFollowError.message : '';
       // The symbol name is in the heading; this line only explains why the bot could not follow the selection.
-      symbolsBadges.innerHTML = differs ? `<span class="bot-symbol-differs">Seçili sembol ${escapeHtml(currentSymbol)}; bot geçemedi: ${escapeHtml(failed)}</span>` : '';
-      symbolsBadges.hidden = !differs;
+      symbolsBadges.innerHTML = failed ? `<span class="bot-symbol-differs">Bot seçimi izleyemedi: ${escapeHtml(failed)}</span>` : '';
+      symbolsBadges.hidden = !failed;
     }
-    if (currentSymbol && currentSymbol !== botSym) syncBotSymbol(currentSymbol, {announce: false, retry: false});
+    syncBotToSelection({}, {announce: false, retry: false});
 
     document.getElementById("bot-atr-status").textContent = `ATR(${bot.atr_period || 14}): ${Number(bot.current_atr || 0).toFixed(5)} · ER: ${Number(bot.current_er || 0).toFixed(2)} · ${bot.use_atr_filter ? (bot.pending_confirmation ? 'Onay bekleniyor' : 'Filtre açık') : 'Filtre kapalı'} · ${bot.risk_mode === 'ATR' ? 'ATR stop/hedef' : 'Sabit puan stop/hedef'}`;
     const lastSigEl = document.getElementById("bot-last-signal");
@@ -2830,8 +2851,7 @@ async function toggleBot() {
   try {
     // Starting: align the bot with the chart timeframe first.
     if (!isBotRunning && !(latestBotSettings?.is_running)) {
-      await syncBotTimeframe(undefined);
-      await syncBotSymbol(currentSymbol, {announce: false});
+      await syncBotToSelection({}, {announce: false});
     }
     const res = await fetch("/api/bot/toggle", { method: "POST" });
     const data = await res.json();
@@ -2927,6 +2947,11 @@ async function toggleBotSettingsModal() {
 
 async function saveBotSettings() {
   // HMA_Crossover_EA inputs only; the server keeps every non-EA feature off.
+  // HMA / 2nd MA are shared with the scanner (2–200), so the bot and the scanner never disagree.
+  for (const id of ['cfg-hma-period', 'cfg-ma2-period']) {
+    const n = Number(document.getElementById(id)?.value);
+    if (!Number.isInteger(n) || n < 2 || n > 200) { showToast('❌ HMA ve 2. MA periyodu 2–200 arası tam sayı olmalı (sinyal tarayıcıyla ortak).', 'error'); return; }
+  }
   const cfg = {
     symbol: document.getElementById("cfg-symbol").value,
     timeframe_minutes: Number(document.getElementById('cfg-timeframe').value),
@@ -2963,7 +2988,15 @@ async function saveBotSettings() {
     }
     if (res.ok) {
       showToast("✅ Bot ayarları güncellendi!", "success");
+      const saved = await res.json().catch(() => null);
+      if (saved && typeof saved === 'object' && saved.symbol) latestBotSettings = saved;
       toggleBotSettingsModal();
+      // The bot follows the panel selection; carry these choices to the scanner, chart and symbol.
+      try {
+        window.HMASignalSettings?.setPeriods?.({hma_period: cfg.hma_period, ma_type: cfg.second_ma_type, ema_period: cfg.second_ma_period});
+        if (cfg.symbol && cfg.symbol !== currentSymbol && typeof switchSymbol === 'function') switchSymbol(cfg.symbol);
+        if (BOT_TIMEFRAMES.includes(cfg.timeframe_minutes) && cfg.timeframe_minutes !== Number(window.MT5Chart?.getTimeframe?.())) setChartTimeframe(cfg.timeframe_minutes);
+      } catch (err) { console.warn('Bot settings could not be carried to the panel selection', err); }
       fetchBotStatus();
     }
   } catch (err) {

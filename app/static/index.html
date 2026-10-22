@@ -1196,7 +1196,6 @@
       </div>
       <div class="signal-settings-actions">
         <button type="button" onclick="HMASignalSettings.reset()" class="signal-btn-ghost">Varsayılanlar</button>
-        <button type="button" onclick="HMASignalSettings.applyToBot()" class="signal-btn-ghost">Bota uygula</button>
         <span class="flex-1"></span>
         <button type="button" onclick="HMASignalSettings.close()" class="signal-btn-ghost">Vazgeç</button>
         <button type="submit" class="signal-btn-primary">Kaydet ve tara</button>
@@ -1302,14 +1301,14 @@
         </fieldset>
         <fieldset class="border border-gray-700 rounded-xl p-3 space-y-2">
           <legend class="px-1 font-semibold text-cyan-300">1. İndikatör: Hull Moving Average (HMA)</legend>
-          <label class="block">HMA periyodu (InpHMAPeriod)<input type="number" id="cfg-hma-period" value="14" min="2" class="block w-full rounded bg-gray-800 p-2"></label>
+          <label class="block">HMA periyodu (InpHMAPeriod)<input type="number" id="cfg-hma-period" value="14" min="2" max="200" class="block w-full rounded bg-gray-800 p-2"></label>
         </fieldset>
         <fieldset class="border border-gray-700 rounded-xl p-3 space-y-2">
           <legend class="px-1 font-semibold text-cyan-300">2. İndikatör</legend>
           <label class="block">Tür (InpSecondMAType)<select id="cfg-ma2-type" class="block w-full rounded bg-gray-800 p-2">
             <option value="HMA">HMA</option><option value="EMA" selected>EMA</option><option value="SMA">SMA</option><option value="LWMA">LWMA</option>
           </select></label>
-          <label class="block">Periyot (InpSecondMAPeriod)<input type="number" id="cfg-ma2-period" value="34" min="2" class="block w-full rounded bg-gray-800 p-2"></label>
+          <label class="block">Periyot (InpSecondMAPeriod)<input type="number" id="cfg-ma2-period" value="34" min="2" max="200" class="block w-full rounded bg-gray-800 p-2"></label>
         </fieldset>
         </div>
         <div class="bot-settings-exits space-y-3">

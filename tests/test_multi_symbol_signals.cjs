@@ -101,6 +101,11 @@ assert.ok(html.includes('id="bot-execute-all-signals-btn"'), 'Missing bot-execut
         botStatusData.symbol = body.symbol; botStatusData.symbols = [body.symbol];
         return { ok: true, json: async () => ({ success: true, symbol: body.symbol, symbols: [body.symbol] }) };
       }
+      if (url === '/api/bot/follow') {
+        const body = JSON.parse(opts.body);
+        Object.assign(botStatusData, body, body.symbol ? {symbols: [body.symbol]} : {});
+        return { ok: true, json: async () => ({ ...botStatusData }) };
+      }
       if (url === '/api/bot/remove-symbol') {
         const body = JSON.parse(opts.body);
         return { ok: true, json: async () => ({ success: true, symbols: botStatusData.symbols.filter(s => s !== body.symbol) }) };
@@ -150,22 +155,22 @@ assert.ok(html.includes('id="bot-execute-all-signals-btn"'), 'Missing bot-execut
   botStatusData.is_running = true;
   await ctx.fetchBotStatus();
   toasts.length = 0;
-  const beforeRunning = sentRequests.filter((r) => r.url === '/api/bot/add-symbol').length;
+  sentRequests.length = 0;
   await ctx.assignScannerSymbolToBot('GBPUSD', 15);
-  const runningReqs = sentRequests.filter((r) => r.url === '/api/bot/add-symbol').slice(beforeRunning);
+  const runningReqs = sentRequests.filter((r) => ['/api/bot/add-symbol', '/api/bot/follow'].includes(r.url) && JSON.parse(r.opts.body).symbol);
   assert.ok(runningReqs.length >= 1, 'running bot is switched to the selected symbol');
   assert.equal(JSON.parse(runningReqs.at(-1).opts.body).symbol, 'GBPUSD');
-  assert.ok(toasts.some((t) => /→ GBPUSD geçti/.test(t.msg)), 'switch is announced');
+  assert.ok(toasts.some((t) => /Bot seçimi izledi: GBPUSD/.test(t.msg)), 'switch is announced');
   assert.ok(!toasts.some((t) => /önce botu durdurun/.test(t.msg)));
 
   // Test 3b: a failed switch is shown once and not retried on every status poll
-  vm.runInContext("latestBotSettings = {...latestBotSettings, symbol: 'EURUSD', symbols: ['EURUSD'], is_running: true}; botSymbolSyncError = {symbol: 'GBPUSD', message: 'hazır değil'}; currentSymbol = 'GBPUSD';", ctx);
   botStatusData.symbol = 'EURUSD'; botStatusData.symbols = ['EURUSD'];
-  const beforePoll = sentRequests.filter((r) => r.url === '/api/bot/add-symbol').length;
+  vm.runInContext("currentSymbol = 'GBPUSD'; botFollowError = {key: JSON.stringify(desiredBotSelection()), message: 'hazır değil'};", ctx);
+  const beforePoll = sentRequests.filter((r) => r.url === '/api/bot/follow').length;
   await ctx.fetchBotStatus();
-  assert.equal(sentRequests.filter((r) => r.url === '/api/bot/add-symbol').length, beforePoll, 'no retry loop');
+  assert.equal(sentRequests.filter((r) => r.url === '/api/bot/follow').length, beforePoll, 'no retry loop');
   assert.ok(node('bot-symbols-badges').innerHTML.includes('hazır değil'), 'reason is shown');
-  vm.runInContext("botSymbolSyncError = null;", ctx);
+  vm.runInContext("botFollowError = null;", ctx);
 
   // Test 4: sendSignalDirectToBot calls /api/bot/execute-signal
   await ctx.sendSignalDirectToBot('XAUUSD', 'SELL', 2650.5, {signalId: 'scan-XAUUSD-15-SELL-1700000000', slPrice: 2680.0, tpPrice: 2600.0});

@@ -45,10 +45,14 @@ KAMA, ATR stop/filtre, H4 filtresi, onay mumu, RISK lotu, %2 parasal risk sını
 engeli, RSI/spread/başabaş/iz süren kuralları bot için kapalıdır (`main.EA_ONLY_BOT_SETTINGS`); geri eklenmez.
 Başlangıçtan önce kapanmış mumdaki kesişim işlenmez (EA OnInit). "Şimdi AL/SAT" manuel magic (123460) kullanır.
 
-## Bot sembolü = seçili sembol (kullanıcı kararı, 2026-10-22)
-Panelde hangi sembol seçiliyse bot onu işler; bot çalışırken de geçer (`/api/bot/add-symbol` →
-`StrategyBot.switch_symbol_live`). MT5'te EA'nın grafik sembolü değişince olduğu gibi: OnDeinit(REASON_CHARTCHANGE)
-+ OnInit — eski sembolün pozisyonları açık kalır, geçişten önce kapanmış mumdaki kesişim işlenmez. Yeni sembol
-bot başlangıcıyla aynı hazırlık kontrolünden (`bot_readiness`) ve gerçek hesapta ikinci doğrulamadan geçer;
-geçemezse bot eski sembolde çalışmaya devam eder ve sebep bot kartında gösterilir. Emir gönderilirken geçiş yapılmaz
-(`_check_lock` beklenir). Sinyal, EA gibi yeni mumun ilk tick'inde (0,5 sn döngü) kapanmış mumda işlenir.
+## Bot = paneldeki seçim (kullanıcı kararı, 2026-10-22)
+Bot; seçili sembolü, grafiğin zaman dilimini ve sinyal tarayıcısının HMA × 2. MA ayarını (tür + periyot) kullanır.
+Bot çalışırken de izler (`/api/bot/follow` → `StrategyBot.reinit_live`; panel `syncBotToSelection`). MT5'te EA'nın
+grafik sembolü/periyodu (REASON_CHARTCHANGE) ya da girişi (REASON_PARAMETERS) değişince olduğu gibi: OnDeinit + OnInit —
+açık pozisyonlar olduğu gibi kalır, değişiklikten önce kapanmış mumdaki kesişim işlenmez. Yeni ayar bot başlangıcıyla
+aynı hazırlık kontrolünden (`bot_readiness`) ve gerçek hesapta ikinci doğrulamadan geçer; geçemezse bot mevcut ayarla
+çalışmaya devam eder ve sebep bot kartında gösterilir (her durum yenilemesinde tekrar denenmez). Emir gönderilirken
+değişiklik yapılmaz (`_check_lock` beklenir). Çalışan botta yalnız `StrategyBot.LIVE_KEYS` değişir; lot, SL/TP vb. için
+bot durdurulur. Tarayıcının RSI/ADX/üst zaman dilimi gibi filtreleri bota taşınmaz (EA'da yok). Bot Ayarları'nda
+HMA/2. MA/sembol/zaman dilimi kaydedilirse tarayıcıya, grafiğe ve seçime de yazılır; ortak periyot sınırı 2–200.
+Sinyal, EA gibi yeni mumun ilk tick'inde (0,5 sn döngü) kapanmış mumda işlenir.

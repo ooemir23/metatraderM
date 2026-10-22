@@ -1514,37 +1514,67 @@ def update_bot_signal_rules(req: BotSignalRulesRequest, request: Request):
 class BotSymbolActionRequest(BaseModel):
     symbol: str = Field(min_length=1, max_length=32, pattern=r'^[A-Za-z0-9_.#-]+$')
 
-@app.post("/api/bot/add-symbol")
-async def add_bot_symbol(req: BotSymbolActionRequest, request: Request):
-    """The bot trades the selected symbol. A running bot switches like an MT5 EA whose chart symbol changes
-    (re-init on the new symbol); the new symbol passes the same readiness checks as a bot start."""
+async def follow_selection(data: Dict[str, Any], request: Request) -> Dict[str, Any]:
+    """The bot trades what the panel shows: selected symbol, chart timeframe and the scanner's HMA × MA.
+    A running bot changes like an MT5 EA re-initialised on a chart/input change; the new settings pass the
+    same readiness checks (and real-account second factor) as a bot start, otherwise the bot keeps running
+    on its current settings."""
+    data = {k: v for k, v in data.items() if v is not None}
+    if 'symbol' in data:
+        data['symbol'] = data['symbol'].strip()
+        data['symbols'] = [data['symbol']]
+    if data.get('timeframe_minutes', bot.timeframe_minutes) not in TIMEFRAME_NAMES:
+        raise HTTPException(status_code=422, detail='Desteklenmeyen zaman dilimi')
     try:
         async with bot_toggle_guard:
-            if bot.is_running and bot.symbol != req.symbol.strip():
-                account = require_real_unlock(request)
+            if bot.is_running:
                 old_config = bot.config_snapshot()
-                config = {**old_config, 'symbol': req.symbol.strip(), 'symbols': [req.symbol.strip()]}
+                config = bot.validated_config(data)
+                if all(config.get(k) == old_config.get(k) for k in bot.LIVE_KEYS):
+                    return bot.get_status()
+                account = require_real_unlock(request)
                 ready = await asyncio.to_thread(mt5_client.bot_readiness, config)
                 if not ready.get('success'):
+                    tf = str(TIMEFRAME_NAMES.get(config['timeframe_minutes'], config['timeframe_minutes'])).replace('TIMEFRAME_', '')
                     raise HTTPException(status_code=409, detail=(
-                        f"{req.symbol} için bot hazır değil: {ready.get('error', 'hazırlık kontrolü geçmedi')} "
-                        f"Bot {bot.symbol} üzerinde çalışmaya devam ediyor."))
+                        f"{config['symbol']} {tf} için bot hazır değil: {ready.get('error', 'hazırlık kontrolü geçmedi')} "
+                        f"Bot {old_config['symbol']} üzerinde mevcut ayarlarla çalışmaya devam ediyor."))
                 with mt5_client._lock:
                     if require_real_unlock(request) != account or ready.get('account') != account:
-                        raise HTTPException(status_code=409, detail='Hazırlık kontrolü sırasında hesap değişti; bot sembolü değiştirilmedi.')
-                symbols = await asyncio.to_thread(bot.switch_symbol_live, req.symbol, old_config)
+                        raise HTTPException(status_code=409, detail='Hazırlık kontrolü sırasında hesap değişti; bot ayarları değiştirilmedi.')
+                await asyncio.to_thread(bot.reinit_live, data, old_config)
                 bot.set_start_warnings(ready.get('warnings') or [])
-            elif bot.is_running:
-                symbols = list(bot.symbols)
+            elif bot.task is not None and not bot.task.done():
+                raise HTTPException(status_code=409, detail='Önceki bot döngüsü bitiyor; tamamlanmasını bekleyin.')
             else:
-                symbols = bot.add_symbol(req.symbol)
-        return {"success": True, "symbols": symbols, "symbol": bot.symbol, "is_running": bot.is_running}
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+                bot.update_config(data)
+        return bot.get_status()
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except OSError as exc:
-        raise HTTPException(status_code=503, detail='Bot sembol listesi kaydedilemedi.') from exc
+        raise HTTPException(status_code=503, detail='Bot ayarları kaydedilemedi; mevcut ayarlar korundu.') from exc
+
+
+class BotFollowRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    symbol: Optional[str] = Field(default=None, min_length=1, max_length=32, pattern=r'^[A-Za-z0-9_.#-]+$')
+    timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=43200)
+    hma_period: Optional[int] = Field(default=None, ge=2, le=1000)
+    second_ma_type: Optional[Literal["EMA", "SMA", "LWMA", "HMA"]] = None
+    second_ma_period: Optional[int] = Field(default=None, ge=2, le=1000)
+
+
+@app.post("/api/bot/follow")
+async def follow_bot_selection(req: BotFollowRequest, request: Request):
+    return await follow_selection(req.model_dump(exclude_none=True), request)
+
+
+@app.post("/api/bot/add-symbol")
+async def add_bot_symbol(req: BotSymbolActionRequest, request: Request):
+    status = await follow_selection({'symbol': req.symbol}, request)
+    return {"success": True, "symbols": status['symbols'], "symbol": status['symbol'], "is_running": status['is_running']}
 
 @app.post("/api/bot/remove-symbol")
 def remove_bot_symbol(req: BotSymbolActionRequest):

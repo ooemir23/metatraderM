@@ -87,6 +87,8 @@ def live(monkeypatch):
     monkeypatch.setattr(main.bot, 'is_running', True)
     monkeypatch.setattr(main.bot, 'symbol', 'EURUSD')
     monkeypatch.setattr(main.bot, 'symbols', ['EURUSD'])
+    for key in ('timeframe_minutes', 'hma_period', 'second_ma_type', 'second_ma_period', 'last_candle_times', 'symbol_status'):
+        monkeypatch.setattr(main.bot, key, getattr(main.bot, key))
     monkeypatch.setattr(main.bot, 'persist_config', lambda data: None)
     monkeypatch.setattr(main, 'require_real_unlock', lambda request: [7, 'demo', 'DEMO'])
     return main
@@ -129,3 +131,45 @@ def test_api_running_switch_on_real_account_needs_second_factor(monkeypatch):
     response = web().post('/api/bot/add-symbol', json={'symbol': 'XAUUSD'})
     assert response.status_code == 403
     switch.assert_not_called()
+
+
+def test_running_bot_follows_scanner_crossover_and_chart_period_like_ea_reinit():
+    bot, client = running_bot()
+    bot.hma_period, bot.second_ma_type, bot.second_ma_period, bot.timeframe_minutes = 75, 'EMA', 34, 1
+    bot.reinit_live({'hma_period': 14, 'second_ma_type': 'SMA', 'second_ma_period': 50, 'timeframe_minutes': 5})
+    assert (bot.hma_period, bot.second_ma_type, bot.second_ma_period, bot.timeframe_minutes) == (14, 'SMA', 50, 5)
+    assert bot.is_running and bot.symbol == 'EURUSD'
+    # OnInit (REASON_PARAMETERS / REASON_CHARTCHANGE): the last closed candle is not traded.
+    assert bot.last_candle_times == {} and bot.last_candle_time == 0
+    client.open_order.assert_not_called()
+    client.close_position.assert_not_called()
+
+
+def test_running_bot_only_changes_chart_and_crossover_inputs():
+    bot, _ = running_bot()
+    with pytest.raises(ValueError):
+        bot.reinit_live({'lot_size': 5})
+    with pytest.raises(ValueError):
+        bot.reinit_live({'timeframe_minutes': 7})
+    assert bot.lot_size == 0.01 and bot.timeframe_minutes == 15
+
+
+def test_api_follow_checks_new_periods_before_changing_running_bot(live):
+    ready = Mock(return_value={'success': True, 'account': [7, 'demo', 'DEMO'], 'warnings': []})
+    live.mt5_client.bot_readiness = ready
+    try:
+        response = web().post('/api/bot/follow', json={'symbol': 'XAUUSD', 'hma_period': 14, 'second_ma_type': 'EMA',
+                                                       'second_ma_period': 34, 'timeframe_minutes': 1})
+        assert response.status_code == 200, response.text
+        config = ready.call_args.args[0]
+        assert (config['symbol'], config['hma_period'], config['timeframe_minutes']) == ('XAUUSD', 14, 1)
+        body = response.json()
+        assert (body['symbol'], body['hma_period'], body['timeframe_minutes'], body['is_running']) == ('XAUUSD', 14, 1, True)
+        # Already aligned: no second readiness check.
+        ready.reset_mock()
+        assert web().post('/api/bot/follow', json={'hma_period': 14}).status_code == 200
+        ready.assert_not_called()
+        # Non-EA settings cannot come through this endpoint.
+        assert web().post('/api/bot/follow', json={'lot_size': 5}).status_code == 422
+    finally:
+        del live.mt5_client.bot_readiness

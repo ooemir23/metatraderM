@@ -211,6 +211,20 @@
     close();
     if (typeof refreshSignalScanner === 'function') refreshSignalScanner(true, true);
     if (typeof showToast === 'function') showToast(`✅ Sinyal ayarları kaydedildi: ${fastLabel()} × ${slowLabel()}`, 'success');
+    // The HMA bot uses the scanner's crossover (also while running, like an MT5 EA input change).
+    if (typeof syncBotToSelection === 'function') syncBotToSelection({}, {announce: true});
+    return true;
+  }
+  // Bot settings dialog edits the same crossover: keep scanner, chart and bot on one HMA × MA.
+  function setPeriods({hma_period, ma_type, ema_period} = {}) {
+    const next = sanitize({...settings, hma_period: hma_period ?? settings.hma_period,
+      ma_type: ma_type ?? settings.ma_type, ema_period: ema_period ?? settings.ema_period});
+    if (next.hma_period === settings.hma_period && next.ma_type === settings.ma_type && next.ema_period === settings.ema_period) return false;
+    settings = next;
+    try { localStorage.setItem(KEY, JSON.stringify(settings)); } catch (_) { /* session-only */ }
+    renderSummary();
+    window.MT5Chart?.setSignalPeriods?.(settings.hma_period, settings.ema_period, settings.ma_type, settings.confirm_close !== false);
+    if (typeof refreshSignalScanner === 'function') refreshSignalScanner(true, true);
     return true;
   }
   function reset() { fillForm(sanitize(null)); renderPresetOptions(); }
@@ -300,21 +314,8 @@
     }
   }
 
-  // Copy HMA / MA settings to the HMA bot (bot must be stopped; server enforces it).
-  async function applyToBot() {
-    const raw = sanitize(readForm());
-    const status = $('signal-settings-status');
-    try {
-      const res = await fetch('/api/bot/config', {method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({hma_period: raw.hma_period, second_ma_type: raw.ma_type, second_ma_period: raw.ema_period})});
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Bot ayarları kaydedilemedi.');
-      if (status) status.textContent = `Bot ayarları güncellendi: ${fastLabel(raw)} × ${slowLabel(raw)}.`;
-      if (typeof fetchBotStatus === 'function') fetchBotStatus();
-    } catch (err) {
-      if (status) status.textContent = '❌ ' + err.message;
-    }
-  }
+  // The bot always uses the saved scanner crossover, so "Bota uygula" saves the form (and the bot follows).
+  function applyToBot() { return save(); }
 
   function init() {
     const form = $('signal-settings-form');
@@ -331,7 +332,7 @@
     window.MT5Chart?.setSignalPeriods?.(settings.hma_period, settings.ema_period, settings.ma_type, settings.confirm_close !== false);
   }
 
-  window.HMASignalSettings = {get: () => ({...settings, sessions: [...settings.sessions]}), query, open, close, save, reset, applyToBot,
+  window.HMASignalSettings = {get: () => ({...settings, sessions: [...settings.sessions]}), query, open, close, save, reset, applyToBot, setPeriods,
     applyPreset, savePreset, deletePreset, testHistory, statsHtml, filterNames: {...FILTER_NAMES},
     presets: () => ({builtin: Object.keys(PRESETS), custom: Object.keys(customPresets)}),
     fastLabel, slowLabel, explanation, defaults: sanitize(null)};

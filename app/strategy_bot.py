@@ -384,41 +384,54 @@ class StrategyBot:
                 self.persist_config(self.config_snapshot())
             return [sym]
 
-    def switch_symbol_live(self, sym: str, expected_config=None, timeout: float = 30.0) -> List[str]:
-        """Running bot follows the selected symbol, like an MT5 EA when its chart symbol changes:
-        OnDeinit(REASON_CHARTCHANGE) + OnInit on the new symbol. Positions on the old symbol are left
-        as they are; a crossover on a candle that closed before the switch is not traded (EA OnInit)."""
-        sym = sym.strip()
-        if not re.fullmatch(r'[A-Za-z0-9_.#-]{1,32}', sym):
-            raise ValueError("Geçersiz sembol.")
-        # Wait for the current check (it may be sending an order) so the switch never lands mid-order.
+    # Settings a running bot may change: the chart it is attached to and the EA crossover inputs.
+    LIVE_KEYS = ('symbol', 'symbols', 'timeframe_minutes', 'hma_period', 'second_ma_type', 'second_ma_period')
+
+    def reinit_live(self, data: Dict[str, Any], expected_config=None, timeout: float = 30.0) -> Dict[str, Any]:
+        """Running bot follows the panel selection, like an MT5 EA: a chart symbol/period change
+        (REASON_CHARTCHANGE) or an input change (REASON_PARAMETERS) runs OnDeinit + OnInit. Positions stay
+        open, and a crossover on a candle that closed before the change is not traded (OnInit sets
+        m_lastBarTime to the current bar)."""
+        if not isinstance(data, dict) or not data or set(data) - set(self.LIVE_KEYS):
+            raise ValueError('Çalışan botta yalnız sembol, zaman dilimi ve HMA/2. MA değiştirilebilir.')
+        # Wait for the current check (it may be sending an order) so the change never lands mid-order.
         if not self._check_lock.acquire(timeout=timeout):
-            raise RuntimeError('Bot döngüsü meşgul (emir gönderiliyor olabilir); sembol değiştirilmedi.')
+            raise RuntimeError('Bot döngüsü meşgul (emir gönderiliyor olabilir); ayar değiştirilmedi.')
         try:
             with self._state_lock:
                 if not self.is_running:
                     raise RuntimeError('Bot çalışmıyor.')
                 if expected_config is not None and self.config_snapshot() != expected_config:
-                    raise RuntimeError('Hazırlık kontrolü sırasında bot ayarları değişti; sembol değiştirilmedi.')
-                old = self.symbol
-                if old == sym and list(self.symbols) == [sym]:
-                    return [sym]
-                snapshot = self.config_snapshot()
-                snapshot.update(symbol=sym, symbols=[sym])
-                self.persist_config(snapshot)        # OSError: nothing changed in memory
-                self.symbol, self.symbols = sym, [sym]
+                    raise RuntimeError('Hazırlık kontrolü sırasında bot ayarları değişti; ayar değiştirilmedi.')
+                before = self.config_snapshot()
+                candidate = self.validated_config(data)
+                changed = [k for k in self.LIVE_KEYS if candidate.get(k) != before.get(k)]
+                if not changed:
+                    return candidate
+                self.persist_config(candidate)        # OSError: nothing changed in memory
+                for key, value in candidate.items():
+                    setattr(self, key, value)
                 self.last_candle_time, self.last_candle_times = 0, {}
                 self._candidate, self._candidates = None, {}
                 self.symbol_status = {}
                 self.current_hma = self.current_ma2 = 0.0
                 self.current_atr = self.current_er = 0.0
-                self.last_signal, self.last_signal_time, self.last_signal_price = "YOK", "", 0.0
-                self.runtime_state, self.runtime_detail, self.last_error = 'WAITING_DATA', f'{sym}: Yeni kapanmış mum verisi bekleniyor.', None
-                self.log(f"🎯 Bot sembolü {old} → {sym} (çalışırken). {old} pozisyonları olduğu gibi kalır; "
-                         f"{sym} için bir sonraki kapanmış mumdaki kesişim bekleniyor.")
-                return [sym]
+                if before['symbol'] != self.symbol:
+                    self.last_signal, self.last_signal_time, self.last_signal_price = "YOK", "", 0.0
+                self.runtime_state, self.runtime_detail, self.last_error = 'WAITING_DATA', f'{self.symbol}: Yeni kapanmış mum verisi bekleniyor.', None
+                tf = TIMEFRAME_NAMES.get(self.timeframe_minutes, f'M{self.timeframe_minutes}').replace('TIMEFRAME_', '')
+                note = (f"{before['symbol']} pozisyonları olduğu gibi kalır; " if before['symbol'] != self.symbol else 'Açık pozisyonlar olduğu gibi kalır; ')
+                self.log(f"🎯 Bot seçimi izledi (çalışırken): {self.symbol} {tf} · HMA({self.hma_period}) × "
+                         f"{self.second_ma_type}({self.second_ma_period}). {note}bir sonraki kapanmış mumdaki kesişim bekleniyor.")
+                return candidate
         finally:
             self._check_lock.release()
+
+    def switch_symbol_live(self, sym: str, expected_config=None, timeout: float = 30.0) -> List[str]:
+        sym = sym.strip()
+        if not re.fullmatch(r'[A-Za-z0-9_.#-]{1,32}', sym):
+            raise ValueError("Geçersiz sembol.")
+        return list(self.reinit_live({'symbol': sym, 'symbols': [sym]}, expected_config, timeout)['symbols'])
 
     def remove_symbol(self, sym: str) -> List[str]:
         with self._state_lock:
@@ -442,6 +455,20 @@ class StrategyBot:
         with self._state_lock:
             if self.is_running or self._check_lock.locked() or (self.task is not None and not self.task.done()):
                 raise ValueError('Ayarları değiştirmeden önce botu durdurun ve mevcut döngünün bitmesini bekleyin.')
+            candidate = self.validated_config(data)
+            if persist:
+                self.persist_config(candidate)
+            for key, value in candidate.items():
+                setattr(self, key, value)
+            self._candidate = None
+            self.current_atr = self.current_er = 0.0
+            self.last_candle_time = 0
+            self.last_candle_times = {}
+        self.log(f"Bot ayarları güncellendi: {', '.join(self.symbols)} | HMA: {self.hma_period} | 2.MA: {self.second_ma_type}({self.second_ma_period}) | Lot: {self.lot_size}")
+
+    def validated_config(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Current settings + data, validated; nothing is applied."""
+        with self._state_lock:
             candidate = self.config_snapshot()
             if not isinstance(data, dict) or set(data) - set(candidate):
                 raise ValueError('Bilinmeyen bot ayarı.')
@@ -499,15 +526,7 @@ class StrategyBot:
             if candidate['risk_mode'] == 'ATR' and candidate['use_take_profit'] and candidate['atr_target_multiplier'] <= 0:
                 raise ValueError('Etkin ATR hedef çarpanı pozitif olmalı.')
             self._validate_protection(candidate)
-            if persist:
-                self.persist_config(candidate)
-            for key, value in candidate.items():
-                setattr(self, key, value)
-            self._candidate = None
-            self.current_atr = self.current_er = 0.0
-            self.last_candle_time = 0
-            self.last_candle_times = {}
-        self.log(f"Bot ayarları güncellendi: {', '.join(self.symbols)} | HMA: {self.hma_period} | 2.MA: {self.second_ma_type}({self.second_ma_period}) | Lot: {self.lot_size}")
+            return candidate
 
     def _sym_status(self, sym, state, detail, **extra):
         with self._state_lock:
