@@ -15,10 +15,14 @@
   const pts = (v) => (v == null ? '—' : `${v > 0 ? '+' : ''}${Number(v).toLocaleString('tr-TR', {maximumFractionDigits: 1})} p`);
   const date = (t) => new Date(Number(t) * 1000).toISOString().slice(0, 16).replace('T', ' ');
 
+  // A strategy is the whole setup: "Manuel işlemlerim" = manual-style entry + lot / SL / TP from the profitable
+  // manual trades; a common crossover = that entry + the bot's own lot / SL / TP (Bot Ayarları).
   async function setEntryMode(mode) {
     const bot = (typeof latestBotSettings !== 'undefined' && latestBotSettings) || {};
-    if (bot.entry_mode === mode) return true;
-    const res = await fetch('/api/bot/follow', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({entry_mode: mode})});
+    const copy = mode === 'MANUAL_STYLE';
+    if (bot.entry_mode === mode && Boolean(bot.copy_manual_trades) === copy) return true;
+    const res = await fetch('/api/bot/follow', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({entry_mode: mode, copy_manual_trades: copy})});
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Bot giriş kuralı değiştirilemedi.');
     if (data && data.symbol && typeof latestBotSettings !== 'undefined') latestBotSettings = data;
@@ -92,6 +96,7 @@
 
   function isCurrent(p) {
     if (botMode() !== 'CROSSOVER') return false;
+    if (((typeof latestBotSettings !== 'undefined' && latestBotSettings) || {}).copy_manual_trades) return false;
     const s = window.HMASignalSettings?.get?.() || {};
     return (s.fast_type || 'HMA') === p.fast_type && Number(s.hma_period) === p.fast && s.ma_type === p.slow_type && Number(s.ema_period) === p.slow;
   }
@@ -101,6 +106,7 @@
     const status = $('sp-status');
     if (!list) return;
     const exits = data.exit_source === 'manual_copy' ? 'manuel kopya SL/TP' : 'botun SL/TP ayarı';
+    const lotBot = (typeof latestBotSettings !== 'undefined' && latestBotSettings) || {};
     if (status) status.innerHTML = `${esc(data.symbol)} ${esc(TF[data.timeframe_minutes] || data.timeframe_minutes)} · ${data.candles} kapanmış mum (${esc(date(data.from_time))} – ${esc(date(data.to_time))}, sunucu saati) · `
       + `çıkış: ${esc(exits)} (SL ${data.sl_points || 'yok'} p, TP ${data.tp_points || 'yok'} p) · spread ${data.spread_points} p · komisyon ${data.commission_points} p. `
       + `<i>${esc(data.disclaimer)}</i>`;
@@ -122,7 +128,8 @@
             ${p.small_sample ? '<span class="sp-warn">az işlem, sonuç güvenilir değil</span>' : ''}
           </div>
         </div>
-        <button type="button" class="signal-btn-primary" ${current ? 'disabled' : ''} onclick="StrategyPresets.apply('${esc(p.id)}')">${current ? 'Seçili' : 'Bunu kullan'}</button>
+        <button type="button" class="signal-btn-primary" ${current ? 'disabled' : ''} onclick="StrategyPresets.apply('${esc(p.id)}')"
+          title="Giriş bu kesişim; lot ve SL/TP Bot Ayarları'ndan (${esc(lotBot.lot_size ?? '')} lot)">${current ? 'Seçili' : 'Bunu kullan'}</button>
       </div>`;
     }).join('');
   }
@@ -161,7 +168,7 @@
     try { await setEntryMode('CROSSOVER'); } catch (err) { ok = false; if (typeof showToast === 'function') showToast('❌ ' + err.message, 'error'); }
     if (ok && typeof syncBotToSelection === 'function') ok = await syncBotToSelection({}, {announce: false});
     if (typeof showToast === 'function') {
-      showToast(ok ? `🌐 ${p.name} seçildi: tarayıcı, grafik ve bot bu kesişimi kullanıyor.${latestBotSettings?.is_running ? ' Bot çalışırken geçti; açık pozisyonlar kalır.' : ''}`
+      showToast(ok ? `🌐 ${p.name} seçildi: tarayıcı, grafik ve bot bu kesişimi kullanıyor; lot ve SL/TP Bot Ayarları'ndan (${latestBotSettings?.lot_size ?? '—'} lot).${latestBotSettings?.is_running ? ' Bot çalışırken geçti; açık pozisyonlar kalır.' : ''}`
         : `⚠️ ${p.name} tarayıcıya uygulandı ama bot geçemedi; sebebi bot kartında.`, ok ? 'success' : 'warning');
     }
     if (typeof fetchBotStatus === 'function') fetchBotStatus();

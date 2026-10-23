@@ -83,3 +83,19 @@ def test_bot_accepts_fast_type_and_rejects_unknown():
         assert False
     except ValueError:
         assert bot.fast_ma_type == 'EMA'
+
+
+def test_choosing_a_crossover_switches_lot_source_to_bot_settings_while_running():
+    from app.strategy_bot import StrategyBot
+    bot = StrategyBot(Mock(login_id=7, server='demo', account_type='DEMO'))
+    bot.persist_config = lambda data: None
+    bot.is_running, bot.symbol, bot.symbols = True, 'XAUUSD', ['XAUUSD']
+    bot.copy_manual_trades, bot.entry_mode = True, 'CROSSOVER'
+    bot.manual_copy = {'available': True, 'lot': 22.5}
+    bot.mt5.bot_lot_override = (22.5, 47.0)
+    bot.last_candle_times = {'XAUUSD': 123}
+    bot.reinit_live({'copy_manual_trades': False})
+    assert bot.copy_manual_trades is False and bot.manual_copy is None and bot.mt5.bot_lot_override is None
+    assert bot.last_candle_times == {'XAUUSD': 123}       # running instance is not re-initialised
+    lot, sl, tp, note = bot.copied_order_settings('XAUUSD', 200, 0)
+    assert lot is None and (sl, tp) == (200, 0)          # the order uses the bot's own lot / SL / TP

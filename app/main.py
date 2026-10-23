@@ -436,19 +436,10 @@ async def strategy_presets(symbol: str = Query(min_length=1, max_length=32, patt
     from app import signal_engine, strategy_presets as sp
 
     def run():
-        # The bot's own exits: manual copy SL/TP when that is on and available, else its SL/TP settings.
+        # Choosing a common crossover makes the bot use its own lot / SL / TP (Bot Ayarları), so the test uses them.
         sl = bot.sl_points if bot.use_stop_loss else 0
         tp = bot.tp_points if bot.use_take_profit else 0
         exit_source = 'bot'
-        if bot.copy_manual_trades:
-            try:
-                prof = mt5_client.manual_copy_profile(symbol, bot.copy_manual_since)
-            except Exception:
-                prof = {}
-            if prof.get('available'):
-                sl = prof.get('sl_points') or sl
-                tp = prof.get('tp_points') or tp
-                exit_source = 'manual_copy'
         warmup = max(signal_engine.history_bars({'hma_period': p['fast'], 'fast_type': p['fast_type'],
                                                  'ema_period': p['slow'], 'ma_type': p['slow_type']}) for p in sp.PRESETS)
         rates = mt5_client.get_rates(symbol, timeframe_minutes, candles + warmup + 1)
@@ -471,7 +462,7 @@ async def strategy_presets(symbol: str = Query(min_length=1, max_length=32, patt
                 'disclaimer': 'Geçmiş test sonucudur; gelecekteki kârı garanti etmez. Swap ve kayma dahil değildir.'}
 
     key = (symbol, timeframe_minutes, candles, commission_points, bot.sl_points, bot.tp_points, bot.use_stop_loss,
-           bot.use_take_profit, bot.copy_manual_trades)
+           bot.use_take_profit)
     hit = _PRESET_CACHE.get(key)
     if hit and time.monotonic() - hit[0] < 60:
         return hit[1]
@@ -1686,6 +1677,7 @@ class BotFollowRequest(BaseModel):
     second_ma_period: Optional[int] = Field(default=None, ge=2, le=1000)
     fast_ma_type: Optional[Literal["HMA", "EMA", "SMA", "LWMA"]] = None
     entry_mode: Optional[Literal["CROSSOVER", "MANUAL_STYLE"]] = None
+    copy_manual_trades: Optional[bool] = None
     # More EA instances on other timeframes (MT5: the same EA attached to more charts of the symbol).
     extra_timeframes: Optional[List[Literal[1, 5, 15, 30, 60, 240, 1440]]] = Field(default=None, max_length=6)
 

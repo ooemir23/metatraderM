@@ -32,10 +32,10 @@ const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:a
   assert.match(node('sp-manual').innerHTML, /43 manuel karar/);
   assert.match(node('sp-manual').innerHTML, /deneysel/);
   await SP.applyManual();
-  assert.deepEqual(sent.filter((r) => r.url === '/api/bot/follow').at(-1).body, {entry_mode: 'MANUAL_STYLE'});
+  assert.deepEqual(sent.filter((r) => r.url === '/api/bot/follow').at(-1).body, {entry_mode: 'MANUAL_STYLE', copy_manual_trades: true});
   assert.equal(bot.entry_mode, 'MANUAL_STYLE');
   await SP.apply('ema-9-21');
-  assert.deepEqual(sent.filter((r) => r.url === '/api/bot/follow').at(-1).body, {entry_mode: 'CROSSOVER'});
+  assert.deepEqual(sent.filter((r) => r.url === '/api/bot/follow').at(-1).body, {entry_mode: 'CROSSOVER', copy_manual_trades: false});
   assert.deepEqual(JSON.parse(JSON.stringify(periods)), {fast_type: 'EMA', hma_period: 9, ma_type: 'EMA', ema_period: 21});
   console.log('Strategies dialog: manual-style entry on top, presets switch back PASS');
 })().catch((err) => { console.error(err); process.exit(1); });

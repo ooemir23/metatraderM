@@ -96,3 +96,7 @@ Kullanıcı ikisini de MT5'ten farklı olduğunu bilerek seçti; varsayılan aç
   (MT5 DEAL_REASON 4/5/6, `mt5_bridge.hma_recent_closes`) ve strateji hâlâ bir yön gösteriyorsa bot bir sonraki kapanmış
   mumda yeniden girer (kapanış başına bir kez; reddedilirse sonraki mumda tekrar). Elle kapatma (masaüstü/mobil/web/
   panel = 0/1/2/3) yeniden giriş tetiklemez. MANUAL_STYLE'da aynı kurulum sürüyorsa yeniden girer.
+- Strateji seçimi bütün bir kurulumdur (2026-10-23): "Manuel işlemlerim" = MANUAL_STYLE giriş + manuel kopya lot/SL/TP
+  (`copy_manual_trades` açık); yaygın kesişimlerden biri = o kesişim + botun kendi lot/SL/TP'si (kopya kapalı).
+  `copy_manual_trades` çalışan botta değişebilir (LIVE_KEYS) ve çalışan örnekleri sıfırlamaz. Yaygın kesişim testi her
+  zaman botun kendi SL/TP'siyle yapılır.

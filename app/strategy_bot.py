@@ -420,7 +420,7 @@ class StrategyBot:
             return [sym]
 
     # Settings a running bot may change: the chart it is attached to and the EA crossover inputs.
-    LIVE_KEYS = ('symbol', 'symbols', 'timeframe_minutes', 'entry_mode', 'fast_ma_type', 'hma_period', 'second_ma_type', 'second_ma_period', 'extra_timeframes')
+    LIVE_KEYS = ('symbol', 'symbols', 'timeframe_minutes', 'entry_mode', 'copy_manual_trades', 'fast_ma_type', 'hma_period', 'second_ma_type', 'second_ma_period', 'extra_timeframes')
 
     def reinit_live(self, data: Dict[str, Any], expected_config=None, timeout: float = 30.0) -> Dict[str, Any]:
         """Running bot follows the panel selection, like an MT5 EA: a chart symbol/period change
@@ -446,6 +446,16 @@ class StrategyBot:
                 self.persist_config(candidate)        # OSError: nothing changed in memory
                 for key, value in candidate.items():
                     setattr(self, key, value)
+                if changed == ['copy_manual_trades']:
+                    # Only the order size source changes (manual copy or the bot's own lot / SL / TP); the
+                    # running instances and their candle markers stay as they are.
+                    if not self.copy_manual_trades:
+                        self.manual_copy = None
+                        if getattr(self.mt5, 'bot_lot_override', None) is not None:
+                            self.mt5.bot_lot_override = None
+                    self.log('📏 Lot ve SL/TP kaynağı: ' + ('kârlı manuel işlemler.' if self.copy_manual_trades else
+                             f'bot ayarı ({self.lot_size:g} lot, SL {self.sl_points if self.use_stop_loss else "yok"}, TP {self.tp_points if self.use_take_profit else "yok"}).'))
+                    return candidate
                 if changed == ['extra_timeframes']:
                     # Attaching / removing EA instances on other charts leaves the running ones untouched;
                     # a new instance starts with OnInit on its own timeframe.
