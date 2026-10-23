@@ -2804,6 +2804,7 @@ function renderBotProtection(bot) {
     parts.push(bot.lot_mode === 'RISK' ? `Lot: özsermayenin %${bot.risk_pct} riski` : `Lot: sabit ${bot.lot_size}`);
   }
   if (bot.entry_mode === 'MANUAL_STYLE') parts.unshift('Giriş: manuel işlemlerinden öğrenilen sinyal');
+  else if (bot.entry_mode === 'MEVO') parts.unshift('Giriş: MevO fırsatları (DeepSeek)');
   else if (bot.trend_entry_on_start) parts.push('Başlarken trend yönünde girer');
   if (bot.reenter_after_stop) parts.push('SL/TP sonrası sinyal sürüyorsa yeniden girer');
   if (bot.max_consecutive_losses) parts.push(`${bot.max_consecutive_losses} kayıpta dur`);

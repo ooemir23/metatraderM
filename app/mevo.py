@@ -1,7 +1,7 @@
-"""MevO — DeepSeek destekli, YALNIZ DANIŞMAN asistan (2026-10-23 yeniden yazıldı).
+"""MevO — DeepSeek destekli, DANIŞMAN asistan (2026-10-23 yeniden yazıldı).
 
 Kullanıcı kararı: MevO sadece orijinal MT5 terminalinden elle açılmış işlemleri (broker geçmişi) inceleyip
-mantığını öğrenir ve bu mantığa uyan fırsatları SUNAR. Emir açmaz, otopilotu yoktur; açmak istersen sen açarsın.
+mantığını öğrenir ve bu mantığa uyan fırsatları SUNAR. Kendisi emir açmaz: fırsatı kullanıcı düzenleyip açar (sayfa) ya da kullanıcı botta 'MevO'yu kullan' seçer.
 
 Kurallar
 - Öğrenme verisi yalnız `MT5Client.get_manual_trades` (elle açılan, tamamen kapanmış pozisyonlar) ve bunlardan
@@ -213,6 +213,14 @@ def trade_warnings(item, comparison, broker_hour, entry_sl_pct):
     return out
 
 
+LOSS_MARK = 'zarar edildi'     # trade_warnings: geçmiş zarara dayanan uyarılar bu ifadeyi içerir
+
+
+def blocking_warnings(warnings):
+    """Botun girişi engelleyen uyarıları: yalnız geçmişte gerçekten zarar edilmiş durumlar (salt sapma uyarıları engellemez)."""
+    return [w for w in warnings or [] if LOSS_MARK in w]
+
+
 def validate_opportunity(item, tick):
     """Model çıktısını güvenli forma çevirir; mantıksız seviye varsa BEKLE olur (emir açılmaz zaten)."""
     action = str(item.get('action', 'WAIT')).upper()
@@ -408,7 +416,7 @@ class MevO:
         'Türkçe, reason en fazla 1 cümle. JSON: {"opportunities":[{"symbol":"","action":"BUY|SELL|WAIT",'
         '"confidence":0,"sl":0,"tp":0,"matched_rule":"","reason":""}]}')
 
-    def opportunities(self, symbols, timeframe_minutes=15):
+    def opportunities(self, symbols, timeframe_minutes=15, store=True):
         symbols = [s for s in dict.fromkeys(str(s).strip() for s in symbols) if s][:SYMBOLS_MAX]
         if not symbols:
             return {'success': False, 'error': 'Sembol seçilmedi.'}
@@ -469,13 +477,21 @@ class MevO:
             payload = {'created_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
                        'timeframe': f'M{timeframe_minutes}', 'items': result, 'used_model': used_model}
             with self._lock:
-                self._acct()['opportunities'] = payload
+                if store:
+                    self._acct()['opportunities'] = payload
                 self._save()
             return {'success': True, **payload}
         except Exception as exc:
             return {'success': False, 'error': str(exc)}
         finally:
             self._busy.release()
+
+    def signal_for(self, symbol, timeframe_minutes):
+        """Bot için tek sembol fırsatı (sayfadaki listeyi değiştirmez). Aynı kapanmış mum önbellekten gelir."""
+        res = self.opportunities([symbol], timeframe_minutes, store=False)
+        if not res.get('success'):
+            raise RuntimeError(res.get('error', 'MevO fırsatı alınamadı'))
+        return next((i for i in res['items'] if i['symbol'] == symbol), None)
 
     def status(self):
         with self._lock:

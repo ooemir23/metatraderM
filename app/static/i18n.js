@@ -386,7 +386,7 @@
     ["Fırsatları getir", "Get opportunities"],
     ["Henüz öğrenilmedi.", "Nothing learned yet."],
     ["Manuel işlemlerimi öğren", "Learn my manual trades"],
-    ["MevO yalnız orijinal MT5 terminalinden elle açtığın kapalı işlemleri inceler, mantığını öğrenir ve buna uyan fırsatları sunar. Emir açmaz; açmak istersen terminalden kendin açarsın. Model güveni kazanma olasılığı değildir.", "MevO only studies the closed trades you opened by hand in the original MT5 terminal, learns their logic and presents opportunities that match it. It never places orders; if you want one, open it yourself in the terminal. Model confidence is not a probability of winning."],
+    ["MevO orijinal MT5 terminalinden elle açtığın kapalı işlemleri (kârlı ve zararlı) inceler, mantığını ve zarar sebeplerini öğrenir, buna uyan fırsatları sunar. Fırsatı düzenleyip kendin açarsın; istersen botta \"MevO'yu kullan\" ile bot da açar. Model güveni kazanma olasılığı değildir.", "MevO studies the closed trades (profitable and losing) you opened by hand in the original MT5 terminal, learns their logic and loss causes, and presents matching opportunities. You edit and open an opportunity yourself; or choose \"Use MevO\" in the bot and the bot opens them. Model confidence is not a probability of winning."],
     ["Semboller (virgülle, en fazla 6)", "Symbols (comma separated, up to 6)"],
     ["Önce mantığı öğren, sonra fırsatları getir.", "Learn the logic first, then get opportunities."],
     ["Son Veri Güncelleme Saati", "Last data update"],

@@ -237,7 +237,7 @@ class BotConfigRequest(BaseModel):
     # User decisions 2026-10-23 (not EA inputs): trend entry on start, lot/SL/TP from profitable manual trades.
     trend_entry_on_start: Optional[bool] = None
     reenter_after_stop: Optional[bool] = None
-    entry_mode: Optional[Literal["CROSSOVER", "MANUAL_STYLE"]] = None
+    entry_mode: Optional[Literal["CROSSOVER", "MANUAL_STYLE", "MEVO"]] = None
     auto_lot_limits_demo: Optional[bool] = None
     fast_ma_type: Optional[Literal["HMA", "EMA", "SMA", "LWMA"]] = None
     extra_timeframes: Optional[List[int]] = None
@@ -731,6 +731,7 @@ def bot_manual_style(symbol, timeframe_minutes, candle_time, days=90):
 
 
 bot.manual_style_provider = bot_manual_style
+bot.mevo_provider = lambda symbol, minutes: mevo.signal_for(symbol, minutes)
 
 
 @app.get('/api/research/history')
@@ -1606,7 +1607,7 @@ class BotFollowRequest(BaseModel):
     second_ma_type: Optional[Literal["EMA", "SMA", "LWMA", "HMA"]] = None
     second_ma_period: Optional[int] = Field(default=None, ge=2, le=1000)
     fast_ma_type: Optional[Literal["HMA", "EMA", "SMA", "LWMA"]] = None
-    entry_mode: Optional[Literal["CROSSOVER", "MANUAL_STYLE"]] = None
+    entry_mode: Optional[Literal["CROSSOVER", "MANUAL_STYLE", "MEVO"]] = None
     copy_manual_trades: Optional[bool] = None
     # More EA instances on other timeframes (MT5: the same EA attached to more charts of the symbol).
     extra_timeframes: Optional[List[Literal[1, 5, 15, 30, 60, 240, 1440]]] = Field(default=None, max_length=6)

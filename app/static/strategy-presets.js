@@ -19,7 +19,7 @@
   // manual trades; a common crossover = that entry + the bot's own lot / SL / TP (Bot Ayarları).
   async function setEntryMode(mode) {
     const bot = (typeof latestBotSettings !== 'undefined' && latestBotSettings) || {};
-    const copy = mode === 'MANUAL_STYLE';
+    const copy = mode !== 'CROSSOVER';      // manual-style and MevO take their lot from the profitable manual trades
     if (bot.entry_mode === mode && Boolean(bot.copy_manual_trades) === copy) return true;
     const res = await fetch('/api/bot/follow', {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({entry_mode: mode, copy_manual_trades: copy})});
@@ -94,6 +94,48 @@
     if (last) render(last);
   }
 
+  // MevO card: the bot opens the opportunities MevO (DeepSeek, learned from the manual trades) presents.
+  async function loadMevo() {
+    const node = $('sp-mevo');
+    if (!node) return;
+    let st = null, error = '';
+    try {
+      const res = await fetch('/api/mevo/status');
+      st = await res.json();
+      if (!res.ok) throw new Error('MevO durumu okunamadı.');
+    } catch (err) { error = err.message; }
+    const current = botMode() === 'MEVO';
+    const learned = st && st.profile;
+    const ready = !!(st && st.configured && learned);
+    const tf = context().tf;
+    const tfOk = [5, 15, 30, 60, 240].includes(tf);
+    const note = error ? `❌ ${esc(error)}`
+      : !st.configured ? 'MevO için önce MevO sayfasında DeepSeek API anahtarını gir.'
+      : !learned ? 'MevO henüz manuel işlemlerini öğrenmedi: MevO sayfasında "Manuel işlemlerimi öğren"e bas.'
+      : !tfOk ? `MevO girişi ${esc(TF[tf] || tf)} zaman diliminde çalışmaz (token maliyeti); M5–H4 seçin.`
+      : `Bot, her kapanan mumda (pozisyon yokken) MevO'ya sorar; model güveni en az %65 olan ve geçmiş zarar uyarısı taşımayan AL/SAT fırsatını açar. SL/TP MevO'nun seviyeleri, lot kârlı manuel işlemlerinden. Mum başına en çok 1 DeepSeek isteği; bugün ${st.usage_today.calls}/${st.daily_call_limit}.`;
+    node.innerHTML = `<div class="sp-row sp-manual" data-tone="${current ? 'good' : 'idle'}">
+      <div class="sp-rank">✨</div>
+      <div class="sp-main">
+        <div class="sp-name">MevO'yu kullan (DeepSeek)${current ? ' <span class="sp-current">şu an kullanılıyor</span>' : ''} <span class="sp-warn">deneysel · MT5'ten farklı</span></div>
+        <div class="sp-note">${note}</div>
+      </div>
+      <button type="button" class="signal-btn-primary" ${current || !ready || !tfOk ? 'disabled' : ''} onclick="StrategyPresets.applyMevo()">${current ? 'Seçili' : 'MevO\'yu kullan'}</button>
+    </div>`;
+  }
+  async function applyMevo() {
+    try {
+      await setEntryMode('MEVO');
+      if (typeof showToast === 'function') showToast('✨ Bot artık MevO fırsatlarını açıyor; açık pozisyonlar kalır.' +
+        (latestBotSettings?.is_running ? '' : ' Botu başlatınca çalışır.'), 'success');
+    } catch (err) {
+      if (typeof showToast === 'function') showToast('❌ ' + err.message, 'error');
+    }
+    if (typeof fetchBotStatus === 'function') fetchBotStatus();
+    loadMevo(); loadManual(false);
+    if (last) render(last);
+  }
+
   function isCurrent(p) {
     if (botMode() !== 'CROSSOVER') return false;
     if (((typeof latestBotSettings !== 'undefined' && latestBotSettings) || {}).copy_manual_trades) return false;
@@ -147,6 +189,7 @@
     try {
       const q = new URLSearchParams({symbol, timeframe_minutes: String(tf), candles: String(candles), commission_points: String(commission)});
       if (force) loadManual(true);
+      loadMevo();
       const res = await fetch(`/api/strategy-presets?${q}`, controller ? {signal: controller.signal} : undefined);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Stratejiler test edilemedi.');
@@ -180,10 +223,10 @@
     const dialog = $('strategy-presets-dialog');
     if (!dialog) return;
     if (!dialog.open) dialog.showModal?.();
-    loadManual(false);
+    loadManual(false); loadMevo();
     load(false);
   }
   function close() { $('strategy-presets-dialog')?.close?.(); }
 
-  window.StrategyPresets = {open, close, load, apply, render, applyManual, loadManual};
+  window.StrategyPresets = {open, close, load, apply, render, applyManual, loadManual, applyMevo, loadMevo};
 })();

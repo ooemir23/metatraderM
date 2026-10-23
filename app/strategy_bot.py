@@ -25,6 +25,9 @@ logger.setLevel(logging.INFO)
 
 BOT_TIMEFRAMES = (1, 5, 15, 30, 60, 240, 1440)
 MANUAL_STYLE_TIMEFRAMES = (1, 5, 15, 30, 60, 240)
+MEVO_TIMEFRAMES = (5, 15, 30, 60, 240)      # MevO her kapanan mumda DeepSeek'e sorar: M1 token maliyeti nedeniyle yok
+MEVO_MIN_CONFIDENCE = 65
+MEVO_COOLDOWN_CANDLES = 3
 _TF_CODES = {1: 'M1', 5: 'M5', 15: 'M15', 30: 'M30', 60: 'H1', 240: 'H4', 1440: 'D1'}
 _TF_FROM_CODE = {v: k for k, v in _TF_CODES.items()}
 _COMMENT_TF = re.compile(r'^HMA Bot (M1|M5|M15|M30|H1|H4|D1)\b')
@@ -96,6 +99,10 @@ class StrategyBot:
         self.entry_mode = "CROSSOVER"
         self.manual_style_provider = None      # set by app.main: (symbol, tf) -> manual_style.analyze result
         self._ms_prev: Dict[str, Optional[str]] = {}
+        # MEVO entry (user decision 2026-10-23): MevO (app.mevo, DeepSeek) opportunities opened by the bot.
+        self.mevo_provider = None              # set by app.main: (symbol, tf_minutes) -> opportunity dict or None
+        self._mevo_levels: Dict[str, Dict[str, float]] = {}
+        self._mevo_last: Dict[str, int] = {}
         self.manual_copy: Optional[Dict[str, Any]] = None
         # Position sizing: FIXED = lot_size; RISK = risk_pct of equity lost at the stop.
         self.lot_mode = "FIXED"
@@ -474,6 +481,7 @@ class StrategyBot:
                 self._candidate, self._candidates = None, {}
                 self._trend_pending = {}
                 self._ms_prev = {}
+                self._mevo_levels, self._mevo_last = {}, {}
                 self._run_nonce = time.time_ns()
                 self._reentry_for = {}
                 self.symbol_status = {}
@@ -536,11 +544,14 @@ class StrategyBot:
             if not isinstance(data, dict) or set(data) - set(candidate):
                 raise ValueError('Bilinmeyen bot ayarı.')
             candidate.update(data)
-            if candidate.get('entry_mode') not in ('CROSSOVER', 'MANUAL_STYLE'):
+            if candidate.get('entry_mode') not in ('CROSSOVER', 'MANUAL_STYLE', 'MEVO'):
                 raise ValueError('Geçersiz bot ayarı: entry_mode')
             if candidate['entry_mode'] == 'MANUAL_STYLE' and any(t not in MANUAL_STYLE_TIMEFRAMES for t in
                     [candidate['timeframe_minutes'], *(candidate.get('extra_timeframes') or [])]):
                 raise ValueError('Manuel işlem stili M1, M5, M15, M30, H1 ve H4 zaman dilimlerinde çalışır.')
+            if candidate['entry_mode'] == 'MEVO' and any(t not in MEVO_TIMEFRAMES for t in
+                    [candidate['timeframe_minutes'], *(candidate.get('extra_timeframes') or [])]):
+                raise ValueError('MevO girişi M5, M15, M30, H1 ve H4 zaman dilimlerinde çalışır (token maliyeti).')
             if candidate.get('fast_ma_type') not in ('HMA', 'EMA', 'SMA', 'LWMA'):
                 raise ValueError('Geçersiz bot ayarı: fast_ma_type')
             for key in ('symbol', 'second_ma_type', 'risk_mode'):
@@ -1038,8 +1049,8 @@ class StrategyBot:
             self.last_candle_times[key] = latest_closed_candle_time
             if primary:
                 self.last_candle_time = latest_closed_candle_time
-            if self.entry_mode == 'MANUAL_STYLE':
-                start_trend = 0   # the manual-style signal of this candle decides below (an active one opens at start)
+            if self.entry_mode in ('MANUAL_STYLE', 'MEVO'):
+                start_trend = 0   # the manual-style / MevO signal of this candle decides below (an active one opens at start)
             elif self.trend_entry_on_start and trend_way and not self.use_atr_filter:
                 # Kept until the trend position is opened (or one already is): a rejected first try (market
                 # closed, broker reject) is retried on the next closed candle while no new crossover appears.
@@ -1057,7 +1068,7 @@ class StrategyBot:
                     self.runtime_state, self.runtime_detail = 'WAITING_SIGNAL', 'Yeni kapanmış mumdaki sinyal bekleniyor.'
                 return
 
-        if not start_trend and latest_closed_candle_time <= last_t and not (self.entry_mode == 'MANUAL_STYLE' and not last_t):
+        if not start_trend and latest_closed_candle_time <= last_t and not (self.entry_mode in ('MANUAL_STYLE', 'MEVO') and not last_t):
             return
 
         study = None
@@ -1100,6 +1111,14 @@ class StrategyBot:
         cross = 1 if hma2 <= ma2_2 and hma1 > ma2_1 else -1 if hma2 >= ma2_2 and hma1 < ma2_1 else 0
         if self.entry_mode == 'MANUAL_STYLE':
             cross = self._manual_style_cross(sym, tf, key, latest_closed_candle_time, status)
+            if cross is None:
+                return
+            start_trend = 0
+            self._trend_pending.pop(key, None)
+            if not cross:
+                return
+        if self.entry_mode == 'MEVO':
+            cross = self._mevo_cross(sym, tf, key, latest_closed_candle_time, status)
             if cross is None:
                 return
             start_trend = 0
@@ -1211,6 +1230,9 @@ class StrategyBot:
             status('SKIPPED', f'{side} kesişimi: ATR stop/hedef mesafesi hesaplanamadı.')
             return
         copied_lot, sl, tp, copy_note = self.copied_order_settings(sym, sl, tp)
+        if self.entry_mode == 'MEVO' and key in self._mevo_levels:
+            sl, tp, level_note = self._mevo_order_points(sym, key, sl, tp)
+            copy_note = (copy_note + ' | ' if copy_note else '') + level_note
         entry_kind = 'trend girişi' if start_trend and not cross else 'kesişim'
 
         if primary:
@@ -1370,6 +1392,66 @@ class StrategyBot:
         self.last_candle_times[key] = int(candle_time) - 1
         if '@' not in key and self.last_candle_time == candle_time:
             self.last_candle_time = int(candle_time) - 1
+
+    def _mevo_cross(self, sym, tf, key, candle_time, status):
+        """1 / -1 when MevO has a BUY / SELL opportunity for this closed candle that passes the bot's checks; 0 when
+        there is none; None when it cannot be evaluated. MevO is asked only while this instance has no own position
+        (token cost), at most once per closed candle (MevO caches it) and not within a few candles of the last entry."""
+        from app.mevo import blocking_warnings
+        if self.mevo_provider is None:
+            self._ms_retry(key, candle_time)
+            status('WAITING_DATA', 'MevO hazır değil.', candle_time=candle_time)
+            return None
+        try:
+            owned = self.mt5.get_positions(fresh=True)
+        except Exception as exc:
+            status('WAITING_DATA', f'Pozisyonlar okunamadı: {exc}', candle_time=candle_time)
+            self._ms_retry(key, candle_time)
+            return None
+        if any(p['symbol'] == sym and p.get('magic') == HMA_MAGIC and self._owner_tf(p) == tf for p in owned):
+            status('WAITING_CROSS', 'MevO: bu zaman diliminin pozisyonu açık; yeni fırsat için MevO\'ya sorulmadı (token tasarrufu).',
+                   candle_time=candle_time)
+            return 0
+        last = self._mevo_last.get(key)
+        if last and int(candle_time) - last < MEVO_COOLDOWN_CANDLES * tf * 60:
+            status('WAITING_CROSS', f'MevO: son girişten sonra {MEVO_COOLDOWN_CANDLES} mum beklenir.', candle_time=candle_time)
+            return 0
+        try:
+            item = self.mevo_provider(sym, tf)
+        except Exception as exc:
+            status('WAITING_DATA', f'MevO fırsatı alınamadı: {exc}', candle_time=candle_time)
+            self._ms_retry(key, candle_time)
+            return None
+        if not item or item.get('action') not in ('BUY', 'SELL'):
+            status('WAITING_CROSS', f"MevO: fırsat yok (bekle). {(item or {}).get('reason', '')}".strip(), candle_time=candle_time)
+            return 0
+        conf = int(item.get('confidence') or 0)
+        if conf < MEVO_MIN_CONFIDENCE:
+            status('SKIPPED', f"MevO {item['action']} fırsatı model güveni %{conf} < %{MEVO_MIN_CONFIDENCE}; atlandı.", candle_time=candle_time)
+            return 0
+        blocked = blocking_warnings(item.get('warnings'))
+        if blocked:
+            status('SKIPPED', f"MevO {item['action']} fırsatı geçmiş zarar uyarısı nedeniyle atlandı: {blocked[0]}", candle_time=candle_time)
+            self.log(f"🛑 [{sym} {tf_code(tf)}] MevO fırsatı geçmiş zarar uyarısıyla engellendi: {blocked[0]}", 'WARNING')
+            return 0
+        self._mevo_levels[key] = {'sl': float(item['sl']), 'tp': float(item['tp']), 'entry': float(item['entry'])}
+        self._mevo_last[key] = int(candle_time)
+        self.log(f"🧠 [{sym} {tf_code(tf)}] MevO {'AL' if item['action'] == 'BUY' else 'SAT'} fırsatı (model güveni %{conf}): "
+                 f"{item.get('reason', '')}", 'SIGNAL')
+        return 1 if item['action'] == 'BUY' else -1
+
+    def _mevo_order_points(self, sym, key, sl, tp):
+        """SL/TP points from MevO's price levels (distance to its entry); bot values stay when the point is unknown."""
+        lv = self._mevo_levels.get(key) or {}
+        try:
+            point = float((self.mt5.get_symbol_spec(sym) or {}).get('point') or 0)
+        except Exception:
+            point = 0.0
+        if not (math.isfinite(point) and point > 0 and lv):
+            return sl, tp, 'MevO seviyeleri çevrilemedi, bot SL/TP ayarı kullanıldı'
+        new_sl = int(math.ceil(abs(lv['entry'] - lv['sl']) / point))
+        new_tp = int(math.ceil(abs(lv['tp'] - lv['entry']) / point))
+        return new_sl, new_tp, f'MevO seviyeleri: SL {new_sl} p, TP {new_tp} p'
 
     def _manual_style_cross(self, sym, tf, key, candle_time, status):
         """1 / -1 when the manual-style signal (app.manual_style, the same result as the 'Manuel Stil Sinyali'
@@ -1608,6 +1690,7 @@ class StrategyBot:
                 self._candidates = {}
                 self._trend_pending = {}
                 self._ms_prev = {}
+                self._mevo_levels, self._mevo_last = {}, {}
                 self.started_at = int(time.time())
                 self._run_nonce = time.time_ns()
                 self._reentry_for = {}

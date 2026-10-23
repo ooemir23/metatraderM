@@ -119,3 +119,11 @@ zarar sebepleri saat / yön / erken stop / dar SL / büyük lot / referans yok. 
 (`mevo.trade_warnings`, token harcamaz) eklenir. Yalnız bilgi; emir/bot davranışı değişmez.
 MevO zarar analizi (2026-10-23, kullanıcı: "kârı değil zararı da incele"): hem manuel ZARARLAR hem bot zararları, manuel kârlı işlemlerin
 referansıyla kodda karşılaştırılır (saat, yön, erken stop, dar SL, büyük lot, uzun tutma, SL yok). Uyarılar ikisinin geçmişinden beslenir.
+MevO — emir açma ve bot girişi (2026-10-23, kullanıcı kararı; ÖNCEKİ "MevO emir açmaz" kuralının yerine geçer):
+1) /ai sayfasında fırsat kartından "Pozisyon olarak aç…": lot/SL/TP düzenlenir, onay penceresinden sonra normal `/api/order/open`
+   (kullanıcı eylemi; gerçek hesapta TOTP kilidi geçerli). 2) Semboller uygulamadaki ürün seçiciyle (`MT5Markets`) eklenir.
+3) Bot `entry_mode='MEVO'` ("Stratejiler" penceresindeki "MevO'yu kullan"): MT5 EA'dan FARKLIDIR (kullanıcı istedi). Her kapanan mumda,
+   o zaman diliminin pozisyonu yokken `mevo.signal_for` ile sorulur (mum başına en çok 1 DeepSeek isteği, önbellekli; son girişten
+   3 mum bekleme; M1 yok: M5–H4). Giriş koşulu: model güveni ≥ %65 ve geçmiş ZARARA dayanan uyarı yok (`mevo.blocking_warnings`;
+   salt sapma uyarıları engellemez). SL/TP = MevO seviyelerinin giriş mesafesi (puan), lot = manuel kopya (kopya açık). Çıkış SL/TP;
+   ters sinyalde kapatma yok. Günlük istek sınırı dolarsa bot girmez, durum kartında yazar.
