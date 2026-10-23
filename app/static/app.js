@@ -2888,6 +2888,10 @@ function renderBotProtection(bot) {
   else if (bot.entry_mode === 'MEVO') parts.unshift('Giriş: MevO fırsatları (DeepSeek)');
   else if (bot.trend_entry_on_start) parts.push('Başlarken trend yönünde girer');
   if (bot.reenter_after_stop) parts.push('SL/TP sonrası sinyal sürüyorsa yeniden girer');
+  if (bot.stop_profit_amount || bot.stop_loss_amount) {
+    const now = Number.isFinite(bot.session_pnl) ? ` (şu an ${bot.session_pnl > 0 ? '+' : ''}${bot.session_pnl})` : '';
+    parts.push(`Hedef: ${bot.stop_profit_amount ? 'kâr +' + bot.stop_profit_amount : 'kâr yok'} / ${bot.stop_loss_amount ? 'zarar -' + bot.stop_loss_amount : 'zarar yok'}${now}`);
+  }
   if (bot.max_consecutive_losses) parts.push(`${bot.max_consecutive_losses} kayıpta dur`);
   if (bot.trade_hours_enabled) parts.push(`Saat ${bot.trade_start}–${bot.trade_end}`);
   if (Array.isArray(bot.trade_days) && bot.trade_days.length < 7) parts.push(`${bot.trade_days.length} gün`);
@@ -3019,6 +3023,7 @@ const botSettingInputs = {
   'cfg-symbol': 'symbol', 'cfg-timeframe': 'timeframe_minutes', 'cfg-hma-period': 'hma_period',
   'cfg-ma2-type': 'second_ma_type', 'cfg-ma2-period': 'second_ma_period', 'cfg-lot': 'lot_size',
   'cfg-sl-points': 'sl_points', 'cfg-tp-points': 'tp_points', 'cfg-copy-since': 'copy_manual_since',
+  'cfg-stop-profit': 'stop_profit_amount', 'cfg-stop-loss': 'stop_loss_amount',
 };
 const botSettingChecks = {'cfg-close-opp': 'close_opposite', 'cfg-use-sl': 'use_stop_loss', 'cfg-use-tp': 'use_take_profit',
   'cfg-trend-entry': 'trend_entry_on_start', 'cfg-reenter': 'reenter_after_stop', 'cfg-copy-manual': 'copy_manual_trades', 'cfg-auto-lot-demo': 'auto_lot_limits_demo'};
@@ -3116,6 +3121,10 @@ async function saveBotSettings() {
   if (reenter) cfg.reenter_after_stop = Boolean(reenter.checked);
   const autoLot = document.getElementById('cfg-auto-lot-demo');
   if (autoLot) cfg.auto_lot_limits_demo = Boolean(autoLot.checked);
+  for (const [id, key] of [['cfg-stop-profit', 'stop_profit_amount'], ['cfg-stop-loss', 'stop_loss_amount']]) {
+    const node = document.getElementById(id);
+    if (node) { const v = Number(node.value || 0); if (!Number.isFinite(v) || v < 0) { showToast('❌ Kâr hedefi / zarar sınırı 0 veya pozitif sayı olmalı.', 'error'); return; } cfg[key] = v; }
+  }
   const copySince = document.getElementById('cfg-copy-since')?.value;
   if (copySince) cfg.copy_manual_since = copySince;
   const limits = {

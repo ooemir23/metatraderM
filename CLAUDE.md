@@ -145,3 +145,13 @@ pozisyon numaraları). Sebepler kodla, kârlı manuel referansla (saat/yön/lot/
 kartında uyarı çıkar ve bot MevO girişi o sembol/yönde yapmaz (uyarı "zarar edildi" ifadesi taşır → `blocking_warnings`). Seri kırılınca kalkar.
 MevO sayfası: tek düğmeyle "Fırsatları getir" (profil yoksa önce kendisi öğrenir) → "MevO fırsatlarının sonucu" → kapalı "ne öğrendi" bölümü.
 Üst çubuk hesap kutusu: her rakamın yıldızı (favoriler üst çubukta görünür), göz düğmesi tutarları bulanıklaştırır (tarayıcıda saklanır).
+
+## Saat kuralı kaldırıldı, kâr hedefi / zarar sınırı (2026-10-23, kullanıcı isteği)
+- MevO artık işlem saatini hiçbir yerde kullanmaz (uyarı, zarar sebebi, kazanç sebebi): kullanıcının saatleri değişiyor ve bot o uyurken de çalışacak.
+  Fırsatı engelleyen uyarılar yalnız yön / dar SL / lot gibi sebepler ve MevO'nun kendi art arda zararlarıdır.
+- `stop_profit_amount` / `stop_loss_amount` (Bot Ayarları; 0 = kapalı; MT5 EA'da YOK, kullanıcı istedi): bot bu çalıştırmadaki net sonuç
+  (başlangıçtan beri kapanan bot pozisyonları + açık bot pozisyonlarının anlık K/Z + swap + komisyon, magic 123461) kâr hedefine ya da
+  zarar sınırına ulaşınca durur (`StrategyBot.check_session_target`, döngüde; kapananlar 5 sn'de bir okunur). Açık pozisyonlar kapatılmaz:
+  SL/TP ile sürer (durmuş EA gibi). Durum: PROFIT_TARGET / LOSS_LIMIT. Çalışan botta değiştirilemez (önce durdur).
+- Yeniden giriş: pozisyon SL/TP ile kapanınca bot, `reenter_after_stop` açıkken (varsayılan) strateji hâlâ yön gösteriyorsa sonraki mumda yeniden girer;
+  MevO modunda pozisyon yokken her kapanan mumda (3 mum beklemeyle) yeniden sorulur.

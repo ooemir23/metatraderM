@@ -1137,6 +1137,13 @@
           <label class="block">İşlem lotu (InpLotSize)<input type="number" id="cfg-lot" value="0.01" step="0.01" min="0.01" class="block w-full rounded bg-gray-800 p-2"></label>
           <label class="flex items-center gap-2"><input type="checkbox" id="cfg-close-opp" checked>Ters sinyalde mevcut pozisyonu kapat (InpCloseOpposite)</label>
           <label class="flex items-center gap-2"><input type="checkbox" id="cfg-reenter" checked>Pozisyon SL/TP ile kapanınca sinyal sürüyorsa bir sonraki mumda yeniden gir <span class="text-amber-300 text-xs">(MT5 EA'da yok)</span></label>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+            <label class="block text-xs text-gray-300">Kâr hedefi (bot bu kadar kâra ulaşınca durur; 0 = kapalı)
+              <input type="number" id="cfg-stop-profit" min="0" step="any" value="0" class="mt-1 w-full bg-[#0b0e14] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"></label>
+            <label class="block text-xs text-gray-300">Zarar sınırı (bot bu kadar zarara ulaşınca durur; 0 = kapalı)
+              <input type="number" id="cfg-stop-loss" min="0" step="any" value="0" class="mt-1 w-full bg-[#0b0e14] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"></label>
+          </div>
+          <p class="text-[11px] text-gray-500">Botun bu çalıştırmadaki net sonucu (kapanan + açık bot pozisyonları, hesap para birimi). Dolunca bot durur; açık pozisyonlar SL/TP ile sürer. <span class="text-amber-300">(MT5 EA'da yok)</span></p>
           <label class="flex items-center gap-2"><input type="checkbox" id="cfg-trend-entry" checked>Başlarken mevcut trend yönünde hemen işlem aç <span class="text-amber-300 text-xs">(MT5 EA'da yok: EA yeni kesişimi bekler)</span></label>
           <label class="flex items-center gap-2"><input type="checkbox" id="cfg-copy-manual" checked>Lot ve SL/TP'yi kârlı manuel MT5 işlemlerinden al <span class="text-amber-300 text-xs">(MT5 EA'da yok)</span></label>
           <label class="block">Manuel işlemler şu tarihten itibaren<input type="date" id="cfg-copy-since" value="2026-10-08" class="block w-full rounded bg-gray-800 p-2"></label>

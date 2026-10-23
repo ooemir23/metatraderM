@@ -237,6 +237,8 @@ class BotConfigRequest(BaseModel):
     # User decisions 2026-10-23 (not EA inputs): trend entry on start, lot/SL/TP from profitable manual trades.
     trend_entry_on_start: Optional[bool] = None
     reenter_after_stop: Optional[bool] = None
+    stop_profit_amount: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    stop_loss_amount: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     entry_mode: Optional[Literal["CROSSOVER", "MANUAL_STYLE", "MEVO"]] = None
     auto_lot_limits_demo: Optional[bool] = None
     fast_ma_type: Optional[Literal["HMA", "EMA", "SMA", "LWMA"]] = None

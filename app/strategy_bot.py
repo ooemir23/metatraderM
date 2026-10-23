@@ -87,6 +87,11 @@ class StrategyBot:
         # After the bot's own position is closed by SL / TP / stop out, open the side the strategy still shows on
         # the next closed candle (user decision 2026-10-23; the EA would wait for a new crossover).
         self.reenter_after_stop = True
+        self.stop_profit_amount = 0.0    # bot bu çalıştırmada bu kadar kâra ulaşınca durur (hesap para birimi; 0 = kapalı)
+        self.stop_loss_amount = 0.0      # bot bu çalıştırmada bu kadar zarara ulaşınca durur (0 = kapalı)
+        self.session_pnl = None
+        self._target_check_at = 0.0
+        self._session_realized = 0.0
         self._reentry_for: Dict[str, int] = {}
         # More EA instances on other timeframes of the same symbol (each opens and closes only its own position).
         self.extra_timeframes: List[int] = []
@@ -309,6 +314,46 @@ class StrategyBot:
                 self.runtime_state, self.runtime_detail = 'LOSS_STREAK', f'Art arda {streak} kayıp; bot durduruldu.'
         return streak
 
+    def check_session_target(self, force=False):
+        """Stop the bot when this run's net result (closed bot positions since the start + floating P/L of the
+        bot's open positions) reaches the profit target or the loss limit. App-only safety/automation feature
+        (not in HMA_Crossover_EA). Open positions are left as they are: SL/TP keep working, like a stopped EA."""
+        with self._state_lock:
+            profit_t, loss_t, started, running = self.stop_profit_amount, self.stop_loss_amount, self.started_at, self.is_running
+        if not running or not started or not (profit_t or loss_t):
+            return None
+        now = time.monotonic()
+        try:
+            if force or now - self._target_check_at >= 5:       # closed positions: history read every 5 s
+                self._target_check_at = now
+                from app import bot_performance
+                days = min(90, int((time.time() - started) // 86400) + 2)
+                deals = self.mt5.get_history(days=days)
+                open_rows = self.mt5.get_positions(fresh=True)
+                offset = getattr(self.mt5, 'tick_clock_offset', 0)
+                offset = offset if isinstance(offset, (int, float)) and not isinstance(offset, bool) else 0
+                rows = bot_performance.closed_positions(
+                    deals, self.signal_history, [p.get('identifier', p.get('ticket')) for p in open_rows], clock_offset=offset)
+                self._session_realized = round(sum(r['net'] for r in rows if r['closed_at'] >= started), 2)
+            floating = sum(float(p.get('profit') or 0) + float(p.get('swap') or 0) + float(p.get('commission') or 0)
+                           for p in self.mt5.get_positions() if int(p.get('magic') or 0) == HMA_MAGIC)
+        except Exception as exc:
+            self.log(f'Kâr/zarar hedefi kontrol edilemedi: {exc}', 'ERROR')
+            return None
+        total = round(self._session_realized + floating, 2)
+        self.session_pnl = total
+        hit = None
+        if profit_t and total >= profit_t:
+            hit = ('PROFIT_TARGET', f'🎯 Kâr hedefi doldu: bu çalıştırmada {total} (hedef {profit_t}); bot durduruldu. Açık pozisyonlar SL/TP ile sürer.')
+        elif loss_t and total <= -loss_t:
+            hit = ('LOSS_LIMIT', f'🛑 Zarar sınırı doldu: bu çalıştırmada {total} (sınır -{loss_t}); bot durduruldu. Açık pozisyonlar SL/TP ile sürer.')
+        if hit:
+            self.log(hit[1], 'ERROR' if hit[0] == 'LOSS_LIMIT' else 'INFO')
+            self.stop()
+            with self._state_lock:
+                self.runtime_state, self.runtime_detail = hit[0], hit[1].split(' ', 1)[1]
+        return total
+
     def load_config(self, data):
         self.update_config(data, persist=False)
 
@@ -318,7 +363,7 @@ class StrategyBot:
                 'er_min','confirmation_bars','min_distance_atr','risk_mode','atr_stop_multiplier',
                 'atr_target_multiplier','lot_size','use_stop_loss','sl_points','use_take_profit','tp_points','close_opposite',
                 'lot_mode','risk_pct','max_consecutive_losses','trade_hours_enabled','trade_start','trade_end',
-                'trade_utc_offset_min','trade_days','blocked_windows','trend_entry_on_start','copy_manual_trades','copy_manual_since','extra_timeframes','auto_lot_limits_demo','entry_mode','reenter_after_stop')
+                'trade_utc_offset_min','trade_days','blocked_windows','trend_entry_on_start','copy_manual_trades','copy_manual_since','extra_timeframes','auto_lot_limits_demo','entry_mode','reenter_after_stop','stop_profit_amount','stop_loss_amount')
         with self._state_lock:
             snap = {key: (list(getattr(self, key)) if isinstance(getattr(self, key), list) else getattr(self, key)) for key in keys}
             snap['symbols'] = list(getattr(self, 'symbols', [self.symbol]))
@@ -605,6 +650,10 @@ class StrategyBot:
                         'trend_entry_on_start', 'copy_manual_trades', 'auto_lot_limits_demo', 'reenter_after_stop'):
                 if not isinstance(candidate[key], bool):
                     raise ValueError(f'Geçersiz bot ayarı: {key}')
+            for key in ('stop_profit_amount', 'stop_loss_amount'):
+                value = candidate[key]
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+                    raise ValueError(f'Geçersiz bot ayarı: {key}')
             for key, low, high, inclusive in (('lot_size', 0, None, False), ('er_min', 0, 1, True),
                     ('min_distance_atr', 0, 2, True), ('atr_stop_multiplier', 0, 20, False), ('atr_target_multiplier', 0, 50, True)):
                 value = candidate[key]
@@ -708,6 +757,9 @@ class StrategyBot:
             "close_opposite": self.close_opposite,
             "trend_entry_on_start": self.trend_entry_on_start,
             "reenter_after_stop": self.reenter_after_stop,
+            "stop_profit_amount": self.stop_profit_amount,
+            "stop_loss_amount": self.stop_loss_amount,
+            "session_pnl": self.session_pnl,
             "extra_timeframes": list(self.extra_timeframes),
             "instance_timeframes": self.instance_timeframes(),
             "copy_manual_trades": self.copy_manual_trades,
@@ -941,6 +993,8 @@ class StrategyBot:
         while self.is_running:
             try:
                 await asyncio.to_thread(self.check_loss_streak)
+                if self.is_running:
+                    await asyncio.to_thread(self.check_session_target)
                 if not self.is_running:
                     break
                 await self.check_strategy()
@@ -1699,6 +1753,7 @@ class StrategyBot:
                 self._reentry_for = {}
                 self.symbol_status = {}
                 self._loss_check_at = 0.0
+                self._target_check_at, self._session_realized, self.session_pnl = 0.0, 0.0, None
                 self.is_running = True
                 self.runtime_state, self.runtime_detail, self.last_error = 'WAITING_DATA', 'Yeni kapanmış mum verisi bekleniyor.', None
                 self.task = asyncio.create_task(self.run_loop())

@@ -90,7 +90,6 @@ def compute_stats(trades):
 
 
 CAUSE_LABELS = {
-    'hour': 'Manuel kârlı işlemlerinin hiç olmadığı saatte açıldı',
     'side': 'Manuel kârlı işlemlerinin baskın yönünün tersine açıldı',
     'early_stop': 'Manuel tutma süresinin çeyreğinden kısa sürede SL/stop ile kapandı',
     'tight_sl': 'SL, manuel kârlı işlemlerin SL mesafesinin yarısından dar',
@@ -130,8 +129,7 @@ def loss_causes(bot_trade, ref):
     if not r:
         return ['no_ref']
     out = []
-    if _hour(bot_trade['open_time']) not in r['hours']:
-        out.append('hour')
+    # Saat bilerek karşılaştırılmaz: kullanıcı işlem saatlerinin değiştiğini, botun uyurken de çalışacağını söyledi (2026-10-23).
     if r['side'] and bot_trade['side'] != r['side']:
         out.append('side')
     hold = (bot_trade['close_time'] - bot_trade['open_time']) / 60
@@ -208,8 +206,6 @@ def explain_trade(t, ref):
     elif net > 0:
         if r:
             agree = []
-            if _hour(t['open_time']) in r['hours']:
-                agree.append('açılış saati manuel kârlı işlemlerinle uyumlu')
             if r['side'] and t['side'] == r['side']:
                 agree.append('yön manuel kârlı işlemlerinle uyumlu')
             why += agree or ['Manuel referansla belirgin uyum yok (şans payı olabilir)']
@@ -291,8 +287,6 @@ def trade_warnings(item, comparison, broker_hour, entry_sl_pct, own=None):
         return f" Geçmişte ({'+'.join(c['who'])}) bu sebeple {c['count']} kez toplam {c['loss']} zarar edildi." if c else ''
     if not ref:
         return own + [f"{item['symbol']} için manuel kârlı işlem referansı yetersiz; karşılaştırma yapılamadı."]
-    if broker_hour not in ref['hours']:
-        out.append(f"Şu an broker saati {broker_hour:02d}:00; manuel kârlı işlemlerin bu saatte açılmadı." + lost('hour'))
     if ref['side'] and item['action'] != ref['side']:
         out.append(f"Manuel kârlı işlemlerin çoğu {ref['side']}; bu fırsat tersi." + lost('side'))
     if entry_sl_pct and ref['median_sl_pct'] and entry_sl_pct < ref['median_sl_pct'] * 0.5:

@@ -151,7 +151,7 @@ def test_bot_losses_are_explained_by_difference_from_manual_winners():
     c = mod.compare_bot_with_manual(manual, bad)
     keys = {x['key']: x for x in c['causes']}
     assert c['bot_count'] == 3 and c['bot_losses'] == 2 and c['bot_loss_total'] == -50.0
-    assert set(keys) == {'hour', 'side', 'big_lot', 'tight_sl', 'early_stop', 'no_sl'}
+    assert set(keys) == {'side', 'big_lot', 'tight_sl', 'early_stop', 'no_sl'}      # saat sebep sayılmaz
     assert keys['side']['loss'] == -30.0 and keys['big_lot']['loss'] == -20.0
     assert mod.compare_bot_with_manual(manual, [trade(30, symbol='EURUSD', net=-5)])['causes'][0]['key'] == 'no_ref'
 
@@ -161,7 +161,8 @@ def test_trade_warnings_are_free_and_cite_bot_history():
     cmp_ = mod.compare_bot_with_manual(manual, [trade(20, side='SELL', net=-30, hour=15)])
     sell = {'symbol': 'XAUUSD', 'action': 'SELL'}
     w = mod.trade_warnings(sell, cmp_, 15, 0.1)
-    assert any('15:00' in x and 'zarar edildi' in x for x in w) and any('BUY' in x for x in w) and any('SL' in x for x in w)
+    assert not any('saat' in x.lower() for x in w)                                   # saat uyarısı yok
+    assert any('BUY' in x and 'zarar edildi' in x for x in w) and any('SL' in x for x in w)
     assert mod.trade_warnings({'symbol': 'XAUUSD', 'action': 'BUY'}, cmp_, 10, 0.5) == []
     assert mod.trade_warnings({'symbol': 'XAUUSD', 'action': 'WAIT'}, cmp_, 15, 0.1) == []
 
@@ -192,8 +193,8 @@ def test_manual_losing_trades_are_analysed_too():
     m = c['manual']
     assert (m['count'], m['wins'], m['losses'], m['loss_total']) == (6, 4, 2, -65.0)
     keys = {x['key']: x for x in m['causes']}
-    assert {'hour', 'held_long', 'no_sl', 'side'} <= set(keys) and keys['hour']['loss'] == -40.0
-    w = mod.trade_warnings({'symbol': 'XAUUSD', 'action': 'BUY'}, c, 22, 0.5)
+    assert {'held_long', 'no_sl', 'side'} <= set(keys) and 'hour' not in keys
+    w = mod.trade_warnings({'symbol': 'XAUUSD', 'action': 'SELL'}, c, 22, 0.5)
     assert w and 'manuel' in w[0]          # uyarı manuel zararlardan da beslenir
 
 
@@ -206,9 +207,9 @@ def test_mevo_review_explains_wins_and_losses_and_blocks_after_losing_streak():
     rv = mod.review_trades(own, ref)
     assert (rv['count'], rv['wins'], rv['losses'], rv['net']) == (4, 1, 3, -10.0)
     by_id = {t['position_id']: t for t in rv['trades']}
-    assert by_id[20]['why'][0] == 'SL tetiklendi' and any('saat' in w for w in by_id[20]['why'])
+    assert by_id[20]['why'][0] == 'SL tetiklendi' and not any('saat' in w.lower() for w in by_id[20]['why'])
     assert any('yön' in w for w in by_id[20]['why'])                                    # SAT, referans BUY
-    assert any('saat' in w and 'uyumlu' in w for w in by_id[23]['why'])
+    assert any('yön' in w and 'uyumlu' in w for w in by_id[23]['why'])
     assert [(b['symbol'], b['side']) for b in rv['blocks']] == [('XAUUSD', 'SELL')]
     assert mod.LOSS_MARK in rv['blocks'][0]['text']                                     # bot girişini de engeller
 
