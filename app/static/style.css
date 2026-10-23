@@ -1340,3 +1340,8 @@ body[data-hide-amounts="1"] .hx-fav-value, body[data-hide-amounts="1"] .hx-balan
 .hx-actions select.hx-lang, #language-select.hx-lang { width:58px; min-width:0; padding:0 6px !important; text-align:center; text-align-last:center; font-weight:700; letter-spacing:.04em; }
 .tools-security-btn { flex:0 0 40px; min-height:40px; display:flex; align-items:center; justify-content:center; gap:8px; width:100%; height:40px; border-radius:8px; background:#1a1f28; border:1px solid #3a3320; color:#f3c969; font-size:13px; font-weight:700; }
 .tools-security-btn:hover { background:#222833; }
+.hx-pos-table thead th.hx-sortable { cursor:pointer; user-select:none; }
+.hx-pos-table thead th.hx-sortable:hover { color:var(--hx-text) !important; }
+.hx-pos-table thead th.hx-sortable:focus-visible { outline:2px solid #4c8dff; outline-offset:-2px; }
+.hx-pos-table thead th[aria-sort="ascending"]::after { content:' ▲'; font-size:9px; color:#4c8dff; }
+.hx-pos-table thead th[aria-sort="descending"]::after { content:' ▼'; font-size:9px; color:#4c8dff; }

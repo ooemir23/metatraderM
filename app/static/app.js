@@ -1235,10 +1235,54 @@ function tradeSourceBadge(item) {
   return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-gray-800 text-gray-200 border border-gray-700 text-xs font-sans font-semibold leading-tight" title="Harici Uzman Danışman / EA (Magic #${effectiveMagic})">⚙️ Harici Bot (#${effectiveMagic})</span>`;
 }
 
+// Click a column header of the open positions table: ascending → descending → original order (choice is remembered).
+const POSITION_SORT_KEY = 'hma.positions.sort.v1';
+let positionSort = (() => {
+  try { const v = JSON.parse(localStorage.getItem(POSITION_SORT_KEY) || 'null'); return v && typeof v.key === 'string' && (v.dir === 1 || v.dir === -1) ? v : null; }
+  catch (_) { return null; }
+})();
+function positionSortValue(p, key) {
+  if (key === 'time') return String(p.time || '');                      // "YYYY-MM-DD HH:MM:SS" sorts as text
+  if (key === 'symbol' || key === 'type') return String(p[key] || '');
+  const n = Number(key === 'ticket' ? p.ticket : p[key]);
+  return Number.isFinite(n) ? n : (key === 'sl' || key === 'tp' ? 0 : -Infinity);
+}
+function sortPositions(rows, sort = positionSort) {
+  if (!sort) return rows;
+  const out = rows.slice();
+  out.sort((a, b) => {
+    const x = positionSortValue(a, sort.key), y = positionSortValue(b, sort.key);
+    const c = typeof x === 'string' ? x.localeCompare(y) : (x < y ? -1 : x > y ? 1 : 0);
+    return (c || Number(a.ticket) - Number(b.ticket)) * sort.dir;
+  });
+  return out;
+}
+function markPositionSort() {
+  document.querySelectorAll('.hx-pos-table thead th[data-sort]').forEach(th => {
+    const on = positionSort && positionSort.key === th.dataset.sort;
+    th.setAttribute('aria-sort', on ? (positionSort.dir === 1 ? 'ascending' : 'descending') : 'none');
+  });
+}
+function setPositionSort(key) {
+  positionSort = !positionSort || positionSort.key !== key ? {key, dir: 1} : positionSort.dir === 1 ? {key, dir: -1} : null;
+  try { positionSort ? localStorage.setItem(POSITION_SORT_KEY, JSON.stringify(positionSort)) : localStorage.removeItem(POSITION_SORT_KEY); } catch (_) { /* session only */ }
+  markPositionSort();
+  if (Array.isArray(window.lastPositionsData)) renderPositionsData(window.lastPositionsData);
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.hx-pos-table thead th[data-sort]').forEach(th => {
+    th.tabIndex = 0; th.setAttribute('role', 'columnheader'); th.classList.add('hx-sortable');
+    th.addEventListener('click', () => setPositionSort(th.dataset.sort));
+    th.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPositionSort(th.dataset.sort); } });
+  });
+  markPositionSort();
+});
+
 function renderPositionsData(positions) {
     if (accountSwitching) return;
     if (!Array.isArray(positions)) throw new Error('Pozisyon listesi doğrulanamadı.');
     positionsRenderRevision++;
+    window.lastPositionsData = positions;
     executionPositions.clear();
     (positions || []).forEach(p => executionPositions.set(p.ticket, p));
     updatePositionExecution();
@@ -1257,7 +1301,7 @@ function renderPositionsData(positions) {
     }
 
     let rowsHtml = "";
-    positions.forEach(p => {
+    sortPositions(positions).forEach(p => {
       const digits = Number.isInteger(p.digits) ? p.digits : 5;
       const price = value => Number(value).toFixed(digits);
       const money = value => value == null ? "—" : `${value > 0 ? "+" : ""}${accountCurrency} ${formatMoney(value)}`;
