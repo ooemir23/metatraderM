@@ -2853,8 +2853,25 @@ function renderBotSymbolStatus(bot) {
   renderBotAddedSignals(bot);
 }
 
+// Which way the bot works (entry mode), shown prominently at the top of the bot card.
+function renderBotMode(bot) {
+  const node = document.getElementById('bot-mode-line');
+  if (!node || !bot) return;
+  const pair = `${bot.fast_ma_type || 'HMA'} ${bot.hma_period} × ${bot.second_ma_type} ${bot.second_ma_period}`;
+  const modes = {
+    MEVO: ['ph-brain', 'purple', 'MevO (DeepSeek)', 'Her kapanan mumda MevO fırsatına bakar; güven ≥ %65 ve geçmiş zarar uyarısı yoksa girer.'],
+    MANUAL_STYLE: ['ph-hand-pointing', 'amber', 'Manuel işlemlerim tarzı', 'Manuel işlemlerinden öğrenilen sinyal AL/SAT olunca girer.'],
+    CROSSOVER: ['ph-chart-line', 'cyan', `Strateji: ${pair} kesişimi`, 'Kapanmış mumda iki ortalama kesişince girer, ters kesişimde kapatır.'],
+  };
+  const [icon, tone, name, hint] = modes[bot.entry_mode] || modes.CROSSOVER;
+  node.dataset.tone = tone;
+  node.innerHTML = `<i class="ph-bold ${icon}"></i><span class="bot-mode-label">Çalışma şekli</span><strong>${escapeHtml(name)}</strong><span class="bot-mode-hint">${escapeHtml(hint)}</span>`;
+  node.hidden = false;
+}
+
 // Protection / sizing summary line under the bot status.
 function renderBotProtection(bot) {
+  renderBotMode(bot);
   const node = document.getElementById('bot-protect-status');
   if (!node || !bot) return;
   const copy = bot.copy_manual_trades ? bot.manual_copy : null;

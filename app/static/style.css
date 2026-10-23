@@ -1324,3 +1324,12 @@ html, body { overflow-x:clip; max-width:100%; }
 .hx-balance-menu .hx-star { position:absolute; top:6px; right:6px; }
 /* Amounts hidden: blur values in the top bar and in the dropdown (text stays, so live updates keep working). */
 body[data-hide-amounts="1"] .hx-fav-value, body[data-hide-amounts="1"] .hx-balance-menu .hx-metric > span:nth-child(2) { filter:blur(7px); user-select:none; }
+
+.bot-mode-line { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; padding:8px 12px; margin-bottom:8px; border-radius:8px; border:1px solid #2a3140; background:#10141b; font-size:12px; color:#9aa4b2; }
+.bot-mode-line[hidden] { display:none; }
+.bot-mode-line strong { font-size:13px; color:#e6e9ef; }
+.bot-mode-line .bot-mode-hint { flex-basis:100%; font-size:11px; color:#7f8a99; }
+.bot-mode-line i { font-size:16px; }
+.bot-mode-line[data-tone="purple"] { border-color:#7c4dd6; background:#1a1430; } .bot-mode-line[data-tone="purple"] i { color:#c3a6ff; }
+.bot-mode-line[data-tone="amber"] { border-color:#a8741a; background:#241b0c; } .bot-mode-line[data-tone="amber"] i { color:#f5c451; }
+.bot-mode-line[data-tone="cyan"] { border-color:#1d6b86; background:#0d1e26; } .bot-mode-line[data-tone="cyan"] i { color:#4cc9f0; }

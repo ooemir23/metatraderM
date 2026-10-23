@@ -167,6 +167,7 @@
     ["Kâr al (TP)", "Take profit (TP)"],
     ["Bilet / Kaynak", "Ticket / Source"],
     ["Açılış saati", "Open time"],
+    ["Çalışma şekli", "Working mode"],
     ["Fırsatlar", "Opportunities"],
     ["Sembol seç, “Fırsatları getir”e bas. MevO gerekirse önce manuel işlemlerini kendisi öğrenir.", "Pick symbols and press “Get opportunities”. MevO learns your manual trades first if needed."],
     ["MevO fırsatlarının sonucu", "Results of MevO opportunities"],
