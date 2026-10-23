@@ -1274,7 +1274,32 @@ function renderPositionsData(positions) {
       `;
     });
 
+    patchPositionRows(tbody, rowsHtml);
+}
+
+// The live feed re-renders several times a second. Replacing every row would destroy the "Değiştir" / "Kapat"
+// button between mouse-down and mouse-up and the click would be lost, so only cells whose content changed are patched.
+function patchPositionRows(tbody, rowsHtml) {
+  const probe = typeof document.createElement === 'function' ? document.createElement('tbody') : null;
+  if (!probe || !('rows' in probe)) { tbody.innerHTML = rowsHtml; return; }
+  probe.innerHTML = rowsHtml;
+  const next = Array.from(probe.rows), current = Array.from(tbody.rows || []);
+  const key = (row) => row.querySelector('[data-close-ticket]')?.dataset.closeTicket || '';
+  const sameShape = next.length === current.length && next.every((row, i) => key(row) && key(row) === key(current[i])
+    && row.cells.length === current[i].cells.length);
+  if (!sameShape) {
     tbody.innerHTML = rowsHtml;
+    Array.from(tbody.rows || []).forEach((row, i) => Array.from(row.cells).forEach((cell, c) => { cell.__src = next[i]?.cells[c]?.innerHTML; }));
+    return;
+  }
+  next.forEach((row, i) => {
+    Array.from(row.cells).forEach((cell, c) => {
+      const old = current[i].cells[c];
+      // Compare with what was rendered last time, not the live DOM: the language layer rewrites live text.
+      if (old.__src !== cell.innerHTML) { old.innerHTML = cell.innerHTML; old.__src = cell.innerHTML; }
+      if (old.className !== cell.className && old.__cls !== cell.className) { old.className = cell.className; old.__cls = cell.className; }
+    });
+  });
 }
 
 async function fetchPositions(force = false) {
