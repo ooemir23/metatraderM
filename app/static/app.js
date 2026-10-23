@@ -4455,3 +4455,16 @@ async function sendSignalDirectToBot(symbol, side, price, opts = {}) {
 }
 
 
+
+function toggleBotHistory(force) {
+  const box = document.getElementById('bot-history-box');
+  const btn = document.getElementById('bot-history-toggle');
+  if (!box) return;
+  const open = typeof force === 'boolean' ? force : box.classList.contains('is-collapsed');
+  box.classList.toggle('is-collapsed', !open);
+  if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  try { localStorage.setItem('botHistoryOpen', open ? '1' : '0'); } catch (e) {}
+}
+document.addEventListener('DOMContentLoaded', () => {
+  try { if (localStorage.getItem('botHistoryOpen') === '1') toggleBotHistory(true); } catch (e) {}
+});

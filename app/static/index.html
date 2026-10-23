@@ -989,9 +989,9 @@
                 <div id="bot-added-signals" class="bot-added" aria-live="polite" hidden></div>
 
                 <!-- SIGNALS SENT TO THE BOT (manual confirmations + automatic orders) -->
-                <div class="bot-history">
+                <div class="bot-history is-collapsed" id="bot-history-box">
                   <div class="bot-history-head">
-                    <span><i class="ph-bold ph-paper-plane-tilt text-indigo-300"></i> Sinyalden Açılan İşlemler <span id="bot-history-count" class="bot-history-count">0</span></span>
+                    <button type="button" id="bot-history-toggle" class="bot-history-toggle" onclick="toggleBotHistory()" aria-expanded="false" aria-controls="bot-history-list"><i class="ph-bold ph-paper-plane-tilt text-indigo-300"></i> Sinyalden Açılan İşlemler <span id="bot-history-count" class="bot-history-count">0</span><i class="ph-bold ph-caret-down bot-history-caret"></i></button>
                     <button type="button" id="bot-history-clear" onclick="clearBotSignalHistory()" class="bot-history-clear" title="Listeyi temizle (pozisyonlar etkilenmez)">Temizle</button>
                   </div>
                   <div id="bot-history-list" class="bot-history-list" aria-live="polite">
