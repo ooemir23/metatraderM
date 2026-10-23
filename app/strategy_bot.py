@@ -1485,8 +1485,9 @@ class StrategyBot:
             status('WAITING_CROSS', f"MevO: fırsat yok (bekle). {(item or {}).get('reason', '')}".strip(), candle_time=candle_time)
             return 0
         conf = int(item.get('confidence') or 0)
-        if conf < MEVO_MIN_CONFIDENCE:
-            status('SKIPPED', f"MevO {item['action']} fırsatı model güveni %{conf} < %{MEVO_MIN_CONFIDENCE}; atlandı.", candle_time=candle_time)
+        need = max(MEVO_MIN_CONFIDENCE, int(item.get('min_confidence') or 0))     # MevO kötü gidişte eşiği kendisi yükseltir
+        if conf < need:
+            status('SKIPPED', f"MevO {item['action']} fırsatı model güveni %{conf} < %{need}; atlandı.", candle_time=candle_time)
             return 0
         blocked = blocking_warnings(item.get('warnings'))
         if blocked:

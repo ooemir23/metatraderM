@@ -1544,6 +1544,44 @@ def _closed_lifetimes(mt5, days, tick_offset, account_scope, opened_by):
     return out
 
 
+def trade_contexts(mt5, specs, account_scope):
+    """Per closed position: adverse / favourable excursion (MAE / MFE, % of entry; Bid M1 bars between open and
+    close), spread at entry and average M5 range (ATR-like, % of entry) just before entry. Read-only broker data;
+    keys are position ids as text. Rows that cannot be read are left out."""
+    _account(mt5, *account_scope)
+    day = lambda ts: datetime.fromtimestamp(int(ts), timezone.utc)
+    out = {}
+    for s in specs[:80]:
+        try:
+            sym, buy = str(s['symbol']), s['side'] == 'BUY'
+            opened, price = int(s['open_time']), float(s['open_price'])
+            closed = min(max(int(s['close_time']), opened + 60), opened + 3 * 86400)
+            if price <= 0:
+                continue
+            row = {}
+            m1 = mt5.copy_rates_range(sym, mt5.TIMEFRAME_M1, day(opened - opened % 60), day(closed))
+            if m1 is not None and len(m1):
+                low, high = min(float(r[3]) for r in m1), max(float(r[2]) for r in m1)
+                adverse, favour = (price - low, high - price) if buy else (high - price, price - low)
+                row['mae_pct'] = round(max(adverse, 0.0) / price * 100, 5)
+                row['mfe_pct'] = round(max(favour, 0.0) / price * 100, 5)
+                info = mt5.symbol_info(sym)
+                point = float(getattr(info, 'point', 0) or 0)
+                spread = float(m1[0][6]) if len(m1[0]) > 6 else 0.0
+                if point > 0 and spread >= 0:
+                    row['spread_pct'] = round(spread * point / price * 100, 5)
+            m5 = mt5.copy_rates_range(sym, mt5.TIMEFRAME_M5, day(opened - 20 * 300), day(opened - 1))
+            if m5 is not None and len(m5) >= 5:
+                last = list(m5)[-14:]
+                row['atr_pct'] = round(sum(float(r[2]) - float(r[3]) for r in last) / len(last) / price * 100, 5)
+            if row:
+                out[str(int(s['position_id']))] = row
+        except Exception:
+            continue
+    _account(mt5, *account_scope)
+    return out
+
+
 def hma_recent_closes(mt5, symbol, hours, tick_offset, account_scope):
     """Closed HMA bot positions of one symbol in the last `hours` (broker server time), newest first:
     opening comment (timeframe tag), side, close time and MT5 DEAL_REASON of the closing deal

@@ -1194,6 +1194,21 @@ class MT5Client:
             except Exception as exc:
                 raise MT5DataError("Bot işlem geçmişi okunamadı.") from exc
 
+    def get_trade_contexts(self, specs) -> Dict[str, Dict[str, float]]:
+        """MAE/MFE, entry spread and range for closed positions (broker M1/M5 bars); {position_id: {...}}."""
+        specs = [{k: s[k] for k in ('position_id', 'symbol', 'side', 'open_time', 'close_time', 'open_price')} for s in specs]
+        if not specs:
+            return {}
+        with self._lock:
+            if not self.ensure_connected():
+                raise MT5DataError("MT5 bağlı değil; işlem bağlamı okunamadı.")
+            try:
+                return self._bridge('trade_contexts', specs, self._selected_account())
+            except MT5DataError:
+                raise
+            except Exception as exc:
+                raise MT5DataError("İşlem bağlamı okunamadı.") from exc
+
     def get_mevo_trades(self, days: int = 90, bot_position_ids=()) -> List[Dict[str, Any]]:
         """Closed positions opened because of MevO (MevO page orders + bot MevO-mode orders), broker history."""
         with self._lock:

@@ -166,3 +166,13 @@ tek satırlık üst bar (logo · hesap özeti · ☰ menü; araçlar/hesap/dil m
 MevO kaynak etiketi (2026-10-23): MT5'e giden emir yorumu idempotency etiketidir (`vm:<hash>`); MevO sayfasından onaylanan emirlerde yorum `mevo:<hash>`
 olur (`MT5Client.open_order`), böylece pozisyon/geçmişte "MevO (Manuel)" rozeti ve `mevo_lifetimes` çalışır. Bu değişiklikten önce açılanlar `vm:` kalır (HMA Sitesi).
 MevO sonuç analizi bot girişlerini de kapsar (entry_mode='MEVO'); pozisyon numaraları `mevo.json` içinde kalıcıdır (`_remember_bot_ids`), bot geçmişi (50 kayıt) kırpılsa/temizlense de kaybolmaz.
+
+## MevO kendini geliştirme (2026-10-23, kullanıcı isteği; saat analizi hâlâ YOK)
+Zarar/kâr sebeplerine broker mumlarından bağlam eklendi (`mt5_bridge.trade_contexts`, `MT5Client.get_trade_contexts`, kapanmış işlem başına bir kez okunup
+`mevo.json` `ctx` içinde saklanır): MAE/MFE (M1 Bid), girişte spread ve M5 ortalama aralık (ATR benzeri), eşzamanlı açık işlem sayısı/lotu
+(`enrich_trades`). Yeni zarar sebepleri (`context_causes`): `noise_sl` (SL, kârlı işlemlerin MAE p75'inden dar ve SL ile stop), `wide_spread`,
+`low_vol`/`high_vol`, `crowded`, `giveback` (hedefin yarısına gelip zarar). Kârlı manuel işlemlerden sembol başına referans/koruma sınırları
+(`build_guards`). Ders defteri: tekrarlayan (≥2) sebepler `build_lessons` ile kalıcı ders+önlem olur, `journal` kazanç/net/eşik trendini tutar.
+Fırsatlar: SL, MAE sınırının (`min_sl_pct`) altındaysa kod SL'yi genişletir (`apply_sl_guard`, TP aynı; yalnız MevO önerisi), canlı spread/volatilite/açık
+işlem uyarıları eklenir (geçmiş ≥2 zarar varsa engeller), modele guards/lessons/trend/spread gider. `adaptive_policy`: son 5 MevO işlemi kötüyse bot güven
+eşiği %65 → %75'e, net zararda %70'e çıkar (`item['min_confidence']`; bot `max(65, eşik)` kullanır). Üst çubuktaki "MevO AI" düğmesi kaldırıldı (MevO artık ana ekran anahtarında).

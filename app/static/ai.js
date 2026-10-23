@@ -186,12 +186,25 @@ function renderOpps(o) {
     const lv = wait ? '' : `<div class="font-mono text-[11px] grid grid-cols-4 gap-1 mt-3"><span class="text-gray-500">Giriş<br><b class="text-white">${esc(i.entry)}</b></span><span class="text-gray-500">SL<br><b class="text-rose-400">${esc(i.sl)}</b></span><span class="text-gray-500">TP<br><b class="text-emerald-400">${esc(i.tp)}</b></span><span class="text-gray-500">R:R<br><b class="text-white">${esc(i.rr)}</b></span></div>`;
     const warns = (i.warnings || []);
     const warnBox = warns.length ? `<details class="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-amber-300"><summary class="cursor-pointer"><i class="ph-bold ph-warning"></i> ${warns.length} uyarı</summary>${warns.map(w => `<p class="mt-1">${esc(w)}</p>`).join('')}</details>` : '';
-    return `<div class="bg-[#0f1218] border ${tone} rounded-xl p-3 text-xs"><div class="flex justify-between items-center"><b class="text-white text-sm">${esc(i.symbol)}</b><span class="px-2 py-0.5 rounded-md font-bold ${badge}">${label}</span></div>${wait ? '' : `<div class="text-gray-500 mt-1">model güveni %${esc(i.confidence)}</div>`}${lv}<p class="mt-3 text-gray-300">${esc(i.reason)}</p>${warnBox}${wait ? '' : openForm(i, n)}</div>`;
+    return `<div class="bg-[#0f1218] border ${tone} rounded-xl p-3 text-xs"><div class="flex justify-between items-center"><b class="text-white text-sm">${esc(i.symbol)}</b><span class="px-2 py-0.5 rounded-md font-bold ${badge}">${label}</span></div>${wait ? '' : `<div class="text-gray-500 mt-1">model güveni %${esc(i.confidence)}</div>`}${lv}<p class="mt-3 text-gray-300">${esc(i.reason)}</p>${i.adjusted ? `<p class="mt-2 text-amber-300"><i class="ph-bold ph-sliders-horizontal"></i> ${esc(i.adjusted)}</p>` : ''}${warnBox}${wait ? '' : openForm(i, n)}</div>`;
   }).join('') + `<p class="sm:col-span-2 text-[11px] text-gray-500">${esc(o.created_at)} · ${esc(o.timeframe)} · ${o.used_model === false ? 'önbellekten, token harcanmadı · ' : ''}kapanmış mumlara göre. Yatırım tavsiyesi değildir; emri sen onaylarsın.</p>`;
 }
 
 // ---- MevO'nun kendi işlemlerinin sonucu: neden kazandı / kaybetti + alınan önlemler ----
 function money(v) { const n = Number(v); return (n > 0 ? '+' : '') + n.toFixed(2); }
+function growthBox(r) {
+  const lessons = (r.lessons || []).map(l => `<li>${esc(l.text)}</li>`).join('');
+  const policy = r.policy ? `<p class="text-gray-300"><i class="ph-bold ph-gauge"></i> Bot için güven eşiği: <b class="text-white">%${esc(r.policy.min_confidence)}</b> <span class="text-gray-500">— ${esc(r.policy.reason)}</span></p>` : '';
+  const guards = Object.entries(r.guards || {}).map(([sym, g]) => `<span class="inline-block mr-3">${esc(sym)}: ${g.min_sl_pct ? 'SL ≥ %' + esc(g.min_sl_pct) : ''}${g.max_open ? ' · en çok ' + esc(g.max_open) + ' açık işlem' : ''}</span>`).join('');
+  const j = r.journal || [];
+  const trend = j.length >= 2 ? `<p class="text-gray-400">Gelişim: kazanç oranı %${esc(j[0].win_rate)} → %${esc(j[j.length - 1].win_rate)} · net ${money(j[0].net)} → ${money(j[j.length - 1].net)} (${esc(j[0].count)} → ${esc(j[j.length - 1].count)} işlem)</p>` : '';
+  const capture = r.avg_capture != null ? `<p class="text-gray-400">Kârlı işlemlerde hareketin ortalama %${esc(r.avg_capture)}'i alındı (çıkış kalitesi).</p>` : '';
+  if (!lessons && !policy && !guards) return '';
+  return `<div class="rounded-xl border border-sky-500/30 bg-sky-500/5 px-3 py-2 space-y-1"><div class="font-semibold text-white"><i class="ph-bold ph-graduation-cap"></i> MevO'nun çıkardığı dersler</div>
+    ${lessons ? `<ul class="list-disc pl-5 text-gray-300 space-y-1">${lessons}</ul>` : '<p class="text-gray-500">Tekrarlanan bir zarar sebebi yok.</p>'}
+    ${policy}${guards ? `<p class="text-gray-400">Koruma sınırları (kârlı işlemlerinden): ${guards}</p>` : ''}${capture}${trend}</div>`;
+}
+
 function renderReview(r) {
   const box = $('mevo-review');
   if (!r || !r.count) {
@@ -211,6 +224,7 @@ function renderReview(r) {
   box.innerHTML = `<div class="grid grid-cols-2 sm:grid-cols-4 gap-2">${tile('İşlem', r.count)}${tile('Kazanç oranı', '%' + esc(r.win_rate))}${tile('Net', money(r.net), r.net >= 0 ? 'text-emerald-400' : 'text-rose-400')}${tile('Zarar toplamı', esc(r.loss_total), 'text-rose-400')}</div>
     ${blocks}
     ${groups ? `<div class="text-gray-400">${groups}</div>` : ''}
+    ${growthBox(r)}
     ${(r.causes || []).length ? `<div><div class="font-semibold text-white mb-1">Zararların ortak sebepleri</div>${causeTable(r.causes)}</div>` : ''}
     <div class="space-y-2">${rows}</div>
     <p class="text-[11px] text-gray-500">Sebepler kârlı manuel işlemlerinin saat/yön/lot/süre/SL referansıyla ve kapanış nedeniyle (SL/TP/elle) koddan karşılaştırılır; bağlantıdır, kesin neden değildir.</p>`;
