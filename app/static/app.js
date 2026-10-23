@@ -1255,7 +1255,9 @@ function renderPositionsData(positions) {
           <td data-label="" class="num hx-actions-cell">
             <span class="hx-row-actions">
               <button type="button" onclick="showPositionEditor(${ticket})" title="SL/TP değiştir veya kısmi kapat">Değiştir</button>
-              <button type="button" onclick="closePosition(${ticket})" title="Pozisyon #${ticket} kapat">Kapat</button>
+              ${closePending.has(Number(ticket))
+                ? `<button type="button" data-close-ticket="${ticket}" disabled aria-busy="true" class="is-closing" title="Kapatma isteği gönderildi; broker sonucu bekleniyor">Kapatılıyor…</button>`
+                : `<button type="button" data-close-ticket="${ticket}" onclick="closePosition(${ticket})" title="Pozisyon #${ticket} kapat">Kapat</button>`}
             </span>
           </td>
         </tr>
@@ -2217,11 +2219,24 @@ function closeResultText(data, position) {
   if (times.length) parts.push(times.join(' + '));
   return parts.join(' · ');
 }
+// Close button state: the click always gets visible feedback (never a silent no-op).
+function setCloseButtonBusy(ticket, busy) {
+  document.querySelectorAll(`[data-close-ticket="${Number(ticket)}"]`).forEach((b) => {
+    b.disabled = busy;
+    b.classList.toggle('is-closing', busy);
+    b.setAttribute('aria-busy', busy ? 'true' : 'false');
+    b.textContent = busy ? 'Kapatılıyor…' : 'Kapat';
+  });
+}
 async function closePosition(ticket) {
-  if (closePending.has(ticket) || accountSwitching) return;
+  ticket = Number(ticket);
+  if (closePending.has(ticket)) return showToast(`⏳ #${ticket} zaten kapatılıyor; broker sonucu bekleniyor.`, 'info');
+  if (accountSwitching) return showToast('Hesap değiştiriliyor; birkaç saniye sonra tekrar deneyin.', 'warning');
   const position = executionPositions.get(Number(ticket)) || executionPositions.get(ticket);
   if (accountVerificationKnown && !currentAccountIdentity) return showToast('Kapatmadan önce broker hesap bağlantısını doğrulayın.', 'error');
   closePending.add(ticket);
+  setCloseButtonBusy(ticket, true);
+  const started = Date.now();
   try {
     // MT5 close button: every click is a new close request at the current price. The bridge only
     // closes a position that is still open, so a repeat after an unclear reply cannot close twice.
@@ -2251,9 +2266,13 @@ async function closePosition(ticket) {
       }
     }
   } catch (err) {
-    showToast("Kapatma sonucu belirsiz; MT5 durumunu kontrol edin.", "error");
+    showToast(err?.name === 'AbortError'
+      ? `#${ticket} için ${Math.round((Date.now() - started) / 1000)} sn içinde yanıt gelmedi; pozisyon listesi yenileniyor, tekrar basmadan önce kontrol edin.`
+      : "Kapatma sonucu belirsiz; MT5 durumunu kontrol edin.", "error");
+    fetchPositions(true);
   } finally {
     closePending.delete(ticket);
+    setCloseButtonBusy(ticket, false);
     refreshOrderRecovery();
   }
 }

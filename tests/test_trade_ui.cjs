@@ -43,6 +43,7 @@ const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:a
   const closing=context.closePosition(42), before=sent.length;
   await context.closePosition(42);
   assert.equal(sent.length,before,'double click on close is suppressed');
+  assert.match(notices.at(-1).text,/#42 zaten kapatılıyor/,'second click gets visible feedback, never a silent no-op');
   release({ok:false,json:async()=>({success:false,uncertain:true,error:'unknown',request_id:'close-42'})});
   await closing;
   assert.ok(storage.has('close-intent:42'));

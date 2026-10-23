@@ -1262,3 +1262,10 @@ html[data-buy-scheme="green"] .mt5-menu-buy { background:#1f9d6a; }
   /* Toasts above the bottom trade bar */
   #toast-container { bottom:calc(72px + env(safe-area-inset-bottom)) !important; left:8px !important; right:8px !important; }
 }
+
+/* Close button while its request runs */
+.hx-row-actions button.is-closing { opacity:.75; cursor:progress; position:relative; padding-left:26px !important; }
+.hx-row-actions button.is-closing::before { content:''; position:absolute; left:9px; top:50%; width:11px; height:11px; margin-top:-6px;
+  border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:hx-spin .7s linear infinite; }
+@keyframes hx-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .hx-row-actions button.is-closing::before { animation:none; } }
