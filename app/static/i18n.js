@@ -381,6 +381,8 @@
     ["1. Manuel işlemlerimin mantığı", "1. The logic of my manual trades"],
     ["2. Fırsatlar", "2. Opportunities"],
     ["DeepSeek API anahtarı", "DeepSeek API key"],
+    ["MevO ayarları: DeepSeek API anahtarı", "MevO settings: DeepSeek API key"],
+    ["MevO ayarları", "MevO settings"],
     ["Doğrula ve kaydet", "Verify and save"],
     ["DeepSeek · yalnız danışman", "DeepSeek · advisor only"],
     ["Fırsatları getir", "Get opportunities"],

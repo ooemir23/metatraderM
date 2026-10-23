@@ -188,8 +188,8 @@ function renderStatus(st) {
   window.mevoLastUsedModel = st.opportunities ? st.opportunities.used_model : undefined;
   $('mevo-usage').textContent = `Bugün ${st.usage_today.calls}/${st.daily_call_limit} istek · ${st.usage_today.tokens} token · model ${st.model}`;
   const src = {panel: 'panelden kaydedilmiş anahtar kullanılıyor', env: 'sunucu ortam değişkenindeki anahtar kullanılıyor', explicit: 'anahtar tanımlı'}[st.key_source];
-  $('mevo-key-state').textContent = src ? 'Durum: ' + src + '. Yeni anahtar girersen onun yerine geçer.' : 'Anahtar tanımlı değil; yukarıya gir.';
-  if (!st.configured) mevoAlert('DeepSeek API anahtarı tanımlı değil.', 'err');
+  $('mevo-key-state').textContent = src ? 'Durum: ' + src + '. Yeni anahtar girersen onun yerine geçer.' : 'Anahtar tanımlı değil; buraya gir.';
+  if (!st.configured) mevoAlert('DeepSeek API anahtarı tanımlı değil: sağ üstteki çark simgesinden gir.', 'err');
 }
 
 async function busy(btnId, fn) {
@@ -199,13 +199,19 @@ async function busy(btnId, fn) {
   finally { b.disabled = false; b.classList.remove('opacity-60'); }
 }
 
+function openKeySettings() {
+  const d = $('mevo-key-modal');
+  if (!d.open) d.showModal();
+  $('mevo-key').focus();
+}
+
 function mevoSaveKey() {
   return busy('mevo-key-btn', async () => {
     const key = $('mevo-key').value.trim();
     if (!key) throw new Error('Anahtarı yaz.');
     const st = await mevoApi('/api/mevo/key', {api_key: key});
     $('mevo-key').value = '';
-    renderStatus(st); mevoAlert('Anahtar doğrulandı ve kaydedildi.', 'ok');
+    renderStatus(st); $('mevo-key-modal').close(); mevoAlert('Anahtar doğrulandı ve kaydedildi.', 'ok');
   });
 }
 
