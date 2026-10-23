@@ -95,6 +95,8 @@ CAUSE_LABELS = {
     'early_stop': 'Manuel tutma süresinin çeyreğinden kısa sürede SL/stop ile kapandı',
     'tight_sl': 'SL, manuel kârlı işlemlerin SL mesafesinin yarısından dar',
     'big_lot': 'Lot, manuel kârlı işlem lotunun 2 katından büyük',
+    'held_long': 'Zarardaki pozisyon, kârlı işlemlerin tutma süresinin 2 katından uzun tutuldu',
+    'no_sl': 'Stop loss (SL) konmamıştı',
     'no_ref': 'Manuelde bu sembolde yeterli kârlı işlem yok (karşılaştırılamadı)',
     'other': 'Belirgin bir fark bulunamadı',
 }
@@ -140,15 +142,17 @@ def loss_causes(bot_trade, ref):
             out.append('tight_sl')
     if r['median_lot'] and float(bot_trade['volume']) > r['median_lot'] * 2:
         out.append('big_lot')
+    if r['median_hold_min'] and hold > r['median_hold_min'] * 2:
+        out.append('held_long')
+    if not float(bot_trade.get('sl') or 0) > 0:
+        out.append('no_sl')
     return out or ['other']
 
 
-def compare_bot_with_manual(manual, bot_trades):
-    """Bot sonuçları ile manuel kârlı işlemlerin karşılaştırması ve bot zararlarının sebep dağılımı."""
-    bot_trades = [t for t in bot_trades if float(t.get('volume') or 0) > 0]
-    ref = winner_reference(manual)
-    wins = [t for t in bot_trades if float(t['net']) > 0]
-    losses = [t for t in bot_trades if float(t['net']) < 0]
+def _loss_block(trades, ref):
+    trades = [t for t in trades if float(t.get('volume') or 0) > 0]
+    wins = [t for t in trades if float(t['net']) > 0]
+    losses = [t for t in trades if float(t['net']) < 0]
     causes, per_symbol = {}, defaultdict(lambda: defaultdict(lambda: {'count': 0, 'loss': 0.0}))
     for t in losses:
         for key in loss_causes(t, ref):
@@ -156,12 +160,25 @@ def compare_bot_with_manual(manual, bot_trades):
                 bucket['count'] += 1
                 bucket['loss'] = round(bucket['loss'] + float(t['net']), 2)
     return {
-        'bot_count': len(bot_trades), 'bot_wins': len(wins), 'bot_losses': len(losses),
-        'bot_net': round(sum(float(t['net']) for t in bot_trades), 2),
-        'bot_loss_total': round(sum(float(t['net']) for t in losses), 2),
-        'causes': [{'key': k, 'label': CAUSE_LABELS[k], **v}
-                   for k, v in sorted(causes.items(), key=lambda kv: kv[1]['loss'])],
+        'count': len(trades), 'wins': len(wins), 'losses': len(losses),
+        'net': round(sum(float(t['net']) for t in trades), 2),
+        'loss_total': round(sum(float(t['net']) for t in losses), 2),
+        'causes': [{'key': k, 'label': CAUSE_LABELS[k], **v} for k, v in sorted(causes.items(), key=lambda kv: kv[1]['loss'])],
         'by_symbol': {s: {k: dict(v) for k, v in d.items()} for s, d in per_symbol.items()},
+    }
+
+
+def compare_bot_with_manual(manual, bot_trades):
+    """Zararların sebep analizi: hem manuel ZARARLAR hem bot zararları, manuel KÂRLI işlemlerin referansıyla
+    karşılaştırılır (saat, yön, lot, tutma süresi, SL)."""
+    ref = winner_reference(manual)
+    bot_block, manual_block = _loss_block(bot_trades, ref), _loss_block(manual, ref)
+    return {
+        'bot_count': bot_block['count'], 'bot_wins': bot_block['wins'], 'bot_losses': bot_block['losses'],
+        'bot_net': bot_block['net'], 'bot_loss_total': bot_block['loss_total'], 'causes': bot_block['causes'],
+        'manual': {k: manual_block[k] for k in ('count', 'wins', 'losses', 'net', 'loss_total', 'causes')},
+        'by_symbol': {s: bot_block['by_symbol'].get(s, {}) for s in bot_block['by_symbol']},
+        'manual_by_symbol': manual_block['by_symbol'],
         'reference': {s: {**r, 'median_lot': round(r['median_lot'], 4),
                           'median_hold_min': round(r['median_hold_min'], 1),
                           'median_sl_pct': round(r['median_sl_pct'], 4) if r['median_sl_pct'] else None}
@@ -175,12 +192,16 @@ def trade_warnings(item, comparison, broker_hour, entry_sl_pct):
     if item.get('action') not in ('BUY', 'SELL') or not comparison:
         return []
     ref = comparison['reference'].get(item['symbol'])
-    seen = comparison['by_symbol'].get(item['symbol'], {})
+    seen = {}
+    for source, label in ((comparison.get('manual_by_symbol', {}), 'manuel'), (comparison['by_symbol'], 'bot')):
+        for key, c in source.get(item['symbol'], {}).items():
+            row = seen.setdefault(key, {'count': 0, 'loss': 0.0, 'who': []})
+            row['count'] += c['count']; row['loss'] = round(row['loss'] + c['loss'], 2); row['who'].append(label)
     out = []
 
     def lost(key):
         c = seen.get(key)
-        return f" Bot bu sebeple {c['count']} kez toplam {c['loss']} zarar etti." if c else ''
+        return f" Geçmişte ({'+'.join(c['who'])}) bu sebeple {c['count']} kez toplam {c['loss']} zarar edildi." if c else ''
     if not ref:
         return [f"{item['symbol']} için manuel kârlı işlem referansı yetersiz; karşılaştırma yapılamadı."]
     if broker_hour not in ref['hours']:
@@ -336,9 +357,9 @@ class MevO:
     LEARN_SYSTEM = (
         'MT5 elle işlem istatistiklerinden kullanıcının mantığını çıkar. Yalnız veriye dayan; psikoloji/garanti '
         'uydurma; örnek azsa belirt. Çok kısa Türkçe JSON (her liste en fazla 4 kısa madde): '
-        '{"summary":"en fazla 2 cümle","rules":[],"risk_habits":[],"best_hours":[],"weak_points":[],"caveats":[],"bot_loss_reasons":[]}. '
-        'bot_vs_manual varsa botun zararlarının sebebini yalnız bu sayılara dayanarak bot_loss_reasons\'a yaz '
-        '(en fazla 4 madde, sebep + zarar tutarı); yoksa boş bırak.')
+        '{"summary":"en fazla 2 cümle","rules":[],"risk_habits":[],"best_hours":[],"weak_points":[],"caveats":[],"manual_loss_reasons":[],"bot_loss_reasons":[]}. '
+        'loss_analysis varsa manuel ve bot ZARARLARININ sebebini yalnız bu sayılara dayanarak ilgili listeye yaz '
+        '(en fazla 4 madde, sebep + zarar tutarı + hangi durumda); kaçınılacak durumları da belirt; yoksa boş bırak.')
 
     def learn(self):
         if not self._busy.acquire(blocking=False):
@@ -353,11 +374,14 @@ class MevO:
             if stats['count'] < MIN_TRADES:
                 return {'success': False, 'error': f'Son {LEARN_DAYS} günde elle açılmış kapalı işlem sayısı '
                                                    f'{stats["count"]} (en az {MIN_TRADES} gerekli).'}
-            if comparison and comparison['bot_count']:
+            if comparison and (comparison['bot_count'] or comparison['manual']['losses']):
                 # Modele yalnız özet sayılar gider (referans/sembol ayrıntısı kodda kalır).
-                stats = {**stats, 'bot_vs_manual': {k: comparison[k] for k in
-                                                    ('bot_count', 'bot_wins', 'bot_losses', 'bot_net', 'bot_loss_total')}
-                         | {'causes': [{k: c[k] for k in ('label', 'count', 'loss')} for c in comparison['causes']]}}
+                short = lambda causes: [{k: c[k] for k in ('label', 'count', 'loss')} for c in causes]
+                stats = {**stats, 'loss_analysis': {
+                    'manual': {**{k: comparison['manual'][k] for k in ('losses', 'loss_total')},
+                               'causes': short(comparison['manual']['causes'])},
+                    'bot': {**{k: comparison[k] for k in ('bot_count', 'bot_wins', 'bot_losses', 'bot_loss_total')},
+                            'causes': short(comparison['causes'])}}}
             key = digest_of([stats, comparison], self.model)
             old = self._acct().get('profile')
             if old and old.get('digest') == key:

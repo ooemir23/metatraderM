@@ -117,3 +117,5 @@ MevO bot-manuel karşılaştırması (2026-10-23, kullanıcı isteği): `MT5Clie
 işlemlerin sembol bazlı referansıyla (saatler, baskın yön, lot, süre, SL mesafesi) kodda karşılaştırılır (`mevo.compare_bot_with_manual`);
 zarar sebepleri saat / yön / erken stop / dar SL / büyük lot / referans yok. Modele yalnız özet sayılar gider. Fırsatlara `warnings`
 (`mevo.trade_warnings`, token harcamaz) eklenir. Yalnız bilgi; emir/bot davranışı değişmez.
+MevO zarar analizi (2026-10-23, kullanıcı: "kârı değil zararı da incele"): hem manuel ZARARLAR hem bot zararları, manuel kârlı işlemlerin
+referansıyla kodda karşılaştırılır (saat, yön, erken stop, dar SL, büyük lot, uzun tutma, SL yok). Uyarılar ikisinin geçmişinden beslenir.

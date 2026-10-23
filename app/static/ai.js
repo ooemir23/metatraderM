@@ -24,14 +24,21 @@ function list(title, items) {
   return `<div><div class="font-semibold text-white mb-1">${esc(title)}</div><ul class="list-disc pl-5 space-y-0.5">${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></div>`;
 }
 
-function renderBotComparison(c, reasons) {
-  if (!c || !c.bot_count) return '<p class="text-gray-500">Bot geçmişi bulunamadı; bot-manuel karşılaştırması yapılamadı.</p>';
-  const rows = (c.causes || []).map(x => `<tr><td class="pr-3">${esc(x.label)}</td><td class="pr-3">${x.count} zarar</td><td class="text-rose-400">${esc(x.loss)}</td></tr>`).join('');
-  return `<div class="border border-rose-500/30 rounded-xl p-3 bg-rose-500/5">
-    <div class="font-semibold text-white mb-1">Bot zararları ve sebepleri</div>
-    <p class="text-gray-400">Bot: ${c.bot_count} işlem · ${c.bot_wins} kârlı / ${c.bot_losses} zararlı · net ${esc(c.bot_net)} · zarar toplamı ${esc(c.bot_loss_total)}. Sebepler manuel KÂRLI işlemlerinle karşılaştırılarak koddan hesaplandı; bir zarar birden fazla sebebe sayılabilir.</p>
-    ${rows ? `<table class="text-[11px] text-gray-300 mt-2">${rows}</table>` : ''}
-    ${list('MevO yorumu', reasons)}</div>`;
+function causeTable(c) {
+  const rows = (c || []).map(x => `<tr><td class="pr-3">${esc(x.label)}</td><td class="pr-3">${x.count} zarar</td><td class="text-rose-400">${esc(x.loss)}</td></tr>`).join('');
+  return rows ? `<table class="text-[11px] text-gray-300 mt-1">${rows}</table>` : '<p class="text-gray-500">Zarar yok ya da sebep bulunamadı.</p>';
+}
+
+function renderBotComparison(c, a) {
+  if (!c) return '<p class="text-gray-500">Zarar analizi yapılamadı.</p>';
+  const m = c.manual || {};
+  return `<div class="border border-rose-500/30 rounded-xl p-3 bg-rose-500/5 space-y-3">
+    <div class="font-semibold text-white">Zarar analizi: hangi durumda zarar edilmiş?</div>
+    <p class="text-gray-400">Sebepler, kârlı manuel işlemlerinin (saat, yön, lot, süre, SL) referansıyla karşılaştırılarak koddan hesaplandı. Bir zarar birden fazla sebebe sayılabilir; bunlar bağlantıdır, kesin neden kanıtı değildir.</p>
+    <div><b class="text-white">Manuel (orijinal MT5):</b> ${m.count || 0} işlem · ${m.wins || 0} kârlı / ${m.losses || 0} zararlı · net ${esc(m.net)} · zarar toplamı ${esc(m.loss_total)}
+      ${causeTable(m.causes)}${list('MevO yorumu', a && a.manual_loss_reasons)}</div>
+    <div><b class="text-white">Bot:</b> ${c.bot_count} işlem · ${c.bot_wins} kârlı / ${c.bot_losses} zararlı · net ${esc(c.bot_net)} · zarar toplamı ${esc(c.bot_loss_total)}
+      ${c.bot_count ? causeTable(c.causes) : '<p class="text-gray-500">Bot geçmişi yok.</p>'}${list('MevO yorumu', a && a.bot_loss_reasons)}</div></div>`;
 }
 
 function renderProfile(p) {
@@ -45,7 +52,7 @@ function renderProfile(p) {
     <p>${esc(a.summary)}</p>
     ${syms ? `<div class="overflow-x-auto"><table class="text-[11px] text-gray-300">${syms}</table></div>` : ''}
     ${list('Mantık / kurallar', a.rules)}${list('Risk alışkanlıkları', a.risk_habits)}${list('Verimli saatler (broker saati)', a.best_hours)}
-    ${renderBotComparison(p.comparison, a.bot_loss_reasons)}
+    ${renderBotComparison(p.comparison, a)}
     ${list('Zayıf noktalar', a.weak_points)}${list('Dikkat', a.caveats)}`;
   const names = Object.keys(s.symbols || {});
   if (names.length && !$('mevo-symbols').dataset.touched) $('mevo-symbols').value = names.slice(0, 6).join(',');

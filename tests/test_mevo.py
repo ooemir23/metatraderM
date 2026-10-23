@@ -150,7 +150,7 @@ def test_bot_losses_are_explained_by_difference_from_manual_winners():
     c = mod.compare_bot_with_manual(manual, bad)
     keys = {x['key']: x for x in c['causes']}
     assert c['bot_count'] == 3 and c['bot_losses'] == 2 and c['bot_loss_total'] == -50.0
-    assert set(keys) == {'hour', 'side', 'big_lot', 'tight_sl', 'early_stop'}
+    assert set(keys) == {'hour', 'side', 'big_lot', 'tight_sl', 'early_stop', 'no_sl'}
     assert keys['side']['loss'] == -30.0 and keys['big_lot']['loss'] == -20.0
     assert mod.compare_bot_with_manual(manual, [trade(30, symbol='EURUSD', net=-5)])['causes'][0]['key'] == 'no_ref'
 
@@ -160,7 +160,7 @@ def test_trade_warnings_are_free_and_cite_bot_history():
     cmp_ = mod.compare_bot_with_manual(manual, [trade(20, side='SELL', net=-30, hour=15)])
     sell = {'symbol': 'XAUUSD', 'action': 'SELL'}
     w = mod.trade_warnings(sell, cmp_, 15, 0.1)
-    assert any('15:00' in x and 'zarar etti' in x for x in w) and any('BUY' in x for x in w) and any('SL' in x for x in w)
+    assert any('15:00' in x and 'zarar edildi' in x for x in w) and any('BUY' in x for x in w) and any('SL' in x for x in w)
     assert mod.trade_warnings({'symbol': 'XAUUSD', 'action': 'BUY'}, cmp_, 10, 0.5) == []
     assert mod.trade_warnings({'symbol': 'XAUUSD', 'action': 'WAIT'}, cmp_, 15, 0.1) == []
 
@@ -175,9 +175,22 @@ def test_learn_sends_bot_summary_not_details_and_opportunities_carry_warnings(tm
     monkeypatch.setattr(mod, 'MIN_INTERVAL', 0)
     assert m.learn()['success']
     sent = post.call_args_list[0].kwargs['json']['messages'][1]['content']
-    assert '"bot_vs_manual"' in sent and '"reference"' not in sent and '"by_symbol"' not in sent
+    assert '"loss_analysis"' in sent and '"reference"' not in sent and '"by_symbol"' not in sent
     res = m.opportunities(['XAUUSD'])
     assert res['items'][0]['warnings']          # manuel işlemler BUY baskın → SAT fırsatına uyarı
     mt5.get_bot_trades.side_effect = RuntimeError('x')
     m._acct()['profile']['digest'] = 'z'
     assert m.learn()['success']                 # bot geçmişi okunamazsa yalnız manuel öğrenme sürer
+
+
+def test_manual_losing_trades_are_analysed_too():
+    wins = [trade(i, net=8, vol=1.0, hour=10, hold=600, sl=1990) for i in range(4)]
+    losers = [trade(10, net=-40, vol=1.0, hour=22, hold=3600),                    # saat, uzun tutma, SL yok
+              trade(11, side='SELL', net=-25, vol=1.0, hour=10, hold=600, sl=1990)]  # yön
+    c = mod.compare_bot_with_manual(wins + losers, [])
+    m = c['manual']
+    assert (m['count'], m['wins'], m['losses'], m['loss_total']) == (6, 4, 2, -65.0)
+    keys = {x['key']: x for x in m['causes']}
+    assert {'hour', 'held_long', 'no_sl', 'side'} <= set(keys) and keys['hour']['loss'] == -40.0
+    w = mod.trade_warnings({'symbol': 'XAUUSD', 'action': 'BUY'}, c, 22, 0.5)
+    assert w and 'manuel' in w[0]          # uyarı manuel zararlardan da beslenir
