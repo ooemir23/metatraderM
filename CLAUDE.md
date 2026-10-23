@@ -92,3 +92,7 @@ Kullanıcı ikisini de MT5'ten farklı olduğunu bilerek seçti; varsayılan aç
   M1–H4'te çalışır. Sinyal deneyseldir (geçmiş testte her mumdan anlamlı farkı yok); kartta bu yazılır.
 - Emir kimliği (`order_id`) her bot başlatma/yeniden başlatmada yeni bir çalışma numarası (`_run_nonce`) içerir; aynı
   çalışmada aynı sinyal tek emirdir. Manuel kopya değerleri başlangıçta bilgi (`start_notes`) olarak gösterilir, uyarı değil.
+- `reenter_after_stop` (2026-10-23): botun bir zaman dilimi örneğinin pozisyonu bu çalışmada SL/TP/stop out ile kapanırsa
+  (MT5 DEAL_REASON 4/5/6, `mt5_bridge.hma_recent_closes`) ve strateji hâlâ bir yön gösteriyorsa bot bir sonraki kapanmış
+  mumda yeniden girer (kapanış başına bir kez; reddedilirse sonraki mumda tekrar). Elle kapatma (masaüstü/mobil/web/
+  panel = 0/1/2/3) yeniden giriş tetiklemez. MANUAL_STYLE'da aynı kurulum sürüyorsa yeniden girer.

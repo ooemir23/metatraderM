@@ -1523,6 +1523,39 @@ def manual_lifetimes(mt5, days, tick_offset, account_scope):
     return out
 
 
+def hma_recent_closes(mt5, symbol, hours, tick_offset, account_scope):
+    """Closed HMA bot positions of one symbol in the last `hours` (broker server time), newest first:
+    opening comment (timeframe tag), side, close time and MT5 DEAL_REASON of the closing deal
+    (4 = SL, 5 = TP, 6 = stop out, 3 = expert/API close, 0/1/2 = desktop/mobile/web hand close)."""
+    _account(mt5, *account_scope)
+    end = datetime.now(timezone.utc) + timedelta(seconds=int(tick_offset))
+    start = end - timedelta(hours=float(hours))
+    deals, current = mt5.history_deals_get(start, end), mt5.positions_get()
+    if deals is None or current is None:
+        raise RuntimeError('Bot işlem geçmişi okunamadı.')
+    _account(mt5, *account_scope)
+    open_ids = set(int(p.identifier) for p in current)
+    by_position = {}
+    for d in deals:
+        if int(d.type) in (0, 1) and str(d.symbol) == symbol:
+            by_position.setdefault(int(d.position_id), []).append(d)
+    out = []
+    for position_id, rows in by_position.items():
+        if position_id in open_ids:
+            continue
+        rows.sort(key=lambda d: (int(getattr(d, 'time_msc', int(d.time) * 1000)), int(d.ticket)))
+        opening = [d for d in rows if int(d.entry) == 0]
+        closing = [d for d in rows if int(d.entry) in (1, 3)]
+        if not opening or not closing or int(getattr(opening[0], 'magic', 0)) != HMA_MAGIC:
+            continue
+        last = closing[-1]
+        out.append(dict(position_id=position_id, comment=str(getattr(opening[0], 'comment', '')),
+                        side='BUY' if int(opening[0].type) == 0 else 'SELL', close_time=int(last.time),
+                        close_reason=int(getattr(last, 'reason', -1))))
+    out.sort(key=lambda r: -r['close_time'])
+    return out
+
+
 def risk_lot(mt5, symbol, side, sl_points, risk_pct, expected_login=0, expected_server='', tick_offset=0):
     """Lot size so that hitting the stop loses ~risk_pct of equity (broker profit calculation).
     Rounds DOWN to the broker lot step; never rounds up to the minimum lot."""

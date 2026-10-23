@@ -286,6 +286,7 @@ class BotConfigRequest(BaseModel):
     symbol: Optional[str] = None
     # User decisions 2026-10-23 (not EA inputs): trend entry on start, lot/SL/TP from profitable manual trades.
     trend_entry_on_start: Optional[bool] = None
+    reenter_after_stop: Optional[bool] = None
     entry_mode: Optional[Literal["CROSSOVER", "MANUAL_STYLE"]] = None
     auto_lot_limits_demo: Optional[bool] = None
     fast_ma_type: Optional[Literal["HMA", "EMA", "SMA", "LWMA"]] = None

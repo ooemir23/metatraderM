@@ -2829,6 +2829,7 @@ function renderBotProtection(bot) {
   }
   if (bot.entry_mode === 'MANUAL_STYLE') parts.unshift('Giriş: manuel işlemlerinden öğrenilen sinyal');
   else if (bot.trend_entry_on_start) parts.push('Başlarken trend yönünde girer');
+  if (bot.reenter_after_stop) parts.push('SL/TP sonrası sinyal sürüyorsa yeniden girer');
   if (bot.max_consecutive_losses) parts.push(`${bot.max_consecutive_losses} kayıpta dur`);
   if (bot.trade_hours_enabled) parts.push(`Saat ${bot.trade_start}–${bot.trade_end}`);
   if (Array.isArray(bot.trade_days) && bot.trade_days.length < 7) parts.push(`${bot.trade_days.length} gün`);
@@ -2962,7 +2963,7 @@ const botSettingInputs = {
   'cfg-sl-points': 'sl_points', 'cfg-tp-points': 'tp_points', 'cfg-copy-since': 'copy_manual_since',
 };
 const botSettingChecks = {'cfg-close-opp': 'close_opposite', 'cfg-use-sl': 'use_stop_loss', 'cfg-use-tp': 'use_take_profit',
-  'cfg-trend-entry': 'trend_entry_on_start', 'cfg-copy-manual': 'copy_manual_trades', 'cfg-auto-lot-demo': 'auto_lot_limits_demo'};
+  'cfg-trend-entry': 'trend_entry_on_start', 'cfg-reenter': 'reenter_after_stop', 'cfg-copy-manual': 'copy_manual_trades', 'cfg-auto-lot-demo': 'auto_lot_limits_demo'};
 // Automation lot limits (MAX_ORDER_LOTS / MAX_TOTAL_OPEN_LOTS / MAX_OPEN_ORDERS), editable from the panel.
 let loadedLotLimits = null;
 async function loadLotLimitsIntoForm() {
@@ -3053,6 +3054,8 @@ async function saveBotSettings() {
   if (trendEntry) cfg.trend_entry_on_start = Boolean(trendEntry.checked);
   const copyManual = document.getElementById('cfg-copy-manual');
   if (copyManual) cfg.copy_manual_trades = Boolean(copyManual.checked);
+  const reenter = document.getElementById('cfg-reenter');
+  if (reenter) cfg.reenter_after_stop = Boolean(reenter.checked);
   const autoLot = document.getElementById('cfg-auto-lot-demo');
   if (autoLot) cfg.auto_lot_limits_demo = Boolean(autoLot.checked);
   const copySince = document.getElementById('cfg-copy-since')?.value;

@@ -81,6 +81,10 @@ class StrategyBot:
         # - on start / settings change open the current trend side at once (the EA waits for a new crossover);
         # - lot and SL/TP come from the profitable hand-opened MT5 positions since copy_manual_since.
         self.trend_entry_on_start = True
+        # After the bot's own position is closed by SL / TP / stop out, open the side the strategy still shows on
+        # the next closed candle (user decision 2026-10-23; the EA would wait for a new crossover).
+        self.reenter_after_stop = True
+        self._reentry_for: Dict[str, int] = {}
         # More EA instances on other timeframes of the same symbol (each opens and closes only its own position).
         self.extra_timeframes: List[int] = []
         self.copy_manual_trades = True
@@ -307,7 +311,7 @@ class StrategyBot:
                 'er_min','confirmation_bars','min_distance_atr','risk_mode','atr_stop_multiplier',
                 'atr_target_multiplier','lot_size','use_stop_loss','sl_points','use_take_profit','tp_points','close_opposite',
                 'lot_mode','risk_pct','max_consecutive_losses','trade_hours_enabled','trade_start','trade_end',
-                'trade_utc_offset_min','trade_days','blocked_windows','trend_entry_on_start','copy_manual_trades','copy_manual_since','extra_timeframes','auto_lot_limits_demo','entry_mode')
+                'trade_utc_offset_min','trade_days','blocked_windows','trend_entry_on_start','copy_manual_trades','copy_manual_since','extra_timeframes','auto_lot_limits_demo','entry_mode','reenter_after_stop')
         with self._state_lock:
             snap = {key: (list(getattr(self, key)) if isinstance(getattr(self, key), list) else getattr(self, key)) for key in keys}
             snap['symbols'] = list(getattr(self, 'symbols', [self.symbol]))
@@ -461,6 +465,7 @@ class StrategyBot:
                 self._trend_pending = {}
                 self._ms_prev = {}
                 self._run_nonce = time.time_ns()
+                self._reentry_for = {}
                 self.symbol_status = {}
                 self.current_hma = self.current_ma2 = 0.0
                 self.current_atr = self.current_er = 0.0
@@ -573,7 +578,7 @@ class StrategyBot:
             except ValueError as exc:
                 raise ValueError('Geçersiz bot ayarı: copy_manual_since (YYYY-AA-GG)') from exc
             for key in ('use_stop_loss', 'use_take_profit', 'close_opposite', 'use_atr_filter', 'use_h4_filter', 'single_position',
-                        'trend_entry_on_start', 'copy_manual_trades', 'auto_lot_limits_demo'):
+                        'trend_entry_on_start', 'copy_manual_trades', 'auto_lot_limits_demo', 'reenter_after_stop'):
                 if not isinstance(candidate[key], bool):
                     raise ValueError(f'Geçersiz bot ayarı: {key}')
             for key, low, high, inclusive in (('lot_size', 0, None, False), ('er_min', 0, 1, True),
@@ -678,6 +683,7 @@ class StrategyBot:
             "tp_points": self.tp_points,
             "close_opposite": self.close_opposite,
             "trend_entry_on_start": self.trend_entry_on_start,
+            "reenter_after_stop": self.reenter_after_stop,
             "extra_timeframes": list(self.extra_timeframes),
             "instance_timeframes": self.instance_timeframes(),
             "copy_manual_trades": self.copy_manual_trades,
@@ -1092,8 +1098,14 @@ class StrategyBot:
                 return
         if cross:
             self._trend_pending.pop(key, None)
-        elif self._trend_pending.get(key) and self.trend_entry_on_start:
+        elif self._trend_pending.get(key) and (self.trend_entry_on_start or self.reenter_after_stop):
             start_trend = 1 if hma1 > ma2_1 else -1 if hma1 < ma2_1 else 0
+        elif not start_trend and self._reentry_allowed(sym, tf, key):
+            start_trend = 1 if hma1 > ma2_1 else -1 if hma1 < ma2_1 else 0
+            if start_trend:
+                self._trend_pending[key] = True
+                status('TREND_ENTRY', f"Botun {label} pozisyonu SL/TP ile kapandı; {'AL' if start_trend == 1 else 'SAT'} trendi sürdüğü için "
+                       "yeniden giriliyor (ayarınız: kapanınca sinyal varsa yeniden gir).", candle_time=latest_closed_candle_time)
         direction = cross or start_trend
         closed_on_cross = False
         if not cross and not start_trend:
@@ -1309,6 +1321,40 @@ class StrategyBot:
         return (er[-1] is not None and kama[-1] is not None and kama[-2] is not None
                 and er[-1] >= self.er_min and side*(kama[-1]-kama[-2]) > 0)
 
+    STOP_REASONS = (4, 5, 6)   # MT5 DEAL_REASON_SL, DEAL_REASON_TP, DEAL_REASON_SO
+
+    def _reentry_allowed(self, sym, tf, key):
+        """True once per closed position: this timeframe instance has no open bot position and its last
+        position, closed during this run, was closed by SL / TP / stop out. A hand close (desktop, mobile,
+        web or the panel's Kapat) never triggers a re-entry; the next crossover does as usual."""
+        if not self.reenter_after_stop:
+            return False
+        try:
+            owned = self.mt5.get_positions(fresh=True)
+            if not isinstance(owned, list):
+                return False
+            if any(p.get('symbol') == sym and p.get('magic') == HMA_MAGIC and self._owner_tf(p) == tf for p in owned):
+                return False
+            closes = self.mt5.bot_recent_closes(sym)
+        except Exception:
+            return False
+        if not isinstance(closes, list):
+            return False
+        mine = [c for c in closes if isinstance(c, dict) and self._owner_tf({'comment': c.get('comment')}) == tf]
+        if not mine:
+            return False
+        last = mine[0]
+        if last.get('close_reason') not in self.STOP_REASONS:
+            return False
+        offset = getattr(self.mt5, 'tick_clock_offset', 0)
+        offset = offset if isinstance(offset, (int, float)) and not isinstance(offset, bool) else 0
+        if self.started_at and int(last.get('close_time') or 0) - offset < self.started_at - 60:
+            return False      # closed before this run started
+        if self._reentry_for.get(key) == last.get('position_id'):
+            return False      # already re-entered after this close
+        self._reentry_for[key] = last.get('position_id')
+        return True
+
     def _ms_retry(self, key, candle_time):
         """Evaluate this closed candle again on the next loop (marker just below it, not a re-init)."""
         self.last_candle_times[key] = int(candle_time) - 1
@@ -1347,6 +1393,9 @@ class StrategyBot:
             status('WAITING_CROSS', f"Manuel stil{tag}: sinyal yok (bekle). Benzer durumda manuel işlemlerinin skoru "
                    f"{sig.get('score', 0):.2f}; senin tarzına benzeyen bir AL/SAT kurulumu bekleniyor.", candle_time=candle_time)
             return 0
+        if side == prev and self._reentry_allowed(sym, tf, key):
+            self.log(f"🧠 [{sym} {tf_code(tf)}] Pozisyon SL/TP ile kapandı; manuel stil {'AL' if side == 'BUY' else 'SAT'} kurulumu sürüyor, yeniden giriliyor.", 'SIGNAL')
+            return 1 if side == 'BUY' else -1
         if side == prev:
             status('WAITING_CROSS', f"Manuel stil{tag}: {'AL' if side == 'BUY' else 'SAT'} kurulumu sürüyor; aynı kurulumda yeni işlem açılmaz.",
                    candle_time=candle_time)
@@ -1551,6 +1600,7 @@ class StrategyBot:
                 self._ms_prev = {}
                 self.started_at = int(time.time())
                 self._run_nonce = time.time_ns()
+                self._reentry_for = {}
                 self.symbol_status = {}
                 self._loss_check_at = 0.0
                 self.is_running = True

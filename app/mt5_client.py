@@ -1192,6 +1192,13 @@ class MT5Client:
             except Exception as exc:
                 raise MT5DataError("Manuel işlem geçmişi okunamadı; hesap ve bağlantıyı kontrol edin.") from exc
 
+    def bot_recent_closes(self, symbol: str, hours: float = 48) -> List[Dict[str, Any]]:
+        """Closed HMA bot positions of `symbol` with their MT5 close reason (mt5_bridge.hma_recent_closes)."""
+        with self._lock:
+            if not self.ensure_connected():
+                raise MT5DataError("MT5 bağlı değil; bot işlem geçmişi okunamadı.")
+            return self._bridge('hma_recent_closes', symbol, float(hours), int(self.tick_clock_offset), self._selected_account())
+
     MANUAL_COPY_TTL = 300
 
     def manual_copy_profile(self, symbol: str, since: str) -> Dict[str, Any]:
