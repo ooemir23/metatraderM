@@ -1111,6 +1111,11 @@ function positionOpenTime(p) {
   const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2}:\d{2})/.exec(String(p?.time || ''));
   return m ? `${m[3]}.${m[2]}.${m[1].slice(2)} ${m[4]}` : '—';
 }
+// Table cell: date over time, so the column stays narrow.
+function positionOpenTimeStacked(p) {
+  const t = positionOpenTime(p), i = t.indexOf(' ');
+  return i < 0 ? escapeHtml(t) : `<span class="block leading-tight">${escapeHtml(t.slice(0, i))}</span><span class="block leading-tight text-gray-400">${escapeHtml(t.slice(i + 1))}</span>`;
+}
 
 // Which part of the app opened this position: bot (and with which entry mode / strategy), MevO, signal scanner, web, MT5.
 function positionOrigin(p) {
@@ -1251,7 +1256,7 @@ function renderPositionsData(positions) {
             <span class="font-mono font-semibold text-gray-100">#${ticket}</span><button type="button" class="hx-detail" onclick="showPositionExecution(${ticket})" title="Gönderim Bid/Ask, açılış spreadi ve kayma">Detay</button>
             <div>${tradeSourceBadge(p)}</div>
           </td>
-          <td data-label="Açılış saati" class="whitespace-nowrap text-gray-300" title="MT5 sunucu saati">${escapeHtml(positionOpenTime(p))}</td>
+          <td data-label="Açılış saati" class="whitespace-nowrap text-gray-300" title="MT5 sunucu saati: ${escapeHtml(positionOpenTime(p))}">${positionOpenTimeStacked(p)}</td>
           <td data-label="Sembol" class="font-sans font-bold text-white whitespace-nowrap">${escapeHtml(p.symbol)}</td>
           <td data-label="Yön"><span class="hx-dir" data-side="${side}">${side}</span></td>
           <td data-label="Hacim" class="num">${p.volume}</td>
