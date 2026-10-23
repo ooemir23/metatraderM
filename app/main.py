@@ -9,14 +9,12 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, Res
 from pydantic import BaseModel, Field, ConfigDict
 
 from app.mt5_client import MT5Client, TIMEFRAME_NAMES, MT5DataError
-from app.mt5_bridge import AI_MAGIC
-from app.ai_performance import summarize as summarize_ai_performance
 from app.security import protect_dashboard
 from app.live_feed import LiveFeed
 from app.trailing_stops import TrailingStops
 from app.native_terminal import NativeTerminal
 from app.strategy_bot import StrategyBot
-from app.ai_advisor import DeepSeekAdvisor
+from app.mevo import MevO
 from app import security_sessions
 from app.order_journal import state_path
 from app.backtest import simulate
@@ -35,21 +33,10 @@ mt5_client = MT5Client()
 live_feed = LiveFeed(mt5_client)
 trailing_stops = TrailingStops(mt5_client)
 bot = StrategyBot(mt5_client, config_path=state_path('bot_settings.json'))
-ai_advisor = DeepSeekAdvisor(mt5_client)
+mevo = MevO(mt5_client)
 flatten_active = threading.Event()
 flatten_guard = threading.Lock()
 bot_toggle_guard = asyncio.Lock()
-
-def ai_market_snapshot(symbol, minutes):
-    with mt5_client._lock:
-        if not mt5_client.ensure_connected():
-            raise MT5DataError('MT5 bağlantısı doğrulanamadı.')
-        account = [*mt5_client._selected_account(), mt5_client.account_type]
-        tick = mt5_client.get_symbol_price(symbol)
-        rates = mt5_client.get_rates(symbol, minutes, 30) or []
-        positions = mt5_client.get_positions(fresh=True)
-        mt5_client._bound_account(account)
-        return account, tick, rates, positions
 
 async def auto_reconnect_loop():
     was_connected = False
@@ -68,40 +55,6 @@ async def auto_reconnect_loop():
                 if bot.is_running:
                     bot.stop()
                     mt5_client.journal.event('warning', 'security', 'Real-account automation stopped: unlock expired')
-                if ai_advisor.autopilot.get('enabled'):
-                    ai_advisor.update_autopilot({'enabled': False})
-                    mt5_client.journal.event('warning', 'security', 'Real-account AI autopilot stopped: unlock expired')
-
-            # Autopilot autonomous check
-            if connected and os.getenv("DASHBOARD_PASSWORD") and not mt5_client.journal.trading_halted() and ai_advisor.autopilot.get("enabled") and ai_advisor.autopilot.get("mode") == "FULL_AUTO":
-                if not ai_advisor.autopilot_budget_available():
-                    ai_advisor.update_autopilot({'enabled': False})
-                    mt5_client.journal.event('warning', 'ai', 'AI autopilot stopped at reserved daily budget or unknown usage')
-                    await asyncio.sleep(5)
-                    continue
-                now = time.time()
-                last_time = ai_advisor.autopilot.get("last_auto_trade_time", 0)
-                # Scan once per M15 bucket; trade cooldown is separate from analysis cadence.
-                if now - last_time >= 300 and ai_advisor.claim_autopilot_cycle():
-                    symbols = ai_advisor.autopilot.get("allowed_symbols", ["EURUSD", "XAUUSD"])
-                    generation = ai_advisor.autopilot_generation
-                    for sym in symbols:
-                        if not ai_advisor.autopilot_budget_available():
-                            ai_advisor.update_autopilot({'enabled': False})
-                            mt5_client.journal.event('warning', 'ai', 'AI autopilot stopped at reserved daily budget or unknown usage')
-                            break
-                        account, tick, rates, open_pos = await asyncio.to_thread(ai_market_snapshot, sym, 15)
-                        if tick and tick.get("bid"):
-                            adv = await asyncio.to_thread(ai_advisor.get_market_advice, sym, "M15", tick=tick, rates=rates, open_positions=open_pos, source="autopilot", expected_account=account)
-                            if adv.get("success") and not adv.get("cached"):
-                                rec = adv.get("recommendation", {})
-                                conf = rec.get("confidence", 0)
-                                action = rec.get("action")
-                                min_conf = ai_advisor.autopilot.get("min_confidence", 80)
-                                if action in ("BUY", "SELL") and conf >= min_conf:
-                                    logger.info(f"AI FULL_AUTO triggering trade on {sym}: {action} (Confidence: {conf}%)")
-                                    await asyncio.to_thread(ai_advisor.execute_recommendation, rec, automatic=True, generation=generation)
-                                    break
         except Exception as e:
             logger.debug(f"auto_reconnect_loop error: {e}")
         await asyncio.sleep(5)
@@ -132,7 +85,6 @@ async def maintenance_loop():
                         f"Daily loss {status['daily_loss']} / {status['daily_loss_limit']} {status['currency']}")
                     if level == 2:
                         bot.stop()
-                        ai_advisor.update_autopilot({'enabled': False})
                 last_risk_alert = level
         except Exception:
             logger.debug('Risk alert data unavailable')
@@ -184,7 +136,6 @@ async def lifespan(app: FastAPI):
     ensure_optimized_server_py()
     if mt5_client.journal.trading_halted():
         mt5_client.automation_stopped.set()
-        ai_advisor.update_autopilot({"enabled": False})
     # MT5 may be offline; the HTTP server must still start and expose status.
     task = asyncio.create_task(auto_reconnect_loop())
     feed_task = asyncio.create_task(live_feed.run())
@@ -195,7 +146,6 @@ async def lifespan(app: FastAPI):
     finally:
         # Cancelling asyncio.to_thread does not stop its queued worker.
         mt5_client.automation_stopped.set()
-        ai_advisor.update_autopilot({"enabled": False})
         bot.stop()
         await asyncio.to_thread(trailing_stops.stop)
         task.cancel()
@@ -326,25 +276,10 @@ class BotConfigRequest(BaseModel):
     trade_days: Optional[List[int]] = Field(default=None, min_length=1, max_length=7)
     blocked_windows: Optional[List[str]] = Field(default=None, max_length=20)
 
-class AIAdviceRequest(BaseModel):
-    symbol: Optional[str] = "EURUSD"
-    timeframe: Optional[str] = "M15"
-    language: Literal["tr", "en"] = "tr"
+class MevOOpportunityRequest(BaseModel):
+    symbols: List[str] = Field(min_length=1, max_length=6)
+    timeframe: Literal["M5", "M15", "M30", "H1", "H4"] = "M15"
 
-class AILearnRequest(BaseModel):
-    language: Literal["tr", "en"] = "tr"
-
-class AIExecuteRequest(AccountBoundRequest):
-    recommendation: Dict[str, Any]
-
-class AIAutopilotRequest(AccountBoundRequest):
-    enabled: Optional[bool] = None
-    mode: Optional[Literal["ADVISORY", "SEMI_AUTO", "FULL_AUTO"]] = None
-    min_confidence: Optional[int] = Field(default=None, ge=50, le=99)
-    max_lot: Optional[float] = Field(default=None, gt=0, le=5, allow_inf_nan=False)
-    daily_loss_limit: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
-    allowed_symbols: Optional[List[str]] = None
-    confirm_real_full_auto: bool = False
 
 class PendingRequest(OrderRequest):
     filling_policy: Literal['AUTO','FOK','IOC','RETURN','BOC'] = 'AUTO'
@@ -960,7 +895,6 @@ def security_lock(request: Request):
     security_sessions.revoke(request.cookies.get(security_sessions.COOKIE))
     if mt5_client.account_type == 'REAL' and not security_sessions.active_session():
         bot.stop()
-        ai_advisor.update_autopilot({'enabled': False})
     response = JSONResponse({'unlocked': False})
     response.delete_cookie(security_sessions.COOKIE, path='/')
     return response
@@ -1212,7 +1146,6 @@ def set_trading_lock(req: TradingLockRequest, account=Depends(require_real_unloc
         if req.locked:
             mt5_client.automation_stopped.set()
             bot.stop()
-            ai_advisor.update_autopilot({'enabled': False})
         return {"new_orders_halted": req.locked, "daily_limit_enabled": req.locked}
 
 @app.post("/api/trading/resume")
@@ -1252,11 +1185,9 @@ def account_login(req: LoginRequest, request: Request):
             raise HTTPException(status_code=403, detail='Gerçek hesaba giriş için ikinci doğrulama gerekli.')
     mt5_client.automation_stopped.set()
     bot.stop()
-    ai_advisor.update_autopilot({"enabled": False})
     res = mt5_client.login(req.login, req.password, req.server, req.account_type)
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error", "Login failed"))
-    ai_advisor.sync_account_scope()
     mt5_client.journal.event('info', 'account', 'Broker account connected')
     return res
 
@@ -1377,7 +1308,6 @@ def close_all_orders(req: ActionRequest):
         mt5_client.journal.event('warning', 'trading', 'Emergency close-all started')
         mt5_client.automation_stopped.set()
         bot.stop()
-        ai_advisor.update_autopilot({"enabled": False})
         with mt5_client._lock.order():
             if bound_request_account(req) != account:
                 raise HTTPException(status_code=409, detail='Toplu kapatma beklerken hesap değişti; talep gönderilmedi.')
@@ -1768,91 +1698,25 @@ def clear_bot_pending_signal(data: Optional[Dict[str, Any]] = None):
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-# DeepSeek AI Advisor & Autopilot Endpoints
-@app.get("/api/ai/status")
-def get_ai_status():
-    return ai_advisor.get_status()
+# MevO: yalnız danışman (manuel MT5 işlemlerinden öğrenir, fırsat sunar; emir açmaz)
+@app.get("/api/mevo/status")
+def mevo_status():
+    return mevo.status()
 
-@app.get('/api/ai/performance')
-def get_ai_performance():
-    # Broker history is account-specific. Report closed AI positions only.
-    with mt5_client._lock:
-        mt5_client._selected_account()
-        account_type = mt5_client.account_type
-        deals = mt5_client.get_history(days=90, include_ai_entries=True)
-        open_ids = [p['ticket'] for p in mt5_client.get_positions(fresh=True)]
-    return {'account_type': account_type, 'days': 90,
-            **summarize_ai_performance(deals, ai_advisor.execution_records, open_ids),
-            'currency': mt5_client.get_account_info().get('currency', ''),
-            'basis': 'Brokerın 90 günlük geçmişinde AI etiketi bulunan ve tamamen kapanmış pozisyonlar. Model güveni başarı olasılığı değildir; geçmiş maliyetleri veya eşleşmeyen emirler eksik olabilir.'}
-
-@app.post("/api/ai/learn")
-def trigger_ai_learning(req: Optional[AILearnRequest] = None):
-    with mt5_client._lock:
-        if not mt5_client.ensure_connected():
-            raise MT5DataError('MT5 bağlantısı doğrulanamadı.')
-        account = [*mt5_client._selected_account(), mt5_client.account_type]
-        deals = mt5_client.get_history(days=90)
-        mt5_client._bound_account(account)
-    res = ai_advisor.analyze_user_trades(deals, language=req.language if req else "tr", expected_account=account)
+@app.post("/api/mevo/learn")
+def mevo_learn():
+    res = mevo.learn()
     if not res.get("success"):
-        raise HTTPException(status_code=400, detail=res.get("error", "Öğrenme analizi başarısız"))
+        raise HTTPException(status_code=400, detail=res.get("error", "Öğrenme başarısız"))
     return res
 
-@app.post("/api/ai/advice")
-def get_ai_advice(req: AIAdviceRequest):
-    sym = req.symbol or "EURUSD"
-    timeframe = (req.timeframe or "M15").upper()
-    minutes = next((m for m, name in TIMEFRAME_NAMES.items() if name == "TIMEFRAME_" + timeframe), None)
-    if minutes is None:
-        raise HTTPException(status_code=422, detail="Desteklenmeyen zaman dilimi")
-    account, tick, rates, open_pos = ai_market_snapshot(sym, minutes)
-    hma_val = bot.current_hma if bot.symbol == sym else None
-    ma2_val = bot.current_ma2 if bot.symbol == sym else None
-    res = ai_advisor.get_market_advice(
-        symbol=sym,
-        timeframe_name=timeframe,
-        tick=tick,
-        rates=rates,
-        open_positions=open_pos,
-        hma_val=hma_val,
-        ma2_val=ma2_val,
-        language=req.language,
-        expected_account=account
-    )
+@app.post("/api/mevo/opportunities")
+def mevo_opportunities(req: MevOOpportunityRequest):
+    minutes = {"M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240}[req.timeframe]
+    res = mevo.opportunities(req.symbols, minutes)
     if not res.get("success"):
-        raise HTTPException(status_code=400, detail=res.get("error", "Tavsiye üretilemedi"))
+        raise HTTPException(status_code=400, detail=res.get("error", "Fırsat üretilemedi"))
     return res
-
-@app.post("/api/ai/execute")
-def execute_ai_advice(req: AIExecuteRequest, account=Depends(require_real_unlock)):
-    res = ai_advisor.execute_recommendation(req.recommendation, expected_account=bound_request_account(req, account))
-    if not res.get("success"):
-        return JSONResponse(status_code=400, content={**res, "detail": res.get("error", "İşlem açılamadı")})
-    return res
-
-@app.post("/api/ai/autopilot")
-def update_ai_autopilot(req: AIAutopilotRequest, request: Request):
-    data = req.model_dump(exclude_unset=True, exclude={"confirm_real_full_auto", "expected_account"})
-    with mt5_client._lock.order():
-        enabled = data.get("enabled", ai_advisor.autopilot.get("enabled"))
-        mode = data.get("mode", ai_advisor.autopilot.get("mode"))
-        scope = bound_request_account(req, require_real_unlock(request) if enabled else None)
-        if enabled and mt5_client.journal.trading_halted():
-            raise HTTPException(status_code=409, detail="Yeni emirler durduruldu; önce işlemlere devam edin.")
-        if enabled and mode == "FULL_AUTO":
-            if not mt5_client.ensure_connected():
-                raise HTTPException(status_code=503, detail="MT5 bağlantısı doğrulanamadı.")
-            try:
-                mt5_client._bound_account(scope)
-            except MT5DataError as exc:
-                raise HTTPException(status_code=409, detail=str(exc)) from exc
-            if scope[2] == "REAL" and not req.confirm_real_full_auto:
-                raise HTTPException(status_code=409, detail="Gerçek hesapta tam otomatik işlem için açık onay gerekli.")
-        result = ai_advisor.update_autopilot(data)
-        if not result.get('success'):
-            raise HTTPException(status_code=400, detail=result.get('error', 'Otopilot ayarları kaydedilemedi.'))
-        return result
 
 @app.get("/api/debug/server-log")
 def get_server_log():

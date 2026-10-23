@@ -6,34 +6,15 @@ from unittest.mock import Mock
 
 import pytest
 
-from app import ai_advisor
 from app.mt5_bridge import HMA_MAGIC
 from app.order_journal import OrderJournal
 from app.strategy_bot import StrategyBot
 
 
-@pytest.fixture
-def advisor(monkeypatch, tmp_path):
-    monkeypatch.setattr(ai_advisor, 'MEMORY_PATHS', [str(tmp_path / 'ai.json')])
-    monkeypatch.setattr(ai_advisor.requests, 'post', Mock(side_effect=AssertionError('Live provider forbidden')))
-    mt5 = Mock(login_id=7, server='demo', account_type='DEMO')
-    mt5.get_symbol_price.return_value = {'ask': 1.1, 'bid': 1.0999}
-    mt5.open_order.return_value = {'success': True, 'ticket': 42, 'price': 1.1}
-    return ai_advisor.DeepSeekAdvisor(mt5, api_key='stub')
 
 
-def install_recommendation(advisor, **fields):
-    rec = {'id': 'trusted', 'symbol': 'EURUSD', 'action': 'BUY', 'confidence': 90,
-           'sl_points': 200, 'tp_points': 400, 'suggested_lot': .01,
-           'expires_at': time.time() + 900, 'account': [7, 'demo', 'DEMO'], **fields}
-    advisor.cost_state['advice_cache']['trusted'] = {'recommendation': rec, 'expires_at': rec['expires_at']}
-    advisor.memory['latest_recommendation'] = rec
-    return rec
 
 
-def advise(advisor, **fields):
-    return advisor.get_market_advice('EURUSD', rates=[{'time': 100, 'close': 1}, {'time': 1000, 'close': 1}],
-                                     tick={'bid': 1, 'ask': 1.1}, **fields)
 
 
 def bot_client():
@@ -50,125 +31,28 @@ def bot_client():
     return bot, client
 
 
-def test_restart_restores_preferences_without_reenabling_autopilot(advisor):
-    assert advisor.update_autopilot({'enabled': True, 'mode': 'FULL_AUTO', 'max_lot': .02})['success']
-    restarted = ai_advisor.DeepSeekAdvisor(advisor.mt5, api_key='stub')
-    assert not restarted.autopilot['enabled']
-    assert restarted.autopilot['mode'] == 'FULL_AUTO'
-    assert restarted.autopilot['max_lot'] == .02
-    assert restarted._auto_stop.is_set()
 
 
-@pytest.mark.parametrize('operation', ['advice', 'learn'])
-def test_analysis_response_cannot_cross_broker_accounts(advisor, monkeypatch, operation):
-    def response(*args):
-        advisor.mt5.login_id = 8
-        return {'action': 'HOLD', 'confidence': 30} if operation == 'advice' else {'persona': {'style': 'other'}, 'learned_rules': []}
-    monkeypatch.setattr(advisor, '_request_json', response)
-    result = advise(advisor) if operation == 'advice' else advisor.analyze_user_trades([{'ticket': 1, 'profit': 2}])
-    assert not result['success'] and 'hesabı değişti' in result['error']
-    assert not advisor.cost_state['advice_cache']
-    assert advisor.memory['last_analyzed'] is None
-    assert advisor.memory['latest_recommendation'] is None
 
 
-@pytest.mark.parametrize('operation', ['advice', 'learn'])
-def test_data_snapshot_account_is_checked_before_paid_analysis(advisor, monkeypatch, operation):
-    request = Mock()
-    monkeypatch.setattr(advisor, '_request_json', request)
-    kwargs = {'expected_account': [8, 'demo', 'DEMO']}
-    result = advise(advisor, **kwargs) if operation == 'advice' else advisor.analyze_user_trades([{'ticket': 1}], **kwargs)
-    assert not result['success']
-    request.assert_not_called()
 
 
-def test_automatic_execution_rechecks_confidence(advisor):
-    rec = install_recommendation(advisor, confidence=50)
-    assert advisor.update_autopilot({'enabled': True, 'mode': 'FULL_AUTO'})['success']
-    result = advisor.execute_recommendation(rec, automatic=True, generation=advisor.autopilot_generation)
-    assert not result['success'] and 'güven' in result['error']
-    advisor.mt5.open_order.assert_not_called()
 
 
-@pytest.mark.parametrize('lot', [0, -1, float('nan'), float('inf'), True])
-def test_invalid_explicit_lot_is_rejected_instead_of_replaced(advisor, lot):
-    rec = install_recommendation(advisor)
-    assert not advisor.execute_recommendation({**rec, 'suggested_lot': lot})['success']
-    advisor.mt5.open_order.assert_not_called()
 
 
-@pytest.mark.parametrize('flag', ['pending', 'partial', 'uncertain'])
-def test_unsettled_ai_execution_stops_further_automatic_orders(advisor, flag):
-    rec = install_recommendation(advisor)
-    advisor.update_autopilot({'enabled': True, 'mode': 'FULL_AUTO'})
-    generation, event = advisor.autopilot_generation, advisor._auto_stop
-    advisor.mt5.open_order.return_value = {'success': True, flag: True, 'ticket': 42}
-    result = advisor.execute_recommendation(rec, automatic=True, generation=generation)
-    assert result[flag] and not advisor.autopilot['enabled'] and event.is_set()
-    assert not advisor.execute_recommendation(rec, automatic=True, generation=generation)['success']
-    advisor.mt5.open_order.assert_called_once()
 
 
-def test_ai_order_forwards_authorized_account_and_rejects_mismatch(advisor):
-    rec = install_recommendation(advisor)
-    assert not advisor.execute_recommendation(rec, expected_account=[8, 'demo', 'DEMO'])['success']
-    advisor.mt5.open_order.assert_not_called()
-    assert advisor.execute_recommendation(rec, expected_account=[7, 'demo', 'DEMO'])['success']
-    assert advisor.mt5.open_order.call_args.kwargs['expected_account'] == [7, 'demo', 'DEMO']
 
 
-def test_fill_record_remains_with_original_account_when_selection_changes(advisor):
-    rec = install_recommendation(advisor)
-    original_scope = advisor.account_scope
-    def send(*args, **kwargs):
-        advisor.mt5.login_id = 8
-        return {'success': True, 'ticket': 42, 'price': 1.1}
-    advisor.mt5.open_order.side_effect = send
-    assert advisor.execute_recommendation(rec)['success']
-    assert not advisor.execution_records
-    assert advisor.account_states[original_scope]['execution_records'][0]['order_ticket'] == 42
-    advisor.mt5.login_id = 7
-    advisor.sync_account_scope()
-    assert advisor.execution_records[0]['order_ticket'] == 42
 
 
-@pytest.mark.parametrize('config', [{'max_lot': float('nan')}, {'daily_loss_limit': -1}, {'mode': 'WRONG'},
-                                  {'enabled': 'false'}, {'min_confidence': 101}, {'allowed_symbols': ['']}])
-def test_autopilot_configuration_is_atomic_on_validation_error(advisor, config):
-    before = dict(advisor.autopilot)
-    generation, event = advisor.autopilot_generation, advisor._auto_stop
-    assert not advisor.update_autopilot(config)['success']
-    assert advisor.autopilot == before and advisor.autopilot_generation == generation
-    assert advisor._auto_stop is event
 
 
-def test_unpersisted_recommendation_is_not_executable(advisor, monkeypatch):
-    monkeypatch.setattr(advisor, '_request_json', lambda *args: {'action': 'BUY', 'confidence': 90, 'sl_points': 200, 'tp_points': 400, 'suggested_lot': .01})
-    monkeypatch.setattr(advisor, 'save_memory', lambda: False)
-    assert not advise(advisor)['success']
-    assert not advisor.cost_state['advice_cache'] and advisor.memory['latest_recommendation'] is None
-    assert not advisor.execute_recommendation()['success']
-    advisor.mt5.open_order.assert_not_called()
 
 
-def test_failed_autopilot_persistence_preserves_risk_settings_and_stops(advisor, monkeypatch):
-    advisor.update_autopilot({'enabled': True, 'mode': 'FULL_AUTO'})
-    before, old_event = dict(advisor.autopilot), advisor._auto_stop
-    monkeypatch.setattr(advisor, 'save_memory', lambda: False)
-    assert not advisor.update_autopilot({'max_lot': .04, 'daily_loss_limit': 20})['success']
-    assert advisor.autopilot == {**before, 'enabled': False}
-    assert advisor.mt5.ai_daily_loss_limit == before['daily_loss_limit']
-    assert old_event.is_set()
 
 
-def test_failed_learning_persistence_cannot_be_returned_as_cached_success(advisor, monkeypatch):
-    request = Mock(return_value={'persona': {'style': 'new'}, 'learned_rules': []})
-    monkeypatch.setattr(advisor, '_request_json', request)
-    monkeypatch.setattr(advisor, 'save_memory', lambda: False)
-    trades = [{'ticket': 1, 'profit': 2}]
-    assert not advisor.analyze_user_trades(trades)['success']
-    assert not advisor.analyze_user_trades(trades)['success']
-    assert advisor.memory['last_analyzed'] is None and advisor.cost_state['learn_digest'] is None
 
 
 @pytest.mark.parametrize('flag', ['partial', 'pending', 'uncertain'])

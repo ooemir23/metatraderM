@@ -73,7 +73,7 @@
         <button id="tools-toggle" type="button" class="tools-toggle hx-btn" onclick="setToolsDrawer(true)" aria-controls="tools-drawer" aria-expanded="false" title="Strateji testi, araştırma, piyasa derinliği ve sistem günlüğü">
           <i class="ph-bold ph-toolbox"></i><span>Araçlar</span><span id="tools-error-badge" class="tools-error-badge" hidden>0</span>
         </button>
-        <a href="/ai" target="_blank" class="hx-btn" title="MevO AI Danışmanı ve Otopilot"><span class="hx-ai-dot" aria-hidden="true"></span><span>MevO AI</span></a>
+        <a href="/ai" target="_blank" class="hx-btn" title="MevO Danışman: manuel işlemlerinden fırsat sunar"><span class="hx-ai-dot" aria-hidden="true"></span><span>MevO AI</span></a>
         <div class="hx-account" id="hx-account">
           <button type="button" id="hx-account-toggle" class="hx-btn" aria-haspopup="true" aria-expanded="false" aria-controls="hx-account-menu"><i class="ph-bold ph-user-circle"></i><span>Hesap</span></button>
           <div id="hx-account-menu" class="hx-account-menu" hidden>
@@ -390,7 +390,7 @@
               <i class="ph-bold ph-chart-polar text-sm"></i>
               <span>Günlük Rapor & Analiz</span>
             </button>
-            <a href="/ai" target="_blank" id="tab-btn-ai" class="ai-logo-animated px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-[#14181f] border border-purple-500/50 text-purple-300 hover:text-white shadow-md shadow-purple-950/40 active:scale-95" title="MevO AI Danışmanı ve Otopilot">
+            <a href="/ai" target="_blank" id="tab-btn-ai" class="ai-logo-animated px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-[#14181f] border border-purple-500/50 text-purple-300 hover:text-white shadow-md shadow-purple-950/40 active:scale-95" title="MevO Danışman: manuel işlemlerinden fırsat sunar">
               <i class="ph-bold ph-brain text-purple-400 animate-pulse text-sm"></i>
               <span class="ai-gradient-text font-black text-xs">MevO</span>
             </a>
@@ -443,22 +443,7 @@
             </button>
           </div>
 
-          <!-- AI ACTIONS (Visible when AI tab active) -->
-          <div id="ai-actions-bar" class="hidden flex items-center gap-2 flex-wrap text-xs">
-            <button onclick="triggerAILearn()" id="ai-learn-btn" class="px-3 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold flex items-center gap-1.5 shadow-md shadow-purple-600/20 active:scale-95 transition" title="Geçmiş işlemlerinizi DeepSeek'e analiz ettirip tarzınızı öğrenmesini sağlayın">
-              <i class="ph-bold ph-sparkle text-amber-300"></i>
-              <span>İşlemlerimi Analiz Et & Öğren</span>
-            </button>
-            <button onclick="triggerAIAdvice()" id="ai-advice-btn" class="px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-cyan-400 border border-cyan-500/30 font-bold flex items-center gap-1.5 active:scale-95 transition" title="Mevcut sembol ve grafik için anlık yapay zeka tavsiyesi üret">
-              <i class="ph-bold ph-target"></i>
-              <span>Canlı Piyasa Tavsiyesi Al</span>
-            </button>
-            <button onclick="toggleAIAutopilotModal()" class="px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold flex items-center gap-1.5 border border-gray-700 active:scale-95 transition">
-              <i class="ph-bold ph-robot text-purple-400"></i>
-              <span>Otopilot Ayarları</span>
-              <span id="ai-autopilot-pill" class="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-300 font-mono font-bold">KAPALI</span>
-            </button>
-          </div>
+          
         </div>
 
 
@@ -657,205 +642,7 @@
           </div>
         </div>
 
-        <!-- AI DANISMAN & OGRENIM CONTAINER -->
-        <div id="ai-container" class="flex-1 flex flex-col gap-3 hidden overflow-y-auto pr-1">
-          <!-- TOP AI KPI & STATUS CARDS -->
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-            <!-- LEARNING STATUS -->
-            <div class="bg-[#14181f] p-3 rounded-xl border border-gray-800/80">
-              <div class="flex items-center justify-between text-gray-400 text-xs mb-1">
-                <span class="font-medium">Öğrenim Durumu</span>
-                <i class="ph-bold ph-brain text-purple-400"></i>
-              </div>
-              <div id="ai-status-badge" class="text-sm md:text-base font-bold text-gray-300 flex items-center gap-1.5">
-                <span class="w-2 h-2 rounded-full bg-amber-400"></span> Analiz Bekleniyor
-              </div>
-              <div id="ai-learned-trades-count" class="text-xs text-gray-500 mt-0.5">0 işlem analiz edildi</div>
-            </div>
-
-            <!-- TRADING PERSONA / TARZ -->
-            <div class="bg-[#14181f] p-3 rounded-xl border border-gray-800/80">
-              <div class="flex items-center justify-between text-gray-400 text-xs mb-1">
-                <span class="font-medium">Tespit Edilen Tarz</span>
-                <i class="ph-bold ph-identification-card text-cyan-400"></i>
-              </div>
-              <div id="ai-persona-style" class="text-sm md:text-base font-bold text-white truncate">-</div>
-              <div id="ai-persona-rr" class="text-xs text-gray-500 mt-0.5">R:R Oranı: Bekleniyor</div>
-            </div>
-
-            <!-- AUTOPILOT STATUS -->
-            <div class="bg-[#14181f] p-3 rounded-xl border border-gray-800/80">
-              <div class="flex items-center justify-between text-gray-400 text-xs mb-1">
-                <span class="font-medium">AI Otopilot</span>
-                <i class="ph-bold ph-robot text-emerald-400"></i>
-              </div>
-              <div id="ai-autopilot-status" class="text-sm md:text-base font-bold text-gray-400">KAPALI</div>
-              <div id="ai-autopilot-sub" class="text-xs text-gray-500 mt-0.5">Maks Lot: 0.01</div>
-            </div>
-
-            <!-- ENGINE & MODEL -->
-            <div class="bg-[#14181f] p-3 rounded-xl border border-gray-800/80">
-              <div class="flex items-center justify-between text-gray-400 text-xs mb-1">
-                <span class="font-medium">AI Çekirdeği</span>
-                <i class="ph-bold ph-lightning text-amber-400"></i>
-              </div>
-              <div class="text-sm md:text-base font-bold text-white flex items-center gap-1">
-                <span class="text-purple-400">DeepSeek</span> Chat
-              </div>
-              <div id="ai-last-learned-date" class="text-xs text-gray-500 mt-0.5">Son Güncelleme: -</div>
-<div id="ai-usage" class="text-xs text-gray-400 mt-1">AI kullanım bilgisi yükleniyor...</div>
-<div id="ai-usage-breakdown" class="text-xs text-gray-500 mt-1"></div>
-<div id="ai-performance" class="text-xs text-gray-400 mt-1 whitespace-pre-line">AI işlem sonuçları yükleniyor...</div>
-            </div>
-          </div>
-
-          <!-- MAIN AI CONTENT GRID: 2 COLUMNS ON DESKTOP -->
-          <div class="grid grid-cols-1 xl:grid-cols-12 gap-3">
-            <!-- LEFT COLUMN: LEARNED LOGIC & RECOMMENDATIONS (7 COLS) -->
-            <div class="xl:col-span-7 flex flex-col gap-3">
-              <!-- CARD 1: WHAT AI LEARNED FROM YOU -->
-              <div class="bg-[#14181f] p-3.5 rounded-xl border border-gray-800/80 flex flex-col gap-2.5">
-                <div class="flex items-center justify-between border-b border-gray-800 pb-2">
-                  <span class="font-bold text-gray-200 text-xs flex items-center gap-1.5">
-                    <i class="ph-bold ph-lightbulb text-amber-400"></i> Sizin İşlemlerinizden Öğrendiğim Mantık
-                  </span>
-                  <span class="text-xs text-purple-400 font-mono">Trader Profili</span>
-                </div>
-                
-                <p id="ai-persona-desc" class="text-xs text-gray-300 leading-relaxed bg-[#0f1218] p-2.5 rounded-lg border border-gray-800/60 font-sans">
-                  Henüz işlem geçmişiniz analiz edilmedi. Üst menüdeki <strong class="text-purple-400">"İşlemlerimi Analiz Et & Öğren"</strong> butonuna basarak DeepSeek yapay zekasının geçmiş MT5 işlemlerinizi incelemesini ve tarzınızı öğrenmesini sağlayabilirsiniz.
-                </p>
-
-                <!-- LEARNED RULES & HABITS -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                  <!-- RULES -->
-                  <div class="bg-[#0f1218] p-2.5 rounded-lg border border-gray-800/60">
-                    <div class="text-xs font-bold text-gray-400 mb-1.5 flex items-center gap-1">
-                      <i class="ph-bold ph-check-circle text-emerald-400"></i> Tespit Edilen Giriş/Çıkış Kuralları
-                    </div>
-                    <ul id="ai-rules-list" class="text-xs text-gray-300 space-y-1 list-disc list-inside">
-                      <li class="text-gray-500 list-none">Öğrenilen kural yok</li>
-                    </ul>
-                  </div>
-
-                  <!-- HABITS -->
-                  <div class="bg-[#0f1218] p-2.5 rounded-lg border border-gray-800/60">
-                    <div class="text-xs font-bold text-gray-400 mb-1.5 flex items-center gap-1">
-                      <i class="ph-bold ph-sparkle text-cyan-400"></i> Tercih Edilen Yapılar & Alışkanlıklar
-                    </div>
-                    <ul id="ai-habits-list" class="text-xs text-gray-300 space-y-1 list-disc list-inside">
-                      <li class="text-gray-500 list-none">Öğrenilen alışkanlık yok</li>
-                    </ul>
-                  </div>
-                </div>
-
-                <!-- STRENGTHS & WEAKNESSES -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div class="bg-emerald-500/5 p-2.5 rounded-lg border border-emerald-500/20">
-                    <div class="text-xs font-bold text-emerald-400 mb-1 flex items-center gap-1">
-                      <i class="ph-bold ph-thumbs-up"></i> Güçlü Yönleriniz (Kazandıranlar)
-                    </div>
-                    <ul id="ai-strengths-list" class="text-xs text-emerald-300/90 space-y-0.5 list-disc list-inside">
-                      <li class="text-gray-500 list-none">-</li>
-                    </ul>
-                  </div>
-
-                  <div class="bg-rose-500/5 p-2.5 rounded-lg border border-rose-500/20">
-                    <div class="text-xs font-bold text-rose-400 mb-1 flex items-center gap-1">
-                      <i class="ph-bold ph-warning"></i> Dikkat Edilmesi Gereken Hatalar
-                    </div>
-                    <ul id="ai-weaknesses-list" class="text-xs text-rose-300/90 space-y-0.5 list-disc list-inside">
-                      <li class="text-gray-500 list-none">-</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
-              <!-- CARD 2: INCOME GENERATING STRATEGIC IDEAS -->
-              <div class="bg-[#14181f] p-3.5 rounded-xl border border-gray-800/80 flex flex-col gap-2">
-                <div class="flex items-center justify-between border-b border-gray-800 pb-2">
-                  <span class="font-bold text-gray-200 text-xs flex items-center gap-1.5">
-                    <i class="ph-bold ph-trend-up text-emerald-400"></i> İşlem Disiplini ve Strateji Önerileri
-                  </span>
-                  <span class="text-xs text-gray-500">DeepSeek Tavsiyeleri</span>
-                </div>
-                <ul id="ai-ideas-list" class="text-xs text-gray-300 space-y-1.5">
-                  <li class="text-gray-500 text-xs py-1">İşlem geçmişiniz analiz edildiğinde strateji önerileri burada gösterilecektir.</li>
-                </ul>
-              </div>
-            </div>
-
-            <!-- RIGHT COLUMN: LIVE ADVICE & ONE-CLICK / AUTOPILOT EXECUTION (5 COLS) -->
-            <div class="xl:col-span-5 flex flex-col gap-3">
-              <!-- LIVE ADVICE CARD -->
-              <div class="bg-[#14181f] p-3.5 rounded-xl border border-purple-500/30 shadow-lg shadow-purple-900/10 flex flex-col gap-3">
-                <div class="flex items-center justify-between border-b border-gray-800 pb-2">
-                  <span class="font-bold text-white text-xs flex items-center gap-1.5">
-                    <i class="ph-bold ph-broadcast text-cyan-400"></i> Anlık Piyasa Tavsiyesi
-                  </span>
-                  <span id="ai-advice-time" class="text-xs text-gray-500 font-mono">-</span>
-                </div>
-
-                <!-- SIGNAL BADGE & CONFIDENCE -->
-                <div class="flex items-center justify-between bg-[#0f1218] p-2.5 rounded-xl border border-gray-800">
-                  <div>
-                    <div class="text-xs text-gray-500 uppercase tracking-wider font-semibold">Tavsiye Sinyali</div>
-                    <div id="ai-advice-signal" class="text-lg font-black tracking-wide text-gray-400">BEKLE / YOL HARİTASI YOK</div>
-                  </div>
-                  <div class="text-right">
-                    <div class="text-xs text-gray-500 font-semibold">AI Güven Skoru</div>
-                    <div id="ai-advice-confidence" class="text-base font-bold font-mono text-gray-300">%0</div>
-                  </div>
-                </div>
-
-                <!-- SIGNAL METRICS (SYMBOL, ENTRY, SL, TP) -->
-                <div class="grid grid-cols-2 gap-2 text-xs font-mono">
-                  <div class="bg-[#0f1218] p-2 rounded-lg border border-gray-800/60">
-                    <span class="text-gray-500 text-xs block font-sans">Sembol</span>
-                    <span id="ai-advice-symbol" class="text-white font-bold">-</span>
-                  </div>
-                  <div class="bg-[#0f1218] p-2 rounded-lg border border-gray-800/60">
-                    <span class="text-gray-500 text-xs block font-sans">Giriş Seviyesi</span>
-                    <span id="ai-advice-entry" class="text-gray-200 font-bold">-</span>
-                  </div>
-                  <div class="bg-[#0f1218] p-2 rounded-lg border border-rose-500/20">
-                    <span class="text-rose-400 text-xs block font-sans">Zarar Durdur (SL)</span>
-                    <span id="ai-advice-sl" class="text-rose-400 font-bold">-</span>
-                  </div>
-                  <div class="bg-[#0f1218] p-2 rounded-lg border border-emerald-500/20">
-                    <span class="text-emerald-400 text-xs block font-sans">Kâr Al (TP)</span>
-                    <span id="ai-advice-tp" class="text-emerald-400 font-bold">-</span>
-                  </div>
-                </div>
-
-                <!-- ADVICE REASONING -->
-                <div>
-                  <span class="text-xs font-bold text-gray-400 block mb-1">AI Mantığı & Piyasayı Değerlendirmesi:</span>
-                  <div id="ai-advice-reasoning" class="text-xs text-gray-300 bg-[#0f1218] p-2.5 rounded-lg border border-gray-800/60 leading-relaxed font-sans min-h-[60px]">
-                    Canlı piyasa tavsiyesi almak için üstteki "Canlı Piyasa Tavsiyesi Al" butonuna tıklayın.
-                  </div>
-                </div>
-
-                <!-- ACTION BUTTONS: ONE CLICK EXECUTE & AUTOPILOT MODAL TRIGGER -->
-                <div class="flex flex-col gap-2 pt-1 border-t border-gray-800">
-                  <button id="ai-execute-btn" onclick="executeCurrentAdvice()" disabled class="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 disabled:pointer-events-none text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition active:scale-98">
-                    <i class="ph-bold ph-paper-plane-tilt text-base"></i>
-                    <span>Bu Tavsiyeyi MT5'te Uygula (Pozisyon Aç)</span>
-                  </button>
-
-                  <div class="flex items-center justify-between text-xs text-gray-400 px-1">
-                    <span class="flex items-center gap-1">
-                      <i class="ph-bold ph-shield-check text-cyan-400"></i> Emirler sunucuda doğrulanır
-                    </span>
-                    <button onclick="toggleAIAutopilotModal()" class="text-purple-400 hover:text-purple-300 underline font-medium">
-                      Otopilot Modunu Değiştir
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        
 
           </div>
 
@@ -1368,66 +1155,7 @@
   </div>
 
   <!-- AI AUTOPILOT SETTINGS MODAL -->
-  <div id="ai-autopilot-modal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
-    <div class="bg-[#14181f] border border-gray-800 rounded-2xl max-w-md w-full p-5 shadow-2xl">
-      <div class="flex items-center justify-between mb-4 pb-2 border-b border-gray-800">
-        <h3 class="font-bold text-white text-base flex items-center gap-2">
-          <i class="ph-bold ph-robot text-purple-400"></i>
-          DeepSeek AI Otopilot & Alım-Satım Ayarları
-        </h3>
-        <button onclick="toggleAIAutopilotModal()" class="text-gray-400 hover:text-white text-lg">
-          <i class="ph-bold ph-x"></i>
-        </button>
-      </div>
-
-      <div class="space-y-3.5 text-xs">
-        <div>
-          <label class="block text-gray-300 font-semibold mb-1">Otopilot Çalışma Modu</label>
-          <select id="ai-cfg-mode" class="w-full bg-[#0f1218] border border-gray-700 rounded-lg px-3 py-2 text-white font-sans focus:border-purple-500 focus:outline-none">
-            <option value="DISABLED">Kapalı (Sadece manuel analiz & tavsiye)</option>
-            <option value="SEMI_AUTO">Onaylı İşlem (tavsiyeyi siz istersiniz, emri siz onaylarsınız)</option>
-            <option value="FULL_AUTO">Tam Otomatik (AI piyasayı tarar, şartlar uyduğunda MT5'te doğrudan açar)</option>
-          </select>
-          <p class="text-xs text-gray-500 mt-1">Tam otomatik modda AI periyodik olarak piyasayı tarar ve eşik üstü fırsatlarda bağımsız emir gönderir.</p>
-        </div>
-
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="block text-gray-300 font-semibold mb-1">Maksimum İşlem Lotu</label>
-            <input type="number" id="ai-cfg-max-lot" value="0.01" step="0.01" min="0.01" max="1.0" class="w-full bg-[#0f1218] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-purple-500 focus:outline-none">
-          </div>
-          <div>
-            <label class="block text-gray-300 font-semibold mb-1">Min. Güven Eşiği (%)</label>
-            <input type="number" id="ai-cfg-min-conf" value="75" min="50" max="99" class="w-full bg-[#0f1218] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-purple-500 focus:outline-none">
-          </div>
-        </div>
-
-        <div>
-          <label class="block text-gray-300 font-semibold mb-1">Günlük Zarar Limiti (hesap para birimi, broker sunucu günü)</label>
-          <p class="text-xs text-gray-400">AI yeni emirlerini sınırlar. Hesabın gerçekleşen net sonucu ve açık zararı birlikte değerlendirilir; ortak günlük limit daha düşükse o kullanılır.</p>
-          <input type="number" id="ai-cfg-max-loss" value="50.0" step="5" min="0" class="w-full bg-[#0f1218] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-purple-500 focus:outline-none">
-          <p class="text-xs text-gray-500 mt-0.5">Günün toplam zararı bu tutarı aşarsa AI otopilot otomatik durur.</p>
-        </div>
-
-        <div>
-          <label class="block text-gray-300 font-semibold mb-1">Taranacak Semboller (Virgülle ayırın)</label>
-          <input type="text" id="ai-cfg-symbols" value="EURUSD,GBPUSD,USDJPY,XAUUSD" class="w-full bg-[#0f1218] border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-purple-500 focus:outline-none">
-        </div>
-
-        <div class="p-2.5 rounded-xl bg-purple-950/20 border border-purple-800/40 text-xs text-purple-200">
-          <span class="font-bold flex items-center gap-1 text-purple-300 mb-0.5">
-            <i class="ph-bold ph-shield-check"></i> Güvenlik Koruması
-          </span>
-          AI emirleri sunucuda doğrulanır; geçerli Stop Loss (SL), Kâr Al (TP) ve işlem başına risk sınırı olmadan emir gönderilmez.
-        </div>
-      </div>
-
-      <div class="flex items-center justify-end gap-2 mt-5 pt-3 border-t border-gray-800">
-        <button onclick="toggleAIAutopilotModal()" class="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-semibold">İptal</button>
-        <button onclick="saveAIAutopilot()" class="px-5 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-lg shadow-purple-600/30">Ayarları Kaydet</button>
-      </div>
-    </div>
-  </div>
+  
 
   <dialog id="strategy-presets-dialog" aria-labelledby="strategy-presets-title" class="strategy-presets-dialog backdrop:bg-black/70">
     <div class="sp-head">

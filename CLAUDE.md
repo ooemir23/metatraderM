@@ -100,3 +100,12 @@ Kullanıcı ikisini de MT5'ten farklı olduğunu bilerek seçti; varsayılan aç
   (`copy_manual_trades` açık); yaygın kesişimlerden biri = o kesişim + botun kendi lot/SL/TP'si (kopya kapalı).
   `copy_manual_trades` çalışan botta değişebilir (LIVE_KEYS) ve çalışan örnekleri sıfırlamaz. Yaygın kesişim testi her
   zaman botun kendi SL/TP'siyle yapılır.
+
+## MevO yeniden yazıldı (kullanıcı kararı, 2026-10-23)
+Kullanıcı "eski MevO'yu komple sil, yeniden yap" dedi. Eski DeepSeek danışman/otopilot (`ai_advisor.py`, `ai_performance.py`,
+`/api/ai/*`, ana sayfadaki AI sekmesi/otopilot penceresi, FULL_AUTO döngüsü) silindi. Yeni `app/mevo.py` (`/ai` sayfası,
+`/api/mevo/status|learn|opportunities`) YALNIZ DANIŞMANDIR: yalnız orijinal MT5'ten elle açılan kapalı işlemleri
+(`MT5Client.get_manual_trades`, 90 gün, en az 5) inceler; istatistikleri kod hesaplar, DeepSeek yorumlar. Fırsatlar kapanmış
+mumlara göre sunulur, SL/TP yönle doğrulanır (uyumsuzsa BEKLE); **MevO emir açmaz**. Profil hesap bazlıdır
+(`mevo.json`). API anahtarı yalnız ortam değişkeni `DEEPSEEK_API_KEY` (koda/depoya/duruma yazılmaz); günlük sınır
+`MEVO_DAILY_CALL_LIMIT`. `AI_MAGIC` (123462) yalnız geçmişte AI etiketli işlemleri tanımak için bırakıldı.

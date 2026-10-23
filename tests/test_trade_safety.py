@@ -363,26 +363,6 @@ def test_account_login_requires_explicit_demo_or_real_choice():
     assert authenticated_web().post('/api/account/login', json={**base, 'account_type':'CONTEST'}).status_code == 422
 
 
-def test_real_full_auto_requires_explicit_confirmation(monkeypatch):
-    from app import main
-    monkeypatch.setattr(main.mt5_client, 'login_id', 3)
-    monkeypatch.setattr(main.mt5_client, 'server', 'broker-live')
-    monkeypatch.setattr(main.mt5_client, 'account_type', 'REAL')
-    monkeypatch.setattr(main.mt5_client, 'ensure_connected', lambda: True)
-    monkeypatch.setattr(main.mt5_client, '_selected_account', lambda: [3, 'broker-live'])
-    update = Mock(return_value={'success': True})
-    monkeypatch.setattr(main.ai_advisor, 'update_autopilot', update)
-    payload = {'enabled': True, 'mode': 'FULL_AUTO'}
-    assert authenticated_web().post('/api/ai/autopilot', json=payload).status_code == 403
-    monkeypatch.setattr(main.security_sessions, 'verify_totp', lambda code, username=None: True)
-    token = base64.b64encode(b'test:test-panel-password').decode()
-    web = TestClient(main.app, base_url='https://testserver', headers={'Authorization': 'Basic ' + token})
-    assert web.post('/api/security/unlock', json={'code':'123456'}).status_code == 200
-    assert web.post('/api/ai/autopilot', json=payload).status_code == 409
-    update.assert_not_called()
-    response = web.post('/api/ai/autopilot', json={**payload, 'confirm_real_full_auto': True})
-    assert response.status_code == 200
-    update.assert_called_once_with(payload)
 
 
 def test_real_open_requires_second_factor_but_emergency_close_stays_available(monkeypatch):
@@ -407,11 +387,9 @@ def test_api_position_failure_returns_error_not_empty_list(monkeypatch):
 def test_close_all_stops_automation_before_close(monkeypatch):
     from app import main
     monkeypatch.setattr(main.bot, 'stop', Mock())
-    monkeypatch.setattr(main.ai_advisor, 'update_autopilot', Mock())
     def close(kind):
         assert main.mt5_client.automation_stopped.is_set()
         main.bot.stop.assert_called_once()
-        main.ai_advisor.update_autopilot.assert_called_once_with({'enabled':False})
         return {'success': True, 'closed_count': 1, 'total_matched': 1, 'errors': []}
     monkeypatch.setattr(main.mt5_client, 'close_by_filter', close)
     monkeypatch.setattr(main.mt5_client, 'get_pending_orders', lambda: [])
@@ -452,37 +430,8 @@ def test_flatten_reports_remaining_broker_exposure(monkeypatch):
     assert not result['success'] and '1 bekleyen emir' in result['errors'][0]
 
 
-def test_ai_uses_saved_recommendation_and_preserves_execution_state(monkeypatch, tmp_path):
-    from app import ai_advisor
-    monkeypatch.setattr(ai_advisor, 'MEMORY_PATHS', [str(tmp_path / 'ai.json')])
-    mt5 = Mock()
-    a = ai_advisor.DeepSeekAdvisor(mt5)
-    rec = {'id':'trusted-rec', 'action':'BUY','symbol':'EURUSD','expires_at':time.time()+900,
-           'sl_points':200,'tp_points':400,'suggested_lot':.01}
-    a.cost_state['advice_cache']['key'] = {'recommendation':rec, 'expires_at':rec['expires_at']}
-    mt5.open_order.return_value = {'success':True,'partial':True,'volume':.005,'retcode':10010}
-    response = a.execute_recommendation({**rec,'action':'SELL','symbol':'XAUUSD','sl_points':0})
-    assert response['partial'] and response['volume'] == .005
-    assert mt5.open_order.call_args.args == ('EURUSD','BUY',.01)
-    assert mt5.open_order.call_args.kwargs['sl_points'] == 200
-    assert mt5.open_order.call_args.kwargs['request_id'] == 'ai-trusted-rec'
-    assert not a.execute_recommendation({})['success']
-    assert not a.execute_recommendation({**rec,'id':'forged'})['success']
 
 
-def test_old_autopilot_analysis_cannot_trade_after_settings_change(monkeypatch, tmp_path):
-    from app import ai_advisor
-    monkeypatch.setattr(ai_advisor, 'MEMORY_PATHS', [str(tmp_path / 'ai.json')])
-    mt5 = Mock()
-    a = ai_advisor.DeepSeekAdvisor(mt5)
-    a.update_autopilot({'enabled':True,'mode':'FULL_AUTO'})
-    old_event, old_generation = a._auto_stop, a.autopilot_generation
-    a.update_autopilot({'max_lot':.02})
-    assert old_event.is_set() and a._auto_stop is not old_event
-    rec = {'id':'trusted-rec','action':'BUY','symbol':'EURUSD','expires_at':time.time()+900}
-    a.cost_state['advice_cache']['key'] = {'recommendation':rec}
-    assert not a.execute_recommendation(rec, automatic=True, generation=old_generation)['success']
-    mt5.open_order.assert_not_called()
 
 
 def test_waiting_order_precedes_dashboard_reads():

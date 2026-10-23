@@ -46,8 +46,7 @@ MT5 resmi referansları: [emir dönüş kodları](https://www.mql5.com/en/docs/c
 - Aynı sembol/zaman dilimi/kapanmış mum/profil/pozisyon bilgisi için analiz yeniden kullanılabilir. Yeni mum yoksa eski sonuç gösterilir; süresi dolan tavsiye işlem açamaz. Yeniden başlatmada önbellek korunur.
 - Son 100 işlemin özeti yerelde hesaplanır, modele yalnızca gruplar ve 8 örnek gönderilir. Aynı geçmiş yeniden analiz edilmez.
 - Tavsiye çıktı sınırı 400, geçmiş analizi 800 token. Kesilen JSON otomatik tekrar edilmez. Aynı analiz hatasından sonra en az 60 saniye beklenir.
-- `AI_DAILY_CALL_LIMIT=100`: UTC günü için kalıcı çağrı sayısı sınırı; başarısız istekler de sayılır.
-- `AI_DAILY_TOKEN_LIMIT=100000`: sağlayıcının bildirdiği toplam token bu eşiğe ulaşınca **sonraki** ücretli çağrı engellenir; son isteğin tokenlarıyla eşik aşılabilir. Yanıtı alınamayan isteklerin harcaması bilinmez, ayrı sayaçta gösterilir. Bu bir kesin dolar bütçesi değildir.
+- `MEVO_DAILY_CALL_LIMIT=100`: MevO için UTC günü çağrı sınırı (eski AI_DAILY_* ayarları kaldırıldı).
 - Arayüz sayacı bu sürümden itibaren tutulan verileri gösterir; eski sağlayıcı harcamalarını geriye dönük içermez. Durum yenilemeleri ücretli AI çağrısı yapmaz.
 - Sayaç tek Uvicorn süreci için tasarlanmıştır. Birden çok worker/replica kullanılacaksa merkezi Redis/DB kilidi ve sayaç gerekir.
 - Her iki arayüz backend'in `recommendation`, `autopilot` ve profil alanlarıyla uyumlu hale getirildi. Manuel emir onayında gösterilen 0.01 lot istekle birlikte gönderilir; başka bir sembolün son tavsiyesine sessiz geri dönüş kaldırıldı.

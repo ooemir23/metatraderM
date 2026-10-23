@@ -207,70 +207,19 @@ def test_risk_controls_cannot_move_from_authorized_demo_to_real(client, monkeypa
 @pytest.mark.parametrize('endpoint,payload', [
     ('/api/risk/daily-limit', {'amount': 100}),
     ('/api/trading/lock', {'locked': False, 'acknowledge_unlimited': True}),
-    ('/api/ai/autopilot', {'enabled': True, 'mode': 'FULL_AUTO'}),
-    ('/api/ai/autopilot', {'enabled': False}),
 ])
 def test_settings_reject_the_account_of_an_old_confirmation(client, monkeypatch, endpoint, payload):
     monkeypatch.setattr(main, 'mt5_client', client)
-    update = Mock()
-    monkeypatch.setattr(main, 'ai_advisor', NS(autopilot={'enabled': False, 'mode': 'ADVISORY'}, update_autopilot=update))
     response = TestClient(main.app).post(endpoint, auth=('test', 'test-panel-password'),
         json={**payload, 'expected_account': [2, 'test', 'DEMO']})
     assert response.status_code == 409
-    update.assert_not_called()
     assert client.journal.daily_loss_limit(1, 'test') is None
 
 
-def test_autopilot_reconnect_cannot_publish_for_a_different_account(client, monkeypatch):
-    monkeypatch.setattr(main, 'mt5_client', client)
-    update = Mock()
-    monkeypatch.setattr(main, 'ai_advisor', NS(autopilot={'enabled': False, 'mode': 'ADVISORY'}, update_autopilot=update))
-
-    def reconnect():
-        client.login_id, client.account_type = 2, 'REAL'
-        client.mt5.account_info.return_value.login = 2
-        client.mt5.account_info.return_value.trade_mode = 2
-        return True
-
-    monkeypatch.setattr(client, 'ensure_connected', reconnect)
-    response = TestClient(main.app).post('/api/ai/autopilot', auth=('test', 'test-panel-password'),
-        json={'enabled': True, 'mode': 'FULL_AUTO', 'confirm_real_full_auto': True})
-    assert response.status_code == 409
-    update.assert_not_called()
 
 
-def test_autopilot_authorization_and_publication_serialize_account_changes(client, monkeypatch):
-    monkeypatch.setattr(main, 'mt5_client', client)
-    competing_lock = []
-
-    def publish(settings):
-        def switch_account():
-            acquired = client._lock.acquire(blocking=False)
-            competing_lock.append(acquired)
-            if acquired:
-                client._lock.release()
-        worker = threading.Thread(target=switch_account)
-        worker.start()
-        worker.join(1)
-        assert not worker.is_alive()
-        return {'success': True}
-
-    monkeypatch.setattr(main, 'ai_advisor', NS(autopilot={'enabled': False, 'mode': 'ADVISORY'}, update_autopilot=publish))
-    response = TestClient(main.app).post('/api/ai/autopilot', auth=('test', 'test-panel-password'),
-        json={'enabled': True, 'mode': 'FULL_AUTO', 'expected_account': [1, 'test', 'DEMO']})
-    assert response.status_code == 200
-    assert competing_lock == [False]
 
 
-def test_partial_autopilot_settings_cannot_reenable_work_during_a_halt(client, monkeypatch):
-    monkeypatch.setattr(main, 'mt5_client', client)
-    client.journal.set_trading_halted(True)
-    update = Mock()
-    monkeypatch.setattr(main, 'ai_advisor', NS(autopilot={'enabled': True, 'mode': 'ADVISORY'}, update_autopilot=update))
-    response = TestClient(main.app).post('/api/ai/autopilot', auth=('test', 'test-panel-password'),
-        json={'min_confidence': 90})
-    assert response.status_code == 409
-    update.assert_not_called()
 
 
 def test_quiet_or_closed_market_does_not_block_start_like_mt5(ready_client):

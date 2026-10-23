@@ -78,13 +78,12 @@ function stopRefreshes(h) { for(const fn of ['fetchAccount','fetchPositions','fe
     c.rememberPositions([{ticket:7,symbol:'EURUSD',type:'BUY',volume:.03,sl:1.08,tp:1.14}]);c.showPositionEditor(7);
     h.node('edit-sl').value='1.09';h.node('edit-tp').value='1.15';await c.savePositionStops();
     h.node('partial-volume').value='.01';await c.partialClosePosition();
-    c.renderAIAdvice(recommendation());await c.executeCurrentAdvice();
     for(const request of h.requests) assert.deepEqual(request.payload.expected_account,[12345,'Broker-Demo','DEMO'],request.url);
-    assert.equal(h.requests.length,8);
+    assert.equal(h.requests.length,7);
     // A stored manual request may never migrate to a different account.
     h.storage.set('order-intent:EURUSD',JSON.stringify({request_id:'old-request-id-123',symbol:'EURUSD',order_type:'BUY',volume:.01,sl_points:200,tp_points:400,expected_account:[99,'Other','REAL']}));
-    await c.submitOrder('BUY');assert.equal(h.requests.length,8);
-    c.showAccountConnectionError('offline');await c.submitOrder('BUY');assert.equal(h.requests.length,8);
+    await c.submitOrder('BUY');assert.equal(h.requests.length,7);
+    c.showAccountConnectionError('offline');await c.submitOrder('BUY');assert.equal(h.requests.length,7);
     assert.equal(h.node('order-buy-btn').disabled,true);
     assert.equal(h.node('acc-equity').innerText,'—');
   }
@@ -120,26 +119,6 @@ function stopRefreshes(h) { for(const fn of ['fetchAccount','fetchPositions','fe
     h.node('tp-input').value='1.5';await c.refreshTradePreview();assert.equal(h.requests.length,0);
     assert.equal(h.node('trade-preview').dataset.state,'unavailable');
   }
-  // Both screens reject stale symbols, changes during confirmation and duplicate AI execution.
-  for(const file of ['app.js','ai.js']) {
-    const h=harness([file]),c=h.context;stopRefreshes(h);
-    c.renderAIAdvice(recommendation());assert.equal(h.node('ai-execute-btn').disabled,false);
-    c.confirmAction=async()=>{c.invalidateAIAdvice('EURUSD');return true};
-    await c.executeCurrentAdvice();assert.equal(h.requests.length,0,'changed confirmation: '+file);
-    c.renderAIAdvice(recommendation());c.confirmAction=async()=>true;
-    await c.executeCurrentAdvice();await c.executeCurrentAdvice();assert.equal(h.requests.length,1,'duplicate: '+file);
-    let release;
-    h.setReply(()=>new Promise(resolve=>{release=resolve}));
-    const first=c.triggerAIAdvice();
-    h.read('currentSymbol="XAUUSD"');c.invalidateAIAdvice('XAUUSD');
-    release(response({success:true,recommendation:recommendation('EURUSD','late-a')}));await first;
-    assert.equal(h.read('currentAIAdvice'),null,'late old symbol: '+file);
-    assert.equal(h.node('ai-execute-btn').disabled,true);
-    // Polling must preserve unfinished autopilot edits, including an explicit zero loss budget.
-    h.node('ai-autopilot-modal').classList.remove('hidden');h.node('ai-cfg-max-loss').value='0';
-    c.renderAIMemory({}, {mode:'FULL_AUTO',max_lot:.01,min_confidence:75,daily_loss_limit:50,allowed_symbols:['EURUSD']});
-    assert.equal(h.node('ai-cfg-max-loss').value,'0','polling overwrites edit: '+file);
-  }
   // Double-clicking an automation toggle may not stop and immediately restart it.
   {
     const h=harness(),c=h.context;let release;c.fetchBotStatus=()=>{};
@@ -173,7 +152,6 @@ function stopRefreshes(h) { for(const fn of ['fetchAccount','fetchPositions','fe
     vm.runInContext(fs.readFileSync('app/static/permissions.js','utf8'),c);await initialize();
     for(const button of buttons) assert.equal(button.disabled,true);
     c.updateOrderButtons();assert.equal(h.node('order-buy-btn').disabled,true);
-    c.renderAIAdvice(recommendation());assert.equal(h.node('ai-execute-btn').disabled,true);
     buttons[2].disabled=false;observer();assert.equal(buttons[2].disabled,true);
   }
   // Risk settings bind the displayed account, serialize updates, and cancel an account change during confirmation.
@@ -193,16 +171,6 @@ function stopRefreshes(h) { for(const fn of ['fetchAccount','fetchPositions','fe
     release(true);await save;assert.equal(h.requests.length,1);
     assert.deepEqual(h.requests[0].payload.expected_account,[12345,'Broker-Demo','DEMO']);
   }
-  for(const file of ['app.js','ai.js']) {
-    const h=harness([file]),c=h.context;stopRefreshes(h);c.fetchAIStatus=()=>{};
-    const setup=()=>{if(file==='app.js')c.renderAccountData({...account(),account_type:'REAL'});else h.read('currentAIAccountType="REAL";currentAIAccountIdentity=[12345,"Broker-Demo","REAL"];aiAccountVerificationKnown=true');h.node('ai-cfg-mode').value='FULL_AUTO'};
-    setup();c.confirmAction=async()=>{if(file==='app.js')c.renderAccountData({...account(54321),account_type:'REAL'});else h.read('currentAIAccountIdentity=[54321,"Broker-Demo","REAL"]');return true};
-    await c.saveAIAutopilot();assert.equal(h.requests.length,0,'changed autopilot account: '+file);
-    setup();let release;c.confirmAction=()=>new Promise(resolve=>{release=resolve});
-    const save=c.saveAIAutopilot();await c.saveAIAutopilot();assert.equal(h.requests.length,0);
-    release(true);await save;assert.equal(h.requests.length,1,'duplicate autopilot save: '+file);
-    assert.deepEqual(h.requests[0].payload.expected_account,[12345,'Broker-Demo','REAL']);
-  }
   // Account input cannot silently truncate malformed values; other-symbol unresolved orders block switching.
   {
     const h=harness(),c=h.context;stopRefreshes(h);
@@ -211,5 +179,5 @@ function stopRefreshes(h) { for(const fn of ['fetchAccount','fetchPositions','fe
     h.node('login-acc').value='12345';h.storage.set('order-intent:BTCUSD','old');
     await c.submitLogin();assert.equal(h.requests.length,0);
   }
-  console.log('UI audit: account snapshots, live/REST races, quote clearing, truthful fills, risk updates, AI races and login guards PASS');
+  console.log('UI audit: account snapshots, live/REST races, quote clearing, truthful fills, risk updates and login guards PASS');
 })().catch(error=>{console.error(error);process.exitCode=1});

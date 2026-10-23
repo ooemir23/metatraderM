@@ -117,7 +117,6 @@ def test_admin_can_toggle_trading_lock_with_explicit_bypass_ack(monkeypatch):
     monkeypatch.setattr(main.mt5_client, 'get_risk_status', lambda: {'daily_loss':600, 'daily_loss_limit':1})
     monkeypatch.setattr(main.mt5_client, 'automation_stopped', threading.Event())
     monkeypatch.setattr(main.bot, 'stop', lambda: None)
-    monkeypatch.setattr(main.ai_advisor, 'update_autopilot', lambda settings: None)
     main.mt5_client.login_id, main.mt5_client.server = 1, 'test'
     admin = base64.b64encode(b'test:test-panel-password').decode()
     trader = base64.b64encode(b'trader:trader-password').decode()
