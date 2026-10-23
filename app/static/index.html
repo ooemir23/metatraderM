@@ -102,6 +102,13 @@
       <div class="hx-metric"><span>Teminat seviyesi</span><span id="acc-margin-level">—</span></div>
     </div>
   </header>
+  <!-- Mobile: jump between the four parts of the terminal (hidden on wider screens) -->
+  <nav id="mx-nav" class="mx-nav" aria-label="Bölümler">
+    <button type="button" data-mx="chart"><i class="ph-bold ph-chart-line"></i><span>Grafik</span></button>
+    <button type="button" data-mx="order"><i class="ph-bold ph-pencil-simple-line"></i><span>Emir</span></button>
+    <button type="button" data-mx="positions"><i class="ph-bold ph-list-bullets"></i><span>İşlemler</span></button>
+    <button type="button" data-mx="bot"><i class="ph-bold ph-robot"></i><span>Bot</span></button>
+  </nav>
 
   <!-- MAIN WORKSPACE -->
   <main class="hx-main ui-scale-width">
@@ -1569,6 +1576,7 @@
   <script src="/static/research.js"></script>
   <script src="/static/manual-style.js?v=2"></script>
   <script src="/static/strategy-presets.js?v=1"></script>
+  <script src="/static/mobile-nav.js?v=1"></script>
   <script src="/static/workspace.js?v=terminal-1"></script>
   <script src="/static/header-autohide.js?v=1"></script>
   <script src="/static/account-menu.js?v=1"></script>

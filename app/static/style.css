@@ -1175,3 +1175,90 @@ html[data-buy-scheme="green"] .mt5-menu-buy { background:#1f9d6a; }
 .sp-manual-wrap { margin-bottom:14px; }
 .sp-manual { border-color:#7c3aed66 !important; background:#1a1726; }
 .sp-subhead { font-size:13px; font-weight:700; color:#e5e7eb; margin:4px 0 6px; }
+
+/* ================= Mobile usability (<760px) =================
+   One page that scrolls once: no hidden horizontal overflow, no nested fixed-height scroll areas,
+   every tab visible, a section bar to jump to Chart / Order / Trades / Bot. */
+.mx-nav { display:none; }
+@media (max-width: 759px) {
+  html, body { overflow-x:clip; }   /* clip, not hidden: hidden would break the sticky section bar */
+  /* Section bar */
+  .mx-nav { display:grid; grid-template-columns:repeat(4, 1fr); gap:4px; position:sticky; top:0; z-index:44;
+    padding:6px 10px; background:#0f1218f2; backdrop-filter:blur(6px); border-bottom:1px solid #222833; }
+  .mx-nav button { height:40px; border-radius:8px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
+    font-size:11px; font-weight:700; color:#9aa4b2; background:transparent; border:1px solid transparent; }
+  .mx-nav button i { font-size:17px; }
+  .mx-nav button[aria-current="true"] { color:#fff; background:#1d2633; border-color:#2f6fd6; }
+
+  /* Header: compact, icon buttons */
+  .hx-row1 { flex-wrap:wrap; gap:8px; }
+  .hx-actions { flex-wrap:wrap; gap:6px; width:100%; }
+  .hx-actions .hx-btn { height:36px; padding:0 10px; }
+  .hx-actions .hx-btn > span:not(.hx-ai-dot):not(.tools-error-badge) { display:none; }
+  .hx-actions .hx-btn[href="/ai"] > span:last-child { display:inline; }
+  .hx-actions select, .hx-actions .ui-scale { height:36px; font-size:13px; }
+  .hx-metrics { grid-template-columns:repeat(3, minmax(0, 1fr)) !important; gap:6px !important; }
+  .hx-metric { padding:6px 8px !important; }
+  .hx-metric > span:first-child { font-size:11px !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .hx-metric > span:last-child { font-size:13px !important; }
+
+  /* Chart: a fixed comfortable height, no drag handles on touch */
+  .cx-card { height:min(62vh, 460px) !important; }
+  .cx-resizer, #positions-resizer, #positions-top-resizer { display:none !important; }
+
+  /* Workspace card grows with its content (no saved drag height, no inner scroll box) */
+  #positions-card { height:auto !important; max-height:none !important; }
+  #positions-card .workspace-split, #positions-card .positions-pane, #positions-card .signals-pane { max-height:none !important; overflow:visible !important; }
+
+  /* Tabs: all visible in a 3-column grid instead of a hidden horizontal scroller */
+  .hx-tabs { display:grid !important; grid-template-columns:repeat(3, minmax(0, 1fr)); overflow:visible; padding:6px 8px; gap:4px; }
+  .hx-tabs .hx-tab { justify-content:center; min-height:42px; padding:0 4px; font-size:12.5px; border-radius:8px; min-width:0; flex-wrap:wrap; gap:3px; }
+  .hx-tabs .hx-tab > span:first-child { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+  .hx-tabs .hx-tab .hx-count { font-size:10.5px; padding:0 5px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hx-tabs .hx-tab.is-active { background:#1d2633; }
+
+  /* Chart header: timeframes as one full-width row, tools in one swipeable row */
+  .cx-head .cx-row { flex-wrap:wrap; gap:8px; }
+  #chart-timeframe-toolbar { display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); width:100%; }
+  #chart-timeframe-toolbar button { min-height:36px; padding:0; }
+  .cx-quote { width:100%; justify-content:space-between; font-size:12px; }
+  .cx-row-tools { flex-wrap:nowrap !important; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; padding-bottom:2px; }
+  .cx-row-tools::-webkit-scrollbar { display:none; }
+  .cx-row-tools > * { flex:0 0 auto; }
+  .cx-row-tools .cx-spacer { display:none; }
+
+  /* Action bars wrap; long button labels wrap instead of pushing the page wider */
+  #open-actions-bar, #closed-summary-bar, #reports-actions-bar { flex-wrap:wrap; min-width:0; max-width:100%; }
+  #positions-pane > .flex.items-center.justify-between { flex-wrap:wrap; gap:8px; }
+  #positions-pane > .flex.items-center.justify-between > * { min-width:0; max-width:100%; }
+  #order-execution-type.sr-only { width:1px !important; max-width:1px !important; }
+  #open-actions-bar > button { flex:1 1 auto; white-space:normal; text-align:left; min-height:38px; }
+
+  /* Signal scanner: controls wrap onto their own rows */
+  #signals-pane .flex.items-center.justify-between { flex-wrap:wrap; gap:8px; }
+  #signals-pane h2.whitespace-nowrap { white-space:normal; }
+  #signals-pane .flex.items-center.gap-1\.5 { flex-wrap:wrap; }
+  #signal-scan-mode, #signal-scan-tf { height:36px; font-size:13px; }
+
+  /* Bot card header: title on one line, buttons on the next row, all reachable */
+  #bot-card > div > .flex.items-center.justify-between:first-child { flex-wrap:wrap; gap:8px; }
+  #bot-card > div > .flex.items-center.justify-between:first-child h2 { white-space:nowrap; }
+  #bot-card > div > .flex.items-center.justify-between:first-child > div:last-child { flex-wrap:wrap; width:100%; gap:6px; }
+  #bot-card .bot-head-btn { height:38px; padding:0 12px; font-size:13px; flex:1 1 auto; justify-content:center; }
+  #bot-card .bot-head-settings span { display:inline; }
+  .bot-overview-head { flex-wrap:wrap; gap:4px; }
+  .bot-tfs button { min-height:34px; min-width:44px; }
+
+  /* Dialogs fill the phone screen */
+  .strategy-presets-dialog, .signal-settings-dialog { width:100vw; max-width:100vw; max-height:100dvh; height:100dvh; margin:0; border-radius:0; }
+  #bot-settings-modal > div { width:100vw !important; max-width:100vw !important; max-height:100dvh !important; border-radius:0 !important; }
+  .sp-controls select, .sp-controls input { width:100%; }
+  .sp-controls label { flex:1 1 45%; }
+
+  /* Touch targets */
+  button, select, input[type="checkbox"] { touch-action:manipulation; }
+  input[type="number"], input[type="text"], input[type="date"], select { font-size:16px; } /* no iOS zoom on focus */
+
+  /* Toasts above the bottom trade bar */
+  #toast-container { bottom:calc(72px + env(safe-area-inset-bottom)) !important; left:8px !important; right:8px !important; }
+}

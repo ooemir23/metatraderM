@@ -74,7 +74,7 @@
           ${data && !data.verdict?.reliable ? ' <span class="sp-warn">deneysel</span>' : ''}</div>
         ${body}
       </div>
-      <button type="button" class="signal-btn-primary" ${current || (data && !usable) ? 'disabled' : ''} onclick="StrategyPresets.applyManual()">${current ? 'Seçili' : 'Bunu kullan'}</button>
+      <button type="button" class="signal-btn-primary" ${current || !data || !usable ? 'disabled' : ''} onclick="StrategyPresets.applyManual()">${current ? 'Seçili' : 'Bunu kullan'}</button>
     </div>`;
   }
   async function applyManual() {
