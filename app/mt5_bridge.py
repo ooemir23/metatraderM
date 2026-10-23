@@ -528,7 +528,8 @@ def open_deal(mt5, symbol, order_type, volume, sl_points, tp_points, comment, ma
                 or type(max_open_orders) is not int or max_open_orders < 1):
             return {'success': False, 'error': 'Geçersiz hesap risk sınırı; yeni emir engellendi.'}
         if not native and volume > max_order_lots + 1e-9:
-            return {'success': False, 'error': 'Emir lotu yapılandırılan üst sınırı aşıyor.'}
+            return {'success': False, 'reason_code': 'order_lot_limit', 'max_order_lots': max_order_lots,
+                    'requested_lots': volume, 'error': 'Emir lotu yapılandırılan üst sınırı aşıyor.'}
         scope = (int(account.login), str(account.server))
         own_current, own_pending = _exposure_scope(current, pending, magic)
         committed = _committed_volume(own_current, own_pending)

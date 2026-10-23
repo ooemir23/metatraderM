@@ -82,6 +82,20 @@ function newRequestId() {
   return 'mevo-' + Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
 }
 
+function limitRaise(d, lot) {
+  if (d.reason_code === 'order_lot_limit' && d.max_order_lots > 0) {
+    return {body: {max_order_lots: Math.ceil(lot * 100) / 100}, text: `Tek emir sınırı: ${d.max_order_lots} → ${Math.ceil(lot * 100) / 100} lot`};
+  }
+  if (d.reason_code === 'exposure_limit' && d.max_total_lots > 0 && d.max_open_orders > 0) {
+    const body = {}, parts = [];
+    const needLots = Math.ceil((d.committed_lots + lot) * 100) / 100, needCount = d.open_count + 1;
+    if (needLots > d.max_total_lots) { body.max_total_lots = needLots; parts.push(`Toplam lot sınırı: ${d.max_total_lots} → ${needLots}`); }
+    if (needCount > d.max_open_orders) { body.max_open_orders = needCount; parts.push(`Açık işlem sınırı: ${d.max_open_orders} → ${needCount}`); }
+    if (Object.keys(body).length) return {body, text: parts.join('\n')};
+  }
+  return null;
+}
+
 async function openOpportunity(n) {
   const item = lastOpps && lastOpps.items[n];
   const msg = $('opp-msg-' + n), btn = $('opp-open-' + n);
@@ -96,13 +110,26 @@ async function openOpportunity(n) {
   if (!confirm(`${item.symbol} ${side} · ${lot} lot · SL ${sl || 'yok'} · TP ${tp || 'yok'}\nHesap: ${identity[2]} #${identity[0]}${warn}\n\nPiyasa emri gönderilsin mi?`)) return;
   btn.disabled = true; say('Emir gönderiliyor…', true);
   try {
-    const res = await fetch('/api/order/open', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
-      request_id: newRequestId(), symbol: item.symbol, order_type: item.action, volume: lot, sl_price: sl, tp_price: tp,
-      comment: 'MevO', expected_account: identity})});
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data.success) say(`Açıldı: #${data.ticket} @ ${data.price}`, true);
-    else if (data.uncertain || data.pending) say('Emir sonucu belirsiz. Tekrar basma; terminalde pozisyonları kontrol et.', false);
-    else say(typeof data.detail === 'string' ? data.detail : (data.error || 'Emir açılamadı.'), false);
+    // Uygulama sınırı (lot/işlem) doluysa: yeni sınırı göstererek onay iste; onaylanırsa sınırı artırıp emri yeniden gönder.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const res = await fetch('/api/order/open', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+        request_id: newRequestId(), symbol: item.symbol, order_type: item.action, volume: lot, sl_price: sl, tp_price: tp,
+        comment: 'MevO', expected_account: identity})});
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) return say(`Açıldı: #${data.ticket} @ ${data.price}`, true);
+      if (data.uncertain || data.pending) return say('Emir sonucu belirsiz. Tekrar basma; terminalde pozisyonları kontrol et.', false);
+      const raise = limitRaise(data, lot);
+      if (!raise) return say(typeof data.detail === 'string' ? data.detail : (data.error || 'Emir açılamadı.'), false);
+      if (!confirm(`${data.error}\n\nSınırı artırıp işlemi açayım mı?\n${raise.text}\n\nBu, uygulamanın kayıtlı sınırlarını kalıcı olarak değiştirir (Risk ayarlarından geri alabilirsin).`)) {
+        return say('Sınır artırılmadı; emir açılmadı.', false);
+      }
+      say('Sınır artırılıyor…', true);
+      const lr = await fetch('/api/risk/lot-limits', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(raise.body)});
+      const ld = await lr.json().catch(() => ({}));
+      if (!lr.ok) return say('Sınır artırılamadı: ' + (typeof ld.detail === 'string' ? ld.detail : 'yetki ya da doğrulama gerekli.'), false);
+      say('Sınır artırıldı; emir yeniden gönderiliyor…', true);
+    }
+    say('Sınır birkaç kez artırıldı ama emir hâlâ açılamadı; terminalde Risk ayarlarını kontrol et.', false);
   } catch (err) {
     say('İstek sonucu bilinmiyor; tekrar basma, terminalde pozisyonları kontrol et.', false);
   } finally { btn.disabled = false; }

@@ -127,3 +127,6 @@ MevO — emir açma ve bot girişi (2026-10-23, kullanıcı kararı; ÖNCEKİ "M
    3 mum bekleme; M1 yok: M5–H4). Giriş koşulu: model güveni ≥ %65 ve geçmiş ZARARA dayanan uyarı yok (`mevo.blocking_warnings`;
    salt sapma uyarıları engellemez). SL/TP = MevO seviyelerinin giriş mesafesi (puan), lot = manuel kopya (kopya açık). Çıkış SL/TP;
    ters sinyalde kapatma yok. Günlük istek sınırı dolarsa bot girmez, durum kartında yazar.
+MevO sayfasında emir lot/işlem sınırına (reason_code `exposure_limit` / `order_lot_limit`) takılırsa sayfa yeni sınırı gösterip onay ister;
+onaylanırsa `/api/risk/lot-limits` ile (admin + gerçek hesapta TOTP kilidi) kayıtlı sınır artırılır ve emir yeni istek kimliğiyle yeniden gönderilir.
+Bot sınırları kendiliğinden artırmaz.
