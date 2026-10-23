@@ -1308,3 +1308,4 @@ html, body { overflow-x:clip; max-width:100%; }
   background:var(--hx-card); border:1px solid var(--hx-input-line); border-radius:8px; box-shadow:0 12px 32px rgba(0,0,0,.45); }
 .hx-balance-menu[hidden] { display:none; }
 .hx-balance-menu .hx-metrics { grid-template-columns:repeat(2, minmax(0, 1fr)); padding:0; }
+.hx-tab[hidden] { display:none !important; }

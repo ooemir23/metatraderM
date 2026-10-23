@@ -152,11 +152,12 @@
     $('workspace-switch')?.addEventListener('keydown', (event) => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
       event.preventDefault();
-      const i = HX_TABS.indexOf(hxActive());
-      const next = event.key === 'Home' ? 0 : event.key === 'End' ? HX_TABS.length - 1
-        : (i + (event.key === 'ArrowRight' ? 1 : HX_TABS.length - 1)) % HX_TABS.length;
-      hxTab(HX_TABS[next]);
-      document.querySelector?.(`#workspace-switch [data-hx="${HX_TABS[next]}"]`)?.focus();
+      const tabs = HX_TABS.filter(n => !(n === 'pending' && $('ws-tab-pending-orders')?.hidden));   // hidden tabs are skipped
+      const i = tabs.indexOf(hxActive());
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+        : (i + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length;
+      hxTab(tabs[next]);
+      document.querySelector?.(`#workspace-switch [data-hx="${tabs[next]}"]`)?.focus();
     });
     syncStrip(); errorRows().forEach(row => seenErrors.add(row));
     setWorkspaceView(storedView(), {persist: false, focus: false});
