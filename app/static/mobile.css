@@ -137,3 +137,35 @@
   #open-actions-bar button { min-height:34px !important; height:34px; padding-top:0 !important; padding-bottom:0 !important; font-size:12px !important; }
   .hx-pos-table tbody td:first-child a, .hx-pos-table tbody td:first-child button { min-height:0 !important; }
 }
+
+/* ===== Compact position cards: 3 columns, symbol / side / P&L on top ===== */
+@media (max-width: 759px) {
+  .hx-pos-table tbody tr { grid-template-columns:repeat(3, minmax(0, 1fr)) !important; column-gap:10px !important; row-gap:0 !important; padding:6px 10px 8px !important; margin:0 0 6px !important; }
+  .hx-pos-table tbody td { font-size:12.5px !important; padding:2px 0 !important; min-height:0 !important; }
+  .hx-pos-table tbody td::before { font-size:10px !important; line-height:1.2; }
+  .hx-pos-table tbody td:nth-child(n) { grid-column:auto; }
+  .hx-pos-table tbody td:nth-child(3) { order:1; font-size:15px !important; font-weight:700; }
+  .hx-pos-table tbody td:nth-child(4) { order:2; }
+  .hx-pos-table tbody td:nth-child(12) { order:3; flex-direction:column !important; align-items:flex-end !important; justify-content:flex-start !important; text-align:right !important; margin:0 !important; padding:2px 0 !important; background:none !important; font-size:15px !important; }
+  .hx-pos-table tbody td:nth-child(12)::before { align-self:flex-end; }
+  .hx-pos-table tbody td:nth-child(5) { order:4; } .hx-pos-table tbody td:nth-child(6) { order:5; } .hx-pos-table tbody td:nth-child(7) { order:6; }
+  .hx-pos-table tbody td:nth-child(8) { order:7; } .hx-pos-table tbody td:nth-child(9) { order:8; } .hx-pos-table tbody td:nth-child(11) { order:9; }
+  .hx-pos-table tbody td:nth-child(10) { order:10; } 
+  .hx-pos-table tbody td:nth-child(2) { order:11; } 
+  .hx-pos-table tbody td:nth-child(2) > * { display:inline !important; }
+  .hx-pos-table tbody td:nth-child(1) { order:12; grid-column:1 / -1 !important; flex-direction:row !important; flex-wrap:wrap; align-items:center !important; gap:4px 8px !important; }
+  .hx-pos-table tbody td:nth-child(1)::before { content:'Bilet'; }
+  .hx-pos-table tbody td:nth-child(13) { order:13; grid-column:1 / -1 !important; display:grid !important; grid-template-columns:1fr 1fr; gap:6px !important; padding-top:6px !important; }
+  .hx-pos-table tbody td:nth-child(13) button { min-height:34px !important; height:34px; width:100%; }
+  .hx-pos-table tbody td:nth-child(13)::before { content:none; }
+  .hx-header .hx-pills { overflow:hidden; }
+  .hx-balance-btn { max-width:100%; overflow:hidden; }
+}
+@media (max-width: 759px) {
+  .hx-pos-table tbody td:nth-child(12) { font-size:14px !important; white-space:nowrap; flex-wrap:nowrap !important; }
+  .hx-pos-table tbody td:nth-child(12) * { white-space:nowrap !important; }
+  .hx-pos-table tbody td:nth-child(2) { grid-column:span 2 !important; }
+  .hx-pos-table tbody td:nth-child(2) > * { white-space:nowrap !important; margin-right:6px; }
+  .hx-pos-table tbody td:nth-child(13) button { min-height:30px !important; height:30px; }
+  .hx-pos-table tbody td:nth-child(13) { padding-top:4px !important; }
+}
