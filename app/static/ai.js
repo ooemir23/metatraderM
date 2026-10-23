@@ -99,7 +99,8 @@ function openForm(i, n) {
 
 function goToOpenPositions(event) {
   event.preventDefault();
-  try { localStorage.setItem('hma.main.view.v1', 'work'); } catch (_) {}   // terminalde "İşlemler & Bot" ekranı açılsın
+  if (window.parent !== window && window.parent.MainView) { window.parent.MainView.set('trades'); return; }   // gömülüyken terminalin İşlemler ekranı
+  try { localStorage.setItem('hma.main.view.v1', 'trades'); } catch (_) {}   // terminalde "İşlemler" ekranı açılsın
   window.location.href = '/';
 }
 

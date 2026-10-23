@@ -68,12 +68,27 @@
         <span id="uptime-badge" class="hx-sync" title="Broker bağlantısının açıldığı saat">
           <i class="ph-bold ph-clock"></i><span id="uptime-text">Bağlantı: Bekleniyor</span>
         </span>
+        <div id="hx-balance" class="hx-balance">
+          <button type="button" id="hx-balance-toggle" class="hx-btn hx-balance-btn" aria-haspopup="true" aria-expanded="false" aria-controls="hx-balance-menu" title="Hesap özeti: üzerine gelince açılır, tıklayınca sabitlenir">
+            <i class="ph-bold ph-wallet"></i><span>Varlık</span><strong id="hx-balance-equity">—</strong><i class="ph-bold ph-caret-down"></i>
+          </button>
+          <div id="hx-balance-menu" class="hx-balance-menu" hidden>
+      <div class="hx-metrics" aria-label="Hesap özeti">
+        <div class="hx-metric"><span>Bakiye</span><span id="acc-balance">—</span></div>
+        <div class="hx-metric"><span>Varlık</span><span id="acc-equity">—</span></div>
+        <div class="hx-metric"><span>Açık K/Z</span><span id="acc-profit">—</span></div>
+        <div class="hx-metric"><span>Kullanılan teminat</span><span id="acc-margin">—</span></div>
+        <div class="hx-metric"><span>Serbest teminat</span><span id="acc-margin-free">—</span></div>
+        <div class="hx-metric"><span>Teminat seviyesi</span><span id="acc-margin-level">—</span></div>
+      </div>
+          </div>
+        </div>
       </div>
       <div class="hx-actions">
         <button id="tools-toggle" type="button" class="tools-toggle hx-btn" onclick="setToolsDrawer(true)" aria-controls="tools-drawer" aria-expanded="false" title="Strateji testi, araştırma, piyasa derinliği ve sistem günlüğü">
           <i class="ph-bold ph-toolbox"></i><span>Araçlar</span><span id="tools-error-badge" class="tools-error-badge" hidden>0</span>
         </button>
-        <a href="/ai" class="hx-btn" title="MevO Danışman: manuel işlemlerinden fırsat sunar"><span class="hx-ai-dot" aria-hidden="true"></span><span>MevO AI</span></a>
+        <a href="/ai" onclick="if(window.MainView){MainView.set('mevo');return false;}" class="hx-btn" title="MevO Danışman: manuel işlemlerinden fırsat sunar"><span class="hx-ai-dot" aria-hidden="true"></span><span>MevO AI</span></a>
         <div class="hx-account" id="hx-account">
           <button type="button" id="hx-account-toggle" class="hx-btn" aria-haspopup="true" aria-expanded="false" aria-controls="hx-account-menu"><i class="ph-bold ph-user-circle"></i><span>Hesap</span></button>
           <div id="hx-account-menu" class="hx-account-menu" hidden>
@@ -93,14 +108,6 @@
         <span id="operator-role"></span>
       </div>
     </div>
-    <div class="hx-wrap hx-metrics ui-scale-width" aria-label="Hesap özeti">
-      <div class="hx-metric"><span>Bakiye</span><span id="acc-balance">—</span></div>
-      <div class="hx-metric"><span>Varlık</span><span id="acc-equity">—</span></div>
-      <div class="hx-metric"><span>Açık K/Z</span><span id="acc-profit">—</span></div>
-      <div class="hx-metric"><span>Kullanılan teminat</span><span id="acc-margin">—</span></div>
-      <div class="hx-metric"><span>Serbest teminat</span><span id="acc-margin-free">—</span></div>
-      <div class="hx-metric"><span>Teminat seviyesi</span><span id="acc-margin-level">—</span></div>
-    </div>
   </header>
   <!-- Mobile: jump between the four parts of the terminal (hidden on wider screens) -->
   <nav id="mx-nav" class="mx-nav" aria-label="Bölümler">
@@ -115,8 +122,13 @@
     <!-- Desktop: show the chart screen or the trades / bot screen (choice is remembered) -->
     <div id="main-view-switch" class="mv-switch" role="tablist" aria-label="Ana ekran">
       <button type="button" role="tab" data-view="chart" aria-selected="true"><i class="ph-bold ph-chart-line"></i><span>Grafik</span></button>
-      <button type="button" role="tab" data-view="work" aria-selected="false"><i class="ph-bold ph-list-bullets"></i><span>İşlemler &amp; Bot</span><span id="mv-pos-count" class="mv-count" hidden>0</span></button>
+      <button type="button" role="tab" data-view="trades" aria-selected="false"><i class="ph-bold ph-list-bullets"></i><span>İşlemler</span><span id="mv-pos-count" class="mv-count" hidden>0</span></button>
+      <button type="button" role="tab" data-view="bot" aria-selected="false"><i class="ph-bold ph-robot"></i><span>Bot</span></button>
+      <button type="button" role="tab" data-view="mevo" aria-selected="false"><i class="ph-bold ph-brain"></i><span>MevO</span></button>
     </div>
+    <section id="mevo-view" class="mevo-view" aria-label="MevO" hidden>
+      <iframe id="mevo-frame" title="MevO" data-src="/ai?embed=1" loading="lazy"></iframe>
+    </section>
     
     <!-- UNIFIED 2-COLUMN WORKSPACE: LEFT (CHART + POSITIONS), RIGHT (FAST ORDERS + BOT + LOGS) -->
     <div class="hx-main-grid">
@@ -453,6 +465,7 @@
             <thead>
               <tr>
                 <th>Bilet / Kaynak</th>
+                <th>Açılış saati</th>
                 <th>Sembol</th>
                 <th>Yön</th>
                 <th class="num">Hacim</th>
@@ -1312,9 +1325,10 @@
   <script src="/static/manual-style.js?v=2"></script>
   <script src="/static/strategy-presets.js?v=1"></script>
   <script src="/static/mobile-nav.js?v=1"></script>
-  <script src="/static/main-view.js?v=1"></script>
+  <script src="/static/main-view.js?v=2"></script>
   <script src="/static/workspace.js?v=terminal-1"></script>
   <script src="/static/header-autohide.js?v=1"></script>
+  <script src="/static/balance-menu.js?v=1"></script>
   <script src="/static/account-menu.js?v=1"></script>
 </body>
 </html>

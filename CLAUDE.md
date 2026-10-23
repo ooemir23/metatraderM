@@ -130,3 +130,9 @@ MevO — emir açma ve bot girişi (2026-10-23, kullanıcı kararı; ÖNCEKİ "M
 MevO sayfasında emir lot/işlem sınırına (reason_code `exposure_limit` / `order_lot_limit`) takılırsa sayfa yeni sınırı gösterip onay ister;
 onaylanırsa `/api/risk/lot-limits` ile (admin + gerçek hesapta TOTP kilidi) kayıtlı sınır artırılır ve emir yeni istek kimliğiyle yeniden gönderilir.
 Bot sınırları kendiliğinden artırmaz.
+
+## Arayüz düzeni (2026-10-23, kullanıcı isteği)
+Ana ekran anahtarı: Grafik | İşlemler | Bot | MevO (`main-view.js`; eski `work` = İşlemler). MevO, `/ai?embed=1` sayfasının gömülmesidir.
+Açık pozisyonlar tablosunda "Açılış saati" (MT5 sunucu saati) vardır; Detay penceresi açanı (bot/MevO/web/MT5/EA) ve botta giriş türü +
+stratejiyi gösterir (`positionOrigin`; bot `signal_history` kayıtlarına `entry_mode`/`strategy` yazılır). Bakiye/varlık/K-Z/teminat
+özeti üst çubukta "Varlık" düğmesinin açılır kutusundadır (üzerine gelince açılır, tıklayınca sabitlenir, dışarı tıklayınca kapanır).

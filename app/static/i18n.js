@@ -166,6 +166,8 @@
     ["Zarar durdur (SL)", "Stop loss (SL)"],
     ["Kâr al (TP)", "Take profit (TP)"],
     ["Bilet / Kaynak", "Ticket / Source"],
+    ["Açılış saati", "Open time"],
+    ["Hesap özeti: üzerine gelince açılır, tıklayınca sabitlenir", "Account summary: opens on hover, click to pin"],
     ["SAT", "SELL"],
     ["AL", "BUY"],
     ["Detay", "Details"],

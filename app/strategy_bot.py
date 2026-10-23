@@ -380,6 +380,9 @@ class StrategyBot:
             'success': bool(result.get('success')), 'ticket': result.get('ticket'), 'price': number(result.get('price')),
             'pending': bool(result.get('pending') or result.get('uncertain')),
             'risk_money': number(risk_money),
+            # Where the trade came from (shown in the position details): entry mode + the MA pair it was opened with.
+            'entry_mode': self.entry_mode if source == 'AUTO' else None,
+            'strategy': f"{self.fast_ma_type} {self.hma_period} × {self.second_ma_type} {self.second_ma_period}" if source == 'AUTO' else None,
             'error': None if result.get('success') else str(result.get('error') or 'Emir gönderilemedi.')[:240],
         }
         with self._state_lock:
@@ -730,7 +733,7 @@ class StrategyBot:
             "current_ma2": round(self.current_ma2, 5),
             "pending_signal_actions": getattr(self, "pending_signal_actions", []),
             "logs": self.logs[:15],
-            "signal_history": self.signal_history[:20]
+            "signal_history": self.signal_history[:50]
         }
 
     def history_bars(self) -> int:

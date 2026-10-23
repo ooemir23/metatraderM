@@ -94,7 +94,7 @@ async def protect_dashboard(request, call_next):
     response = await call_next(request)
     response.headers['Cache-Control'] = 'no-store'
     response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'SAMEORIGIN' if request.url.path.startswith('/native-mt5/') else 'DENY'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN' if request.url.path.startswith(('/native-mt5/', '/ai')) else 'DENY'
     if request.method not in ('GET', 'HEAD', 'OPTIONS'):
         try:
             from app.main import mt5_client

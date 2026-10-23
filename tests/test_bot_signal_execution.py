@@ -249,7 +249,7 @@ def test_history_is_capped_and_survives_corrupt_file(tmp_path):
     for i in range(StrategyBot.HISTORY_LIMIT + 5):
         bot.record_signal(source='AUTO', symbol=f'S{i}', side='BUY', lot=.01, result={'success': True, 'ticket': i})
     assert len(bot.signal_history) == StrategyBot.HISTORY_LIMIT and bot.signal_history[0]['symbol'] == f'S{StrategyBot.HISTORY_LIMIT + 4}'
-    assert len(bot.get_status()['signal_history']) == 20
+    assert len(bot.get_status()['signal_history']) == 50
 
 
 def test_single_history_row_can_be_deleted():
@@ -261,3 +261,13 @@ def test_single_history_row_can_be_deleted():
     assert bot.delete_history_entry(second['id']) is True
     assert [r['id'] for r in bot.signal_history] == [first['id']]
     assert bot.delete_history_entry('missing') is False
+
+
+def test_auto_history_records_entry_mode_and_strategy(tmp_path):
+    bot = StrategyBot(Mock(), config_path=tmp_path / 'bot_settings.json')
+    bot.entry_mode = 'MEVO'
+    bot.record_signal(source='AUTO', symbol='EURUSD', side='BUY', lot=.01, result={'success': True, 'ticket': 7})
+    bot.record_signal(source='MANUAL', symbol='EURUSD', side='BUY', lot=.01, result={'success': True, 'ticket': 8})
+    manual, auto = bot.signal_history
+    assert auto['entry_mode'] == 'MEVO' and auto['strategy'].startswith(bot.fast_ma_type)
+    assert manual['entry_mode'] is None and manual['strategy'] is None

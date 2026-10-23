@@ -888,7 +888,7 @@ function switchPositionTab(tab) {
     }
     fetchReports();
   } else if (tab === "ai") {
-    window.location.href = "/ai";
+    if (window.MainView) window.MainView.set("mevo"); else window.location.href = "/ai";
     return;
   }
 }
@@ -1106,6 +1106,37 @@ function updatePositionExecution() {
   content.innerHTML = renderPositionExecution(position);
 }
 
+// "2026-10-23 14:05:09" (MT5 server clock, already formatted by the backend) -> "23.10 14:05:09".
+function positionOpenTime(p) {
+  const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2}:\d{2})/.exec(String(p?.time || ''));
+  return m ? `${m[3]}.${m[2]}.${m[1].slice(2)} ${m[4]}` : '—';
+}
+
+// Which part of the app opened this position: bot (and with which entry mode / strategy), MevO, signal scanner, web, MT5.
+function positionOrigin(p) {
+  const magic = Number(p?.magic || (Array.isArray(p?.opening_fills) && p.opening_fills[0] ? p.opening_fills[0].magic : 0) || 0);
+  const comment = String(p?.comment || '');
+  const row = (typeof latestBotSignalHistory !== 'undefined' ? latestBotSignalHistory : []).find(r => r && Number(r.ticket) === Number(p?.ticket));
+  const modes = {CROSSOVER: 'Strateji (MA kesişimi)', MANUAL_STYLE: 'Manuel işlemlerim tarzı', MEVO: 'MevO fırsatı'};
+  if (/^mevo/i.test(comment)) return {name: 'MevO', detail: 'MevO sayfasından fırsat kartıyla açıldı (elle onaylandı).'};
+  if (magic === 123461 || /hma bot/i.test(comment) || /^HMA Sinyal/i.test(comment)) {
+    const tf = /hma bot (\w+)/i.exec(comment)?.[1];
+    const mode = row?.entry_mode;
+    const how = mode ? modes[mode] || mode : 'giriş türü kayıtlı değil';
+    const lines = [`Giriş: ${how}`];
+    if (row?.strategy && mode !== 'MEVO') lines.push(`Strateji: ${row.strategy}`);
+    if (tf) lines.push(`Zaman dilimi: ${tf}`);
+    if (/^HMA Sinyal/i.test(comment)) lines.push('Sinyal tarayıcıdan onaylandı.');
+    return {name: 'HMA Bot', detail: lines.join(' · ')};
+  }
+  if (magic === 123462) return {name: 'MevO', detail: 'MevO (eski AI etiketi).'};
+  if (magic === 123460 || comment.startsWith('vm:') || /hma web|web sinyal|panel/i.test(comment)) {
+    return {name: 'HMA Web', detail: /web sinyal/i.test(comment) ? 'Sinyal tarayıcıdaki "Şimdi AL/SAT" ile açıldı.' : 'HMA web panelinden elle açıldı.'};
+  }
+  if (magic === 0) return {name: 'MT5 (elle)', detail: 'Orijinal MetaTrader 5 terminalinden elle açıldı.'};
+  return {name: 'Uzman Danışman / EA', detail: `Harici EA (Magic #${magic}).`};
+}
+
 function renderPositionExecution(position) {
   const quality = position.execution_quality || {};
   const quote = position.quote || {};
@@ -1124,7 +1155,9 @@ function renderPositionExecution(position) {
   const status = quote.quote_status || {};
   const currentLabel = status.state === 'fresh' ? 'Güncel spread' : 'Son kotasyon spreadi';
   const fills = (quality.fills || []).map(d => `<tr class="border-b border-gray-700/50"><td class="p-3">#${d.order}</td><td class="p-3">${d.volume}</td><td class="p-3">${price(d.bid)} / ${price(d.ask)}</td><td class="p-3">${price(d.requested_price)}</td><td class="p-3">${price(d.fill_price)}</td><td class="p-3">${executionPoints(d.spread_points)}</td><td class="p-3 whitespace-nowrap">${slippageText(d.slippage_points)}</td></tr>`).join('');
+  const origin = positionOrigin(position);
   return `<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+    ${card('Açan', escapeHtml(origin.name))}${card('Açılış saati (MT5 sunucu)', escapeHtml(positionOpenTime(position)))}${card('Nasıl açıldı', `<span class="text-xs font-normal text-gray-300">${escapeHtml(origin.detail)}</span>`)}
     ${card('Açılış spreadi (gönderim)', executionPoints(quality.opening_spread_points))}${card(currentLabel, executionPoints(quality.current_spread_points))}${card('Spread farkı', changeText)}
     ${card('İstenen açılış fiyatı', price(quality.requested_price))}${card('Gerçekleşen açılış fiyatı', price(quality.fill_price ?? position.price_open))}${card('Açılış slippage', slippageText(quality.slippage_points))}
     </div><div class="text-xs text-gray-400 mb-4">Gönderim Bid / Ask: <span class="text-gray-200">${price(quality.opening_bid)} / ${price(quality.opening_ask)}</span><br>Son Bid / Ask: <span class="text-gray-200">${price(quote.bid > 0 ? quote.bid : null)} / ${price(quote.ask > 0 ? quote.ask : null)}</span><br>1 puan: ${price(quote.point)} fiyat birimi</div>
@@ -1200,7 +1233,7 @@ function renderPositionsData(positions) {
     renderPositionSourceCounts(positions);
 
     if (!positions || positions.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="12" class="py-8 text-center text-gray-400 font-sans text-sm">Henüz açık pozisyon bulunmuyor.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="13" class="py-8 text-center text-gray-400 font-sans text-sm">Henüz açık pozisyon bulunmuyor.</td></tr>`;
       return;
     }
 
@@ -1218,6 +1251,7 @@ function renderPositionsData(positions) {
             <span class="font-mono font-semibold text-gray-100">#${ticket}</span><button type="button" class="hx-detail" onclick="showPositionExecution(${ticket})" title="Gönderim Bid/Ask, açılış spreadi ve kayma">Detay</button>
             <div>${tradeSourceBadge(p)}</div>
           </td>
+          <td data-label="Açılış saati" class="whitespace-nowrap text-gray-300" title="MT5 sunucu saati">${escapeHtml(positionOpenTime(p))}</td>
           <td data-label="Sembol" class="font-sans font-bold text-white whitespace-nowrap">${escapeHtml(p.symbol)}</td>
           <td data-label="Yön"><span class="hx-dir" data-side="${side}">${side}</span></td>
           <td data-label="Hacim" class="num">${p.volume}</td>

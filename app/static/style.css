@@ -1282,17 +1282,29 @@ html, body { overflow-x:clip; max-width:100%; }
 .mv-switch button:focus-visible { outline:2px solid #4c8dff; outline-offset:2px; }
 .mv-count { min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:#0b0e13; color:#e6e9ef; font-size:12px; display:inline-flex; align-items:center; justify-content:center; }
 @media (min-width: 760px) {
-  body[data-main-view="chart"] #positions-card { display:none !important; }
-  body[data-main-view="work"] .hx-main-grid { display:none !important; }
+  body[data-main-view="chart"] #positions-card, body[data-main-view="mevo"] #positions-card { display:none !important; }
+  body:not([data-main-view="chart"]) .hx-main-grid { display:none !important; }
   /* Each screen uses the whole window height under the header and the switch. */
   body[data-main-view="chart"] .cx-card { height:max(520px, calc(100vh - 190px)) !important; }
-  body[data-main-view="work"] #positions-card { height:auto !important; min-height:max(480px, calc(100vh - 190px)); }
-  body[data-main-view="work"] #positions-resizer, body[data-main-view="work"] #positions-top-resizer { display:none !important; }
+  body[data-main-view="trades"] #positions-card, body[data-main-view="bot"] #positions-card { height:auto !important; min-height:max(480px, calc(100vh - 190px)); }
+  body[data-main-view="trades"] #positions-resizer, body[data-main-view="trades"] #positions-top-resizer,
+  body[data-main-view="bot"] #positions-resizer, body[data-main-view="bot"] #positions-top-resizer { display:none !important; }
+  .mevo-view { width:100%; }
+  .mevo-view iframe { width:100%; height:max(480px, calc(100vh - 190px)); border:0; border-radius:12px; background:#0b0e14; }
 }
-@media (max-width: 759px) { .mv-switch { display:none; } }
+@media (max-width: 759px) { .mv-switch, .mevo-view { display:none !important; } }
 
 .bot-history-toggle { display:inline-flex; align-items:center; gap:6px; flex:1; min-width:0; padding:0; border:0; background:none; color:inherit; font:inherit; text-align:left; cursor:pointer; }
 .bot-history-caret { margin-left:auto; transition:transform .15s; }
 .bot-history:not(.is-collapsed) .bot-history-caret { transform:rotate(180deg); }
 .bot-history.is-collapsed .bot-history-list { display:none; }
 .bot-history.is-collapsed .bot-history-head { border-bottom:0; }
+
+/* Account figures dropdown in the top bar (hover opens, click pins, outside click closes). */
+.hx-balance { position:relative; }
+.hx-balance-btn { display:inline-flex; align-items:center; gap:6px; height:36px; }
+.hx-balance-btn strong { font-family:var(--hx-mono); font-size:13px; color:var(--hx-text); }
+.hx-balance-menu { position:absolute; top:100%; left:0; z-index:60; padding:10px; margin-top:0; width:min(640px, 92vw);
+  background:var(--hx-card); border:1px solid var(--hx-input-line); border-radius:8px; box-shadow:0 12px 32px rgba(0,0,0,.45); }
+.hx-balance-menu[hidden] { display:none; }
+.hx-balance-menu .hx-metrics { grid-template-columns:repeat(2, minmax(0, 1fr)); padding:0; }

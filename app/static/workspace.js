@@ -160,6 +160,8 @@
     });
     syncStrip(); errorRows().forEach(row => seenErrors.add(row));
     setWorkspaceView(storedView(), {persist: false, focus: false});
+    // The main screen (Grafik / İşlemler / Bot / MevO) decides which pane of this card is shown.
+    if (window.MainView) window.MainView.set(window.MainView.get(), {persist: false, scroll: false});
   }
 
   window.setWorkspaceView = setWorkspaceView;
