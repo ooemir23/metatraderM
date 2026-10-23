@@ -861,7 +861,7 @@ button:focus-visible, a:focus-visible, [role="tab"]:focus-visible { outline:2px 
   .hx-metric > span:last-child { font-size:14px !important; }
 }
 
-.sr-only { position:absolute !important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.sr-only { position:absolute !important; width:1px !important; max-width:1px !important; height:1px; min-width:0 !important; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 
 /* ---------------- Order panel (#order-card) ---------------- */
 .ox-card { background:var(--hx-card); border:1px solid var(--hx-line); border-radius:8px; padding:14px; display:flex; flex-direction:column; gap:12px; font-size:14px; }
@@ -1269,3 +1269,7 @@ html[data-buy-scheme="green"] .mt5-menu-buy { background:#1f9d6a; }
   border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:hx-spin .7s linear infinite; }
 @keyframes hx-spin { to { transform:rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .hx-row-actions button.is-closing::before { animation:none; } }
+
+/* Never let anything widen the page sideways (phones zoom the whole page out to fit wider content,
+   which shrinks the panel and leaves empty side margins). */
+html, body { overflow-x:clip; max-width:100%; }

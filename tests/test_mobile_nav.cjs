@@ -5,6 +5,8 @@ for (const key of ['chart', 'order', 'positions', 'bot']) assert.match(html, new
 const css = fs.readFileSync('app/static/style.css', 'utf8');
 assert.match(css, /\.mx-nav \{ display:grid;[^}]*position:sticky/, 'sticky section bar on mobile');
 assert.match(css, /overflow-x:clip/, 'clip (not hidden) so sticky keeps working');
+assert.match(css, /\nhtml, body \{ overflow-x:clip; max-width:100%; \}/, 'page never wider than the screen at any width');
+assert.match(css, /\.sr-only \{ position:absolute !important; width:1px !important; max-width:1px !important;/, 'hidden select cannot widen the page');
 assert.match(css, /\.hx-tabs \{ display:grid !important; grid-template-columns:repeat\(3/, 'all workspace tabs visible');
 const tabs = [], scrolls = [];
 const el = (top) => ({getBoundingClientRect: () => ({top, bottom: top + 50, height: 50})});
