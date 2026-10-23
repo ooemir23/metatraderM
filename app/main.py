@@ -1703,6 +1703,16 @@ def clear_bot_pending_signal(data: Optional[Dict[str, Any]] = None):
 def mevo_status():
     return mevo.status()
 
+class MevOKeyRequest(BaseModel):
+    api_key: str = Field(min_length=8, max_length=200)
+
+@app.post("/api/mevo/key")
+def mevo_key(req: MevOKeyRequest):
+    res = mevo.set_key(req.api_key)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("error", "Anahtar kaydedilemedi"))
+    return mevo.status()
+
 @app.post("/api/mevo/learn")
 def mevo_learn():
     res = mevo.learn()

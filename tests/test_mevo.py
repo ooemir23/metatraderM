@@ -68,7 +68,7 @@ def test_learn_then_opportunities_never_opens_orders(tmp_path, monkeypatch):
     # Yalnız MT5'ten elle açılan işlemler istenir ve oluşan mum gönderilmez.
     mt5.get_manual_trades.assert_called_once_with(days=mod.LEARN_DAYS)
     sent = post.call_args_list[1].kwargs['json']['messages'][1]['content']
-    assert '"candles_ohlc"' in sent
+    assert '"closes"' in sent and '"candles_ohlc"' not in sent
     # Durum yeniden başlatmada hesap bazlı geri gelir.
     again = mod.MevO(mt5, api_key='k', path=str(tmp_path / 'mevo.json'))
     assert again.status()['profile'] and again.status()['opportunities']['items']
@@ -94,6 +94,7 @@ def test_profile_does_not_cross_accounts_and_limits_apply(tmp_path, monkeypatch)
     assert m.status()['profile'] is None
     mt5.login_id = 7
     m.daily_call_limit = 1
+    m._acct()['profile']['digest'] = 'changed'          # önbelleği atla, günlük sınıra çarp
     assert 'sınırına' in m.learn()['error']
 
 
@@ -102,3 +103,35 @@ def test_api_key_is_never_stored_in_state_or_status(tmp_path, monkeypatch):
     monkeypatch.setattr(mod.requests, 'post', Mock(return_value=reply('{"summary":"x"}')))
     m.learn()
     assert 'test-key' not in (tmp_path / 'mevo.json').read_text() and 'test-key' not in str(m.status())
+
+
+def test_same_candle_and_unchanged_history_cost_no_tokens(tmp_path, monkeypatch):
+    m, mt5 = make(tmp_path)
+    post = Mock(side_effect=[reply('{"summary":"x","rules":["r"]}'),
+                             reply('{"opportunities":[{"symbol":"XAUUSD","action":"WAIT","reason":"no"}]}')])
+    monkeypatch.setattr(mod.requests, 'post', post)
+    monkeypatch.setattr(mod, 'MIN_INTERVAL', 0)
+    m.learn()
+    assert m.learn()['cached'] and post.call_count == 1          # aynı geçmiş: yeniden öğrenme yok
+    m.opportunities(['XAUUSD'])
+    again = m.opportunities(['XAUUSD'])
+    assert post.call_count == 2 and again['success'] and not again['used_model']   # aynı kapanmış mum: model çağrılmaz
+    # Modele ham 40 mum değil kısa özet gider.
+    sent = post.call_args_list[1].kwargs['json']['messages'][1]['content']
+    assert len(sent) < 1500 and '"closes"' in sent
+
+
+def test_key_is_validated_for_free_stored_privately_and_beats_env(tmp_path, monkeypatch):
+    m, _ = make(tmp_path)
+    m.api_key = None
+    m._explicit_key = None
+    monkeypatch.setenv('DEEPSEEK_API_KEY', 'old-env-key')
+    get = Mock(return_value=Mock(status_code=401))
+    monkeypatch.setattr(mod.requests, 'get', get)
+    assert 'reddetti' in m.set_key('sk-badbadbad')['error'] and m.api_key == 'old-env-key'
+    get.return_value = Mock(status_code=200)
+    assert m.set_key('sk-goodgoodgood')['success']
+    assert m.api_key == 'sk-goodgoodgood' and m.key_source() == 'panel'
+    assert 'sk-goodgoodgood' not in str(m.status())
+    import os, stat
+    assert stat.S_IMODE(os.stat(m._key_path).st_mode) == 0o600

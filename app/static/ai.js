@@ -48,13 +48,16 @@ function renderOpps(o) {
     const label = i.action === 'BUY' ? 'AL' : i.action === 'SELL' ? 'SAT' : 'BEKLE';
     const lv = i.action === 'WAIT' ? '' : `<div class="font-mono text-[11px] grid grid-cols-4 gap-1 mt-2"><span>Giriş<br><b class="text-white">${esc(i.entry)}</b></span><span>SL<br><b class="text-rose-400">${esc(i.sl)}</b></span><span>TP<br><b class="text-emerald-400">${esc(i.tp)}</b></span><span>R:R<br><b class="text-white">${esc(i.rr)}</b></span></div>`;
     return `<div class="bg-[#0f1218] border ${tone} rounded-xl p-3 text-xs"><div class="flex justify-between items-center"><b class="text-white">${esc(i.symbol)} · ${label}</b><span class="text-gray-400">model güveni %${esc(i.confidence)}</span></div>${lv}<p class="mt-2 text-gray-300">${esc(i.reason)}</p>${i.matched_rule ? `<p class="mt-1 text-gray-500">Kural: ${esc(i.matched_rule)}</p>` : ''}</div>`;
-  }).join('') + `<p class="sm:col-span-2 text-[11px] text-gray-500">${esc(o.created_at)} · ${esc(o.timeframe)} · oluşan mum hariç, kapanmış mumlara göre. Yatırım tavsiyesi değildir; emir açılmadı.</p>`;
+  }).join('') + `<p class="sm:col-span-2 text-[11px] text-gray-500">${esc(o.created_at)} · ${esc(o.timeframe)} · ${o.used_model === false ? 'aynı kapanmış mum: önbellekten, token harcanmadı · ' : ''}oluşan mum hariç, kapanmış mumlara göre. Yatırım tavsiyesi değildir; emir açılmadı.</p>`;
 }
 
 function renderStatus(st) {
   renderProfile(st.profile); renderOpps(st.opportunities);
+  window.mevoLastUsedModel = st.opportunities ? st.opportunities.used_model : undefined;
   $('mevo-usage').textContent = `Bugün ${st.usage_today.calls}/${st.daily_call_limit} istek · ${st.usage_today.tokens} token · model ${st.model}`;
-  if (!st.configured) mevoAlert('DeepSeek API anahtarı tanımlı değil: sunucuda DEEPSEEK_API_KEY ortam değişkenini ayarla.', 'err');
+  const src = {panel: 'panelden kaydedilmiş anahtar kullanılıyor', env: 'sunucu ortam değişkenindeki anahtar kullanılıyor', explicit: 'anahtar tanımlı'}[st.key_source];
+  $('mevo-key-state').textContent = src ? 'Durum: ' + src + '. Yeni anahtar girersen onun yerine geçer.' : 'Anahtar tanımlı değil; yukarıya gir.';
+  if (!st.configured) mevoAlert('DeepSeek API anahtarı tanımlı değil.', 'err');
 }
 
 async function busy(btnId, fn) {
@@ -62,6 +65,16 @@ async function busy(btnId, fn) {
   mevoAlert('');
   try { await fn(); } catch (e) { mevoAlert(e.message, 'err'); }
   finally { b.disabled = false; b.classList.remove('opacity-60'); }
+}
+
+function mevoSaveKey() {
+  return busy('mevo-key-btn', async () => {
+    const key = $('mevo-key').value.trim();
+    if (!key) throw new Error('Anahtarı yaz.');
+    const st = await mevoApi('/api/mevo/key', {api_key: key});
+    $('mevo-key').value = '';
+    renderStatus(st); mevoAlert('Anahtar doğrulandı ve kaydedildi.', 'ok');
+  });
 }
 
 function mevoLearn() {

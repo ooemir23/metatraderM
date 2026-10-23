@@ -29,7 +29,7 @@ def test_operator_roles_are_enforced_on_server(client, monkeypatch):
     web = TestClient(app, headers={'Authorization': 'Basic ' + token})
     assert web.get('/api/auth/me').json() == {'username': 'colleague', 'role': 'TRADER'}
     assert web.post('/api/trading/resume', json={}).status_code == 403
-    assert web.post('/api/ai/autopilot', json={'enabled': False}).status_code == 403
+    assert web.post('/api/mevo/key', json={'api_key': 'sk-xxxxxxxxxx'}).status_code == 403
     assert web.post('/api/order/open', json={}).status_code == 422
     monkeypatch.setenv('DASHBOARD_ROLE_2', 'VIEWER')
     assert web.get('/api/auth/me').json()['role'] == 'VIEWER'

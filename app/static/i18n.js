@@ -380,6 +380,8 @@
     ["MevO Danışman ve Fırsatlar | MetaTrader 5", "MevO Advisor and Opportunities | MetaTrader 5"],
     ["1. Manuel işlemlerimin mantığı", "1. The logic of my manual trades"],
     ["2. Fırsatlar", "2. Opportunities"],
+    ["DeepSeek API anahtarı", "DeepSeek API key"],
+    ["Doğrula ve kaydet", "Verify and save"],
     ["DeepSeek · yalnız danışman", "DeepSeek · advisor only"],
     ["Fırsatları getir", "Get opportunities"],
     ["Henüz öğrenilmedi.", "Nothing learned yet."],

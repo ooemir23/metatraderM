@@ -36,6 +36,15 @@
     <div id="mevo-alert" class="hidden text-xs rounded-lg border px-3 py-2"></div>
 
     <section class="bg-[#121620] border border-gray-800 rounded-2xl p-4">
+      <h2 class="font-bold text-white text-sm flex items-center gap-2 mb-2"><i class="ph-bold ph-key text-gray-300"></i><span>DeepSeek API anahtarı</span></h2>
+      <div class="flex flex-wrap items-center gap-2">
+        <input id="mevo-key" type="password" autocomplete="off" placeholder="sk-..." class="flex-1 min-w-[220px] bg-[#0f1218] border border-gray-700 rounded-lg px-3 py-2 text-xs text-white font-mono">
+        <button id="mevo-key-btn" onclick="mevoSaveKey()" class="px-3 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 font-semibold text-xs">Doğrula ve kaydet</button>
+      </div>
+      <p id="mevo-key-state" class="text-[11px] text-gray-500 mt-2"></p>
+    </section>
+
+    <section class="bg-[#121620] border border-gray-800 rounded-2xl p-4">
       <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
         <h2 class="font-bold text-white text-sm flex items-center gap-2"><i class="ph-bold ph-graduation-cap text-amber-300"></i><span>1. Manuel işlemlerimin mantığı</span></h2>
         <button id="mevo-learn-btn" onclick="mevoLearn()" class="px-3 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold text-xs flex items-center gap-1.5">

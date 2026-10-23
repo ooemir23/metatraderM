@@ -109,3 +109,7 @@ Kullanıcı "eski MevO'yu komple sil, yeniden yap" dedi. Eski DeepSeek danışma
 mumlara göre sunulur, SL/TP yönle doğrulanır (uyumsuzsa BEKLE); **MevO emir açmaz**. Profil hesap bazlıdır
 (`mevo.json`). API anahtarı yalnız ortam değişkeni `DEEPSEEK_API_KEY` (koda/depoya/duruma yazılmaz); günlük sınır
 `MEVO_DAILY_CALL_LIMIT`. `AI_MAGIC` (123462) yalnız geçmişte AI etiketli işlemleri tanımak için bırakıldı.
+MevO API anahtarı (2026-10-23): sayfadaki "DeepSeek API anahtarı" alanından girilir; ücretsiz `GET /models` ile doğrulanır, durum
+klasörüne 0600 `mevo_key.json` olarak yazılır, panel anahtarı ortam değişkeninden önceliklidir, hiçbir yanıtta geri dönmez.
+Token tasarrufu: aynı geçmiş = yeniden öğrenme yok; aynı kapanmış mum + aynı profil = model çağrılmaz (önbellek); modele ham mum
+yerine son 24 kapanış + özet gider; kısa prompt ve düşük `max_tokens`.
