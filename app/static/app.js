@@ -888,7 +888,7 @@ function switchPositionTab(tab) {
     }
     fetchReports();
   } else if (tab === "ai") {
-    window.open("/ai", "_blank");
+    window.location.href = "/ai";
     return;
   }
 }
