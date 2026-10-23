@@ -2,6 +2,27 @@
 const $ = id => document.getElementById(id);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+// Modern, ortalanmış onay penceresi (tarayıcının confirm() yerine). Promise<boolean> döner.
+function askConfirm({title, icon = 'ph-question', rows = [], warnings = [], text = '', okText = 'Tamam', cancelText = 'İptal', tone = 'warn'}) {
+  return new Promise(resolve => {
+    const dlg = $('mevo-modal'), body = $('mm-body');
+    const iconTone = tone === 'buy' ? 'text-emerald-400' : tone === 'sell' ? 'text-rose-400' : 'text-violet-300';
+    body.innerHTML = `<div class="flex items-center gap-3 mb-3"><i class="ph-bold ${esc(icon)} text-2xl ${iconTone}"></i><h3 id="mm-title" class="text-base font-bold text-white">${esc(title)}</h3></div>
+      ${text ? `<p class="text-xs text-gray-300 leading-relaxed whitespace-pre-line mb-2">${esc(text)}</p>` : ''}
+      ${rows.length ? `<div>${rows.map(([k, v]) => `<div class="mm-row"><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join('')}</div>` : ''}
+      ${warnings.length ? `<div class="mm-warn"><b><i class="ph-bold ph-warning"></i> Uyarılar</b>${warnings.map(w => `<p>${esc(w)}</p>`).join('')}</div>` : ''}
+      <div class="flex justify-end gap-2 mt-5"><button type="button" class="mm-btn" id="mm-cancel">${esc(cancelText)}</button><button type="button" class="mm-btn mm-ok" data-tone="${esc(tone)}" id="mm-ok">${esc(okText)}</button></div>`;
+    let done = false;
+    const finish = v => { if (done) return; done = true; dlg.close(); resolve(v); };
+    $('mm-cancel').onclick = () => finish(false);
+    $('mm-ok').onclick = () => finish(true);
+    dlg.oncancel = e => { e.preventDefault(); finish(false); };
+    dlg.onclick = e => { if (e.target === dlg) finish(false); };
+    dlg.showModal();
+    $('mm-cancel').focus();
+  });
+}
+
 function mevoAlert(text, tone) {
   const el = $('mevo-alert');
   if (!text) { el.classList.add('hidden'); return; }
@@ -76,6 +97,12 @@ function openForm(i, n) {
     </div></div>`;
 }
 
+function goToOpenPositions(event) {
+  event.preventDefault();
+  try { localStorage.setItem('hma.main.view.v1', 'work'); } catch (_) {}   // terminalde "İşlemler & Bot" ekranı açılsın
+  window.location.href = '/';
+}
+
 function newRequestId() {
   const a = new Uint8Array(12);
   crypto.getRandomValues(a);
@@ -106,8 +133,11 @@ async function openOpportunity(n) {
   const identity = window.currentAccountIdentity;
   if (!identity) return say('Hesap doğrulanamadı; terminalde hesabı kontrol et.', false);
   const side = item.action === 'BUY' ? 'AL' : 'SAT';
-  const warn = (item.warnings || []).length ? '\n\nUyarılar:\n- ' + item.warnings.join('\n- ') : '';
-  if (!confirm(`${item.symbol} ${side} · ${lot} lot · SL ${sl || 'yok'} · TP ${tp || 'yok'}\nHesap: ${identity[2]} #${identity[0]}${warn}\n\nPiyasa emri gönderilsin mi?`)) return;
+  const ok = await askConfirm({title: `${item.symbol} ${side} piyasa emri`, icon: item.action === 'BUY' ? 'ph-trend-up' : 'ph-trend-down',
+    tone: item.action === 'BUY' ? 'buy' : 'sell', okText: `${side} pozisyonu aç`, cancelText: 'Vazgeç',
+    rows: [['Yön', side], ['Lot', String(lot)], ['SL', sl ? String(sl) : 'yok'], ['TP', tp ? String(tp) : 'yok'], ['Hesap', `${identity[2]} #${identity[0]}`]],
+    warnings: item.warnings || []});
+  if (!ok) return;
   btn.disabled = true; say('Emir gönderiliyor…', true);
   try {
     // Uygulama sınırı (lot/işlem) doluysa: yeni sınırı göstererek onay iste; onaylanırsa sınırı artırıp emri yeniden gönder.
@@ -116,11 +146,17 @@ async function openOpportunity(n) {
         request_id: newRequestId(), symbol: item.symbol, order_type: item.action, volume: lot, sl_price: sl, tp_price: tp,
         comment: 'MevO', expected_account: identity})});
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data.success) return say(`Açıldı: #${data.ticket} @ ${data.price}`, true);
+      if (res.ok && data.success) {
+        msg.innerHTML = `<a href="/" class="underline decoration-dotted text-emerald-300" onclick="goToOpenPositions(event)">Açıldı: #${esc(data.ticket)} @ ${esc(data.price)} · açık işlemleri gör →</a>`;
+        msg.className = 'mt-2 text-[11px]';
+        return;
+      }
       if (data.uncertain || data.pending) return say('Emir sonucu belirsiz. Tekrar basma; terminalde pozisyonları kontrol et.', false);
       const raise = limitRaise(data, lot);
       if (!raise) return say(typeof data.detail === 'string' ? data.detail : (data.error || 'Emir açılamadı.'), false);
-      if (!confirm(`${data.error}\n\nSınırı artırıp işlemi açayım mı?\n${raise.text}\n\nBu, uygulamanın kayıtlı sınırlarını kalıcı olarak değiştirir (Risk ayarlarından geri alabilirsin).`)) {
+      if (!await askConfirm({title: 'Sınırı artırıp işlemi açayım mı?', icon: 'ph-shield-warning', okText: 'Sınırı artır ve aç', cancelText: 'Vazgeç',
+        text: data.error + '\n\nBu, uygulamanın kayıtlı sınırlarını kalıcı olarak değiştirir (Risk ayarlarından geri alabilirsin).',
+        rows: raise.text.split('\n').map(l => { const i = l.indexOf(':'); return [l.slice(0, i), l.slice(i + 1).trim()]; })})) {
         return say('Sınır artırılmadı; emir açılmadı.', false);
       }
       say('Sınır artırılıyor…', true);

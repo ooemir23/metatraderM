@@ -8,6 +8,22 @@
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
   <link rel="stylesheet" href="/static/style.css?v=ui-scale-1">
   <script src="/static/ui-scale.js?v=1"></script>
+  <style>
+    #mevo-modal { border:0; padding:0; background:transparent; max-width:min(92vw,460px); width:100%; margin:auto; color:inherit; }
+    #mevo-modal::backdrop { background:rgba(5,8,14,.72); backdrop-filter:blur(6px); }
+    #mevo-modal[open] .mm-card { animation:mm-in .16s ease-out; }
+    @keyframes mm-in { from { opacity:0; transform:translateY(8px) scale(.97); } to { opacity:1; transform:none; } }
+    .mm-card { background:linear-gradient(180deg,#171c28,#121620); border:1px solid #2a3142; border-radius:18px; padding:20px; box-shadow:0 24px 70px rgba(0,0,0,.55); }
+    .mm-row { display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-bottom:1px solid #222a3a; font-size:13px; }
+    .mm-row:last-child { border-bottom:0; }
+    .mm-row span:first-child { color:#8f98a8; } .mm-row span:last-child { color:#fff; font-family:'IBM Plex Mono',ui-monospace,monospace; text-align:right; }
+    .mm-btn { padding:9px 16px; border-radius:11px; font-weight:700; font-size:13px; border:1px solid #2f384b; background:#1b2231; color:#d5dae4; }
+    .mm-btn:hover { background:#232c40; } .mm-btn:focus-visible { outline:2px solid #8b5cf6; outline-offset:2px; }
+    .mm-ok { border-color:transparent; color:#fff; } .mm-ok[data-tone="buy"] { background:#059669; } .mm-ok[data-tone="sell"] { background:#e11d48; } .mm-ok[data-tone="warn"] { background:#7c3aed; }
+    .mm-ok:hover { filter:brightness(1.12); }
+    .mm-warn { margin-top:12px; padding:10px 12px; border-radius:12px; background:rgba(245,158,11,.1); border:1px solid rgba(245,158,11,.35); color:#fcd34d; font-size:12px; line-height:1.5; }
+    .mm-warn p + p { margin-top:6px; }
+  </style>
 </head>
 <body class="bg-[#0b0e14] text-gray-200 min-h-screen flex flex-col font-sans antialiased">
   <header class="bg-[#121620] border-b border-gray-800/80 sticky top-0 z-40 px-3 py-2.5 sm:px-6">
@@ -99,6 +115,8 @@
     <div id="market-results" class="market-results" role="list" aria-label="Broker ürün sonuçları"></div>
     <div class="market-dialog-footnote"><span>Favoriler bu hesap ve broker sunucusu için saklanır.</span><button id="market-manage-favorites" type="button">Favorileri yönet</button></div>
   </dialog>
+
+  <dialog id="mevo-modal" aria-labelledby="mm-title"><div class="mm-card"><div id="mm-body"></div></div></dialog>
 
   <script src="/static/market-watch.js"></script>
   <script src="/static/ai.js"></script>
