@@ -40,6 +40,8 @@
     ["Pozisyon SL/TP ile kapanınca sinyal sürüyorsa bir sonraki mumda yeniden gir", "When a position closes at SL/TP and the signal still holds, re-enter on the next candle"],
     ["İşlemler & Bot", "Trades & Bot"],
     ["Ana ekran", "Main screen"],
+    ["Menü", "Menu"],
+    ["Gelişmiş ayarlar", "Advanced settings"],
     ["Ters sinyalde mevcut pozisyonu kapat (InpCloseOpposite)", "Close the open position on the opposite signal (InpCloseOpposite)"],
     ["Başlarken mevcut trend yönünde hemen işlem aç", "Open the current trend side right away on start"],
     ["(MT5 EA'da yok: EA yeni kesişimi bekler)", "(not in the MT5 EA: the EA waits for a new crossover)"],

@@ -157,3 +157,8 @@ MevO sayfası: tek düğmeyle "Fırsatları getir" (profil yoksa önce kendisi �
   MevO modunda pozisyon yokken her kapanan mumda (3 mum beklemeyle) yeniden sorulur.
 - `copy_lot_override` (2026-10-23, kullanıcı isteği; MT5 EA'da YOK): manuel kopya açıkken lot, manuel işlemlerden hesaplanan lot yerine bu sabit lot olur
   (0 = kapalı); SL/TP yine manuel kopyadan gelir. Bot Ayarları'ndan girilir, çalışan botta değiştirmek için önce durdurulur.
+
+## Mobil görünüm (2026-10-23, kullanıcı isteği)
+<760px: uygulama gibi kabuk (`mobile.css`, `mobile-shell.js`). Alt sekme çubuğu Grafik | İşlemler | Bot | MevO (masaüstündeki `MainView` ile aynı ekranlar),
+tek satırlık üst bar (logo · hesap özeti · ☰ menü; araçlar/hesap/dil menü sayfasında), hızlı SAT/AL çubuğu yalnız Grafik ekranında, emir formunda
+"Gelişmiş ayarlar" katlanır (doldurma/sapma/yorum), pozisyonlar 2 sütunlu kompakt kart. Eski kaydırmalı bölüm çubuğu (`#mx-nav`) gizli. Emir/hesap davranışı değişmedi.

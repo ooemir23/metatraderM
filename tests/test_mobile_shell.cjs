@@ -1,0 +1,11 @@
+const fs = require('fs'), assert = require('assert');
+const html = fs.readFileSync('app/static/index.html', 'utf8');
+const css = fs.readFileSync('app/static/mobile.css', 'utf8');
+const js = fs.readFileSync('app/static/mobile-shell.js', 'utf8');
+for (const v of ['chart', 'trades', 'bot', 'mevo']) assert.match(html, new RegExp(`id="mx-tabs"[\\s\\S]*?data-view="${v}"`), `tab ${v}`);
+assert.match(html, /mobile\.css/); assert.match(html, /mobile-shell\.js/);
+assert.match(html, /id="mx-more"/); assert.match(html, /id="mx-adv-btn"/);
+assert.match(css, /body:not\(\[data-main-view="chart"\]\) \.hx-main-grid \{ display:none !important; \}/);
+assert.match(css, /body:not\(\[data-main-view="chart"\]\) \.mx-bar \{ display:none !important; \}/);
+assert.match(js, /MainView\.set/);
+console.log('mobile shell ok');

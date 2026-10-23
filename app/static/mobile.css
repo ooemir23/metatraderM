@@ -1,0 +1,95 @@
+/* ===== Mobile (<760px): app-style shell — compact header, one screen at a time, bottom tab bar ===== */
+.mx-tabs, .mx-more, .mx-adv-btn { display:none; }
+@media (max-width: 759px) {
+  :root { --mx-tabs-h: 58px; --mx-head-h: 52px; }
+  body { padding-bottom:calc(var(--mx-tabs-h) + env(safe-area-inset-bottom)) !important; font-size:14px; }
+  body[data-main-view="chart"] { padding-bottom:calc(var(--mx-tabs-h) + 68px + env(safe-area-inset-bottom)) !important; }
+  body[data-main-view="mevo"] { padding-bottom:0 !important; }
+
+  /* Header: one slim row = logo · account summary · menu */
+  .hx-header, .hx-header.hx-header-hidden { position:sticky !important; top:0; z-index:60; transform:none !important; }
+  .hx-row1 { flex-wrap:nowrap !important; align-items:center; gap:8px !important; min-height:var(--mx-head-h); padding:6px 10px !important; }
+  .hx-sub, .hx-sync, .hx-brand .hx-title { display:none !important; }
+  .hx-brand { flex:0 0 auto; }
+  .hx-logo { width:32px; height:32px; }
+  .hx-pills { flex:1 1 auto; min-width:0; display:flex; justify-content:flex-end; }
+  .hx-balance { min-width:0; max-width:100%; }
+  .hx-balance-btn { max-width:100%; height:38px; }
+  .hx-balance-menu { position:fixed !important; left:8px !important; right:8px !important; top:calc(var(--mx-head-h) + 4px) !important; width:auto !important; max-height:calc(100vh - 120px); overflow:auto; z-index:70; }
+  .mx-more { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; width:40px; height:38px; border-radius:8px; border:1px solid #2a313d; background:#161b23; color:#d5dbe5; font-size:20px; }
+  body.mx-menu-open .mx-more { background:#1d2633; border-color:#2f6fd6; color:#fff; }
+  /* The old action row becomes a sheet under the header */
+  .hx-actions { display:none !important; }
+  body.mx-menu-open .hx-actions { display:grid !important; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px !important; position:fixed; left:0; right:0; top:var(--mx-head-h); z-index:65;
+    padding:12px; background:#0f1218; border-bottom:1px solid #222833; box-shadow:0 18px 40px rgba(0,0,0,.55); max-height:calc(100vh - var(--mx-head-h) - var(--mx-tabs-h)); overflow:auto; }
+  body.mx-menu-open .hx-actions .hx-btn { height:46px; justify-content:flex-start; gap:10px; padding:0 14px; font-size:14px; }
+  body.mx-menu-open .hx-actions .hx-btn > span:not(.hx-ai-dot):not(.tools-error-badge) { display:inline !important; }
+  body.mx-menu-open .hx-actions .hx-account, body.mx-menu-open .hx-actions .ui-scale, body.mx-menu-open .hx-actions #operator-role { grid-column:1 / -1; }
+  body.mx-menu-open .hx-actions select { height:46px; font-size:14px; }
+  body.mx-menu-open .hx-account-menu { position:static !important; width:100% !important; margin-top:8px; box-shadow:none; }
+  .mx-scrim { display:none; }
+  body.mx-menu-open .mx-scrim { display:block; position:fixed; inset:0; z-index:55; background:rgba(0,0,0,.45); }
+
+  /* Old section bar is replaced by the bottom tab bar */
+  .mx-nav { display:none !important; }
+
+  /* Bottom tab bar */
+  .mx-tabs { display:grid; grid-template-columns:repeat(4, 1fr); position:fixed; left:0; right:0; bottom:0; z-index:58;
+    padding:0 4px env(safe-area-inset-bottom); height:calc(var(--mx-tabs-h) + env(safe-area-inset-bottom)); background:#0f1218; border-top:1px solid #222833; }
+  .mx-tabs button { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; color:#7f8999; font-size:11px; font-weight:700; background:none; border:0; }
+  .mx-tabs button i { font-size:22px; }
+  .mx-tabs button[aria-selected="true"] { color:#fff; }
+  .mx-tabs button[aria-selected="true"]::before { content:''; position:absolute; top:0; left:22%; right:22%; height:3px; border-radius:0 0 3px 3px; background:#2f6fd6; }
+  .mx-tabs .mx-count { position:absolute; top:5px; left:calc(50% + 8px); min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#2f6fd6; color:#fff; font-size:11px; display:inline-flex; align-items:center; justify-content:center; }
+
+  /* One screen at a time (same switch as desktop) */
+  body[data-main-view="chart"] #positions-card, body[data-main-view="mevo"] #positions-card { display:none !important; }
+  body:not([data-main-view="chart"]) .hx-main-grid { display:none !important; }
+  body[data-main-view="trades"] #positions-card, body[data-main-view="bot"] #positions-card { height:auto !important; min-height:calc(100vh - var(--mx-head-h) - var(--mx-tabs-h)); }
+  body[data-main-view="trades"] #positions-resizer, body[data-main-view="trades"] #positions-top-resizer,
+  body[data-main-view="bot"] #positions-resizer, body[data-main-view="bot"] #positions-top-resizer { display:none !important; }
+  .mevo-view { display:block !important; }
+  .mevo-view[hidden] { display:none !important; }
+  .mevo-view iframe { width:100%; height:calc(100vh - var(--mx-head-h) - var(--mx-tabs-h) - env(safe-area-inset-bottom)); border:0; background:#0b0e14; }
+  .hx-main { padding:8px !important; gap:8px !important; }
+  body[data-main-view="mevo"] .hx-main { padding:0 !important; }
+
+  /* Quick-trade bar sits above the tab bar, only on the chart screen */
+  .mx-bar { bottom:calc(var(--mx-tabs-h) + env(safe-area-inset-bottom)) !important; padding:6px 10px !important; z-index:57; }
+  body:not([data-main-view="chart"]) .mx-bar { display:none !important; }
+  .mx-bar button { height:48px !important; border-radius:8px !important; }
+
+  /* Chart screen: chart first, then a short order form (market buttons live in the quick-trade bar) */
+  .cx-card { height:min(52vh, 420px) !important; min-height:300px; }
+  #order-card #market-order-buttons { display:none !important; }
+  #order-card .ox-foot, #order-card .ox-risk p { display:none; }
+  #order-card .mx-adv-only { display:none; }
+  #order-card.mx-adv .mx-adv-only { display:block; }
+  .mx-adv-btn { display:flex; align-items:center; justify-content:center; gap:6px; width:100%; height:42px; margin-top:4px; border-radius:8px; border:1px dashed #2a313d; color:#9aa4b2; font-size:13px; font-weight:700; background:none; }
+  .ox-stepper button, .ox-presets button, .ox-seg button { min-height:44px; }
+  .ox-stepper input { font-size:16px; }
+  input, select, textarea { font-size:16px; }   /* no zoom-on-focus on iOS */
+
+  /* Positions as compact cards: symbol + P/L on top, details in a 2-column grid */
+  .hx-pos-table tbody tr { margin:0 0 8px; border:1px solid #222833; border-radius:10px; background:#14181f; padding:8px 10px; }
+  .hx-pos-table tbody tr { display:grid !important; grid-template-columns:repeat(2, minmax(0, 1fr)); column-gap:14px; row-gap:2px; }
+  .hx-pos-table tbody td { display:flex !important; flex-direction:column; align-items:flex-start !important; justify-content:flex-start !important; gap:1px !important; text-align:left !important; min-width:0; padding:4px 0 !important; }
+  .hx-pos-table tbody td::before { font-size:11px; }
+  .hx-pos-table tbody td:nth-child(n+12) { grid-column:1 / -1; }
+  .hx-pos-table tbody td:nth-child(12) { flex-direction:row; justify-content:space-between !important; align-items:center !important; margin-top:4px; padding:8px 10px !important; border-radius:8px; background:#0f1218; font-size:16px; }
+  .hx-pos-table tbody td.hx-actions-cell, .hx-pos-table tbody td:nth-child(13) { flex-direction:row; justify-content:flex-end !important; gap:8px !important; }
+  .hx-pos-table tbody td[colspan] { display:block !important; grid-column:1 / -1; text-align:center !important; }
+  .hx-pos-table button, .hx-pos-table a.hx-btn { min-height:40px; }
+}
+
+@media (max-width: 759px) {
+  /* The bottom bar already switches Trades / Bot: no duplicate tab for the bot, no strip at all on the bot screen */
+  #ws-tab-signals { display:none !important; }
+  body[data-main-view="bot"] #workspace-switch { display:none !important; }
+  .hx-tabs { padding:0 6px; }
+  .hx-tab { flex:1 1 auto; justify-content:center; white-space:nowrap; }
+  /* Bot first (start/stop is the main action), scanner below */
+  .signals-grid { display:flex !important; flex-direction:column; gap:12px; }
+  .signals-pane-head { display:none !important; }
+  #bot-card { order:-1; }
+}

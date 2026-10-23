@@ -46,6 +46,7 @@
   <!-- TradingView Widget -->
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <link rel="stylesheet" href="/static/style.css?v=terminal-8">
+  <link rel="stylesheet" href="/static/mobile.css?v=1">
   <script src="/static/ui-scale.js?v=1"></script>
   <script src="/static/vendor/lightweight-charts.js"></script>
 </head>
@@ -86,7 +87,8 @@
           </div>
         </div>
       </div>
-      <div class="hx-actions">
+      <button type="button" id="mx-more" class="mx-more" aria-label="Menü" aria-expanded="false" aria-controls="hx-actions"><i class="ph-bold ph-list"></i></button>
+      <div class="hx-actions" id="hx-actions">
         <button id="tools-toggle" type="button" class="tools-toggle hx-btn" onclick="setToolsDrawer(true)" aria-controls="tools-drawer" aria-expanded="false" title="Strateji testi, araştırma, piyasa derinliği ve sistem günlüğü">
           <i class="ph-bold ph-toolbox"></i><span>Araçlar</span><span id="tools-error-badge" class="tools-error-badge" hidden>0</span>
         </button>
@@ -117,6 +119,15 @@
     <button type="button" data-mx="order"><i class="ph-bold ph-pencil-simple-line"></i><span>Emir</span></button>
     <button type="button" data-mx="positions"><i class="ph-bold ph-list-bullets"></i><span>İşlemler</span></button>
     <button type="button" data-mx="bot"><i class="ph-bold ph-robot"></i><span>Bot</span></button>
+  </nav>
+
+  <div class="mx-scrim" id="mx-scrim" aria-hidden="true"></div>
+  <!-- Mobile bottom tab bar (same screens as the desktop switch) -->
+  <nav id="mx-tabs" class="mx-tabs" aria-label="Ana ekran" role="tablist">
+    <button type="button" role="tab" data-view="chart" aria-selected="true"><i class="ph-bold ph-chart-line"></i><span>Grafik</span></button>
+    <button type="button" role="tab" data-view="trades" aria-selected="false"><i class="ph-bold ph-list-bullets"></i><span>İşlemler</span><span id="mx-pos-count" class="mx-count" hidden>0</span></button>
+    <button type="button" role="tab" data-view="bot" aria-selected="false"><i class="ph-bold ph-robot"></i><span>Bot</span></button>
+    <button type="button" role="tab" data-view="mevo" aria-selected="false"><i class="ph-bold ph-brain"></i><span>MevO</span></button>
   </nav>
 
   <!-- MAIN WORKSPACE -->
@@ -283,7 +294,8 @@
             </div>
           </div>
 
-          <div id="market-filling-row" class="ox-block">
+          <button type="button" id="mx-adv-btn" class="mx-adv-btn" aria-expanded="false"><i class="ph-bold ph-sliders-horizontal"></i><span>Gelişmiş ayarlar</span></button>
+          <div id="market-filling-row" class="ox-block mx-adv-only">
             <label for="order-filling" class="ox-label">Doldurma politikası</label>
             <select id="order-filling" class="ox-select" onchange="saveOrderTicketPreferences();scheduleTradePreview()">
               <option value="AUTO">Broker varsayılanı</option>
@@ -293,7 +305,7 @@
             </select>
           </div>
 
-          <div id="market-deviation-row" class="ox-block">
+          <div id="market-deviation-row" class="ox-block mx-adv-only">
             <label for="order-deviation" class="ox-label">Azami sapma (puan)</label>
             <div class="ox-stepper">
               <button type="button" onclick="adjustDeviation(-1)" aria-label="Sapmayı azalt">−</button>
@@ -302,7 +314,7 @@
             </div>
           </div>
 
-          <div class="ox-block">
+          <div class="ox-block mx-adv-only">
             <label for="order-comment" class="ox-label">Yorum</label>
             <input id="order-comment" class="ox-input" type="text" maxlength="31" placeholder="İsteğe bağlı · en fazla 31 karakter">
           </div>
@@ -1341,6 +1353,7 @@
   <script src="/static/workspace.js?v=terminal-1"></script>
   <script src="/static/header-autohide.js?v=1"></script>
   <script src="/static/balance-menu.js?v=2"></script>
+  <script src="/static/mobile-shell.js?v=1"></script>
   <script src="/static/account-menu.js?v=1"></script>
 </body>
 </html>
