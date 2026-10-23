@@ -54,3 +54,18 @@ def test_settings_validate_and_roundtrip():
             continue
         raise AssertionError(bad)
     assert bot.get_status()['stop_loss_amount'] == 0.0
+
+
+def test_copy_lot_override_keeps_manual_sl_tp_but_fixes_lot():
+    mt5 = Mock(max_order_lots=100.0, max_total_lots=100.0, account_type='REAL')
+    mt5.manual_copy_profile.return_value = {'available': True, 'lot': 22.5, 'sl_points': 150, 'tp_points': 289,
+                                            'count': 152, 'since': '2026-10-08'}
+    bot = StrategyBot(mt5)
+    bot.copy_manual_trades = True
+    lot, sl, tp, _ = bot.copied_order_settings('XAUUSD', 200, 0)
+    assert (lot, sl, tp) == (22.5, 150, 289)                          # varsayılan: manuel lot
+    bot.copy_lot_override = 5.0
+    lot, sl, tp, note = bot.copied_order_settings('XAUUSD', 200, 0)
+    assert (lot, sl, tp) == (5.0, 150, 289) and '5 lot' in note        # yalnız lot değişir
+    assert bot.manual_copy['manual_lot'] == 22.5
+    assert bot.validated_config({'copy_lot_override': 5})['copy_lot_override'] == 5

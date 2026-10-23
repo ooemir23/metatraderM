@@ -155,3 +155,5 @@ MevO sayfası: tek düğmeyle "Fırsatları getir" (profil yoksa önce kendisi �
   SL/TP ile sürer (durmuş EA gibi). Durum: PROFIT_TARGET / LOSS_LIMIT. Çalışan botta değiştirilemez (önce durdur).
 - Yeniden giriş: pozisyon SL/TP ile kapanınca bot, `reenter_after_stop` açıkken (varsayılan) strateji hâlâ yön gösteriyorsa sonraki mumda yeniden girer;
   MevO modunda pozisyon yokken her kapanan mumda (3 mum beklemeyle) yeniden sorulur.
+- `copy_lot_override` (2026-10-23, kullanıcı isteği; MT5 EA'da YOK): manuel kopya açıkken lot, manuel işlemlerden hesaplanan lot yerine bu sabit lot olur
+  (0 = kapalı); SL/TP yine manuel kopyadan gelir. Bot Ayarları'ndan girilir, çalışan botta değiştirmek için önce durdurulur.

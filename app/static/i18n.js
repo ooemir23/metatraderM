@@ -167,6 +167,7 @@
     ["Kâr al (TP)", "Take profit (TP)"],
     ["Bilet / Kaynak", "Ticket / Source"],
     ["Açılış saati", "Open time"],
+    ["Manuel kopyada sabit lot (0 = manuel işlemlerimden gelen lot; ör. 5 yazarsan lot hep 5, SL/TP yine kopyalanır)", "Fixed lot for manual copy (0 = lot from my manual trades; e.g. 5 means always 5, SL/TP still copied)"],
     ["🧠 MevO (Manuel)", "🧠 MevO (Manual)"],
     ["🧠 Otomatik Sinyal (MevO)", "🧠 Automatic signal (MevO)"],
     ["🤖 Otomatik Sinyal (Manuel tarzı)", "🤖 Automatic signal (Manual style)"],

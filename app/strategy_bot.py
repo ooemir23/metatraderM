@@ -87,6 +87,7 @@ class StrategyBot:
         # After the bot's own position is closed by SL / TP / stop out, open the side the strategy still shows on
         # the next closed candle (user decision 2026-10-23; the EA would wait for a new crossover).
         self.reenter_after_stop = True
+        self.copy_lot_override = 0.0     # manuel kopya açıkken lot yerine bu sabit lot (0 = manuel işlemlerden gelen lot)
         self.stop_profit_amount = 0.0    # bot bu çalıştırmada bu kadar kâra ulaşınca durur (hesap para birimi; 0 = kapalı)
         self.stop_loss_amount = 0.0      # bot bu çalıştırmada bu kadar zarara ulaşınca durur (0 = kapalı)
         self.session_pnl = None
@@ -363,7 +364,7 @@ class StrategyBot:
                 'er_min','confirmation_bars','min_distance_atr','risk_mode','atr_stop_multiplier',
                 'atr_target_multiplier','lot_size','use_stop_loss','sl_points','use_take_profit','tp_points','close_opposite',
                 'lot_mode','risk_pct','max_consecutive_losses','trade_hours_enabled','trade_start','trade_end',
-                'trade_utc_offset_min','trade_days','blocked_windows','trend_entry_on_start','copy_manual_trades','copy_manual_since','extra_timeframes','auto_lot_limits_demo','entry_mode','reenter_after_stop','stop_profit_amount','stop_loss_amount')
+                'trade_utc_offset_min','trade_days','blocked_windows','trend_entry_on_start','copy_manual_trades','copy_manual_since','extra_timeframes','auto_lot_limits_demo','entry_mode','reenter_after_stop','stop_profit_amount','stop_loss_amount','copy_lot_override')
         with self._state_lock:
             snap = {key: (list(getattr(self, key)) if isinstance(getattr(self, key), list) else getattr(self, key)) for key in keys}
             snap['symbols'] = list(getattr(self, 'symbols', [self.symbol]))
@@ -650,7 +651,7 @@ class StrategyBot:
                         'trend_entry_on_start', 'copy_manual_trades', 'auto_lot_limits_demo', 'reenter_after_stop'):
                 if not isinstance(candidate[key], bool):
                     raise ValueError(f'Geçersiz bot ayarı: {key}')
-            for key in ('stop_profit_amount', 'stop_loss_amount'):
+            for key in ('stop_profit_amount', 'stop_loss_amount', 'copy_lot_override'):
                 value = candidate[key]
                 if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
                     raise ValueError(f'Geçersiz bot ayarı: {key}')
@@ -758,6 +759,7 @@ class StrategyBot:
             "trend_entry_on_start": self.trend_entry_on_start,
             "reenter_after_stop": self.reenter_after_stop,
             "stop_profit_amount": self.stop_profit_amount,
+            "copy_lot_override": self.copy_lot_override,
             "stop_loss_amount": self.stop_loss_amount,
             "session_pnl": self.session_pnl,
             "extra_timeframes": list(self.extra_timeframes),
@@ -1569,6 +1571,8 @@ class StrategyBot:
             self.manual_copy = dict(prof)
             note = f"manuel kopya yok: {prof.get('reason', '')} Bot ayarı kullanıldı."
             return None, sl, tp, note
+        if self.copy_lot_override > 0:       # kullanıcı: manuel işlemleri kopyala, yalnız lotu değiştir
+            prof = {**prof, 'manual_lot': prof['lot'], 'lot': float(self.copy_lot_override)}
         lot = float(prof['lot'])
         cap = getattr(self.mt5, 'max_order_lots', None)
         capped = ''

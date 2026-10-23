@@ -238,6 +238,7 @@ class BotConfigRequest(BaseModel):
     trend_entry_on_start: Optional[bool] = None
     reenter_after_stop: Optional[bool] = None
     stop_profit_amount: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    copy_lot_override: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     stop_loss_amount: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     entry_mode: Optional[Literal["CROSSOVER", "MANUAL_STYLE", "MEVO"]] = None
     auto_lot_limits_demo: Optional[bool] = None
@@ -1544,6 +1545,8 @@ async def manual_copy_warnings():
         prof = await asyncio.to_thread(mt5_client.manual_copy_profile, bot.symbol, bot.copy_manual_since)
     except Exception as exc:
         return [f'Manuel işlem kopyası okunamadı ({exc}); bot kendi lot/SL/TP ayarını kullanır.']
+    if prof.get('available') and bot.copy_lot_override > 0:
+        prof = {**prof, 'manual_lot': prof['lot'], 'lot': float(bot.copy_lot_override)}
     bot.manual_copy = dict(prof)
     if not prof.get('available'):
         return [f"Manuel kopya kullanılamıyor: {prof.get('reason')} Bot kendi lot/SL/TP ayarını kullanır."]
