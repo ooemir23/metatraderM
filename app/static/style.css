@@ -1273,3 +1273,20 @@ html[data-buy-scheme="green"] .mt5-menu-buy { background:#1f9d6a; }
 /* Never let anything widen the page sideways (phones zoom the whole page out to fit wider content,
    which shrinks the panel and leaves empty side margins). */
 html, body { overflow-x:clip; max-width:100%; }
+
+/* ===== Desktop main screen switch: Grafik | İşlemler & Bot ===== */
+.mv-switch { align-self:center; display:inline-flex; gap:4px; padding:4px; border:1px solid #222833; border-radius:10px; background:#14181f; }
+.mv-switch button { display:inline-flex; align-items:center; gap:7px; height:36px; padding:0 18px; border-radius:7px; font-size:14px; font-weight:700; color:#9aa4b2; }
+.mv-switch button:hover { color:#e6e9ef; background:#1a1f28; }
+.mv-switch button[aria-selected="true"] { color:#fff; background:#2f6fd6; }
+.mv-switch button:focus-visible { outline:2px solid #4c8dff; outline-offset:2px; }
+.mv-count { min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:#0b0e13; color:#e6e9ef; font-size:12px; display:inline-flex; align-items:center; justify-content:center; }
+@media (min-width: 760px) {
+  body[data-main-view="chart"] #positions-card { display:none !important; }
+  body[data-main-view="work"] .hx-main-grid { display:none !important; }
+  /* Each screen uses the whole window height under the header and the switch. */
+  body[data-main-view="chart"] .cx-card { height:max(520px, calc(100vh - 190px)) !important; }
+  body[data-main-view="work"] #positions-card { height:auto !important; min-height:max(480px, calc(100vh - 190px)); }
+  body[data-main-view="work"] #positions-resizer, body[data-main-view="work"] #positions-top-resizer { display:none !important; }
+}
+@media (max-width: 759px) { .mv-switch { display:none; } }

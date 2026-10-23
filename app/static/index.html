@@ -112,6 +112,11 @@
 
   <!-- MAIN WORKSPACE -->
   <main class="hx-main ui-scale-width">
+    <!-- Desktop: show the chart screen or the trades / bot screen (choice is remembered) -->
+    <div id="main-view-switch" class="mv-switch" role="tablist" aria-label="Ana ekran">
+      <button type="button" role="tab" data-view="chart" aria-selected="true"><i class="ph-bold ph-chart-line"></i><span>Grafik</span></button>
+      <button type="button" role="tab" data-view="work" aria-selected="false"><i class="ph-bold ph-list-bullets"></i><span>İşlemler &amp; Bot</span><span id="mv-pos-count" class="mv-count" hidden>0</span></button>
+    </div>
     
     <!-- UNIFIED 2-COLUMN WORKSPACE: LEFT (CHART + POSITIONS), RIGHT (FAST ORDERS + BOT + LOGS) -->
     <div class="hx-main-grid">
@@ -1578,6 +1583,7 @@
   <script src="/static/manual-style.js?v=2"></script>
   <script src="/static/strategy-presets.js?v=1"></script>
   <script src="/static/mobile-nav.js?v=1"></script>
+  <script src="/static/main-view.js?v=1"></script>
   <script src="/static/workspace.js?v=terminal-1"></script>
   <script src="/static/header-autohide.js?v=1"></script>
   <script src="/static/account-menu.js?v=1"></script>
