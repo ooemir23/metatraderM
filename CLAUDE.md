@@ -165,3 +165,4 @@ tek satırlık üst bar (logo · hesap özeti · ☰ menü; araçlar/hesap/dil m
 
 MevO kaynak etiketi (2026-10-23): MT5'e giden emir yorumu idempotency etiketidir (`vm:<hash>`); MevO sayfasından onaylanan emirlerde yorum `mevo:<hash>`
 olur (`MT5Client.open_order`), böylece pozisyon/geçmişte "MevO (Manuel)" rozeti ve `mevo_lifetimes` çalışır. Bu değişiklikten önce açılanlar `vm:` kalır (HMA Sitesi).
+MevO sonuç analizi bot girişlerini de kapsar (entry_mode='MEVO'); pozisyon numaraları `mevo.json` içinde kalıcıdır (`_remember_bot_ids`), bot geçmişi (50 kayıt) kırpılsa/temizlense de kaybolmaz.

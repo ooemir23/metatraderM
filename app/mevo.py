@@ -569,6 +569,19 @@ class MevO:
         finally:
             self._busy.release()
 
+    def _remember_bot_ids(self, ids):
+        """Bot MevO girişlerinin pozisyon numaraları kalıcı tutulur: bot geçmişi 50 kayıtla sınırlı ve temizlenebilir,
+        sonuç analizi eski işlemleri kaybetmesin."""
+        with self._lock:
+            acct = self._acct()
+            known = [int(i) for i in acct.get('bot_mevo_ids', [])]
+            merged = known + [int(i) for i in ids or () if int(i) not in set(known)]
+            merged = merged[-2000:]
+            if merged != known:
+                acct['bot_mevo_ids'] = merged
+                self._save()
+            return merged
+
     def review(self, force=False):
         """MevO'nun açtırdığı işlemlerin sonuç raporu (60 sn önbellek; okunamazsa None)."""
         now = time.monotonic()
@@ -576,7 +589,7 @@ class MevO:
         if cached and not force and now - cached[0] < 60:
             return cached[1]
         try:
-            ids = self.bot_position_ids() if callable(self.bot_position_ids) else ()
+            ids = self._remember_bot_ids(self.bot_position_ids() if callable(self.bot_position_ids) else ())
             trades = self.mt5.get_mevo_trades(days=LEARN_DAYS, bot_position_ids=ids)
             profile = self._acct().get('profile') or {}
             ref = (profile.get('comparison') or {}).get('reference') or {}
