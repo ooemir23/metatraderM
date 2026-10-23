@@ -912,7 +912,10 @@ class MT5Client:
                 daily_loss_limit = self.effective_daily_loss_limit(*account_scope, magic=magic)
                 # MT5 EA InpDailyLossLimit is always on for the EA's own orders.
                 enforce_daily_limit = self.journal.daily_limit_enabled(*account_scope) or magic == mt5_bridge.HMA_MAGIC
-                tag = "vm:" + hashlib.sha256((str(account_scope) + request_id).encode()).hexdigest()[:24]
+                # The broker comment is the idempotency tag; orders confirmed from the MevO page carry "mevo:" so the
+                # position can be recognised as MevO-opened (MT5 shows the comment; "vm:" alone looked like a plain web order).
+                tag_prefix = "mevo:" if str(comment or "").strip().lower().startswith("mevo") and magic == mt5_bridge.MANUAL_MAGIC else "vm:"
+                tag = tag_prefix + hashlib.sha256((str(account_scope) + request_id).encode()).hexdigest()[:24]
                 order_kind = mt5_bridge.PENDING_TYPES.get(pending_type, 0 if payload['order_type'] == 'BUY' else 1)
                 metadata = {'account': account_scope, 'tag': tag, 'order': {
                     'symbol': payload['symbol'], 'magic': magic, 'type': order_kind, 'volume': volume}}

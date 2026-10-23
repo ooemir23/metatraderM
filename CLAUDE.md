@@ -162,3 +162,6 @@ MevO sayfası: tek düğmeyle "Fırsatları getir" (profil yoksa önce kendisi �
 <760px: uygulama gibi kabuk (`mobile.css`, `mobile-shell.js`). Alt sekme çubuğu Grafik | İşlemler | Bot | MevO (masaüstündeki `MainView` ile aynı ekranlar),
 tek satırlık üst bar (logo · hesap özeti · ☰ menü; araçlar/hesap/dil menü sayfasında), hızlı SAT/AL çubuğu yalnız Grafik ekranında, emir formunda
 "Gelişmiş ayarlar" katlanır (doldurma/sapma/yorum), pozisyonlar 2 sütunlu kompakt kart. Eski kaydırmalı bölüm çubuğu (`#mx-nav`) gizli. Emir/hesap davranışı değişmedi.
+
+MevO kaynak etiketi (2026-10-23): MT5'e giden emir yorumu idempotency etiketidir (`vm:<hash>`); MevO sayfasından onaylanan emirlerde yorum `mevo:<hash>`
+olur (`MT5Client.open_order`), böylece pozisyon/geçmişte "MevO (Manuel)" rozeti ve `mevo_lifetimes` çalışır. Bu değişiklikten önce açılanlar `vm:` kalır (HMA Sitesi).
