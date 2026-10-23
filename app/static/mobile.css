@@ -93,3 +93,47 @@
   .signals-pane-head { display:none !important; }
   #bot-card { order:-1; }
 }
+
+/* ===== Tight spacing pass ===== */
+@media (max-width: 759px) {
+  body[data-main-view="chart"] { padding-bottom:calc(var(--mx-tabs-h) + 62px + env(safe-area-inset-bottom)) !important; }
+  .hx-main { padding:6px !important; gap:6px !important; }
+  .hx-main-grid, .hx-main-left, .hx-main-right { gap:6px !important; }
+  .hx-row1 { padding:4px 8px !important; min-height:46px; }
+  :root { --mx-head-h: 46px; }
+  .hx-logo { width:30px; height:30px; }
+  .hx-balance-btn, .mx-more { height:34px; }
+
+  /* Chart card */
+  .cx-card { height:min(58vh, 460px) !important; min-height:280px; border-radius:6px; }
+  .cx-card > * { margin-top:0; }
+  .mt5-chart-attribution { font-size:9px !important; line-height:1.2 !important; padding:2px 6px !important; }
+
+  /* Order card */
+  .ox-card { padding:10px !important; gap:8px !important; border-radius:6px; }
+  .ox-block { gap:4px !important; }
+  .ox-grid2 { gap:8px !important; }
+  .ox-seg button { min-height:36px !important; height:36px; }
+  .ox-stepper button, .ox-stepper input, .ox-stepper-lg button, .ox-stepper-lg input { height:40px !important; min-height:40px !important; }
+  .ox-presets button { min-height:32px !important; height:32px; }
+  #lot-rules { display:none; }
+  .ox-risk { padding:6px 10px; gap:2px; }
+  .mx-adv-btn { height:34px; margin-top:0; }
+  .order-notice { padding:6px 10px !important; }
+
+  /* Trades / bot screens */
+  .hx-ws { border-radius:6px; min-height:0; }
+  .hx-tab { height:40px; padding:0 10px; }
+  .hx-ws .workspace-split { padding:6px !important; }
+  .hx-pos-table tbody tr { margin:0 0 6px; padding:6px 10px; row-gap:0; }
+  .hx-pos-table tbody td { padding:2px 0 !important; }
+  .hx-pos-table tbody td:nth-child(12) { margin-top:2px; padding:5px 10px !important; }
+  .hx-pos-table button { min-height:36px; }
+  #bot-card, #signal-scanner-card { padding:10px !important; border-radius:6px !important; }
+  .signals-grid { gap:6px !important; }
+}
+@media (max-width: 759px) {
+  #open-actions-bar { gap:6px !important; }
+  #open-actions-bar button { min-height:34px !important; height:34px; padding-top:0 !important; padding-bottom:0 !important; font-size:12px !important; }
+  .hx-pos-table tbody td:first-child a, .hx-pos-table tbody td:first-child button { min-height:0 !important; }
+}
