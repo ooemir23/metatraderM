@@ -1531,20 +1531,20 @@ async function fetchHistory() {
 
       rowsHtml += `
         <tr data-testid="history-deal-${ticket}" onclick="showHistoryDetails(${positionId}, ${ticket}, this)" class="cursor-pointer hover:bg-[#14181f]/70 transition border-b border-gray-800/60" title="Açılış ve kapanış detaylarını göster">
-          <td class="py-2 px-2.5">
+          <td data-label="Bilet" class="py-2 px-2.5">
             <button type="button" onclick="event.stopPropagation(); showHistoryDetails(${positionId}, ${ticket}, this)" class="text-left font-mono font-bold text-[13px] text-white hover:text-cyan-400 focus:outline focus:outline-2 focus:outline-cyan-400 rounded" aria-label="İşlem #${ticket} detayları">
               #${ticket} <span class="text-xs text-gray-400 block font-normal">Pos: #${positionId} · Detay</span>
             </button>
             <div>${tradeSourceBadge(d)}</div>
           </td>
-          <td class="py-2 px-2.5 font-bold text-white text-[13px] tracking-wide">${escapeHtml(d.symbol)}</td>
-          <td class="py-2 px-2.5">${typeBadge}</td>
-          <td class="py-2 px-2.5 text-white font-semibold text-[13px]">${d.volume}</td>
-          <td class="py-2 px-2.5 text-gray-200 font-mono text-[13px] font-medium">${d.price}</td>
-          <td class="py-2 px-2.5 text-right font-mono font-bold text-[13px] text-amber-400 whitespace-nowrap">${commissionText}</td>
-          <td class="py-2 px-2.5 text-right font-mono text-xs text-gray-300 whitespace-nowrap">${feeText}</td>
-          <td class="py-2 px-2.5 font-mono text-xs text-gray-300 whitespace-nowrap" title="Broker saati: ${escapeHtml(positionOpenTime(d))}">${positionOpenTimeStacked(d)}</td>
-          <td class="py-2 px-2.5 text-right font-bold font-mono text-[13px] whitespace-nowrap ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(netProfit)}</td>
+          <td data-label="Sembol" class="py-2 px-2.5 font-bold text-white text-[13px] tracking-wide">${escapeHtml(d.symbol)}</td>
+          <td data-label="Yön" class="py-2 px-2.5">${typeBadge}</td>
+          <td data-label="Hacim" class="py-2 px-2.5 text-white font-semibold text-[13px]">${d.volume}</td>
+          <td data-label="Kapanış fiyatı" class="py-2 px-2.5 text-gray-200 font-mono text-[13px] font-medium">${d.price}</td>
+          <td data-label="Komisyon" class="py-2 px-2.5 text-right font-mono font-bold text-[13px] text-amber-400 whitespace-nowrap">${commissionText}</td>
+          <td data-label="Swap / ücret" class="py-2 px-2.5 text-right font-mono text-xs text-gray-300 whitespace-nowrap">${feeText}</td>
+          <td data-label="Kapanış zamanı" class="py-2 px-2.5 font-mono text-xs text-gray-300 whitespace-nowrap" title="Broker saati: ${escapeHtml(positionOpenTime(d))}">${positionOpenTimeStacked(d)}</td>
+          <td data-label="Net K/Z" class="py-2 px-2.5 text-right font-bold font-mono text-[13px] whitespace-nowrap ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(netProfit)}</td>
         </tr>
       `;
     });

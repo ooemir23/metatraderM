@@ -170,3 +170,32 @@
   .hx-pos-table tbody td:nth-child(13) button { min-height:30px !important; height:30px; }
   .hx-pos-table tbody td:nth-child(13) { padding-top:4px !important; }
 }
+
+/* ===== History (closed trades) as compact cards ===== */
+@media (max-width: 759px) {
+  #closed-positions-container { overflow-x:hidden; }
+  #closed-positions-container table, #closed-positions-container tbody { display:block; width:100%; }
+  #closed-positions-container thead { display:none; }
+  #history-table-body > tr { display:grid !important; grid-template-columns:repeat(3, minmax(0, 1fr)); column-gap:10px; row-gap:2px;
+    margin:0 0 6px; padding:8px 10px; border:1px solid #222833 !important; border-radius:10px; background:#14181f; }
+  #history-table-body > tr > td { display:flex; flex-direction:column; align-items:flex-start; gap:1px; padding:2px 0 !important; min-width:0; text-align:left !important; font-size:12.5px !important; border:0 !important; }
+  #history-table-body > tr > td::before { content:attr(data-label); font-family:'IBM Plex Sans', system-ui, sans-serif; font-size:10px; color:#8f98a8; font-weight:400; line-height:1.2; }
+  #history-table-body > tr > td[colspan] { display:block; grid-column:1 / -1; text-align:center !important; }
+  #history-table-body > tr > td[colspan]::before { content:none; }
+  #history-table-body td:nth-child(2) { order:1; font-size:15px !important; }                   /* symbol */
+  #history-table-body td:nth-child(3) { order:2; }                                                /* side */
+  #history-table-body td:nth-child(9) { order:3; align-items:flex-end; white-space:nowrap; font-size:15px !important; } /* net */
+  #history-table-body td:nth-child(4) { order:4; } #history-table-body td:nth-child(5) { order:5; }
+  #history-table-body td:nth-child(8) { order:6; white-space:nowrap; }                            /* close time */
+  #history-table-body td:nth-child(6) { order:7; } #history-table-body td:nth-child(7) { order:8; }
+  #history-table-body td:nth-child(1) { order:9; grid-column:1 / -1; flex-direction:row; flex-wrap:wrap; align-items:center; gap:4px 8px; }
+  #history-table-body td:nth-child(1)::before { content:none; }
+  #history-table-body td:nth-child(1) button { display:inline-flex; align-items:baseline; gap:6px; }
+  #history-table-body td:nth-child(1) button span { display:inline !important; }
+}
+@media (max-width: 759px) {
+  #history-table-body td:nth-child(8) span.block { display:inline !important; margin-right:4px; }
+  #history-table-body td:nth-child(8) { flex-direction:row; flex-wrap:wrap; align-items:baseline; font-size:11.5px !important; }
+  #history-table-body td:nth-child(8)::before { flex:0 0 100%; }
+  #history-table-body > tr { padding:6px 10px; row-gap:0; }
+}
