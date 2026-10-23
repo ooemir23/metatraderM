@@ -76,7 +76,7 @@ function renderProfile(p) {
     <p class="text-gray-500">Son güncelleme: ${esc(p.learned_at)} · ${s.count} elle açılmış kapalı işlem · net ${esc(s.net)} · %${esc(s.win_rate)} kazanç oranı</p>
     <p>${esc(a.summary)}</p>
     ${syms ? `<div class="overflow-x-auto"><table class="text-[11px] text-gray-300">${syms}</table></div>` : ''}
-    ${list('Mantık / kurallar', a.rules)}${list('Risk alışkanlıkları', a.risk_habits)}${list('Verimli saatler (broker saati)', a.best_hours)}
+    ${list('Mantık / kurallar', a.rules)}${list('Risk alışkanlıkları', a.risk_habits)}
     ${renderBotComparison(p.comparison, a)}
     ${list('Zayıf noktalar', a.weak_points)}${list('Dikkat', a.caveats)}`;
   const names = Object.keys(s.symbols || {});

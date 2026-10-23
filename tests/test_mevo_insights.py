@@ -114,3 +114,20 @@ def test_bridge_trade_contexts_measure_mae_mfe_spread_and_range():
     assert out['spread_pct'] == pytest.approx(0.01) and out['atr_pct'] == pytest.approx(0.1)
     sell = bridge.trade_contexts(mt5, [{**spec, 'side': 'SELL'}], (7, 's'))['11']
     assert sell['mae_pct'] == pytest.approx(0.25) and sell['mfe_pct'] == pytest.approx(0.05)
+
+
+def test_hours_never_reach_the_model_and_old_hour_rules_are_dropped():
+    stats = mod.strip_hours(mod.compute_stats([t(1, 5), t(2, -3)]))
+    assert stats['hours'] == {} and all('open_hour' not in r for r in stats['recent'])
+    rules = ['Ağırlıklı SELL', 'Saat 04:00/16:00 kaçın', 'Gün içi 16.00 sonrası girme']
+    assert mod.no_hour_rules(rules) == ['Ağırlıklı SELL']
+
+
+def test_old_profile_without_version_is_relearned_before_opportunities(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+    m = mod.MevO(Mock(login_id=1, server='s', tick_clock_offset=0), api_key='k', path=str(tmp_path / 'm.json'))
+    m._acct()['profile'] = {'analysis': {}, 'stats': {'symbols': {}}, 'digest': 'x'}      # version missing = 1
+    called = []
+    monkeypatch.setattr(m, 'learn', lambda: called.append(1) or {'success': False})
+    m.opportunities([])
+    assert called == [1]

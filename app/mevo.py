@@ -14,6 +14,7 @@ Kurallar
 import json
 import math
 import os
+import re
 import threading
 import time
 from collections import Counter, defaultdict
@@ -40,6 +41,23 @@ def digest_of(value, model=''):
 
 def _hour(ts):
     return datetime.fromtimestamp(int(ts), timezone.utc).hour   # MT5 deal time = broker sunucu saati
+
+
+PROFILE_VERSION = 2          # 2: işlem saati modele gitmez; eski profiller fırsat istenince yeniden öğrenilir
+_HOUR_TEXT = re.compile(r'\b\d{1,2}[:.]\d{2}\b|\bsaat', re.I)
+
+
+def strip_hours(stats):
+    """Kullanıcı kararı: işlem saati hiçbir yerde kullanılmaz; modele saat verisi gitmez."""
+    stats['hours'] = {}
+    for r in stats.get('recent', []):
+        r.pop('open_hour', None)
+    return stats
+
+
+def no_hour_rules(lines):
+    """Eski profillerde kalmış saat temelli maddeleri modele göndermez."""
+    return [x for x in lines or [] if not _HOUR_TEXT.search(str(x))]
 
 
 def compute_stats(trades):
@@ -619,8 +637,9 @@ class MevO:
     # ---- öğrenme ----
     LEARN_SYSTEM = (
         'MT5 elle işlem istatistiklerinden kullanıcının mantığını çıkar. Yalnız veriye dayan; psikoloji/garanti '
+        'uydurma; işlem saati/gün kuralı YAZMA (kullanıcı saatlerinin değiştiğini söyledi). '
         'uydurma; örnek azsa belirt. Çok kısa Türkçe JSON (her liste en fazla 4 kısa madde): '
-        '{"summary":"en fazla 2 cümle","rules":[],"risk_habits":[],"best_hours":[],"weak_points":[],"caveats":[],"manual_loss_reasons":[],"bot_loss_reasons":[],"lessons":[]}. '
+        '{"summary":"en fazla 2 cümle","rules":[],"risk_habits":[],"weak_points":[],"caveats":[],"manual_loss_reasons":[],"bot_loss_reasons":[],"lessons":[]}. '
         'mevo_results varsa MevO\'nun kendi işlemlerinin sonuçlarından en fazla 4 somut ders yaz (sebep -> yapılacak/yapılmayacak), sayılara dayan; yoksa lessons boş. '
         'loss_analysis varsa manuel ve bot ZARARLARININ sebebini yalnız bu sayılara dayanarak ilgili listeye yaz '
         '(en fazla 4 madde, sebep + zarar tutarı + hangi durumda); kaçınılacak durumları da belirt; yoksa boş bırak.')
@@ -630,7 +649,7 @@ class MevO:
             return {'success': False, 'error': 'MevO başka bir istek işliyor; bekleyin.'}
         try:
             trades = self._manual_trades(self.mt5.get_manual_trades(days=LEARN_DAYS))
-            stats = compute_stats(trades)
+            stats = strip_hours(compute_stats(trades))
             try:
                 bot_trades = self.mt5.get_bot_trades(days=LEARN_DAYS)
                 universe = self._universe(trades, bot_trades)
@@ -658,13 +677,13 @@ class MevO:
                     'causes': [{k: c[k] for k in ('label', 'count', 'loss')} for c in mine['causes'][:5]]}}
             key = digest_of([stats, comparison], self.model)
             old = self._acct().get('profile')
-            if old and old.get('digest') == key:
+            if old and old.get('digest') == key and old.get('version', 1) >= PROFILE_VERSION:
                 return {'success': True, 'cached': True, 'profile': old}   # aynı veri: token harcanmaz
             learned = self._call(self.LEARN_SYSTEM, stats, 'learn', max_tokens=900)
             with self._lock:
                 acct = self._acct()
                 acct['profile'] = {'learned_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
-                                   'days': LEARN_DAYS, 'stats': stats, 'analysis': learned, 'digest': key,
+                                   'days': LEARN_DAYS, 'stats': stats, 'analysis': learned, 'digest': key, 'version': PROFILE_VERSION,
                                    'comparison': comparison}
                 acct['opportunities'] = None
                 self._save()
@@ -679,11 +698,16 @@ class MevO:
         'Yalnız danışmansın. Kullanıcının mantığına (rules) ve sembol verisine göre her sembol için AL/SAT fırsatı '
         'ya da BEKLE ver. confidence model güvenidir, olasılık değil. SL/TP fiyat: AL sl<giriş<tp, SAT tp<giriş<sl; '
         'mesafeleri kullanıcının median_sl_pct/median_tp_pct değerine yakın tut; SL mesafesi guards.min_sl_pct (giriş fiyatının %) değerinden dar olmasın. '
+        'Fırsatta SL/TP\'yi SEN veriyorsun: "SL/TP olmadan işlem yasağı" gibi kurallar BEKLE sebebi değildir, SL/TP ile uygula. '
+        'Saat/gün kuralı kullanma. Kurallar karışık/zayıfsa bile sembol verisinden (trend, aralık) bir yön çıkıyorsa fırsat ver; yalnız gerçekten belirsizse BEKLE. '
         'lessons/avoid maddelerine aykırı ya da spread_pct/atr_pct yüksek, trend_pct yönün tersine güçlüyse BEKLE ver. BEKLE ise sl/tp/matched_rule yazma. '
         'Türkçe, reason en fazla 1 cümle. JSON: {"opportunities":[{"symbol":"","action":"BUY|SELL|WAIT",'
         '"confidence":0,"sl":0,"tp":0,"matched_rule":"","reason":""}]}')
 
     def opportunities(self, symbols, timeframe_minutes=15, store=True):
+        old = self._acct().get('profile')
+        if old and old.get('version', 1) < PROFILE_VERSION and self.api_key:
+            self.learn()          # eski (saat kurallı) profil: bir kez yeniden öğren; başarısızsa eskisiyle devam
         symbols = [s for s in dict.fromkeys(str(s).strip() for s in symbols) if s][:SYMBOLS_MAX]
         if not symbols:
             return {'success': False, 'error': 'Sembol seçilmedi.'}
@@ -738,10 +762,10 @@ class MevO:
             if markets:
                 analysis = profile['analysis']
                 raw = self._call(self.OPP_SYSTEM, {
-                    'rules': analysis.get('rules'), 'habits': analysis.get('risk_habits'),
+                    'rules': no_hour_rules(analysis.get('rules')), 'habits': no_hour_rules(analysis.get('risk_habits')),
                     'symbol_stats': {m['symbol']: profile['stats']['symbols'].get(m['symbol']) for m in markets},
                     'guards': {m['symbol']: guards.get(m['symbol']) for m in markets if guards.get(m['symbol'])},
-                    'lessons': lessons + ai_lessons, 'avoid': (analysis.get('weak_points') or [])[:3],
+                    'lessons': lessons + ai_lessons, 'avoid': no_hour_rules(analysis.get('weak_points'))[:3],
                     'tf': f'M{timeframe_minutes}', 'markets': markets},
                     'opportunities', max_tokens=min(1200, 200 * len(markets) + 100))
                 items = raw.get('opportunities') if isinstance(raw.get('opportunities'), list) else []

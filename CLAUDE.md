@@ -176,3 +176,5 @@ Zarar/kâr sebeplerine broker mumlarından bağlam eklendi (`mt5_bridge.trade_co
 Fırsatlar: SL, MAE sınırının (`min_sl_pct`) altındaysa kod SL'yi genişletir (`apply_sl_guard`, TP aynı; yalnız MevO önerisi), canlı spread/volatilite/açık
 işlem uyarıları eklenir (geçmiş ≥2 zarar varsa engeller), modele guards/lessons/trend/spread gider. `adaptive_policy`: son 5 MevO işlemi kötüyse bot güven
 eşiği %65 → %75'e, net zararda %70'e çıkar (`item['min_confidence']`; bot `max(65, eşik)` kullanır). Üst çubuktaki "MevO AI" düğmesi kaldırıldı (MevO artık ana ekran anahtarında).
+MevO saat temizliği (2026-10-23): modele işlem saati/saat dağılımı gitmez (`strip_hours`), eski profildeki saat/zaman maddeleri prompt'tan süzülür (`no_hour_rules`),
+profil `version` < 2 ise fırsat istenince bir kez yeniden öğrenilir. Prompt: SL/TP'yi MevO verir, "SL/TP olmadan işlem yasağı" BEKLE sebebi değildir.
