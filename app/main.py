@@ -1706,7 +1706,7 @@ def clear_bot_pending_signal(data: Optional[Dict[str, Any]] = None):
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-# MevO: yalnız danışman (manuel MT5 işlemlerinden öğrenir, fırsat sunar; emir açmaz)
+# MevO: manuel MT5 işlemlerinden öğrenir, fırsat sunar; emri kullanıcı sayfadan ya da bot MevO modunda açar
 @app.get("/api/mevo/review")
 def mevo_review():
     """MevO'nun açtırdığı kapalı işlemlerin kâr/zarar sebepleri ve alınan önlemler (broker geçmişi, kod hesabı)."""

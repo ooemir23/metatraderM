@@ -1,15 +1,16 @@
-"""MevO — DeepSeek destekli, DANIŞMAN asistan (2026-10-23 yeniden yazıldı).
+"""MevO — DeepSeek destekli asistan (2026-10-23 yeniden yazıldı, aynı gün genişletildi).
 
-Kullanıcı kararı: MevO sadece orijinal MT5 terminalinden elle açılmış işlemleri (broker geçmişi) inceleyip
-mantığını öğrenir ve bu mantığa uyan fırsatları SUNAR. Kendisi emir açmaz: fırsatı kullanıcı düzenleyip açar (sayfa) ya da kullanıcı botta 'MevO'yu kullan' seçer.
+Kullanıcı kararları: MevO orijinal MT5 terminalinden elle açılmış işlemleri (broker geçmişi) inceleyip mantığını öğrenir,
+bu mantığa uyan fırsatları SUNAR. Kendisi emir açmaz: fırsatı kullanıcı düzenleyip açar (sayfa) ya da kullanıcı botta
+'MevO'yu kullan' seçer (bot MevO fırsatıyla girer; bkz. CLAUDE.md). İşlem saati hiçbir yerde kullanılmaz.
 
 Kurallar
-- Öğrenme verisi yalnız `MT5Client.get_manual_trades` (elle açılan, tamamen kapanmış pozisyonlar) ve bunlardan
-  hesaplanan istatistiklerdir. Panel/bot/web emirleri dahil edilmez.
+- Öğrenme verisi elle açılan, tamamen kapanmış pozisyonlar ve bunlardan hesaplanan istatistiklerdir; kendi (MevO) işlemleri
+  yalnız sonuç analizi/ders için okunur.
 - Sayıları kod hesaplar; DeepSeek yalnız bu sayıları yorumlar ve fırsatları yazar. Veri dışı psikoloji,
   başarı garantisi uydurmaz (prompt'ta yasak).
 - Fırsat seviyeleri doğrulanır: AL için SL < giriş < TP, SAT için TP < giriş < SL değilse BEKLE'ye çevrilir.
-- API anahtarı yalnız ortam değişkeninden (`DEEPSEEK_API_KEY`) okunur; koda/depoya yazılmaz.
+- API anahtarı panelden ya da ortam değişkeninden (`DEEPSEEK_API_KEY`) okunur; koda/depoya yazılmaz.
 """
 import json
 import math
@@ -170,7 +171,7 @@ def enrich_trades(trades, contexts, universe=None):
 
 
 def winner_reference(manual):
-    """Manuel KÂRLI işlemlerden sembol başına referans (saatler, baskın yön, lot, süre, SL mesafesi)."""
+    """Manuel KÂRLI işlemlerden sembol başına referans (baskın yön, lot, süre, SL mesafesi ve broker bağlamı)."""
     ref = {}
     by = defaultdict(list)
     for t in manual:
@@ -184,7 +185,7 @@ def winner_reference(manual):
         sl = [abs(r['open_price'] - r['sl']) / r['open_price'] * 100 for r in rows
               if float(r.get('sl') or 0) > 0 and r['open_price']]
         feat = _winner_features(rows)
-        ref[sym] = {**feat, 'n': len(rows), 'hours': sorted({_hour(r['open_time']) for r in rows}),
+        ref[sym] = {**feat, 'n': len(rows),
                     'side': top if n / len(rows) >= 0.7 else None,
                     'median_lot': median(float(r['volume']) for r in rows),
                     'median_hold_min': median((r['close_time'] - r['open_time']) / 60 for r in rows),
@@ -261,7 +262,7 @@ def _loss_block(trades, ref):
 
 def compare_bot_with_manual(manual, bot_trades):
     """Zararların sebep analizi: hem manuel ZARARLAR hem bot zararları, manuel KÂRLI işlemlerin referansıyla
-    karşılaştırılır (saat, yön, lot, tutma süresi, SL)."""
+    karşılaştırılır (yön, lot, tutma süresi, SL ve broker bağlamı)."""
     ref = winner_reference(manual)
     bot_block, manual_block = _loss_block(bot_trades, ref), _loss_block(manual, ref)
     return {
@@ -706,7 +707,7 @@ class MevO:
 
     def opportunities(self, symbols, timeframe_minutes=15, store=True):
         old = self._acct().get('profile')
-        if old and old.get('version', 1) < PROFILE_VERSION and self.api_key:
+        if store and old and old.get('version', 1) < PROFILE_VERSION and self.api_key:
             self.learn()          # eski (saat kurallı) profil: bir kez yeniden öğren; başarısızsa eskisiyle devam
         symbols = [s for s in dict.fromkeys(str(s).strip() for s in symbols) if s][:SYMBOLS_MAX]
         if not symbols:
@@ -719,7 +720,7 @@ class MevO:
                 return {'success': False, 'error': 'Önce "Manuel işlemlerimi öğren" düğmesine bas.'}
             mine = self.review() or {}
             guards, lessons = mine.get('guards') or {}, [l['text'] for l in (mine.get('lessons') or [])][:4]
-            ai_lessons = [str(x)[:160] for x in (profile.get('analysis') or {}).get('lessons') or []][:4]
+            ai_lessons = [str(x)[:160] for x in no_hour_rules((profile.get('analysis') or {}).get('lessons'))][:4]
             policy = mine.get('policy') or {'min_confidence': 65}
             open_now = None
             try:
@@ -772,21 +773,20 @@ class MevO:
                 fresh = {i['symbol']: i for i in items if isinstance(i, dict) and i.get('symbol') in ticks}
                 for m in markets:
                     # Modelin cevap vermediği sembol de önbelleğe BEKLE olarak girer; boşuna tekrar sorulmaz.
-                    raws[m['symbol']] = fresh.get(m['symbol'], {'symbol': m['symbol'], 'action': 'WAIT',
-                                                                 'reason': 'Model bu sembol için yanıt vermedi.'})
-                    cache[keys[m['symbol']]] = raws[m['symbol']]
+                    if m['symbol'] in fresh:
+                        raws[m['symbol']] = cache[keys[m['symbol']]] = fresh[m['symbol']]
+                    else:   # yanıtsız sembol geçici sayılır: BEKLE gösterilir ama önbelleğe girmez (mum boyunca takılı kalmasın)
+                        raws[m['symbol']] = {'symbol': m['symbol'], 'action': 'WAIT', 'reason': 'Model bu sembol için yanıt vermedi; tekrar denenecek.'}
                 used_model = True
             while len(cache) > 40:
                 cache.pop(next(iter(cache)))
             result = [validate_opportunity(raws[sym], ticks[sym]) for sym in symbols if sym in raws]
-            hour = (datetime.now(timezone.utc).hour
-                    + int(getattr(self.mt5, 'tick_clock_offset', 0) or 0) // 3600) % 24     # broker sunucu saati
             own_list = (self.review() or {}).get('blocks', [])      # MevO'nun kendi geçmiş sonuçlarından önlemler
             for r in result:
                 r['min_confidence'] = policy['min_confidence']
                 apply_sl_guard(r, guards.get(r['symbol']))
                 sl_pct = abs(r['entry'] - r['sl']) / r['entry'] * 100 if r.get('entry') else None
-                r['warnings'] = trade_warnings(r, profile.get('comparison'), hour, sl_pct, own_list, live.get(r['symbol']))
+                r['warnings'] = trade_warnings(r, profile.get('comparison'), None, sl_pct, own_list, live.get(r['symbol']))
             result.sort(key=lambda r: (r['action'] == 'WAIT', -r['confidence']))
             payload = {'created_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
                        'timeframe': f'M{timeframe_minutes}', 'items': result, 'used_model': used_model,

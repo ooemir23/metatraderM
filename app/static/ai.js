@@ -1,4 +1,4 @@
-// MevO: yalnız danışman. Emir açma/otopilot yoktur; /api/mevo/* uçlarını kullanır.
+// MevO sayfası: /api/mevo/* uçlarını kullanır. Emri kullanıcı onayıyla açar (otopilot yoktur).
 const $ = id => document.getElementById(id);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -55,7 +55,7 @@ function renderBotComparison(c, a) {
   const m = c.manual || {};
   return `<div class="border border-rose-500/30 rounded-xl p-3 bg-rose-500/5 space-y-3">
     <div class="font-semibold text-white">Zarar analizi: hangi durumda zarar edilmiş?</div>
-    <p class="text-gray-400">Sebepler, kârlı manuel işlemlerinin (saat, yön, lot, süre, SL) referansıyla karşılaştırılarak koddan hesaplandı. Bir zarar birden fazla sebebe sayılabilir; bunlar bağlantıdır, kesin neden kanıtı değildir.</p>
+    <p class="text-gray-400">Sebepler, kârlı manuel işlemlerinin (yön, lot, süre, SL) referansıyla karşılaştırılarak koddan hesaplandı. Bir zarar birden fazla sebebe sayılabilir; bunlar bağlantıdır, kesin neden kanıtı değildir.</p>
     <div><b class="text-white">Manuel (orijinal MT5):</b> ${m.count || 0} işlem · ${m.wins || 0} kârlı / ${m.losses || 0} zararlı · net ${esc(m.net)} · zarar toplamı ${esc(m.loss_total)}
       ${causeTable(m.causes)}${list('MevO yorumu', a && a.manual_loss_reasons)}</div>
     <div><b class="text-white">Bot:</b> ${c.bot_count} işlem · ${c.bot_wins} kârlı / ${c.bot_losses} zararlı · net ${esc(c.bot_net)} · zarar toplamı ${esc(c.bot_loss_total)}
@@ -227,7 +227,7 @@ function renderReview(r) {
     ${growthBox(r)}
     ${(r.causes || []).length ? `<div><div class="font-semibold text-white mb-1">Zararların ortak sebepleri</div>${causeTable(r.causes)}</div>` : ''}
     <div class="space-y-2">${rows}</div>
-    <p class="text-[11px] text-gray-500">Sebepler kârlı manuel işlemlerinin saat/yön/lot/süre/SL referansıyla ve kapanış nedeniyle (SL/TP/elle) koddan karşılaştırılır; bağlantıdır, kesin neden değildir.</p>`;
+    <p class="text-[11px] text-gray-500">Sebepler kârlı manuel işlemlerinin yön/lot/süre/SL ve broker bağlamı (MAE, spread, volatilite) referansıyla ve kapanış nedeniyle (SL/TP/elle) koddan karşılaştırılır; bağlantıdır, kesin neden değildir.</p>`;
 }
 
 async function loadReview() {

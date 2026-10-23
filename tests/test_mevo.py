@@ -229,3 +229,14 @@ def test_review_uses_mevo_trades_and_caches(tmp_path):
     m.bot_position_ids = lambda: [11, 12]
     assert m.review()['count'] == 1 and m.review()['losses'] == 1
     mt5.get_mevo_trades.assert_called_once_with(days=mod.LEARN_DAYS, bot_position_ids=[11, 12])   # önbellek: tek okuma
+
+
+def test_symbol_the_model_skipped_is_not_cached_for_the_whole_candle(tmp_path, monkeypatch):
+    m, mt5 = make(tmp_path)
+    monkeypatch.setattr(mod, 'MIN_INTERVAL', 0)
+    post = Mock(side_effect=[reply('{"summary":"x","rules":["r"]}'), reply('{"opportunities":[]}'),
+                             reply('{"opportunities":[{"symbol":"XAUUSD","action":"BUY","confidence":70,"sl":1990,"tp":2020,"reason":"ok"}]}')])
+    monkeypatch.setattr(mod.requests, 'post', post)
+    assert m.learn()['success']
+    assert m.opportunities(['XAUUSD'])['items'][0]['action'] == 'WAIT'          # model gave no answer
+    assert m.opportunities(['XAUUSD'])['items'][0]['action'] == 'BUY'           # asked again on the same candle
