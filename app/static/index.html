@@ -70,16 +70,18 @@
         </span>
         <div id="hx-balance" class="hx-balance">
           <button type="button" id="hx-balance-toggle" class="hx-btn hx-balance-btn" aria-haspopup="true" aria-expanded="false" aria-controls="hx-balance-menu" title="Hesap özeti: üzerine gelince açılır, tıklayınca sabitlenir">
-            <i class="ph-bold ph-wallet"></i><span>Varlık</span><strong id="hx-balance-equity">—</strong><i class="ph-bold ph-caret-down"></i>
+            <i class="ph-bold ph-wallet"></i><span id="hx-balance-favs" class="hx-balance-favs"></span><i class="ph-bold ph-caret-down"></i>
           </button>
           <div id="hx-balance-menu" class="hx-balance-menu" hidden>
+            <div class="hx-balance-bar"><span>Yıldızladıkların üst çubukta görünür</span>
+              <button type="button" id="hx-balance-hide" class="hx-balance-eye" aria-pressed="false" title="Tutarları gizle / göster" aria-label="Tutarları gizle / göster"><i class="ph-bold ph-eye"></i></button></div>
       <div class="hx-metrics" aria-label="Hesap özeti">
-        <div class="hx-metric"><span>Bakiye</span><span id="acc-balance">—</span></div>
-        <div class="hx-metric"><span>Varlık</span><span id="acc-equity">—</span></div>
-        <div class="hx-metric"><span>Açık K/Z</span><span id="acc-profit">—</span></div>
-        <div class="hx-metric"><span>Kullanılan teminat</span><span id="acc-margin">—</span></div>
-        <div class="hx-metric"><span>Serbest teminat</span><span id="acc-margin-free">—</span></div>
-        <div class="hx-metric"><span>Teminat seviyesi</span><span id="acc-margin-level">—</span></div>
+        <div class="hx-metric" data-fav="balance"><span>Bakiye</span><span id="acc-balance">—</span></div>
+        <div class="hx-metric" data-fav="equity"><span>Varlık</span><span id="acc-equity">—</span></div>
+        <div class="hx-metric" data-fav="profit"><span>Açık K/Z</span><span id="acc-profit">—</span></div>
+        <div class="hx-metric" data-fav="margin"><span>Kullanılan teminat</span><span id="acc-margin">—</span></div>
+        <div class="hx-metric" data-fav="free"><span>Serbest teminat</span><span id="acc-margin-free">—</span></div>
+        <div class="hx-metric" data-fav="level"><span>Teminat seviyesi</span><span id="acc-margin-level">—</span></div>
       </div>
           </div>
         </div>
@@ -1328,7 +1330,7 @@
   <script src="/static/main-view.js?v=2"></script>
   <script src="/static/workspace.js?v=terminal-1"></script>
   <script src="/static/header-autohide.js?v=1"></script>
-  <script src="/static/balance-menu.js?v=1"></script>
+  <script src="/static/balance-menu.js?v=2"></script>
   <script src="/static/account-menu.js?v=1"></script>
 </body>
 </html>

@@ -41,6 +41,7 @@ def test_opportunity_levels_are_validated_against_the_broker_price(item, ok):
 def make(tmp_path, post=None, trades=None):
     mt5 = Mock(login_id=7, server='demo', tick_clock_offset=0)
     mt5.get_bot_trades.return_value = []
+    mt5.get_mevo_trades.return_value = []
     mt5.get_manual_trades.return_value = trades if trades is not None else [trade(i, net=5) for i in range(6)]
     mt5.get_symbol_price.return_value = {'bid': 2000.0, 'ask': 2000.4}
     mt5.get_rates.return_value = [dict(time=i * 900, open=2000, high=2001, low=1999, close=2000) for i in range(60)]
@@ -194,3 +195,36 @@ def test_manual_losing_trades_are_analysed_too():
     assert {'hour', 'held_long', 'no_sl', 'side'} <= set(keys) and keys['hour']['loss'] == -40.0
     w = mod.trade_warnings({'symbol': 'XAUUSD', 'action': 'BUY'}, c, 22, 0.5)
     assert w and 'manuel' in w[0]          # uyarı manuel zararlardan da beslenir
+
+
+def test_mevo_review_explains_wins_and_losses_and_blocks_after_losing_streak():
+    manual = [trade(i, net=10, hour=10, hold=600, sl=1990) for i in range(5)]       # kârlı referans: BUY, saat 10
+    ref = mod.compare_bot_with_manual(manual, [])['reference']
+    own = [trade(20, side='SELL', net=-5, hour=3, hold=60, sl=1999), trade(21, side='SELL', net=-6, hour=3),
+           trade(22, side='SELL', net=-7, hour=3), trade(23, side='BUY', net=8, hour=10)]
+    own[0]['close_reason'] = 4
+    rv = mod.review_trades(own, ref)
+    assert (rv['count'], rv['wins'], rv['losses'], rv['net']) == (4, 1, 3, -10.0)
+    by_id = {t['position_id']: t for t in rv['trades']}
+    assert by_id[20]['why'][0] == 'SL tetiklendi' and any('saat' in w for w in by_id[20]['why'])
+    assert any('yön' in w for w in by_id[20]['why'])                                    # SAT, referans BUY
+    assert any('saat' in w and 'uyumlu' in w for w in by_id[23]['why'])
+    assert [(b['symbol'], b['side']) for b in rv['blocks']] == [('XAUUSD', 'SELL')]
+    assert mod.LOSS_MARK in rv['blocks'][0]['text']                                     # bot girişini de engeller
+
+
+def test_own_loss_streak_warns_only_the_same_symbol_and_side():
+    blocks = mod.own_blocks([trade(i, side='SELL', net=-1) for i in range(3)])
+    sell = mod.trade_warnings({'symbol': 'XAUUSD', 'action': 'SELL'}, None, 10, None, blocks)
+    buy = mod.trade_warnings({'symbol': 'XAUUSD', 'action': 'BUY'}, None, 10, None, blocks)
+    other = mod.trade_warnings({'symbol': 'EURUSD', 'action': 'SELL'}, None, 10, None, blocks)
+    assert mod.blocking_warnings(sell) and not buy and not other
+    assert not mod.own_blocks([trade(1, net=-1), trade(2, net=-1), trade(3, net=4)])    # seri kırıldı
+
+
+def test_review_uses_mevo_trades_and_caches(tmp_path):
+    m, mt5 = make(tmp_path)
+    mt5.get_mevo_trades.return_value = [trade(1, net=-3)]
+    m.bot_position_ids = lambda: [11, 12]
+    assert m.review()['count'] == 1 and m.review()['losses'] == 1
+    mt5.get_mevo_trades.assert_called_once_with(days=mod.LEARN_DAYS, bot_position_ids=[11, 12])   # önbellek: tek okuma

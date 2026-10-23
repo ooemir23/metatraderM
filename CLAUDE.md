@@ -136,3 +136,12 @@ Ana ekran anahtarı: Grafik | İşlemler | Bot | MevO (`main-view.js`; eski `wor
 Açık pozisyonlar tablosunda "Açılış saati" (MT5 sunucu saati) vardır; Detay penceresi açanı (bot/MevO/web/MT5/EA) ve botta giriş türü +
 stratejiyi gösterir (`positionOrigin`; bot `signal_history` kayıtlarına `entry_mode`/`strategy` yazılır). Bakiye/varlık/K-Z/teminat
 özeti üst çubukta "Varlık" düğmesinin açılır kutusundadır (üzerine gelince açılır, tıklayınca sabitlenir, dışarı tıklayınca kapanır).
+
+## MevO sonuç analizi ve sade sayfa (2026-10-23, kullanıcı isteği)
+MevO kendi açtırdığı işlemlerin neden kâr/zarar ettiğini analiz eder (`mevo.review_trades`, `/api/mevo/review`): MevO sayfasından
+açılan ("MevO" yorumlu) ve botta `entry_mode='MEVO'` ile açılan kapalı pozisyonlar (`mt5_bridge.mevo_lifetimes`, bot kayıtlarındaki
+pozisyon numaraları). Sebepler kodla, kârlı manuel referansla (saat/yön/lot/süre/SL) ve kapanış nedeniyle (SL/TP/elle) bulunur; model çağrılmaz.
+Önlem (`own_blocks`): aynı sembol+yönde art arda 3 MevO zararı ya da bir sembolde son 5 işlemin kazanç oranı <%30 ve net zarar ise fırsat
+kartında uyarı çıkar ve bot MevO girişi o sembol/yönde yapmaz (uyarı "zarar edildi" ifadesi taşır → `blocking_warnings`). Seri kırılınca kalkar.
+MevO sayfası: tek düğmeyle "Fırsatları getir" (profil yoksa önce kendisi öğrenir) → "MevO fırsatlarının sonucu" → kapalı "ne öğrendi" bölümü.
+Üst çubuk hesap kutusu: her rakamın yıldızı (favoriler üst çubukta görünür), göz düğmesi tutarları bulanıklaştırır (tarayıcıda saklanır).

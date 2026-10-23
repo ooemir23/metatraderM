@@ -1489,6 +1489,15 @@ def bot_lifetimes(mt5, days, tick_offset, account_scope):
                              lambda d: int(getattr(d, 'magic', 0) or 0) == HMA_MAGIC)
 
 
+def mevo_lifetimes(mt5, days, tick_offset, account_scope, bot_position_ids=()):
+    """Closed positions MevO caused: opened from the MevO page (opening-deal comment starts with "MevO") or by the
+    bot in MevO entry mode (position ids recorded in the bot signal history). Same row shape as manual_lifetimes."""
+    ids = {int(i) for i in bot_position_ids or ()}
+    return _closed_lifetimes(mt5, days, tick_offset, account_scope,
+                             lambda d: str(getattr(d, 'comment', '') or '').lower().startswith('mevo')
+                             or int(getattr(d, 'position_id', 0) or 0) in ids)
+
+
 def _closed_lifetimes(mt5, days, tick_offset, account_scope, opened_by):
     _account(mt5, *account_scope)
     end = datetime.now(timezone.utc) + timedelta(seconds=int(tick_offset))

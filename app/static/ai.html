@@ -51,41 +51,53 @@
   </header>
 
   <main class="flex-1 max-w-[1100px] ui-scale-width w-full mx-auto p-3 sm:p-6 flex flex-col gap-4">
-    <p class="text-xs text-gray-400 leading-relaxed">MevO orijinal MT5 terminalinden elle açtığın kapalı işlemleri (kârlı ve zararlı) inceler, mantığını ve zarar sebeplerini öğrenir, buna uyan fırsatları sunar. Fırsatı düzenleyip kendin açarsın; istersen botta "MevO'yu kullan" ile bot da açar. Model güveni kazanma olasılığı değildir.</p>
+    <div id="mevo-strip" class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-400">
+      <span id="mevo-strip-key"></span><span id="mevo-strip-learn"></span><span id="mevo-usage"></span>
+    </div>
     <div id="mevo-alert" class="hidden text-xs rounded-lg border px-3 py-2"></div>
 
+    <!-- 1. Fırsatlar: tek düğme (gerekirse önce kendisi öğrenir) -->
     <section class="bg-[#121620] border border-gray-800 rounded-2xl p-4">
-      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <h2 class="font-bold text-white text-sm flex items-center gap-2"><i class="ph-bold ph-graduation-cap text-amber-300"></i><span>1. Manuel işlemlerimin mantığı</span></h2>
-        <button id="mevo-learn-btn" onclick="mevoLearn()" class="px-3 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold text-xs flex items-center gap-1.5">
-          <i class="ph-bold ph-sparkle text-amber-300"></i><span>Manuel işlemlerimi öğren</span>
-        </button>
-      </div>
-      <div id="mevo-profile" class="text-xs text-gray-300 space-y-3"><p class="text-gray-500">Henüz öğrenilmedi.</p></div>
-    </section>
-
-    <section class="bg-[#121620] border border-gray-800 rounded-2xl p-4">
-      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <h2 class="font-bold text-white text-sm flex items-center gap-2"><i class="ph-bold ph-target text-cyan-400"></i><span>2. Fırsatlar</span></h2>
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h2 class="font-bold text-white text-base flex items-center gap-2"><i class="ph-bold ph-target text-cyan-400"></i><span>Fırsatlar</span></h2>
         <div class="flex flex-wrap items-center gap-2">
-          <select id="mevo-tf" aria-label="Zaman dilimi" class="px-2 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-200 text-xs">
+          <select id="mevo-tf" aria-label="Zaman dilimi" class="px-2 py-2 rounded-lg bg-gray-800 border border-gray-700 text-gray-200 text-xs">
             <option>M5</option><option selected>M15</option><option>M30</option><option>H1</option><option>H4</option>
           </select>
-          <button id="mevo-opp-btn" onclick="mevoOpportunities()" class="px-3 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-cyan-400 border border-cyan-500/30 font-semibold text-xs flex items-center gap-1.5">
-            <i class="ph-bold ph-magnifying-glass"></i><span>Fırsatları getir</span>
+          <button id="mevo-opp-btn" onclick="mevoOpportunities()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold text-xs flex items-center gap-1.5">
+            <i class="ph-bold ph-sparkle text-amber-300"></i><span>Fırsatları getir</span>
           </button>
         </div>
       </div>
-      <p class="text-[11px] text-gray-400 mb-1">Semboller (en fazla 6)</p>
-      <div class="flex flex-wrap items-center gap-2 mb-3">
+      <div class="flex flex-wrap items-center gap-2 mt-3 mb-3">
         <div id="mevo-chips" class="flex flex-wrap items-center gap-2"></div>
         <button id="market-open" type="button" class="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 text-xs font-semibold flex items-center gap-1.5" disabled>
           <i class="ph-bold ph-plus"></i><span>Sembol ekle</span></button>
       </div>
-      <div id="mevo-opps" class="grid gap-3 sm:grid-cols-2"><p class="text-xs text-gray-500">Önce mantığı öğren, sonra fırsatları getir.</p></div>
+      <div id="mevo-opps" class="grid gap-3 sm:grid-cols-2"><p class="text-xs text-gray-500">Sembol seç, “Fırsatları getir”e bas. MevO gerekirse önce manuel işlemlerini kendisi öğrenir.</p></div>
     </section>
 
-    <p id="mevo-usage" class="text-[11px] text-gray-500"></p>
+    <!-- 2. MevO'nun kendi sonuçları: neden kazandı / kaybetti, ne önlem alındı -->
+    <section class="bg-[#121620] border border-gray-800 rounded-2xl p-4">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <h2 class="font-bold text-white text-base flex items-center gap-2"><i class="ph-bold ph-chart-line-up text-emerald-400"></i><span>MevO fırsatlarının sonucu</span></h2>
+        <button id="mevo-review-btn" onclick="mevoReview()" class="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 text-xs font-semibold flex items-center gap-1.5"><i class="ph-bold ph-arrows-clockwise"></i><span>Yenile</span></button>
+      </div>
+      <div id="mevo-review" class="text-xs text-gray-300 space-y-3"><p class="text-gray-500">Yükleniyor…</p></div>
+    </section>
+
+    <!-- 3. Öğrenilenler: kapalı gelir -->
+    <details class="bg-[#121620] border border-gray-800 rounded-2xl p-4">
+      <summary class="cursor-pointer flex flex-wrap items-center justify-between gap-2 list-none">
+        <span class="font-bold text-white text-base flex items-center gap-2"><i class="ph-bold ph-graduation-cap text-amber-300"></i><span>MevO manuel işlemlerimden ne öğrendi?</span></span>
+        <span id="mevo-profile-hint" class="text-[11px] text-gray-500">Henüz öğrenilmedi</span>
+      </summary>
+      <div class="flex justify-end mt-3">
+        <button id="mevo-learn-btn" onclick="mevoLearn()" class="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-purple-300 border border-purple-500/30 text-xs font-semibold flex items-center gap-1.5">
+          <i class="ph-bold ph-sparkle"></i><span>Manuel işlemlerimi yeniden öğren</span></button>
+      </div>
+      <div id="mevo-profile" class="text-xs text-gray-300 space-y-3 mt-3"><p class="text-gray-500">Henüz öğrenilmedi.</p></div>
+    </details>
   </main>
 
   <dialog id="market-dialog" class="market-dialog" aria-labelledby="market-dialog-title" aria-describedby="market-dialog-description">

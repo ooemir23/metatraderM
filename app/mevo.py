@@ -186,24 +186,111 @@ def compare_bot_with_manual(manual, bot_trades):
     }
 
 
-def trade_warnings(item, comparison, broker_hour, entry_sl_pct):
+CLOSE_REASONS = {0: 'elle kapatıldı (masaüstü)', 1: 'elle kapatıldı (mobil)', 2: 'elle kapatıldı (web)',
+                 3: 'uzman/otomatik kapandı', 4: 'SL tetiklendi', 5: 'TP\'ye ulaştı', 6: 'stop out'}
+STREAK_BLOCK = 3             # aynı sembol + yönde art arda bu kadar MevO zararı = yeni giriş uyarısı/engeli
+POOR_WINDOW, POOR_MAX_WIN_RATE = 5, 0.3
+
+
+def explain_trade(t, ref):
+    """MevO'nun açtırdığı bir kapalı işlemin kâr/zarar sebepleri (yalnız koddan, kanıtlanabilir karşılaştırmalar).
+    Zarar: manuel kârlı referanstan farklar + nasıl kapandığı. Kâr: referansla uyum + nasıl kapandığı."""
+    net = float(t['net'])
+    reason = CLOSE_REASONS.get(int(t.get('close_reason', -1)), 'kapanış nedeni bilinmiyor')
+    why = [reason[0].upper() + reason[1:]]
+    r = ref.get(t['symbol'])
+    if net < 0:
+        why += [CAUSE_LABELS[k] for k in loss_causes(t, ref) if k != 'other']
+        if not r:
+            pass
+        elif len(why) == 1:
+            why.append(CAUSE_LABELS['other'])
+    elif net > 0:
+        if r:
+            agree = []
+            if _hour(t['open_time']) in r['hours']:
+                agree.append('açılış saati manuel kârlı işlemlerinle uyumlu')
+            if r['side'] and t['side'] == r['side']:
+                agree.append('yön manuel kârlı işlemlerinle uyumlu')
+            why += agree or ['Manuel referansla belirgin uyum yok (şans payı olabilir)']
+        else:
+            why.append('Karşılaştırılacak manuel kârlı referans yok')
+    sl, tp = float(t.get('sl') or 0), float(t.get('tp') or 0)
+    rr = round(abs(tp - t['open_price']) / abs(t['open_price'] - sl), 2) if sl > 0 and tp > 0 and sl != t['open_price'] else None
+    return {'position_id': t['position_id'], 'symbol': t['symbol'], 'side': t['side'], 'net': round(net, 2),
+            'volume': t['volume'], 'open_time': t['open_time'], 'close_time': t['close_time'],
+            'hold_min': round((t['close_time'] - t['open_time']) / 60, 1), 'rr': rr, 'why': why}
+
+
+def own_blocks(trades):
+    """MevO'nun kendi geçmiş sonuçlarından önlem: aynı sembol+yönde art arda zarar ya da sembolde kötü son sonuçlar."""
+    rows = [t for t in trades if float(t.get('volume') or 0) > 0]
+    rows.sort(key=lambda t: t['close_time'])
+    blocks = []
+    by_side = defaultdict(list)
+    by_sym = defaultdict(list)
+    for t in rows:
+        by_side[(t['symbol'], t['side'])].append(t)
+        by_sym[t['symbol']].append(t)
+    for (sym, side), g in by_side.items():
+        tail = g[-STREAK_BLOCK:]
+        if len(tail) == STREAK_BLOCK and all(float(t['net']) < 0 for t in tail):
+            loss = round(sum(float(t['net']) for t in tail), 2)
+            blocks.append({'symbol': sym, 'side': side, 'loss': loss,
+                           'text': f"MevO'nun {sym} {'AL' if side == 'BUY' else 'SAT'} işlemlerinin son {STREAK_BLOCK}'ü art arda zararla kapandı "
+                                   f"(toplam {loss}); bu yönde yeni girişte zarar edildi."})
+    for sym, g in by_sym.items():
+        tail = g[-POOR_WINDOW:]
+        if len(tail) == POOR_WINDOW and sum(float(t['net']) > 0 for t in tail) / POOR_WINDOW < POOR_MAX_WIN_RATE \
+                and sum(float(t['net']) for t in tail) < 0:
+            loss = round(sum(float(t['net']) for t in tail), 2)
+            blocks.append({'symbol': sym, 'side': None, 'loss': loss,
+                           'text': f"MevO'nun {sym} son {POOR_WINDOW} işleminin kazanç oranı %{round(sum(float(t['net']) > 0 for t in tail) / POOR_WINDOW * 100)}"
+                                   f" (toplam {loss}); bu sembolde zarar edildi."})
+    return blocks
+
+
+def review_trades(trades, ref):
+    """MevO sonuç raporu: kazanç/zarar özeti, son işlemler (sebepleriyle), sembol+yön kırılımı, alınan önlemler."""
+    rows = [t for t in trades if float(t.get('volume') or 0) > 0]
+    rows.sort(key=lambda t: t['close_time'], reverse=True)
+    wins = [t for t in rows if float(t['net']) > 0]
+    losses = [t for t in rows if float(t['net']) < 0]
+    groups = defaultdict(lambda: {'count': 0, 'wins': 0, 'net': 0.0})
+    for t in rows:
+        g = groups[(t['symbol'], t['side'])]
+        g['count'] += 1; g['wins'] += float(t['net']) > 0; g['net'] = round(g['net'] + float(t['net']), 2)
+    block = _loss_block(rows, ref)
+    return {'count': len(rows), 'wins': len(wins), 'losses': len(losses),
+            'win_rate': round(len(wins) / len(rows) * 100, 1) if rows else None,
+            'net': round(sum(float(t['net']) for t in rows), 2), 'loss_total': block['loss_total'],
+            'causes': block['causes'],
+            'groups': [{'symbol': k[0], 'side': k[1], **v} for k, v in sorted(groups.items(), key=lambda kv: kv[1]['net'])],
+            'trades': [explain_trade(t, ref) for t in rows[:20]],
+            'blocks': own_blocks(rows)}
+
+
+def trade_warnings(item, comparison, broker_hour, entry_sl_pct, own=None):
     """Fırsat için işlem uyarıları: tamamen koddur, token harcamaz. Manuel kârlı referanstan sapmaları ve
     botun geçmişte bu sebeplerle zarar edip etmediğini söyler."""
-    if item.get('action') not in ('BUY', 'SELL') or not comparison:
+    if item.get('action') not in ('BUY', 'SELL'):
         return []
+    own = [b['text'] for b in (own or []) if b['symbol'] == item['symbol'] and b['side'] in (None, item['action'])]
+    if not comparison:
+        return own
     ref = comparison['reference'].get(item['symbol'])
     seen = {}
     for source, label in ((comparison.get('manual_by_symbol', {}), 'manuel'), (comparison['by_symbol'], 'bot')):
         for key, c in source.get(item['symbol'], {}).items():
             row = seen.setdefault(key, {'count': 0, 'loss': 0.0, 'who': []})
             row['count'] += c['count']; row['loss'] = round(row['loss'] + c['loss'], 2); row['who'].append(label)
-    out = []
+    out = list(own)
 
     def lost(key):
         c = seen.get(key)
         return f" Geçmişte ({'+'.join(c['who'])}) bu sebeple {c['count']} kez toplam {c['loss']} zarar edildi." if c else ''
     if not ref:
-        return [f"{item['symbol']} için manuel kârlı işlem referansı yetersiz; karşılaştırma yapılamadı."]
+        return own + [f"{item['symbol']} için manuel kârlı işlem referansı yetersiz; karşılaştırma yapılamadı."]
     if broker_hour not in ref['hours']:
         out.append(f"Şu an broker saati {broker_hour:02d}:00; manuel kârlı işlemlerin bu saatte açılmadı." + lost('hour'))
     if ref['side'] and item['action'] != ref['side']:
@@ -256,6 +343,7 @@ class MevO:
         self.mt5 = mt5_client
         self._explicit_key = api_key
         self._key_path = state_path('mevo_key.json') if path is None else f'{path}.key'
+        self.bot_position_ids = None      # main.py: bot MevO girişlerinin pozisyon numaraları
         self.model = os.getenv('DEEPSEEK_MODEL', DEFAULT_MODEL)
         self.daily_call_limit = max(1, int(os.getenv('MEVO_DAILY_CALL_LIMIT', '100')))
         self._path = path or state_path('mevo.json')
@@ -470,9 +558,10 @@ class MevO:
             result = [validate_opportunity(raws[sym], ticks[sym]) for sym in symbols if sym in raws]
             hour = (datetime.now(timezone.utc).hour
                     + int(getattr(self.mt5, 'tick_clock_offset', 0) or 0) // 3600) % 24     # broker sunucu saati
+            own_list = (self.review() or {}).get('blocks', [])      # MevO'nun kendi geçmiş sonuçlarından önlemler
             for r in result:
                 sl_pct = abs(r['entry'] - r['sl']) / r['entry'] * 100 if r.get('entry') else None
-                r['warnings'] = trade_warnings(r, profile.get('comparison'), hour, sl_pct)
+                r['warnings'] = trade_warnings(r, profile.get('comparison'), hour, sl_pct, own_list)
             result.sort(key=lambda r: (r['action'] == 'WAIT', -r['confidence']))
             payload = {'created_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
                        'timeframe': f'M{timeframe_minutes}', 'items': result, 'used_model': used_model}
@@ -485,6 +574,23 @@ class MevO:
             return {'success': False, 'error': str(exc)}
         finally:
             self._busy.release()
+
+    def review(self, force=False):
+        """MevO'nun açtırdığı işlemlerin sonuç raporu (60 sn önbellek; okunamazsa None)."""
+        now = time.monotonic()
+        cached = getattr(self, '_review_cache', None)
+        if cached and not force and now - cached[0] < 60:
+            return cached[1]
+        try:
+            ids = self.bot_position_ids() if callable(self.bot_position_ids) else ()
+            trades = self.mt5.get_mevo_trades(days=LEARN_DAYS, bot_position_ids=ids)
+            profile = self._acct().get('profile') or {}
+            ref = (profile.get('comparison') or {}).get('reference') or {}
+            data = review_trades(trades, ref)
+        except Exception:
+            return cached[1] if cached else None
+        self._review_cache = (now, data)
+        return data
 
     def signal_for(self, symbol, timeframe_minutes):
         """Bot için tek sembol fırsatı (sayfadaki listeyi değiştirmez). Aynı kapanmış mum önbellekten gelir."""

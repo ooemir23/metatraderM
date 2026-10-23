@@ -1191,6 +1191,19 @@ class MT5Client:
             except Exception as exc:
                 raise MT5DataError("Bot işlem geçmişi okunamadı.") from exc
 
+    def get_mevo_trades(self, days: int = 90, bot_position_ids=()) -> List[Dict[str, Any]]:
+        """Closed positions opened because of MevO (MevO page orders + bot MevO-mode orders), broker history."""
+        with self._lock:
+            if not self.ensure_connected():
+                raise MT5DataError("MT5 bağlı değil; MevO işlemleri okunamadı.")
+            try:
+                return self._bridge('mevo_lifetimes', int(days), int(self.tick_clock_offset), self._selected_account(),
+                                    sorted(int(i) for i in bot_position_ids or ()))
+            except MT5DataError:
+                raise
+            except Exception as exc:
+                raise MT5DataError("MevO işlem geçmişi okunamadı.") from exc
+
     def get_manual_trades(self, days: int = 90) -> List[Dict[str, Any]]:
         """Closed positions opened by hand in the original MT5 terminal (broker history)."""
         with self._lock:

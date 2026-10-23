@@ -732,6 +732,8 @@ def bot_manual_style(symbol, timeframe_minutes, candle_time, days=90):
 
 bot.manual_style_provider = bot_manual_style
 bot.mevo_provider = lambda symbol, minutes: mevo.signal_for(symbol, minutes)
+mevo.bot_position_ids = lambda: [r['ticket'] for r in list(bot.signal_history)
+                                 if r.get('entry_mode') == 'MEVO' and r.get('success') and r.get('ticket')]
 
 
 @app.get('/api/research/history')
@@ -1700,6 +1702,15 @@ def clear_bot_pending_signal(data: Optional[Dict[str, Any]] = None):
 
 
 # MevO: yalnız danışman (manuel MT5 işlemlerinden öğrenir, fırsat sunar; emir açmaz)
+@app.get("/api/mevo/review")
+def mevo_review():
+    """MevO'nun açtırdığı kapalı işlemlerin kâr/zarar sebepleri ve alınan önlemler (broker geçmişi, kod hesabı)."""
+    data = mevo.review(force=True)
+    if data is None:
+        raise HTTPException(status_code=503, detail="MevO işlem geçmişi okunamadı.")
+    return data
+
+
 @app.get("/api/mevo/status")
 def mevo_status():
     return mevo.status()

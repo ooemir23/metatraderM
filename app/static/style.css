@@ -1309,3 +1309,18 @@ html, body { overflow-x:clip; max-width:100%; }
 .hx-balance-menu[hidden] { display:none; }
 .hx-balance-menu .hx-metrics { grid-template-columns:repeat(2, minmax(0, 1fr)); padding:0; }
 .hx-tab[hidden] { display:none !important; }
+
+.hx-balance-favs { display:inline-flex; align-items:center; gap:12px; }
+.hx-fav-item { display:inline-flex; align-items:baseline; gap:6px; }
+.hx-fav-item em { font-style:normal; font-size:12px; color:var(--hx-muted); }
+.hx-fav-value { font-family:var(--hx-mono); font-size:13px; color:var(--hx-text); }
+.hx-fav-value[data-tone="loss"] { color:var(--hx-loss); }
+.hx-fav-value[data-tone="profit"] { color:var(--hx-profit); }
+.hx-balance-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; font-size:11px; color:var(--hx-muted); }
+.hx-balance-eye, .hx-star { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:6px; color:var(--hx-muted); background:transparent; border:1px solid transparent; cursor:pointer; }
+.hx-balance-eye:hover, .hx-star:hover { color:var(--hx-text); background:#222833; }
+.hx-star.is-on { color:#f5c451; }
+.hx-balance-menu .hx-metric { position:relative; }
+.hx-balance-menu .hx-star { position:absolute; top:6px; right:6px; }
+/* Amounts hidden: blur values in the top bar and in the dropdown (text stays, so live updates keep working). */
+body[data-hide-amounts="1"] .hx-fav-value, body[data-hide-amounts="1"] .hx-balance-menu .hx-metric > span:nth-child(2) { filter:blur(7px); user-select:none; }

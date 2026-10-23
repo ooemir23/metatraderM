@@ -66,7 +66,9 @@ let mevoProfile = null, lastOpps = null;
 function renderProfile(p) {
   mevoProfile = p;
   const box = $('mevo-profile');
-  if (!p) { box.innerHTML = '<p class="text-gray-500">Henüz öğrenilmedi.</p>'; return; }
+  const hint = $('mevo-profile-hint');
+  if (!p) { box.innerHTML = '<p class="text-gray-500">Henüz öğrenilmedi.</p>'; if (hint) hint.textContent = 'Henüz öğrenilmedi'; return; }
+  if (hint) hint.textContent = `${p.stats.count} işlem · %${p.stats.win_rate} kazanç`;
   const a = p.analysis || {}, s = p.stats || {};
   const syms = Object.entries(s.symbols || {}).map(([k, v]) =>
     `<tr><td class="pr-3 font-semibold text-white">${esc(k)}</td><td class="pr-3">${v.count} işlem</td><td class="pr-3">%${v.win_rate} kazanç</td><td class="pr-3">${v.buy} AL / ${v.sell} SAT</td><td class="pr-3">lot ~${v.median_lot}</td><td>${v.median_hold_min} dk</td></tr>`).join('');
@@ -175,19 +177,57 @@ async function openOpportunity(n) {
 function renderOpps(o) {
   lastOpps = o;
   const box = $('mevo-opps');
-  if (!o || !o.items || !o.items.length) { box.innerHTML = '<p class="text-xs text-gray-500">Henüz fırsat getirilmedi.</p>'; return; }
+  if (!o || !o.items || !o.items.length) { box.innerHTML = '<p class="text-xs text-gray-500 sm:col-span-2">Henüz fırsat getirilmedi.</p>'; return; }
   box.innerHTML = o.items.map((i, n) => {
-    const tone = i.action === 'BUY' ? 'border-emerald-500/40' : i.action === 'SELL' ? 'border-rose-500/40' : 'border-gray-700';
-    const label = i.action === 'BUY' ? 'AL' : i.action === 'SELL' ? 'SAT' : 'BEKLE';
-    const lv = i.action === 'WAIT' ? '' : `<div class="font-mono text-[11px] grid grid-cols-4 gap-1 mt-2"><span>Giriş<br><b class="text-white">${esc(i.entry)}</b></span><span>SL<br><b class="text-rose-400">${esc(i.sl)}</b></span><span>TP<br><b class="text-emerald-400">${esc(i.tp)}</b></span><span>R:R<br><b class="text-white">${esc(i.rr)}</b></span></div>`;
-    return `<div class="bg-[#0f1218] border ${tone} rounded-xl p-3 text-xs"><div class="flex justify-between items-center"><b class="text-white">${esc(i.symbol)} · ${label}</b><span class="text-gray-400">model güveni %${esc(i.confidence)}</span></div>${lv}${(i.warnings || []).map(w => `<p class="mt-2 text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2 py-1"><i class="ph-bold ph-warning"></i> ${esc(w)}</p>`).join('')}<p class="mt-2 text-gray-300">${esc(i.reason)}</p>${i.action === 'WAIT' ? '' : openForm(i, n)}${i.matched_rule ? `<p class="mt-1 text-gray-500">Kural: ${esc(i.matched_rule)}</p>` : ''}</div>`;
-  }).join('') + `<p class="sm:col-span-2 text-[11px] text-gray-500">${esc(o.created_at)} · ${esc(o.timeframe)} · ${o.used_model === false ? 'aynı kapanmış mum: önbellekten, token harcanmadı · ' : ''}oluşan mum hariç, kapanmış mumlara göre. Yatırım tavsiyesi değildir; emri sen onaylarsın.</p>`;
+    const buy = i.action === 'BUY', wait = i.action === 'WAIT';
+    const tone = buy ? 'border-emerald-500/40' : wait ? 'border-gray-700' : 'border-rose-500/40';
+    const badge = buy ? 'bg-emerald-500/15 text-emerald-300' : wait ? 'bg-gray-700/50 text-gray-300' : 'bg-rose-500/15 text-rose-300';
+    const label = buy ? 'AL' : wait ? 'BEKLE' : 'SAT';
+    const lv = wait ? '' : `<div class="font-mono text-[11px] grid grid-cols-4 gap-1 mt-3"><span class="text-gray-500">Giriş<br><b class="text-white">${esc(i.entry)}</b></span><span class="text-gray-500">SL<br><b class="text-rose-400">${esc(i.sl)}</b></span><span class="text-gray-500">TP<br><b class="text-emerald-400">${esc(i.tp)}</b></span><span class="text-gray-500">R:R<br><b class="text-white">${esc(i.rr)}</b></span></div>`;
+    const warns = (i.warnings || []);
+    const warnBox = warns.length ? `<details class="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-amber-300"><summary class="cursor-pointer"><i class="ph-bold ph-warning"></i> ${warns.length} uyarı</summary>${warns.map(w => `<p class="mt-1">${esc(w)}</p>`).join('')}</details>` : '';
+    return `<div class="bg-[#0f1218] border ${tone} rounded-xl p-3 text-xs"><div class="flex justify-between items-center"><b class="text-white text-sm">${esc(i.symbol)}</b><span class="px-2 py-0.5 rounded-md font-bold ${badge}">${label}</span></div>${wait ? '' : `<div class="text-gray-500 mt-1">model güveni %${esc(i.confidence)}</div>`}${lv}<p class="mt-3 text-gray-300">${esc(i.reason)}</p>${warnBox}${wait ? '' : openForm(i, n)}</div>`;
+  }).join('') + `<p class="sm:col-span-2 text-[11px] text-gray-500">${esc(o.created_at)} · ${esc(o.timeframe)} · ${o.used_model === false ? 'önbellekten, token harcanmadı · ' : ''}kapanmış mumlara göre. Yatırım tavsiyesi değildir; emri sen onaylarsın.</p>`;
 }
+
+// ---- MevO'nun kendi işlemlerinin sonucu: neden kazandı / kaybetti + alınan önlemler ----
+function money(v) { const n = Number(v); return (n > 0 ? '+' : '') + n.toFixed(2); }
+function renderReview(r) {
+  const box = $('mevo-review');
+  if (!r || !r.count) {
+    box.innerHTML = '<p class="text-gray-500">MevO\'dan açılmış kapalı işlem yok. Fırsat kartından “Pozisyon olarak aç” ile ya da botta “MevO\'yu kullan” ile açılan işlemler kapanınca burada sebepleriyle analiz edilir; art arda zarar eden sembol/yönde MevO yeni fırsatta uyarır ve bot girmez.</p>';
+    return;
+  }
+  const tile = (k, v, cls = 'text-white') => `<div class="rounded-xl bg-[#0f1218] border border-gray-800 px-3 py-2"><div class="text-[11px] text-gray-500">${k}</div><div class="text-base font-bold ${cls}">${v}</div></div>`;
+  const blocks = (r.blocks || []).map(b => `<p class="rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-200 px-3 py-2"><i class="ph-bold ph-shield-warning"></i> <b>Önlem:</b> ${esc(b.text)} Bot bu durumda girmez.</p>`).join('');
+  const rows = (r.trades || []).map(t => {
+    const win = t.net > 0;
+    return `<div class="rounded-lg border ${win ? 'border-emerald-500/25' : 'border-rose-500/25'} bg-[#0f1218] px-3 py-2">
+      <div class="flex flex-wrap items-center justify-between gap-2"><span><b class="text-white">${esc(t.symbol)}</b> <span class="text-gray-400">${t.side === 'BUY' ? 'AL' : 'SAT'} · ${esc(t.volume)} lot · ${esc(t.hold_min)} dk${t.rr ? ' · R:R ' + esc(t.rr) : ''}</span></span>
+        <b class="${win ? 'text-emerald-400' : 'text-rose-400'}">${money(t.net)}</b></div>
+      <p class="mt-1 text-gray-400">${win ? 'Neden kazandı' : 'Neden kaybetti'}: ${(t.why || []).map(esc).join(' · ')}</p></div>`;
+  }).join('');
+  const groups = (r.groups || []).map(g => `<span class="inline-block mr-3">${esc(g.symbol)} ${g.side === 'BUY' ? 'AL' : 'SAT'}: ${g.wins}/${g.count} · <b class="${g.net >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${money(g.net)}</b></span>`).join('');
+  box.innerHTML = `<div class="grid grid-cols-2 sm:grid-cols-4 gap-2">${tile('İşlem', r.count)}${tile('Kazanç oranı', '%' + esc(r.win_rate))}${tile('Net', money(r.net), r.net >= 0 ? 'text-emerald-400' : 'text-rose-400')}${tile('Zarar toplamı', esc(r.loss_total), 'text-rose-400')}</div>
+    ${blocks}
+    ${groups ? `<div class="text-gray-400">${groups}</div>` : ''}
+    ${(r.causes || []).length ? `<div><div class="font-semibold text-white mb-1">Zararların ortak sebepleri</div>${causeTable(r.causes)}</div>` : ''}
+    <div class="space-y-2">${rows}</div>
+    <p class="text-[11px] text-gray-500">Sebepler kârlı manuel işlemlerinin saat/yön/lot/süre/SL referansıyla ve kapanış nedeniyle (SL/TP/elle) koddan karşılaştırılır; bağlantıdır, kesin neden değildir.</p>`;
+}
+
+async function loadReview() {
+  try { renderReview(await mevoApi('/api/mevo/review')); }
+  catch (e) { $('mevo-review').innerHTML = `<p class="text-gray-500">Sonuçlar okunamadı: ${esc(e.message)}</p>`; }
+}
+function mevoReview() { return busy('mevo-review-btn', loadReview); }
 
 function renderStatus(st) {
   renderProfile(st.profile); renderOpps(st.opportunities);
   window.mevoLastUsedModel = st.opportunities ? st.opportunities.used_model : undefined;
-  $('mevo-usage').textContent = `Bugün ${st.usage_today.calls}/${st.daily_call_limit} istek · ${st.usage_today.tokens} token · model ${st.model}`;
+  $('mevo-usage').textContent = `Bugün ${st.usage_today.calls}/${st.daily_call_limit} istek · ${st.usage_today.tokens} token`;
+  $('mevo-strip-key').innerHTML = st.configured ? '<span class="text-emerald-400">●</span> DeepSeek bağlı' : '<span class="text-rose-400">●</span> API anahtarı yok';
+  $('mevo-strip-learn').textContent = st.profile ? 'Öğrenildi: ' + st.profile.learned_at.replace('T', ' ') : 'Henüz öğrenilmedi';
   const src = {panel: 'panelden kaydedilmiş anahtar kullanılıyor', env: 'sunucu ortam değişkenindeki anahtar kullanılıyor', explicit: 'anahtar tanımlı'}[st.key_source];
   $('mevo-key-state').textContent = src ? 'Durum: ' + src + '. Yeni anahtar girersen onun yerine geçer.' : 'Anahtar tanımlı değil; buraya gir.';
   if (!st.configured) mevoAlert('DeepSeek API anahtarı tanımlı değil: sağ üstteki çark simgesinden gir.', 'err');
@@ -223,8 +263,10 @@ function mevoLearn() {
 function mevoOpportunities() {
   return busy('mevo-opp-btn', async () => {
     if (!symbols.length) throw new Error('Önce en az bir sembol ekle.');
+    if (!mevoProfile) await mevoApi('/api/mevo/learn', {});      // tek düğme: gerekirse önce manuel işlemlerini öğrenir
     await mevoApi('/api/mevo/opportunities', {symbols, timeframe: $('mevo-tf').value});
     renderStatus(await mevoApi('/api/mevo/status'));
+    loadReview();
   });
 }
 
@@ -260,3 +302,4 @@ window.MT5Markets?.init({onSelect: addSymbol});
 renderChips();
 syncAccount(); setInterval(syncAccount, 15000);
 mevoApi('/api/mevo/status').then(renderStatus).catch(e => mevoAlert(e.message, 'err'));
+loadReview();
