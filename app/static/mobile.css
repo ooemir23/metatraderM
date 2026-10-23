@@ -199,3 +199,40 @@
   #history-table-body td:nth-child(8)::before { flex:0 0 100%; }
   #history-table-body > tr { padding:6px 10px; row-gap:0; }
 }
+
+/* ===== Bot screen ===== */
+.mx-fold-btn { display:none; }
+@media (max-width: 759px) {
+  /* Header: title + status on top, big Start/Stop, then Strategies | Settings */
+  #bot-card > div > div:first-child { display:grid !important; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:8px 10px; align-items:center; margin-bottom:8px !important; padding-bottom:8px !important; }
+  #bot-card > div > div:first-child > div:last-child { display:contents; }
+  #bot-card > div > div:first-child > div:first-child { grid-column:1 / 5; white-space:nowrap; }
+  #bot-card .bot-head-btn { grid-column:span 3; height:44px; font-size:14px; justify-content:center; border-radius:10px; }
+  #bot-card #bot-toggle-btn { grid-column:1 / -1 !important; height:50px; font-size:15px; }
+  #bot-status-badge { grid-column:5 / 7; justify-self:end; }
+  #bot-card h2 { font-size:13px; }
+
+  .bot-overview { padding:8px !important; gap:6px !important; margin-bottom:8px !important; }
+  .bot-overview-hint { display:none; }
+  .bot-mode-line { padding:6px 10px !important; margin-bottom:4px !important; font-size:12.5px; }
+  .bot-tfs { flex-wrap:nowrap !important; overflow-x:auto; margin:0 !important; padding-bottom:2px; scrollbar-width:none; }
+  .bot-tfs::-webkit-scrollbar { display:none; }
+  .bot-tfs > * { flex:0 0 auto; }
+  .bot-tfs button { min-height:34px; padding:3px 12px; }
+  .bot-indicators { gap:6px !important; }
+  .bot-indicators > div { padding:5px 8px !important; }
+  .bot-line { font-size:12px; }
+  .bot-section > summary, .bot-perf summary, .bot-history-toggle { min-height:44px; }
+  .bot-section, .bot-perf { margin:0 0 8px !important; }
+  #bot-quick-lot { height:40px; font-size:16px; }
+  #bot-exec-mode { height:40px; font-size:14px; }
+
+  /* Scanner / manual-style cards behind fold headers, bot first */
+  .signals-grid > .mx-fold-btn, .signals-grid > #signal-scanner-card, .signals-grid > #manual-style-card { order:1; }
+  .mx-fold-btn { display:flex; align-items:center; gap:8px; width:100%; min-height:46px; padding:0 12px; border-radius:10px; border:1px solid #222833; background:#14181f; color:#e6e9ef; font-size:13px; font-weight:700; }
+  .mx-fold-btn i:first-child { font-size:18px; color:#4c8dff; }
+  .mx-fold-btn .mx-fold-caret { margin-left:auto; color:#8f98a8; transition:transform .15s; }
+  .mx-fold-btn[aria-expanded="true"] .mx-fold-caret { transform:rotate(180deg); }
+  .mx-fold-btn[aria-expanded="false"] + div { display:none !important; }
+  #bot-card, #signal-scanner-card, #manual-style-card { padding:10px !important; }
+}

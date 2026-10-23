@@ -41,6 +41,8 @@
     ["İşlemler & Bot", "Trades & Bot"],
     ["Ana ekran", "Main screen"],
     ["Menü", "Menu"],
+    ["Manuel stil sinyali", "Manual-style signal"],
+    ["Sinyal tarayıcı", "Signal scanner"],
     ["Gelişmiş ayarlar", "Advanced settings"],
     ["Ters sinyalde mevcut pozisyonu kapat (InpCloseOpposite)", "Close the open position on the opposite signal (InpCloseOpposite)"],
     ["Başlarken mevcut trend yönünde hemen işlem aç", "Open the current trend side right away on start"],

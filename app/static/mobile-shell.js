@@ -49,4 +49,9 @@
     const open = card.classList.toggle('mx-adv');
     adv.setAttribute('aria-expanded', open ? 'true' : 'false');
   });
+
+  // Bot screen: the signal scanner and the manual-style card fold away behind one-tap headers.
+  document.querySelectorAll('.mx-fold-btn[data-fold]').forEach((btn) => btn.addEventListener('click', () => {
+    btn.setAttribute('aria-expanded', btn.getAttribute('aria-expanded') === 'true' ? 'false' : 'true');
+  }));
 })();
