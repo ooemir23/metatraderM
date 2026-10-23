@@ -1499,7 +1499,7 @@ async function fetchHistory() {
           <td class="py-2 px-2.5 text-gray-200 font-mono text-[13px] font-medium">${d.price}</td>
           <td class="py-2 px-2.5 text-right font-mono font-bold text-[13px] text-amber-400 whitespace-nowrap">${commissionText}</td>
           <td class="py-2 px-2.5 text-right font-mono text-xs text-gray-300 whitespace-nowrap">${feeText}</td>
-          <td class="py-2 px-2.5 font-mono text-xs text-gray-300 whitespace-nowrap">${d.time}</td>
+          <td class="py-2 px-2.5 font-mono text-xs text-gray-300 whitespace-nowrap" title="Broker saati: ${escapeHtml(positionOpenTime(d))}">${positionOpenTimeStacked(d)}</td>
           <td class="py-2 px-2.5 text-right font-bold font-mono text-[13px] whitespace-nowrap ${profitColor}">${profitSign}${accountCurrency} ${formatMoney(netProfit)}</td>
         </tr>
       `;
