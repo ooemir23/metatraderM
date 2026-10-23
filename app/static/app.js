@@ -1176,13 +1176,20 @@ function renderPositionExecution(position) {
 const TRADE_SOURCES = {
   bot: 'Otomatik Sinyal (HMA Bot)', ai: 'Otomatik Sinyal (MevO AI)', web: 'HMA Sitesi (Manuel)',
   mt5: 'Orijinal MT5 (Manuel)', ea: 'Harici Bot / EA'};
+// Entry mode the bot used for this position (from the bot's signal records): CROSSOVER / MANUAL_STYLE / MEVO, or null.
+function botEntryMode(item) {
+  const rows = typeof latestBotSignalHistory !== 'undefined' ? latestBotSignalHistory : [];
+  const row = (rows || []).find(r => r && r.ticket != null && Number(r.ticket) === Number(item?.ticket));
+  return row?.entry_mode || null;
+}
 function tradeSource(item) {
   const magic = Number(item?.magic || 0);
   const fillMagic = Array.isArray(item?.opening_fills) && item.opening_fills.length ? Number(item.opening_fills[0]?.magic || 0) : 0;
   const effectiveMagic = magic || fillMagic;
   const comment = String(item?.comment || '');
-  if (effectiveMagic === 123461 || /hma bot/i.test(comment)) return 'bot';
-  if (effectiveMagic === 123462 || /ai|deepseek|mevo/i.test(comment)) return 'ai';
+  if (/^mevo/i.test(comment)) return 'ai';                                    // opened from the MevO page
+  if (effectiveMagic === 123461 || /hma bot/i.test(comment)) return botEntryMode(item) === 'MEVO' ? 'ai' : 'bot';
+  if (effectiveMagic === 123462 || /deepseek/i.test(comment)) return 'ai';
   if (effectiveMagic === 123460 || comment.startsWith('vm:') || /hma web|panel/i.test(comment)) return 'web';
   return effectiveMagic === 0 ? 'mt5' : 'ea';
 }
@@ -1206,11 +1213,18 @@ function tradeSourceBadge(item) {
     : 0;
   const effectiveMagic = magic || fillMagic;
   const comment = String(item?.comment || '');
-  if (effectiveMagic === 123461 || /hma bot/i.test(comment)) {
-    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-xs font-sans font-semibold leading-tight" title="HMA Algoritmik Bot / Otomatik Sinyal Yakalama (Magic #123461)">🤖 Otomatik Sinyal (HMA Bot)</span>`;
+  const chip = (tone, title, text) => `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-${tone}-500/20 text-${tone}-300 border border-${tone}-500/40 text-xs font-sans font-semibold leading-tight" title="${title}">${text}</span>`;
+  if (/^mevo/i.test(comment)) {
+    return chip('purple', 'MevO fırsatı; MevO sayfasından elle onaylanıp açıldı', '🧠 MevO (Manuel)');
   }
-  if (effectiveMagic === 123462 || /ai|deepseek|mevo/i.test(comment)) {
-    return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 text-xs font-sans font-semibold leading-tight" title="MevO Yapay Zeka Sinyali (Magic #123462)">🧠 Otomatik Sinyal (MevO AI)</span>`;
+  if (effectiveMagic === 123461 || /hma bot/i.test(comment)) {
+    const mode = botEntryMode(item);
+    if (mode === 'MEVO') return chip('purple', 'HMA botu MevO modunda otomatik açtı (Magic #123461)', '🧠 Otomatik Sinyal (MevO)');
+    if (mode === 'MANUAL_STYLE') return chip('amber', 'HMA botu "Manuel işlemlerim tarzı" modunda otomatik açtı (Magic #123461)', '🤖 Otomatik Sinyal (Manuel tarzı)');
+    return chip('cyan', 'HMA Algoritmik Bot / Otomatik Sinyal Yakalama (Magic #123461)', '🤖 Otomatik Sinyal (HMA Bot)');
+  }
+  if (effectiveMagic === 123462 || /deepseek/i.test(comment)) {
+    return chip('purple', 'MevO Yapay Zeka Sinyali (Magic #123462)', '🧠 Otomatik Sinyal (MevO AI)');
   }
   if (effectiveMagic === 123460 || comment.startsWith('vm:') || /hma web|panel/i.test(comment)) {
     return `<span class="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-sans font-semibold leading-tight" title="HMA Web Sitesinden Manuel Açıldı (Magic #123460)">🌐 HMA Sitesi (Manuel)</span>`;
