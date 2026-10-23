@@ -39,7 +39,8 @@ def test_opportunity_levels_are_validated_against_the_broker_price(item, ok):
 
 
 def make(tmp_path, post=None, trades=None):
-    mt5 = Mock(login_id=7, server='demo')
+    mt5 = Mock(login_id=7, server='demo', tick_clock_offset=0)
+    mt5.get_bot_trades.return_value = []
     mt5.get_manual_trades.return_value = trades if trades is not None else [trade(i, net=5) for i in range(6)]
     mt5.get_symbol_price.return_value = {'bid': 2000.0, 'ask': 2000.4}
     mt5.get_rates.return_value = [dict(time=i * 900, open=2000, high=2001, low=1999, close=2000) for i in range(60)]
@@ -135,3 +136,48 @@ def test_key_is_validated_for_free_stored_privately_and_beats_env(tmp_path, monk
     assert 'sk-goodgoodgood' not in str(m.status())
     import os, stat
     assert stat.S_IMODE(os.stat(m._key_path).st_mode) == 0o600
+
+
+def test_bot_losses_are_explained_by_difference_from_manual_winners():
+    # Manuel kârlı: yalnız BUY, saat 10, lot 1, SL %0.5 uzakta, ~10 dk tutma.
+    manual = [trade(i, net=8, vol=1.0, hour=10, hold=600, sl=1990, tp=2020) for i in range(4)]
+    bad = [
+        trade(20, side='SELL', net=-30, vol=1.0, hour=15, hold=600),                          # saat + yön
+        trade(21, net=-20, vol=5.0, hour=10, hold=60, sl=1999.5),                              # lot, dar SL, erken stop
+        trade(22, net=5, vol=1.0, hour=10),                                                   # kârlı bot: sayılmaz
+    ]
+    bad[1]['close_reason'] = 4
+    c = mod.compare_bot_with_manual(manual, bad)
+    keys = {x['key']: x for x in c['causes']}
+    assert c['bot_count'] == 3 and c['bot_losses'] == 2 and c['bot_loss_total'] == -50.0
+    assert set(keys) == {'hour', 'side', 'big_lot', 'tight_sl', 'early_stop'}
+    assert keys['side']['loss'] == -30.0 and keys['big_lot']['loss'] == -20.0
+    assert mod.compare_bot_with_manual(manual, [trade(30, symbol='EURUSD', net=-5)])['causes'][0]['key'] == 'no_ref'
+
+
+def test_trade_warnings_are_free_and_cite_bot_history():
+    manual = [trade(i, net=8, hour=10, sl=1990) for i in range(4)]
+    cmp_ = mod.compare_bot_with_manual(manual, [trade(20, side='SELL', net=-30, hour=15)])
+    sell = {'symbol': 'XAUUSD', 'action': 'SELL'}
+    w = mod.trade_warnings(sell, cmp_, 15, 0.1)
+    assert any('15:00' in x and 'zarar etti' in x for x in w) and any('BUY' in x for x in w) and any('SL' in x for x in w)
+    assert mod.trade_warnings({'symbol': 'XAUUSD', 'action': 'BUY'}, cmp_, 10, 0.5) == []
+    assert mod.trade_warnings({'symbol': 'XAUUSD', 'action': 'WAIT'}, cmp_, 15, 0.1) == []
+
+
+def test_learn_sends_bot_summary_not_details_and_opportunities_carry_warnings(tmp_path, monkeypatch):
+    m, mt5 = make(tmp_path)
+    mt5.get_bot_trades.return_value = [trade(40, side='SELL', net=-12, hour=3)]
+    post = Mock(side_effect=[reply('{"summary":"x","bot_loss_reasons":["saat"]}'),
+                             reply('{"opportunities":[{"symbol":"XAUUSD","action":"SELL","confidence":60,"sl":2010,"tp":1980}]}'),
+                             reply('{"summary":"y"}')])
+    monkeypatch.setattr(mod.requests, 'post', post)
+    monkeypatch.setattr(mod, 'MIN_INTERVAL', 0)
+    assert m.learn()['success']
+    sent = post.call_args_list[0].kwargs['json']['messages'][1]['content']
+    assert '"bot_vs_manual"' in sent and '"reference"' not in sent and '"by_symbol"' not in sent
+    res = m.opportunities(['XAUUSD'])
+    assert res['items'][0]['warnings']          # manuel işlemler BUY baskın → SAT fırsatına uyarı
+    mt5.get_bot_trades.side_effect = RuntimeError('x')
+    m._acct()['profile']['digest'] = 'z'
+    assert m.learn()['success']                 # bot geçmişi okunamazsa yalnız manuel öğrenme sürer

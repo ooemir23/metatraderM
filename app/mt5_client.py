@@ -1179,6 +1179,18 @@ class MT5Client:
             except Exception as exc:
                 raise MT5DataError("Pozisyon detayları okunamadı; hesap ve bağlantıyı kontrol edin.") from exc
 
+    def get_bot_trades(self, days: int = 90) -> List[Dict[str, Any]]:
+        """Closed HMA bot positions (broker history), same row shape as get_manual_trades."""
+        with self._lock:
+            if not self.ensure_connected():
+                raise MT5DataError("MT5 bağlı değil; bot işlemleri okunamadı.")
+            try:
+                return self._bridge('bot_lifetimes', int(days), int(self.tick_clock_offset), self._selected_account())
+            except MT5DataError:
+                raise
+            except Exception as exc:
+                raise MT5DataError("Bot işlem geçmişi okunamadı.") from exc
+
     def get_manual_trades(self, days: int = 90) -> List[Dict[str, Any]]:
         """Closed positions opened by hand in the original MT5 terminal (broker history)."""
         with self._lock:

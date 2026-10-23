@@ -1478,6 +1478,17 @@ def manual_lifetimes(mt5, days, tick_offset, account_scope):
 
     Deal times are broker server time (MT5 History). A position counts only when its opening
     deal is inside the window and its volume is fully closed."""
+    return _closed_lifetimes(mt5, days, tick_offset, account_scope,
+                             lambda d: is_terminal_manual(getattr(d, 'magic', 0), getattr(d, 'comment', '')))
+
+
+def bot_lifetimes(mt5, days, tick_offset, account_scope):
+    """Closed HMA bot positions (magic HMA_MAGIC), same row shape as manual_lifetimes."""
+    return _closed_lifetimes(mt5, days, tick_offset, account_scope,
+                             lambda d: int(getattr(d, 'magic', 0) or 0) == HMA_MAGIC)
+
+
+def _closed_lifetimes(mt5, days, tick_offset, account_scope, opened_by):
     _account(mt5, *account_scope)
     end = datetime.now(timezone.utc) + timedelta(seconds=int(tick_offset))
     start = end - timedelta(days=int(days))
@@ -1500,7 +1511,7 @@ def manual_lifetimes(mt5, days, tick_offset, account_scope):
         if not opening or not closing or rows[0] is not opening[0]:
             continue
         first = opening[0]
-        if not is_terminal_manual(getattr(first, 'magic', 0), getattr(first, 'comment', '')):
+        if not opened_by(first):
             continue
         side = 1 if int(first.type) == 0 else -1
         balance = sum(float(d.volume) * (1 if int(d.type) == 0 else -1) for d in rows)

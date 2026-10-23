@@ -113,3 +113,7 @@ MevO API anahtarı (2026-10-23): sayfadaki "DeepSeek API anahtarı" alanından g
 klasörüne 0600 `mevo_key.json` olarak yazılır, panel anahtarı ortam değişkeninden önceliklidir, hiçbir yanıtta geri dönmez.
 Token tasarrufu: aynı geçmiş = yeniden öğrenme yok; aynı kapanmış mum + aynı profil = model çağrılmaz (önbellek); modele ham mum
 yerine son 24 kapanış + özet gider; kısa prompt ve düşük `max_tokens`.
+MevO bot-manuel karşılaştırması (2026-10-23, kullanıcı isteği): `MT5Client.get_bot_trades` (magic 123461, kapalı pozisyonlar) manuel KÂRLI
+işlemlerin sembol bazlı referansıyla (saatler, baskın yön, lot, süre, SL mesafesi) kodda karşılaştırılır (`mevo.compare_bot_with_manual`);
+zarar sebepleri saat / yön / erken stop / dar SL / büyük lot / referans yok. Modele yalnız özet sayılar gider. Fırsatlara `warnings`
+(`mevo.trade_warnings`, token harcamaz) eklenir. Yalnız bilgi; emir/bot davranışı değişmez.

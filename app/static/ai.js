@@ -24,6 +24,16 @@ function list(title, items) {
   return `<div><div class="font-semibold text-white mb-1">${esc(title)}</div><ul class="list-disc pl-5 space-y-0.5">${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></div>`;
 }
 
+function renderBotComparison(c, reasons) {
+  if (!c || !c.bot_count) return '<p class="text-gray-500">Bot geçmişi bulunamadı; bot-manuel karşılaştırması yapılamadı.</p>';
+  const rows = (c.causes || []).map(x => `<tr><td class="pr-3">${esc(x.label)}</td><td class="pr-3">${x.count} zarar</td><td class="text-rose-400">${esc(x.loss)}</td></tr>`).join('');
+  return `<div class="border border-rose-500/30 rounded-xl p-3 bg-rose-500/5">
+    <div class="font-semibold text-white mb-1">Bot zararları ve sebepleri</div>
+    <p class="text-gray-400">Bot: ${c.bot_count} işlem · ${c.bot_wins} kârlı / ${c.bot_losses} zararlı · net ${esc(c.bot_net)} · zarar toplamı ${esc(c.bot_loss_total)}. Sebepler manuel KÂRLI işlemlerinle karşılaştırılarak koddan hesaplandı; bir zarar birden fazla sebebe sayılabilir.</p>
+    ${rows ? `<table class="text-[11px] text-gray-300 mt-2">${rows}</table>` : ''}
+    ${list('MevO yorumu', reasons)}</div>`;
+}
+
 function renderProfile(p) {
   const box = $('mevo-profile');
   if (!p) { box.innerHTML = '<p class="text-gray-500">Henüz öğrenilmedi.</p>'; return; }
@@ -35,6 +45,7 @@ function renderProfile(p) {
     <p>${esc(a.summary)}</p>
     ${syms ? `<div class="overflow-x-auto"><table class="text-[11px] text-gray-300">${syms}</table></div>` : ''}
     ${list('Mantık / kurallar', a.rules)}${list('Risk alışkanlıkları', a.risk_habits)}${list('Verimli saatler (broker saati)', a.best_hours)}
+    ${renderBotComparison(p.comparison, a.bot_loss_reasons)}
     ${list('Zayıf noktalar', a.weak_points)}${list('Dikkat', a.caveats)}`;
   const names = Object.keys(s.symbols || {});
   if (names.length && !$('mevo-symbols').dataset.touched) $('mevo-symbols').value = names.slice(0, 6).join(',');
@@ -47,7 +58,7 @@ function renderOpps(o) {
     const tone = i.action === 'BUY' ? 'border-emerald-500/40' : i.action === 'SELL' ? 'border-rose-500/40' : 'border-gray-700';
     const label = i.action === 'BUY' ? 'AL' : i.action === 'SELL' ? 'SAT' : 'BEKLE';
     const lv = i.action === 'WAIT' ? '' : `<div class="font-mono text-[11px] grid grid-cols-4 gap-1 mt-2"><span>Giriş<br><b class="text-white">${esc(i.entry)}</b></span><span>SL<br><b class="text-rose-400">${esc(i.sl)}</b></span><span>TP<br><b class="text-emerald-400">${esc(i.tp)}</b></span><span>R:R<br><b class="text-white">${esc(i.rr)}</b></span></div>`;
-    return `<div class="bg-[#0f1218] border ${tone} rounded-xl p-3 text-xs"><div class="flex justify-between items-center"><b class="text-white">${esc(i.symbol)} · ${label}</b><span class="text-gray-400">model güveni %${esc(i.confidence)}</span></div>${lv}<p class="mt-2 text-gray-300">${esc(i.reason)}</p>${i.matched_rule ? `<p class="mt-1 text-gray-500">Kural: ${esc(i.matched_rule)}</p>` : ''}</div>`;
+    return `<div class="bg-[#0f1218] border ${tone} rounded-xl p-3 text-xs"><div class="flex justify-between items-center"><b class="text-white">${esc(i.symbol)} · ${label}</b><span class="text-gray-400">model güveni %${esc(i.confidence)}</span></div>${lv}${(i.warnings || []).map(w => `<p class="mt-2 text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2 py-1"><i class="ph-bold ph-warning"></i> ${esc(w)}</p>`).join('')}<p class="mt-2 text-gray-300">${esc(i.reason)}</p>${i.matched_rule ? `<p class="mt-1 text-gray-500">Kural: ${esc(i.matched_rule)}</p>` : ''}</div>`;
   }).join('') + `<p class="sm:col-span-2 text-[11px] text-gray-500">${esc(o.created_at)} · ${esc(o.timeframe)} · ${o.used_model === false ? 'aynı kapanmış mum: önbellekten, token harcanmadı · ' : ''}oluşan mum hariç, kapanmış mumlara göre. Yatırım tavsiyesi değildir; emir açılmadı.</p>`;
 }
 

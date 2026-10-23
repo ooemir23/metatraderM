@@ -89,6 +89,109 @@ def compute_stats(trades):
     return out
 
 
+CAUSE_LABELS = {
+    'hour': 'Manuel kârlı işlemlerinin hiç olmadığı saatte açıldı',
+    'side': 'Manuel kârlı işlemlerinin baskın yönünün tersine açıldı',
+    'early_stop': 'Manuel tutma süresinin çeyreğinden kısa sürede SL/stop ile kapandı',
+    'tight_sl': 'SL, manuel kârlı işlemlerin SL mesafesinin yarısından dar',
+    'big_lot': 'Lot, manuel kârlı işlem lotunun 2 katından büyük',
+    'no_ref': 'Manuelde bu sembolde yeterli kârlı işlem yok (karşılaştırılamadı)',
+    'other': 'Belirgin bir fark bulunamadı',
+}
+
+
+def winner_reference(manual):
+    """Manuel KÂRLI işlemlerden sembol başına referans (saatler, baskın yön, lot, süre, SL mesafesi)."""
+    ref = {}
+    by = defaultdict(list)
+    for t in manual:
+        if float(t['net']) > 0 and float(t.get('volume') or 0) > 0:
+            by[t['symbol']].append(t)
+    for sym, rows in by.items():
+        if len(rows) < 3:
+            continue
+        sides = Counter(r['side'] for r in rows)
+        top, n = sides.most_common(1)[0]
+        sl = [abs(r['open_price'] - r['sl']) / r['open_price'] * 100 for r in rows
+              if float(r.get('sl') or 0) > 0 and r['open_price']]
+        ref[sym] = {'n': len(rows), 'hours': sorted({_hour(r['open_time']) for r in rows}),
+                    'side': top if n / len(rows) >= 0.7 else None,
+                    'median_lot': median(float(r['volume']) for r in rows),
+                    'median_hold_min': median((r['close_time'] - r['open_time']) / 60 for r in rows),
+                    'median_sl_pct': median(sl) if sl else None}
+    return ref
+
+
+def loss_causes(bot_trade, ref):
+    """Zarar eden bir bot işleminin manuel kârlı referanstan farkları (yalnız sayısal karşılaştırma)."""
+    r = ref.get(bot_trade['symbol'])
+    if not r:
+        return ['no_ref']
+    out = []
+    if _hour(bot_trade['open_time']) not in r['hours']:
+        out.append('hour')
+    if r['side'] and bot_trade['side'] != r['side']:
+        out.append('side')
+    hold = (bot_trade['close_time'] - bot_trade['open_time']) / 60
+    if r['median_hold_min'] and hold < r['median_hold_min'] * 0.25 and bot_trade.get('close_reason') in (4, 6):
+        out.append('early_stop')
+    if float(bot_trade.get('sl') or 0) > 0 and r['median_sl_pct'] and bot_trade['open_price']:
+        if abs(bot_trade['open_price'] - bot_trade['sl']) / bot_trade['open_price'] * 100 < r['median_sl_pct'] * 0.5:
+            out.append('tight_sl')
+    if r['median_lot'] and float(bot_trade['volume']) > r['median_lot'] * 2:
+        out.append('big_lot')
+    return out or ['other']
+
+
+def compare_bot_with_manual(manual, bot_trades):
+    """Bot sonuçları ile manuel kârlı işlemlerin karşılaştırması ve bot zararlarının sebep dağılımı."""
+    bot_trades = [t for t in bot_trades if float(t.get('volume') or 0) > 0]
+    ref = winner_reference(manual)
+    wins = [t for t in bot_trades if float(t['net']) > 0]
+    losses = [t for t in bot_trades if float(t['net']) < 0]
+    causes, per_symbol = {}, defaultdict(lambda: defaultdict(lambda: {'count': 0, 'loss': 0.0}))
+    for t in losses:
+        for key in loss_causes(t, ref):
+            for bucket in (causes.setdefault(key, {'count': 0, 'loss': 0.0}), per_symbol[t['symbol']][key]):
+                bucket['count'] += 1
+                bucket['loss'] = round(bucket['loss'] + float(t['net']), 2)
+    return {
+        'bot_count': len(bot_trades), 'bot_wins': len(wins), 'bot_losses': len(losses),
+        'bot_net': round(sum(float(t['net']) for t in bot_trades), 2),
+        'bot_loss_total': round(sum(float(t['net']) for t in losses), 2),
+        'causes': [{'key': k, 'label': CAUSE_LABELS[k], **v}
+                   for k, v in sorted(causes.items(), key=lambda kv: kv[1]['loss'])],
+        'by_symbol': {s: {k: dict(v) for k, v in d.items()} for s, d in per_symbol.items()},
+        'reference': {s: {**r, 'median_lot': round(r['median_lot'], 4),
+                          'median_hold_min': round(r['median_hold_min'], 1),
+                          'median_sl_pct': round(r['median_sl_pct'], 4) if r['median_sl_pct'] else None}
+                      for s, r in ref.items()},
+    }
+
+
+def trade_warnings(item, comparison, broker_hour, entry_sl_pct):
+    """Fırsat için işlem uyarıları: tamamen koddur, token harcamaz. Manuel kârlı referanstan sapmaları ve
+    botun geçmişte bu sebeplerle zarar edip etmediğini söyler."""
+    if item.get('action') not in ('BUY', 'SELL') or not comparison:
+        return []
+    ref = comparison['reference'].get(item['symbol'])
+    seen = comparison['by_symbol'].get(item['symbol'], {})
+    out = []
+
+    def lost(key):
+        c = seen.get(key)
+        return f" Bot bu sebeple {c['count']} kez toplam {c['loss']} zarar etti." if c else ''
+    if not ref:
+        return [f"{item['symbol']} için manuel kârlı işlem referansı yetersiz; karşılaştırma yapılamadı."]
+    if broker_hour not in ref['hours']:
+        out.append(f"Şu an broker saati {broker_hour:02d}:00; manuel kârlı işlemlerin bu saatte açılmadı." + lost('hour'))
+    if ref['side'] and item['action'] != ref['side']:
+        out.append(f"Manuel kârlı işlemlerin çoğu {ref['side']}; bu fırsat tersi." + lost('side'))
+    if entry_sl_pct and ref['median_sl_pct'] and entry_sl_pct < ref['median_sl_pct'] * 0.5:
+        out.append(f"Önerilen SL (%{entry_sl_pct:.3f}) manuel kârlı SL'nin (%{ref['median_sl_pct']}) yarısından dar." + lost('tight_sl'))
+    return out
+
+
 def validate_opportunity(item, tick):
     """Model çıktısını güvenli forma çevirir; mantıksız seviye varsa BEKLE olur (emir açılmaz zaten)."""
     action = str(item.get('action', 'WAIT')).upper()
@@ -233,7 +336,9 @@ class MevO:
     LEARN_SYSTEM = (
         'MT5 elle işlem istatistiklerinden kullanıcının mantığını çıkar. Yalnız veriye dayan; psikoloji/garanti '
         'uydurma; örnek azsa belirt. Çok kısa Türkçe JSON (her liste en fazla 4 kısa madde): '
-        '{"summary":"en fazla 2 cümle","rules":[],"risk_habits":[],"best_hours":[],"weak_points":[],"caveats":[]}')
+        '{"summary":"en fazla 2 cümle","rules":[],"risk_habits":[],"best_hours":[],"weak_points":[],"caveats":[],"bot_loss_reasons":[]}. '
+        'bot_vs_manual varsa botun zararlarının sebebini yalnız bu sayılara dayanarak bot_loss_reasons\'a yaz '
+        '(en fazla 4 madde, sebep + zarar tutarı); yoksa boş bırak.')
 
     def learn(self):
         if not self._busy.acquire(blocking=False):
@@ -241,18 +346,28 @@ class MevO:
         try:
             trades = self.mt5.get_manual_trades(days=LEARN_DAYS)
             stats = compute_stats(trades)
+            try:
+                comparison = compare_bot_with_manual(trades, self.mt5.get_bot_trades(days=LEARN_DAYS))
+            except Exception:
+                comparison = None            # bot geçmişi okunamazsa yalnız manuel öğrenme yapılır
             if stats['count'] < MIN_TRADES:
                 return {'success': False, 'error': f'Son {LEARN_DAYS} günde elle açılmış kapalı işlem sayısı '
                                                    f'{stats["count"]} (en az {MIN_TRADES} gerekli).'}
-            key = digest_of(stats, self.model)
+            if comparison and comparison['bot_count']:
+                # Modele yalnız özet sayılar gider (referans/sembol ayrıntısı kodda kalır).
+                stats = {**stats, 'bot_vs_manual': {k: comparison[k] for k in
+                                                    ('bot_count', 'bot_wins', 'bot_losses', 'bot_net', 'bot_loss_total')}
+                         | {'causes': [{k: c[k] for k in ('label', 'count', 'loss')} for c in comparison['causes']]}}
+            key = digest_of([stats, comparison], self.model)
             old = self._acct().get('profile')
             if old and old.get('digest') == key:
                 return {'success': True, 'cached': True, 'profile': old}   # aynı veri: token harcanmaz
-            learned = self._call(self.LEARN_SYSTEM, stats, 'learn', max_tokens=800)
+            learned = self._call(self.LEARN_SYSTEM, stats, 'learn', max_tokens=900)
             with self._lock:
                 acct = self._acct()
                 acct['profile'] = {'learned_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
-                                   'days': LEARN_DAYS, 'stats': stats, 'analysis': learned, 'digest': key}
+                                   'days': LEARN_DAYS, 'stats': stats, 'analysis': learned, 'digest': key,
+                                   'comparison': comparison}
                 acct['opportunities'] = None
                 self._save()
             return {'success': True, 'profile': acct['profile']}
@@ -321,6 +436,11 @@ class MevO:
             while len(cache) > 40:
                 cache.pop(next(iter(cache)))
             result = [validate_opportunity(raws[sym], ticks[sym]) for sym in symbols if sym in raws]
+            hour = (datetime.now(timezone.utc).hour
+                    + int(getattr(self.mt5, 'tick_clock_offset', 0) or 0) // 3600) % 24     # broker sunucu saati
+            for r in result:
+                sl_pct = abs(r['entry'] - r['sl']) / r['entry'] * 100 if r.get('entry') else None
+                r['warnings'] = trade_warnings(r, profile.get('comparison'), hour, sl_pct)
             result.sort(key=lambda r: (r['action'] == 'WAIT', -r['confidence']))
             payload = {'created_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
                        'timeframe': f'M{timeframe_minutes}', 'items': result, 'used_model': used_model}
