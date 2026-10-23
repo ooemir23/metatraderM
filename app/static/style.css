@@ -1333,3 +1333,10 @@ body[data-hide-amounts="1"] .hx-fav-value, body[data-hide-amounts="1"] .hx-balan
 .bot-mode-line[data-tone="purple"] { border-color:#7c4dd6; background:#1a1430; } .bot-mode-line[data-tone="purple"] i { color:#c3a6ff; }
 .bot-mode-line[data-tone="amber"] { border-color:#a8741a; background:#241b0c; } .bot-mode-line[data-tone="amber"] i { color:#f5c451; }
 .bot-mode-line[data-tone="cyan"] { border-color:#1d6b86; background:#0d1e26; } .bot-mode-line[data-tone="cyan"] i { color:#4cc9f0; }
+
+/* Operator role lives in the account menu; language is a short TR/EN box; Trading Security sits in the tools drawer. */
+.hx-account-menu .hx-operator { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--hx-text-2); padding:2px 2px; }
+.hx-account-menu .hx-operator:empty { display:none; }
+.hx-actions select.hx-lang, #language-select.hx-lang { width:58px; min-width:0; padding:0 6px !important; text-align:center; text-align-last:center; font-weight:700; letter-spacing:.04em; }
+.tools-security-btn { flex:0 0 40px; min-height:40px; display:flex; align-items:center; justify-content:center; gap:8px; width:100%; height:40px; border-radius:8px; background:#1a1f28; border:1px solid #3a3320; color:#f3c969; font-size:13px; font-weight:700; }
+.tools-security-btn:hover { background:#222833; }

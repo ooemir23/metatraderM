@@ -24,7 +24,8 @@
     padding:12px; background:#0f1218; border-bottom:1px solid #222833; box-shadow:0 18px 40px rgba(0,0,0,.55); max-height:calc(100vh - var(--mx-head-h) - var(--mx-tabs-h)); overflow:auto; }
   body.mx-menu-open .hx-actions .hx-btn { height:46px; justify-content:flex-start; gap:10px; padding:0 14px; font-size:14px; }
   body.mx-menu-open .hx-actions .hx-btn > span:not(.hx-ai-dot):not(.tools-error-badge) { display:inline !important; }
-  body.mx-menu-open .hx-actions .hx-account, body.mx-menu-open .hx-actions .ui-scale, body.mx-menu-open .hx-actions #operator-role { grid-column:1 / -1; }
+  body.mx-menu-open .hx-actions .hx-account, body.mx-menu-open .hx-actions .ui-scale { grid-column:1 / -1; }
+  body.mx-menu-open .hx-actions select.hx-lang { width:100%; }
   body.mx-menu-open .hx-actions select { height:46px; font-size:14px; }
   body.mx-menu-open .hx-account-menu { position:static !important; width:100% !important; margin-top:8px; box-shadow:none; }
   .mx-scrim { display:none; }

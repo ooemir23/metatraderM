@@ -99,16 +99,16 @@
               <span id="status-indicator" class="w-2 h-2 rounded-full bg-amber-400"></span>
               <span id="status-text">MT5 Bağlanıyor...</span>
             </button>
+            <span id="operator-role" class="hx-operator"></span>
             <span id="acc-type-badge" class="hx-acct" hidden></span>
             <button type="button" class="hx-account-manage" onclick="toggleLoginModal()"><i class="ph-bold ph-gear"></i><span>Hesap bağlantısı</span></button>
           </div>
         </div>
         <div class="ui-scale" data-ui-scale-slot></div>
-        <select id="language-select" aria-label="Display language" onchange="MT5I18n.setLanguage(this.value)">
-          <option value="tr">Türkçe</option>
-          <option value="en">English</option>
+        <select id="language-select" class="hx-lang" aria-label="Display language" title="Dil / Language" onchange="MT5I18n.setLanguage(this.value)">
+          <option value="tr">TR</option>
+          <option value="en">EN</option>
         </select>
-        <span id="operator-role"></span>
       </div>
     </div>
   </header>

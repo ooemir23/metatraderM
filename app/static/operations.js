@@ -357,9 +357,10 @@ async function initializeSecurityControl() {
   const button = document.createElement('button');
   button.type = 'button';
   button.id = 'security-button';
-  button.className = 'px-2.5 py-1 rounded-lg bg-gray-800 border border-gray-700 text-xs text-amber-300';
+  button.className = 'tools-security-btn';
   button.textContent = en ? 'Trading Security' : 'İşlem Güvenliği';
-  selector.parentElement.append(button);
+  const toolsBody = document.querySelector('#tools-drawer .tools-drawer-body');
+  (toolsBody || selector.parentElement).prepend(button);
   const dialog = document.createElement('dialog');
   dialog.className = 'rounded-2xl border border-gray-700 bg-[#14181f] p-5 text-gray-100 shadow-2xl backdrop:bg-black/70 w-[min(92vw,420px)]';
   dialog.innerHTML = `<h2 class="text-lg font-bold">${en?'Real-account verification':'Gerçek hesap doğrulaması'}</h2>
