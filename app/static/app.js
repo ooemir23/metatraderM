@@ -750,6 +750,7 @@ function initPositionsTopResizer() {
 
 // Switch Active Symbol
 function switchSymbol(symbol, reloadChart = true) {
+  if (typeof scheduleLossWarning === 'function' && typeof setTimeout === 'function') setTimeout(scheduleLossWarning, 0);
   chartSelectionBlocked = false;
   orderSymbolSource = reloadChart ? 'panel' : 'chart';
   if (symbol !== currentSymbol) {
@@ -4158,3 +4159,70 @@ function toggleBotHistory(force) {
 document.addEventListener('DOMContentLoaded', () => {
   try { if (localStorage.getItem('botHistoryOpen') === '1') toggleBotHistory(true); } catch (e) {}
 });
+
+
+// Loss profile: which kinds of closed manual + bot trades lose (advisory; never blocks an order).
+var lossProfileRequest = 0;
+async function fetchLossProfile() {
+  const body = document.getElementById('loss-profile-body');
+  if (!body) return;
+  const days = Number(document.getElementById('loss-profile-days')?.value || 90);
+  const request = ++lossProfileRequest;
+  body.innerHTML = '<p class="bot-history-empty">Yükleniyor…</p>';
+  try {
+    const res = await fetch(`/api/loss-profile?days=${days}`);
+    const data = await res.json().catch(() => ({}));
+    if (request !== lossProfileRequest) return;
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Zarar profili okunamadı.');
+    body.innerHTML = renderLossProfile(data);
+  } catch (err) {
+    if (request === lossProfileRequest) body.innerHTML = `<p class="bot-history-empty">${escapeHtml(err.message)}</p>`;
+  }
+}
+function renderLossProfile(d) {
+  if (!d.trades) return `<p class="bot-history-empty">Son ${d.days} günde kapanmış manuel veya bot işlemi yok.</p>`;
+  const m = (v) => typeof formatMoney === 'function' ? formatMoney(v) : Number(v).toFixed(2);
+  const row = (g) => `<tr class="${g.risky ? 'is-neg' : ''}"><td>${escapeHtml(g.dim)}</td><td>${escapeHtml(g.key)}</td><td>${g.count}</td><td>%${g.win_rate_pct}</td><td class="${g.net >= 0 ? 'is-pos' : 'is-neg'}">${g.net >= 0 ? '+' : ''}${m(g.net)}</td></tr>`;
+  const risky = d.groups.filter(g => g.risky), rest = d.groups.filter(g => !g.risky && g.count >= 3 && g.net < 0).slice(0, 8);
+  const reasons = Object.entries(d.loss_reasons || {}).map(([k, v]) => `${escapeHtml(k)}: ${v}`).join(' · ');
+  const table = (rows) => `<div class="bot-perf-table"><table><thead><tr><th>Boyut</th><th>Grup</th><th>İşlem</th><th>Kazanma</th><th>Net</th></tr></thead><tbody>${rows.map(row).join('')}</tbody></table></div>`;
+  return `${d.early_sample ? `<p class="bot-perf-warn">Örnek küçük (${d.trades} işlem). Küçük gruplar tesadüf olabilir.</p>` : ''}
+    <p class="bot-protect-note">${d.trades} kapanmış işlem (manuel + bot) · net ${d.net >= 0 ? '+' : ''}${m(d.net)} · kazanma %${d.win_rate_pct}${reasons ? ` · zarar kapanışları: ${reasons}` : ''}</p>
+    ${risky.length ? `<p class="bot-perf-warn">Riskli gruplar (en az ${d.min_trades} işlem, kazanma ≤%35, net zarar):</p>${table(risky)}` : '<p class="bot-history-empty">Yeterli işlemle belirgin zarar ettiren bir grup bulunamadı.</p>'}
+    ${rest.length ? `<p class="bot-protect-note">Gözlemde (az işlemli, zarar eden gruplar):</p>${table(rest)}` : ''}
+    <p class="bot-protect-note">Geçmiş sonuçlardır; bir grubun zarar etmesi gelecekte de edeceği anlamına gelmez. Emir penceresinde yalnız bilgi olarak uyarı çıkar, emri engellemez.</p>`;
+}
+
+// Advisory line under the order buttons: risky loss-profile groups matching the typed order (never blocks).
+var lossWarnTimer = null, lossWarnSeq = 0;
+function scheduleLossWarning() {
+  clearTimeout(lossWarnTimer);
+  lossWarnTimer = setTimeout(refreshLossWarning, 600);
+}
+async function refreshLossWarning() {
+  const box = document.getElementById('loss-warning');
+  if (!box || accountSwitching) return;
+  const volume = Number(document.getElementById('lot-input')?.value);
+  const protection = readOrderProtection();
+  const symbol = currentSymbol, seq = ++lossWarnSeq;
+  if (!(volume > 0) || !symbol) { box.hidden = true; return; }
+  try {
+    const parts = await Promise.all(['BUY', 'SELL'].map(async side => {
+      const q = new URLSearchParams({symbol, side, volume: String(volume)});
+      if (protection?.sl_price) q.set('sl_price', String(protection.sl_price));
+      else if (protection?.sl_points) q.set('sl_points', String(protection.sl_points));
+      const res = await fetch('/api/loss-profile/check?' + q);
+      return res.ok ? (await res.json()).warnings || [] : [];
+    }));
+    if (seq !== lossWarnSeq) return;
+    const lines = parts.flatMap((list, i) => list.map(g => `${i ? 'SAT' : 'AL'}: ${g.key} — ${g.count} işlemde %${g.win_rate_pct} kazanma, net ${g.net}`));
+    box.hidden = !lines.length;
+    if (lines.length) {
+      box.textContent = '';
+      const title = document.createElement('strong'); title.textContent = 'Geçmişte zarar eden kurulum (bilgi, emri engellemez)'; box.appendChild(title);
+      lines.slice(0, 4).forEach(t => { const p = document.createElement('div'); p.textContent = t; box.appendChild(p); });
+    }
+  } catch (_) { box.hidden = true; }
+}
+['lot-input', 'sl-input', 'tp-input', 'order-stop-mode'].forEach(id => { const el = document.getElementById(id); if (el && typeof el.addEventListener === 'function') el.addEventListener('input', scheduleLossWarning); });
+if (typeof setTimeout === 'function') setTimeout(scheduleLossWarning, 2500);

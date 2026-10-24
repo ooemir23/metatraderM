@@ -189,3 +189,8 @@ Gerçek hesapta TOTP kilidi (`require_real_unlock`) geçerlidir.
 "Strateji testi" bölümündeki "Filtreleri Karşılaştır" (`/api/backtest/filters`, `app/filter_compare.py`): aynı mumlarda botun kesişimini saf hâliyle,
 üst zaman dilimi trendi (`signal_engine.HtfTrend`) ve RSI aşırı bölge koruması (`rsi_buy_max/rsi_sell_min`) ile yan yana test eder (`backtest.simulate(entry_filter=)`).
 Bot kuralları DEĞİŞMEZ; filtreler bota eklenmedi (EA'da yok). Eklenmesi istenirse MT5'ten farklı olduğu için ayrıca onay alınır.
+
+## Zarar profili ve emir öncesi uyarı (2026-10-24, kullanıcı isteği; yalnız bilgi)
+`app/loss_profile.py`, `/api/loss-profile` (+ `/check`): kapanmış manuel ve bot işlemlerini sembol, yön, lot (sembolün ortanca lotuna oranı), SL mesafesi (% giriş)
+ve tutma süresine göre gruplar. Riskli grup = en az 5 işlem + kazanma ≤%35 + net zarar. Bot panelinde "Zarar profili" kartı; emir kartında (lot/SL/sembol
+değişince) uyarı satırı çıkar. Emri ENGELLEMEZ, bot davranışını değiştirmez (bota engel eklemek MT5'ten farklı olur, ayrıca onay gerekir). 5 dk önbellek.

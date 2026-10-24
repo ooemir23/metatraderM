@@ -983,6 +983,56 @@ class TrailingRequest(CloseRequest):
     distance_points: int = Field(ge=0, le=10000000)
 
 
+_LOSS_PROFILE_CACHE = {}
+
+
+def loss_profile_data(days):
+    """Closed manual + bot trades of the selected account; cached 5 minutes (history changes only when a trade closes)."""
+    from app import loss_profile
+    scope = mt5_client._selected_account()
+    key = (tuple(scope), days)
+    hit = _LOSS_PROFILE_CACHE.get(key)
+    if hit and time.monotonic() - hit[0] < 300:
+        return hit[1]
+    rows = [*mt5_client.get_manual_trades(days=days), *mt5_client.get_bot_trades(days=days)]
+    profile = {**loss_profile.build(rows), 'days': days}
+    _LOSS_PROFILE_CACHE.clear()
+    _LOSS_PROFILE_CACHE[key] = (time.monotonic(), profile)
+    return profile
+
+
+@app.get('/api/loss-profile')
+def loss_profile_report(days: int = Query(default=90, ge=7, le=365)):
+    try:
+        return loss_profile_data(days)
+    except MT5DataError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+@app.get('/api/loss-profile/check')
+def loss_profile_check(symbol: str = Query(min_length=1, max_length=32, pattern=r'^[A-Za-z0-9_.#-]+$'),
+                       side: Literal['BUY', 'SELL'] = 'BUY', volume: float = Query(gt=0, le=100000),
+                       entry_price: float = Query(default=0, ge=0), sl_price: float = Query(default=0, ge=0),
+                       sl_points: int = Query(default=0, ge=0, le=10000000), days: int = Query(default=90, ge=7, le=365)):
+    from app import loss_profile
+    try:
+        profile = loss_profile_data(days)
+    except MT5DataError:
+        return {'warnings': [], 'available': False}
+    if sl_points and not sl_price:
+        # Stop given as points: distance from the live quote (advisory only; an unreadable quote just skips the stop check).
+        try:
+            quote = mt5_client.get_symbol_price(symbol) or {}
+            point = float((mt5_client.get_symbol_spec(symbol) or {}).get('point') or 0)
+            entry_price = entry_price or float(quote.get('ask' if side == 'BUY' else 'bid') or 0)
+            if point > 0 and entry_price > 0:
+                sl_price = entry_price - sl_points * point if side == 'BUY' else entry_price + sl_points * point
+        except Exception:
+            pass
+    return {'available': True, 'trades': profile['trades'], 'days': days,
+            'warnings': loss_profile.check(profile, symbol, side, volume, entry_price or None, sl_price or None)}
+
+
 class PositionRuleRequest(CloseRequest):
     model_config = ConfigDict(extra='forbid')
     profit_kind: Literal['percent', 'amount'] = 'amount'

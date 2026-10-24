@@ -351,6 +351,7 @@
             <span id="order-notice-message">Emir sonucu ve işlem uyarıları burada gösterilir.</span>
             <button id="order-reset-btn" type="button" onclick="clearUncertainOrder()" hidden>MT5 kontrolü ve yeni talep</button>
           </div>
+          <div id="loss-warning" class="order-notice" data-tone="warning" role="status" aria-live="polite" hidden></div>
           <p class="ox-foot">Mod: MT5 kuralları — broker lot, stop ve teminat kontrolleri uygulanır. Her emir gönderilmeden önce onay istenir.</p>
         </div>
           </div>
@@ -844,6 +845,16 @@
                     </select>
                   </summary>
                   <div id="bot-perf-body" class="bot-perf-body" aria-live="polite"><p class="bot-history-empty">Yükleniyor…</p></div>
+                </details>
+
+                <!-- LOSS PROFILE (closed manual + bot trades) -->
+                <details id="loss-profile" class="bot-perf" ontoggle="if(this.open)fetchLossProfile()">
+                  <summary><i class="ph-bold ph-warning text-amber-300"></i> <span>Zarar profili</span>
+                    <select id="loss-profile-days" onclick="event.stopPropagation()" onchange="fetchLossProfile()" aria-label="Dönem">
+                      <option value="30">30 gün</option><option value="90" selected>90 gün</option><option value="180">180 gün</option>
+                    </select>
+                  </summary>
+                  <div id="loss-profile-body" class="bot-perf-body" aria-live="polite"><p class="bot-history-empty">Yükleniyor…</p></div>
                 </details>
 
                 <!-- TECHNICAL DETAILS -->
