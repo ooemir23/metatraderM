@@ -1345,3 +1345,6 @@ body[data-hide-amounts="1"] .hx-fav-value, body[data-hide-amounts="1"] .hx-balan
 .hx-pos-table thead th.hx-sortable:focus-visible { outline:2px solid #4c8dff; outline-offset:-2px; }
 .hx-pos-table thead th[aria-sort="ascending"]::after { content:' ▲'; font-size:9px; color:#4c8dff; }
 .hx-pos-table thead th[aria-sort="descending"]::after { content:' ▼'; font-size:9px; color:#4c8dff; }
+
+.hx-rule.is-set{color:#67e8f9;border-color:#0e7490}
+.hx-rule.is-warn{color:#fcd34d;border-color:#b45309}

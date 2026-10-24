@@ -1228,6 +1228,20 @@
     <button type="button" onclick="document.getElementById('pending-editor').close()" class="mt-4 ml-3 text-xs underline">Pencereyi kapat</button>
   </dialog>
 
+  <dialog id="pos-rule-dialog" class="bg-[#14181f] text-gray-200 rounded-2xl border border-gray-700 p-5 w-[min(94vw,400px)] backdrop:bg-black/70">
+    <div class="flex items-center justify-between gap-3 mb-3"><h2 id="pos-rule-title" class="font-bold text-white"></h2><button type="button" onclick="document.getElementById('pos-rule-dialog').close()" aria-label="Pencereyi kapat" class="text-xl text-gray-400 hover:text-white">×</button></div>
+    <p class="text-xs text-gray-400 mb-3">Pozisyonun net sonucu (kâr + swap) hedefe ulaşınca piyasa fiyatından kapatılır. Yüzde, pozisyonun teminatı üzerinden hesaplanır. Boş bırakılan taraf kapalıdır.</p>
+    <div class="grid grid-cols-2 gap-3 text-xs">
+      <label>Kâr hedefi<input id="rule-profit" type="number" min="0" step="any" class="w-full bg-gray-800 p-2 rounded mt-1"></label>
+      <label>Tür<select id="rule-profit-kind" class="w-full bg-gray-800 p-2 rounded mt-1"><option value="percent">Yüzde (%)</option><option value="amount">Tutar</option></select></label>
+      <label>Zarar sınırı<input id="rule-loss" type="number" min="0" step="any" class="w-full bg-gray-800 p-2 rounded mt-1"></label>
+      <label>Tür<select id="rule-loss-kind" class="w-full bg-gray-800 p-2 rounded mt-1"><option value="percent">Yüzde (%)</option><option value="amount">Tutar</option></select></label>
+    </div>
+    <p class="text-xs text-amber-300 mt-3">MT5'te yoktur: uygulama açık ve MT5 bağlıyken çalışır; yeniden başlatmada tekrar kurun.</p>
+    <button type="button" onclick="savePositionRule(false)" class="mt-3 px-3 py-2 rounded bg-cyan-700 text-white text-xs">Kaydet</button>
+    <button type="button" onclick="savePositionRule(true)" class="mt-3 ml-2 px-3 py-2 rounded bg-gray-700 text-white text-xs">Kuralı kaldır</button>
+  </dialog>
+
   <dialog id="position-editor" class="bg-[#14181f] text-gray-200 rounded-2xl border border-gray-700 p-5 w-[min(94vw,440px)] max-h-[calc(100dvh-32px)] overflow-y-auto backdrop:bg-black/70">
     <div class="flex items-center justify-between gap-3 mb-3"><h2 id="position-editor-title" class="font-bold text-white"></h2><button type="button" onclick="document.getElementById('position-editor').close()" aria-label="Pozisyon penceresini kapat" class="text-xl text-gray-400 hover:text-white">×</button></div>
     <p class="text-xs text-gray-400 mb-3">SL/TP alanları fiyat cinsindedir. 0 ilgili korumayı kaldırır.</p>

@@ -1283,6 +1283,7 @@ function renderPositionsData(positions) {
     if (!Array.isArray(positions)) throw new Error('Pozisyon listesi doğrulanamadı.');
     positionsRenderRevision++;
     window.lastPositionsData = positions;
+    pollPositionRules();
     executionPositions.clear();
     (positions || []).forEach(p => executionPositions.set(p.ticket, p));
     updatePositionExecution();
@@ -1328,6 +1329,7 @@ function renderPositionsData(positions) {
           <td data-label="" class="num hx-actions-cell">
             <span class="hx-row-actions">
               <button type="button" onclick="showPositionEditor(${ticket})" title="SL/TP değiştir veya kısmi kapat">Değiştir</button>
+              ${positionRuleButton(ticket)}
               ${closePending.has(Number(ticket))
                 ? `<button type="button" data-close-ticket="${ticket}" disabled aria-busy="true" class="is-closing" title="Kapatma isteği gönderildi; broker sonucu bekleniyor">Kapatılıyor…</button>`
                 : `<button type="button" data-close-ticket="${ticket}" onclick="closePosition(${ticket})" title="Pozisyon #${ticket} kapat">Kapat</button>`}
@@ -1338,6 +1340,38 @@ function renderPositionsData(positions) {
     });
 
     patchPositionRows(tbody, rowsHtml);
+}
+
+function positionRuleText(rule) {
+  const part = (kind, v) => kind === 'percent' ? `%${v}` : `${accountCurrency} ${formatMoney(v)}`;
+  const bits = [];
+  if (rule.profit) bits.push(`+${part(rule.profit_kind, rule.profit)}`);
+  if (rule.loss) bits.push(`−${part(rule.loss_kind, rule.loss)}`);
+  return bits.join(' / ');
+}
+function positionRuleButton(ticket) {
+  const rule = (window.positionRules || {})[ticket];
+  if (!rule) return `<button type="button" class="hx-rule" onclick="showPositionRule(${ticket})" title="Kâr hedefi veya zarar sınırına ulaşınca otomatik kapat">Hedef</button>`;
+  const warn = rule.status !== 'armed';
+  return `<button type="button" class="hx-rule is-set${warn ? ' is-warn' : ''}" onclick="showPositionRule(${ticket})" title="${escapeHtml(positionRuleText(rule))}${warn ? ' · ' + escapeHtml(rule.message || rule.status) : ''}">Hedef: ${escapeHtml(positionRuleText(rule))}</button>`;
+}
+async function refreshPositionRules() {
+  try {
+    const res = await fetch('/api/position-rules');
+    if (!res.ok) return;
+    const rows = await res.json();
+    const next = {};
+    (Array.isArray(rows) ? rows : []).forEach(r => { next[r.ticket] = r; });
+    if (JSON.stringify(next) === JSON.stringify(window.positionRules || {})) return;
+    window.positionRules = next;
+    if (Array.isArray(window.lastPositionsData)) renderPositionsData(window.lastPositionsData);
+  } catch (_) { /* panel keeps the last known rules */ }
+}
+let positionRulesPolled = 0;
+function pollPositionRules() {
+  if (Date.now() - positionRulesPolled < 3000) return;
+  positionRulesPolled = Date.now();
+  refreshPositionRules();
 }
 
 // The live feed re-renders several times a second. Replacing every row would destroy the "Değiştir" / "Kapat"

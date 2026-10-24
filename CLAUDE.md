@@ -178,3 +178,9 @@ işlem uyarıları eklenir (geçmiş ≥2 zarar varsa engeller), modele guards/l
 eşiği %65 → %75'e, net zararda %70'e çıkar (`item['min_confidence']`; bot `max(65, eşik)` kullanır). Üst çubuktaki "MevO AI" düğmesi kaldırıldı (MevO artık ana ekran anahtarında).
 MevO saat temizliği (2026-10-23): modele işlem saati/saat dağılımı gitmez (`strip_hours`), eski profildeki saat/zaman maddeleri prompt'tan süzülür (`no_hour_rules`),
 profil `version` < 2 ise fırsat istenince bir kez yeniden öğrenilir. Prompt: SL/TP'yi MevO verir, "SL/TP olmadan işlem yasağı" BEKLE sebebi değildir.
+
+## Pozisyon başına otomatik kapat (2026-10-24, kullanıcı isteği; MT5'te YOK)
+Pozisyon tablosundaki "Hedef" düğmesi: kâr hedefi ve/veya zarar sınırı, her biri yüzde (pozisyon teminatının %'si, `order_calc_margin`) ya da tutar.
+`app/position_rules.py` (1 sn döngü, `/api/position-rules`): net sonuç (kâr + swap) hedefe/sınıra ulaşınca `close_position` ile piyasadan kapatır
+(Kapat düğmesi gibi, journal korumalı). Kurallar yalnız bellekte tutulur; yeniden başlatma/hesap değişimi kuralı düşürür (iz süren stop gibi), pozisyon kapanınca silinir.
+Gerçek hesapta TOTP kilidi (`require_real_unlock`) geçerlidir.

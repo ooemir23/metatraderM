@@ -455,3 +455,23 @@ async function checkReconciledOrders() {
   finally { checkingOrderResults = false; }
 }
 setInterval(checkReconciledOrders, 15000);
+
+function showPositionRule(ticket) {
+  const p = (window.lastPositionsData || []).find(x => Number(x.ticket) === Number(ticket));
+  if (!p) return showToast('Pozisyon bulunamadı.', 'error');
+  const rule = (window.positionRules || {})[p.ticket] || {};
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  window.ruleTicket = p.ticket;
+  document.getElementById('pos-rule-title').textContent = `#${p.ticket} ${p.symbol} · Otomatik kapat`;
+  set('rule-profit-kind', rule.profit_kind || 'percent'); set('rule-profit', rule.profit || '');
+  set('rule-loss-kind', rule.loss_kind || 'percent'); set('rule-loss', rule.loss || '');
+  document.getElementById('pos-rule-dialog').showModal();
+}
+async function savePositionRule(clear) {
+  const ticket = window.ruleTicket, num = id => Number(document.getElementById(id)?.value || 0);
+  const profit = clear ? 0 : num('rule-profit'), loss = clear ? 0 : num('rule-loss');
+  const kinds = {profit_kind: document.getElementById('rule-profit-kind').value, loss_kind: document.getElementById('rule-loss-kind').value};
+  if (!(profit >= 0) || !(loss >= 0) || (!clear && !profit && !loss)) return showToast('Kâr hedefi veya zarar sınırından en az birini girin.', 'error');
+  const data = await guardedAction('rule:' + ticket + ':' + Date.now(), '/api/position-rules', {ticket, profit, loss, ...kinds});
+  if (data?.success) { document.getElementById('pos-rule-dialog').close(); refreshPositionRules(); }
+}

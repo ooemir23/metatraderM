@@ -1700,3 +1700,20 @@ def reconcile_open(mt5, metadata, created):
             'retcode': 10008 if pending else (10010 if 0 < filled < expected['volume'] else 10009 if success else 10006),
             'error': '' if success else 'Broker emri iptal etti, reddetti veya süresi doldu.',
             'comment': 'Broker emir geçmişinden doğrulandı.'}
+
+
+def position_rule_state(mt5, ticket, expected_login=0, expected_server=''):
+    """Read-only: net result (profit + swap) and margin of one position for the auto-close rules."""
+    _account(mt5, expected_login, expected_server)
+    rows = mt5.positions_get(ticket=ticket)
+    if rows is None:
+        raise RuntimeError('Pozisyon okunamadı.')
+    if not rows:
+        return {'closed': True}
+    p = rows[0]
+    if int(p.ticket) != ticket or int(p.type) not in (0, 1):
+        raise ValueError('Pozisyon kimliği doğrulanamadı.')
+    margin = mt5.order_calc_margin(int(p.type), str(p.symbol), float(p.volume), float(p.price_open))
+    margin = float(margin) if margin is not None else 0.0
+    return {'closed': False, 'identifier': int(p.identifier), 'side': int(p.type), 'symbol': str(p.symbol),
+            'profit': float(p.profit) + float(p.swap), 'margin': margin if margin > 0 else 0.0}

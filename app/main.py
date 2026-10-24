@@ -12,6 +12,7 @@ from app.mt5_client import MT5Client, TIMEFRAME_NAMES, MT5DataError
 from app.security import protect_dashboard
 from app.live_feed import LiveFeed
 from app.trailing_stops import TrailingStops
+from app.position_rules import PositionRules
 from app.native_terminal import NativeTerminal
 from app.strategy_bot import StrategyBot
 from app.mevo import MevO
@@ -32,6 +33,7 @@ import threading
 mt5_client = MT5Client()
 live_feed = LiveFeed(mt5_client)
 trailing_stops = TrailingStops(mt5_client)
+position_rules = PositionRules(mt5_client)
 bot = StrategyBot(mt5_client, config_path=state_path('bot_settings.json'))
 mevo = MevO(mt5_client)
 flatten_active = threading.Event()
@@ -141,6 +143,7 @@ async def lifespan(app: FastAPI):
     feed_task = asyncio.create_task(live_feed.run())
     maintenance_task = asyncio.create_task(maintenance_loop())
     trailing_task = asyncio.create_task(trailing_stops.run())
+    rules_task = asyncio.create_task(position_rules.run())
     try:
         yield
     finally:
@@ -148,10 +151,12 @@ async def lifespan(app: FastAPI):
         mt5_client.automation_stopped.set()
         bot.stop()
         await asyncio.to_thread(trailing_stops.stop)
+        await asyncio.to_thread(position_rules.stop)
         task.cancel()
         feed_task.cancel()
         maintenance_task.cancel()
         trailing_task.cancel()
+        rules_task.cancel()
         with suppress(asyncio.CancelledError):
             await task
         with suppress(asyncio.CancelledError):
@@ -160,6 +165,8 @@ async def lifespan(app: FastAPI):
             await maintenance_task
         with suppress(asyncio.CancelledError):
             await trailing_task
+        with suppress(asyncio.CancelledError):
+            await rules_task
         logger.info("Shutting down HMA Trading Application...")
 
 app = FastAPI(title="HMA Trading Dashboard", lifespan=lifespan)
@@ -942,6 +949,14 @@ class TrailingRequest(CloseRequest):
     distance_points: int = Field(ge=0, le=10000000)
 
 
+class PositionRuleRequest(CloseRequest):
+    model_config = ConfigDict(extra='forbid')
+    profit_kind: Literal['percent', 'amount'] = 'amount'
+    profit: float = Field(default=0, ge=0, le=1e9)
+    loss_kind: Literal['percent', 'amount'] = 'amount'
+    loss: float = Field(default=0, ge=0, le=1e9)
+
+
 def trade_response(result):
     if result.get("success"):
         return result
@@ -1034,6 +1049,25 @@ def close_by(req: CloseByRequest):
 @app.get('/api/position/trailing')
 def trailing_status():
     return trailing_stops.status()
+
+@app.get('/api/position-rules')
+def position_rules_status():
+    return position_rules.status()
+
+@app.post('/api/position-rules')
+def configure_position_rule(req: PositionRuleRequest, account=Depends(require_real_unlock)):
+    with mt5_client._lock.order():
+        scope = bound_request_account(req,account)
+        def configure():
+            try:
+                return position_rules.configure(req.ticket,req.profit_kind,req.profit,req.loss_kind,req.loss,scope)
+            except (ValueError, MT5DataError) as exc:
+                return {'success':False,'error':str(exc)}
+        result = mt5_client.journal.run('rule-config-'+req.request_id,
+            {'ticket':req.ticket,'p':[req.profit_kind,req.profit],'l':[req.loss_kind,req.loss],'account':scope},configure)
+        if result.get('replayed') and (req.profit or req.loss) and req.ticket not in position_rules.rules:
+            result.update(success=False,enabled=False,error='Uygulama yeniden başladı veya pozisyon değişti; hedefi yeni taleple kurun.')
+        return trade_response(result)
 
 @app.get('/api/position/{ticket}/capabilities')
 def position_capabilities(ticket: int = Path(gt=0)):
