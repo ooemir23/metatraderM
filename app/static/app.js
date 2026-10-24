@@ -3536,6 +3536,8 @@ function flashFields(nodes) {
 }
 
 function applyScannedSignalToTicket(symbol, slPrice, tpPrice) {
+  // The order window lives on the Grafik screen; the scanner is on the Bot screen, so switch back first.
+  if (window.MainView && window.MainView.get() !== 'chart') window.MainView.set('chart', {scroll: false});
   const symbolChanged = !!symbol && symbol !== currentSymbol;
   if (symbolChanged) switchSymbol(symbol);
   const stopMode = document.getElementById('order-stop-mode');
@@ -3563,7 +3565,7 @@ function applyScannedSignalToTicket(symbol, slPrice, tpPrice) {
     if (lot) { lot.focus({preventScroll: true}); lot.select?.(); }
     flashFields([card, ...(symbolChanged ? [document.getElementById('order-symbol-select'), document.getElementById('order-symbol-tag')] : []),
       ...changed, lot]);
-  }, reduce ? 0 : 350);
+  }, reduce ? 0 : 450);
   if (typeof showToast === 'function') {
     showToast(`🎯 ${symbol} SL ${slPrice || '—'} / TP ${tpPrice || '—'} emir penceresine aktarıldı. Hacmi kontrol edip Sell / Buy'a basın.`, 'info');
   }
