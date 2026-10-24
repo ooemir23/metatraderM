@@ -3039,6 +3039,7 @@ function renderBotPerformance(d) {
     <div class="bot-perf-tables">
       ${table('Sembole göre', d.by_symbol, 'Sembol')}
       ${table(`Giriş saatine göre (UTC${d.utc_offset_min >= 0 ? '+' : ''}${d.utc_offset_min / 60})`, d.by_hour, 'Saat')}
+      ${table('Yöne göre (AL / SAT)', d.by_side, 'Yön')}
       ${table('Kaynağa göre', d.by_source, 'Kaynak')}
     </div>
     <p class="bot-protect-note">Geçmiş sonuçlardır, gelecek tahmini değildir. Sayılar MT5 geçmişindeki kapanmış HMA botu pozisyonlarından hesaplanır ("Şimdi AL/SAT" manuel işlemdir, dahil değildir).</p>`;

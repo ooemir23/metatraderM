@@ -69,3 +69,10 @@ def test_copy_lot_override_keeps_manual_sl_tp_but_fixes_lot():
     assert (lot, sl, tp) == (5.0, 150, 289) and '5 lot' in note        # yalnız lot değişir
     assert bot.manual_copy['manual_lot'] == 22.5
     assert bot.validated_config({'copy_lot_override': 5})['copy_lot_override'] == 5
+
+
+def test_performance_groups_by_side():
+    from app import bot_performance
+    row = lambda side, net: dict(net=net, costs=0, r=None, symbol='X', opened_at=0, closed_at=0, source='AUTO', side=side)
+    out = bot_performance.summarize([row('BUY', 5), row('SELL', -3), row('SELL', -2)])
+    assert out['by_side']['AL']['net'] == 5 and out['by_side']['SAT'] == {'count': 2, 'wins': 0, 'net': -5.0, 'win_rate_pct': 0.0}

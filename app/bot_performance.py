@@ -123,5 +123,6 @@ def summarize(rows, utc_offset_min=180):
         'by_symbol': _group(rows, lambda r: r['symbol'] or '—'),
         'by_hour': dict(sorted(_group(rows, hour).items())),
         'by_source': _group(rows, lambda r: r['source']),
+        'by_side': _group(rows, lambda r: {'BUY': 'AL', 'SELL': 'SAT'}.get(r['side'], '—')),
         'recent': rows[-15:][::-1], 'early_sample': count < 30, 'utc_offset_min': utc_offset_min,
     }
