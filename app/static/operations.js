@@ -334,6 +334,39 @@ async function runStrategyBacktest() {
   } catch (error) { target.textContent = error.message; }
 }
 
+// Same bot-based test settings, plain crossover vs. HTF-trend / RSI-guard filters (read-only comparison).
+async function runFilterCompare() {
+  const target = document.getElementById('backtest-result');
+  if (!target) return;
+  const en = window.MT5I18n?.language() === 'en';
+  const bot = (typeof latestBotSettings !== 'undefined' && latestBotSettings) || {};
+  const atrMode = bot.risk_mode === 'ATR';
+  const payload = {symbol:currentSymbol, candles:Number(document.getElementById('backtest-candles')?.value),
+    commission_points:Number(document.getElementById('backtest-commission')?.value),
+    timeframe_minutes:Number(bot.timeframe_minutes || window.MT5Chart?.getTimeframe?.() || 15),
+    hma_period:Number(bot.hma_period || 14), second_ma_type:bot.second_ma_type || 'EMA',
+    second_ma_period:Number(bot.second_ma_period || 34),
+    sl_points:!atrMode && bot.use_stop_loss !== false ? Number(bot.sl_points ?? 200) : 0,
+    tp_points:!atrMode && bot.use_take_profit ? Number(bot.tp_points || 0) : 0,
+    sl_atr:atrMode && bot.use_stop_loss !== false ? Number(bot.atr_stop_multiplier || 0) : 0,
+    tp_atr:atrMode && bot.use_take_profit ? Number(bot.atr_target_multiplier || 0) : 0,
+    atr_period:Number(bot.atr_period || 14)};
+  if (payload.second_ma_type === 'KAMA') payload.second_ma_type = 'EMA';
+  target.textContent = en ? 'Comparing filters on history…' : 'Filtreler geçmiş mumlarda karşılaştırılıyor…';
+  try {
+    const response = await fetch('/api/backtest/filters', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Test failed');
+    const names = {plain:en?'Plain crossover (bot)':'Saf kesişim (bot)', htf:en?'+ Higher-timeframe trend':'+ Üst zaman dilimi trendi',
+      rsi:en?'+ RSI extreme guard':'+ RSI aşırı bölge koruması', both:en?'+ Both':'+ İkisi birden'};
+    const rows = data.variants.map(v => `${names[v.key] || v.label}: ${v.count} ${en?'trades':'işlem'}, ${v.net_points} ${en?'net points':'net puan'}, ${v.win_rate_pct ?? '—'}% ${en?'wins':'kazanç'}, PF ${v.profit_factor ?? '—'}, ${en?'drawdown':'düşüş'} ${v.max_drawdown_points}${v.count < 30 ? (en?' (few trades: may be chance)':' (az işlem: tesadüf olabilir)') : ''}`);
+    if (!data.htf_available) rows.push(en ? 'Higher-timeframe candles unavailable: trend variants skipped.' : 'Üst zaman dilimi mumları alınamadı: trend filtreli seçenekler atlandı.');
+    target.innerHTML = '';
+    rows.forEach(text => { const p = document.createElement('div'); p.textContent = text; target.appendChild(p); });
+    const note = document.createElement('div'); note.className = 'text-gray-400'; note.textContent = data.disclaimer; target.appendChild(note);
+  } catch (error) { target.textContent = error.message; }
+}
+
 async function checkBrokerCapabilities() {
   const target = document.getElementById('broker-diagnostics');
   if (!target) return;

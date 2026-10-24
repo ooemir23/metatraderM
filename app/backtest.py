@@ -5,7 +5,7 @@ from app import signal_engine as se
 
 def simulate(rates, hma_period=14, ma_type='EMA', ma_period=34, sl_points=200,
              tp_points=0, point=.00001, spread_points=0, commission_points=0, *, start=0,
-             sl_atr=0.0, tp_atr=0.0, atr_period=14, fast_type='HMA'):
+             sl_atr=0.0, tp_atr=0.0, atr_period=14, fast_type='HMA', entry_filter=None):
     """Bot rules on closed candles: crossover on candle i, order at candle i+1 open.
 
     MT5 candles are Bid prices. A buy opens at Ask (Bid + spread) and its SL/TP trigger on Bid; a
@@ -48,6 +48,8 @@ def simulate(rates, hma_period=14, ma_type='EMA', ma_period=34, sl_points=200,
             exit_price = bid_open if position['side'] == 'BUY' else bid_open + spread
             _finish(trades, position, exit_price, point, commission_points, i+1, 'opposite signal')
             position = None
+        if not position and side and entry_filter is not None and not entry_filter(i, side):
+            side = None   # filtered: no entry on this crossover (an opposite signal still closed any position above)
         if not position and side:
             entry = bid_open + spread if side == 'BUY' else bid_open
             sl_d, tp_d = distance(sl_points, sl_atr, i), distance(tp_points, tp_atr, i)
@@ -81,7 +83,7 @@ def simulate(rates, hma_period=14, ma_type='EMA', ma_period=34, sl_points=200,
         _finish(trades, position, exit_price, point, commission_points, len(rates)-1, 'test end')
     split = min_index + int((len(rates) - min_index) * .7)
     return {'success':True, 'symbol_points':True, 'trades':trades[-100:],
-            'total_trades':len(trades), 'trades_sample_limit':100, 'tested_candles': len(rates) - min_index,
+            'total_trades':len(trades), 'all':_stats(trades), 'trades_sample_limit':100, 'tested_candles': len(rates) - min_index,
             'in_sample':_stats([t for t in trades if t['opened_at'] < split]),
             'out_of_sample':_stats([t for t in trades if t['opened_at'] >= split]),
             'assumptions':{'spread_points':spread_points, 'commission_points_round_turn':commission_points,
@@ -105,6 +107,8 @@ def _stats(rows):
         equity += profit
         peak = max(peak, equity)
         max_drawdown = max(max_drawdown, peak-equity)
+    gain, loss = sum(p for p in profits if p > 0), -sum(p for p in profits if p < 0)
     return {'count':len(rows), 'net_points':round(sum(profits), 2),
+            'profit_factor':round(gain/loss, 2) if loss else None,
             'win_rate_pct':round(100*sum(p>0 for p in profits)/len(profits), 1) if profits else None,
             'max_drawdown_points':round(max_drawdown, 2)}

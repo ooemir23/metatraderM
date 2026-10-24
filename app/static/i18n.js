@@ -50,6 +50,8 @@
     ["Kaydet", "Save"],
     ["Kuralı kaldır", "Remove rule"],
     ["Pencereyi kapat", "Close window"],
+    ["Filtreleri Karşılaştır", "Compare Filters"],
+    ["Saf kesişimi üst zaman dilimi trendi ve RSI aşırı bölge koruması ile geçmişte karşılaştırır", "Compares the plain crossover with higher-timeframe trend and RSI extreme guard on history"],
     ["Ana ekran", "Main screen"],
     ["Menü", "Menu"],
     ["Manuel stil sinyali", "Manual-style signal"],

@@ -8,14 +8,14 @@ from starlette.responses import JSONResponse
 
 TRADER_ACTIONS = {
     '/api/security/unlock', '/api/security/lock',
-    '/api/trade/preview', '/api/backtest', '/api/research/compare', '/api/research/export', '/api/mevo/learn', '/api/mevo/opportunities',
+    '/api/trade/preview', '/api/backtest', '/api/backtest/filters', '/api/research/compare', '/api/research/export', '/api/mevo/learn', '/api/mevo/opportunities',
     '/api/order/open', '/api/order/pending', '/api/order/modify', '/api/order/cancel',
     '/api/order/close', '/api/order/close-all', '/api/order/close-profit',
     '/api/order/close-loss', '/api/position/stops', '/api/position/partial-close',
     '/api/position/close-by', '/api/position/trailing', '/api/position-rules',
     '/api/bot/signal-rules', '/api/bot/config',
 }
-VIEWER_ACTIONS = {'/api/trade/preview', '/api/backtest', '/api/research/compare', '/api/research/export'}
+VIEWER_ACTIONS = {'/api/trade/preview', '/api/backtest', '/api/backtest/filters', '/api/research/compare', '/api/research/export'}
 
 
 def normalized_origin(value):

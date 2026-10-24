@@ -184,3 +184,8 @@ Pozisyon tablosundaki "Hedef" düğmesi: kâr hedefi ve/veya zarar sınırı, he
 `app/position_rules.py` (1 sn döngü, `/api/position-rules`): net sonuç (kâr + swap) hedefe/sınıra ulaşınca `close_position` ile piyasadan kapatır
 (Kapat düğmesi gibi, journal korumalı). Kurallar yalnız bellekte tutulur; yeniden başlatma/hesap değişimi kuralı düşürür (iz süren stop gibi), pozisyon kapanınca silinir.
 Gerçek hesapta TOTP kilidi (`require_real_unlock`) geçerlidir.
+
+## Filtre karşılaştırma testi (2026-10-24, kullanıcı isteği; yalnız bilgi)
+"Strateji testi" bölümündeki "Filtreleri Karşılaştır" (`/api/backtest/filters`, `app/filter_compare.py`): aynı mumlarda botun kesişimini saf hâliyle,
+üst zaman dilimi trendi (`signal_engine.HtfTrend`) ve RSI aşırı bölge koruması (`rsi_buy_max/rsi_sell_min`) ile yan yana test eder (`backtest.simulate(entry_filter=)`).
+Bot kuralları DEĞİŞMEZ; filtreler bota eklenmedi (EA'da yok). Eklenmesi istenirse MT5'ten farklı olduğu için ayrıca onay alınır.

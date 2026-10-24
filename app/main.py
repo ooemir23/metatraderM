@@ -367,6 +367,40 @@ def run_backtest(req: BacktestRequest):
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
+@app.post('/api/backtest/filters')
+def run_filter_compare(req: BacktestRequest):
+    """Plain crossover vs. HTF-trend / RSI-guard filters on the broker's candles. Read-only; changes no bot rule."""
+    if req.timeframe_minutes not in TIMEFRAME_NAMES:
+        raise HTTPException(status_code=422, detail='Desteklenmeyen zaman dilimi.')
+    from app import signal_engine, filter_compare
+    warmup = signal_engine.history_bars({'hma_period': req.hma_period, 'ema_period': req.second_ma_period,
+                                         'ma_type': req.second_ma_type, 'atr_period': req.atr_period})
+    rates = mt5_client.get_rates(req.symbol, req.timeframe_minutes, req.candles + warmup + 1)
+    if not rates or len(rates) < 2:
+        raise HTTPException(status_code=503, detail='Mum verisi alınamadı.')
+    rates = rates[:-1]
+    start = max(0, len(rates) - req.candles)
+    price = mt5_client.get_symbol_price(req.symbol)
+    info = mt5_client.get_symbol_spec(req.symbol)
+    if not info or not info.get('point') or not price.get('bid'):
+        raise HTTPException(status_code=503, detail='Broker sembol özellikleri doğrulanamadı.')
+    htf_minutes = signal_engine.htf_minutes_for(req.timeframe_minutes, 0)
+    htf_rates = None
+    if htf_minutes and htf_minutes in TIMEFRAME_NAMES:
+        htf_rates = mt5_client.get_rates(req.symbol, htf_minutes, 400)
+        htf_rates = htf_rates[:-1] if htf_rates and len(htf_rates) > 1 else None
+    try:
+        rows = filter_compare.compare(rates, htf_rates, htf_minutes, req.timeframe_minutes,
+            hma_period=req.hma_period, ma_type=req.second_ma_type, ma_period=req.second_ma_period,
+            sl_points=req.sl_points, tp_points=req.tp_points, point=float(info['point']),
+            spread_points=float(price.get('spread', 0)), commission_points=req.commission_points, start=start,
+            sl_atr=req.sl_atr, tp_atr=req.tp_atr, atr_period=req.atr_period)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {'symbol': req.symbol, 'timeframe_minutes': req.timeframe_minutes, 'htf_minutes': htf_minutes,
+            'htf_available': bool(htf_rates), 'tested_candles': len(rates) - start, 'variants': rows,
+            'disclaimer': 'Geçmiş test sonucudur; gelecekteki kârı garanti etmez. Swap, kayma ve geçmiş spread dahil değildir.'}
+
 _PRESET_CACHE: Dict[Any, Any] = {}
 
 
