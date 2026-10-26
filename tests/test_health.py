@@ -42,6 +42,9 @@ def test_bot_findings():
     assert any(f['id'] == 'skipped:XAUUSD' and '#9' in f['detail'] for f in found)
     stalled = {'XAUUSD': {'state': 'WAITING_SIGNAL', 'detail': '', 'updated': 10_000 - 3600}}
     assert 'bot_stalled' in ids(base(bot={'is_running': True, 'symbol': 'XAUUSD', 'symbol_status': stalled}))
+    # heartbeat present: an old status text alone is not a stall; a stopped heartbeat is
+    assert 'bot_stalled' not in ids(base(bot={'is_running': True, 'symbol': 'XAUUSD', 'symbol_status': stalled, 'loop_at': 9_999}))
+    assert 'bot_stalled' in ids(base(bot={'is_running': True, 'symbol': 'XAUUSD', 'symbol_status': stalled, 'loop_at': 10_000 - 600}))
     assert 'bot_error' in ids(base(bot={'is_running': False, 'last_error': 'boom'}))
     assert 'order_unresolved' in ids(base(bot={'is_running': True, 'runtime_state': 'ORDER_UNRESOLVED', 'symbol_status': {}}))
     assert 'session_target' in ids(base(bot={'is_running': False, 'runtime_state': 'PROFIT_TARGET', 'symbol_status': {}}))

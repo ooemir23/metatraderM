@@ -122,6 +122,7 @@ class StrategyBot:
         self.trade_days = [0, 1, 2, 3, 4, 5, 6]  # Monday = 0
         self.blocked_windows: List[str] = []     # "HH:MM-HH:MM" daily or "YYYY-MM-DD HH:MM-HH:MM"
         self.started_at = 0
+        self.loop_at = 0   # heartbeat: last time run_loop went round (health check tells a hung loop from an idle one)
         self.start_warnings: List[str] = []
         self.start_notes: List[str] = []      # information at start (manual copy values), not problems
         self._run_nonce = 0
@@ -737,6 +738,7 @@ class StrategyBot:
             "is_running": self.is_running,
             "runtime_state": self.runtime_state,
             "runtime_detail": self.runtime_detail,
+            "loop_at": self.loop_at,
             "last_error": self.last_error,
             "symbol": self.symbol,
             "symbols": getattr(self, "symbols", [self.symbol]),
@@ -993,6 +995,7 @@ class StrategyBot:
         self.log(f"🚀 HMA Kesişim Botu Başlatıldı ({symbols_str} · M{self.timeframe_minutes})")
 
         while self.is_running:
+            self.loop_at = time.time()
             try:
                 await asyncio.to_thread(self.check_loss_streak)
                 if self.is_running:

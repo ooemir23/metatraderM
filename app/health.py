@@ -7,6 +7,7 @@
 import math
 
 BOT_STALL_SECONDS = 15 * 60
+LOOP_STALL_SECONDS = 3 * 60   # bot loop heartbeat older than this = the loop really hangs
 LIMIT_NEAR = 0.95
 MARKET_QUIET_SECONDS = 10 * 60
 
@@ -56,11 +57,16 @@ def evaluate(ctx):
     if running:
         rows = bot.get('symbol_status') or {}
         primary_key = bot.get('symbol')
+        loop_at = _num(bot.get('loop_at'))
         for key, row in rows.items():
             updated = _num(row.get('updated'))
-            if key == primary_key and updated and now - updated > BOT_STALL_SECONDS and row.get('state') not in ('WAITING_MARKET',):
-                out.append(_f('bot_stalled', 'warn', f'{key}: bot {int((now - updated) // 60)} dk durum güncellemedi',
-                              'Bot çalışıyor görünüyor ama döngü yanıt vermiyor olabilir.', 'MT5 bağlantısını ve bot günlüğünü kontrol edin.', 'bot-settings'))
+            if loop_at:   # heartbeat known: an unchanged status text is normal (waiting for a crossover), only a stopped loop is a problem
+                stalled, age = now - loop_at > LOOP_STALL_SECONDS, now - loop_at
+            else:
+                stalled, age = bool(updated) and now - updated > BOT_STALL_SECONDS and row.get('state') not in ('WAITING_MARKET',), now - (updated or now)
+            if key == primary_key and stalled:
+                out.append(_f('bot_stalled', 'warn', f'{key}: bot döngüsü {int(age // 60)} dk yanıt vermedi',
+                              'Bot çalışıyor görünüyor ama döngü ilerlemiyor (MT5 isteği takılmış olabilir).', 'MT5 bağlantısını ve bot günlüğünü kontrol edin.', 'bot-settings'))
             if row.get('state') == 'SKIPPED':
                 out.append(_f(f'skipped:{key}', 'info', f'{key}: sinyal atlandı', str(row.get('detail') or '')[:300], '', 'positions'))
             elif row.get('state') == 'REJECTED':

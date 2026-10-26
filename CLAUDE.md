@@ -209,3 +209,4 @@ Sistem sağlığı → Araçlar'da sağlık paneli; teknik hata → Araçlar; em
 Ağ/sunucu kesintisi (2026-10-26): `health.js` istek başına değil kesinti başına tek bildirim yazar (ağ hatası, 502/504 → "Sunucuya ulaşılamıyor"; sonra "geri geldi"); 503 sayılmaz.
 Kesinti teşhisi (2026-10-26): `/api/health` yanıtı `started_at` (uygulama işlem başlangıcı) döner; `health.js` iki kontrol arasında değer değişirse "Uygulama yeniden başlatıldı (saat)" yazar,
 panel başlığında açılış saati görünür. Böylece kesinti yeniden başlatmadan mı ağdan mı anlaşılır. Yalnız bilgi.
+Bot takılma uyarısı (2026-10-26): durum metni değişmemesi (kesişim bekleme) takılma sayılmaz; `StrategyBot.loop_at` kalp atışı (run_loop her turda) 3 dk durursa "bot döngüsü yanıt vermedi" çıkar. Yalnız bilgi.
