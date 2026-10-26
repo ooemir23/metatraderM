@@ -236,3 +236,10 @@
   .mx-fold-btn[aria-expanded="false"] + div { display:none !important; }
   #bot-card, #signal-scanner-card, #manual-style-card { padding:10px !important; }
 }
+
+/* Notification bell on phones: the panel spans the screen; a dot on the menu button shows unread messages. */
+@media (max-width:759px) {
+  .nc-panel { position:fixed; left:8px; right:8px; top:60px; width:auto; max-height:calc(100dvh - 140px); z-index:200; }
+  body.nc-has-unread #mx-more { position:relative; }
+  body.nc-has-unread #mx-more::after { content:''; position:absolute; top:4px; right:4px; width:9px; height:9px; border-radius:50%; background:#e5484d; }
+}

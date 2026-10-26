@@ -46,7 +46,7 @@
   <!-- TradingView Widget -->
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <link rel="stylesheet" href="/static/style.css?v=terminal-8">
-  <link rel="stylesheet" href="/static/mobile.css?v=1">
+  <link rel="stylesheet" href="/static/mobile.css?v=2">
   <script src="/static/ui-scale.js?v=1"></script>
   <script src="/static/vendor/lightweight-charts.js"></script>
 </head>
@@ -89,6 +89,13 @@
       </div>
       <button type="button" id="mx-more" class="mx-more" aria-label="Menü" aria-expanded="false" aria-controls="hx-actions"><i class="ph-bold ph-list"></i></button>
       <div class="hx-actions" id="hx-actions">
+        <div class="nc-wrap" id="nc-wrap">
+          <button type="button" id="nc-bell" class="hx-btn nc-bell" aria-haspopup="true" aria-expanded="false" aria-controls="nc-panel" title="Bildirim geçmişi" aria-label="Bildirim geçmişi"><i class="ph-bold ph-bell"></i><span id="nc-badge" class="nc-badge" hidden>0</span></button>
+          <div id="nc-panel" class="nc-panel" hidden role="dialog" aria-label="Bildirimler">
+            <div class="nc-head"><strong>Bildirimler</strong><button type="button" id="nc-clear" class="nc-clear">Tümünü sil</button></div>
+            <div id="nc-list" class="nc-list" aria-live="polite"></div>
+          </div>
+        </div>
         <button id="tools-toggle" type="button" class="tools-toggle hx-btn" onclick="setToolsDrawer(true)" aria-controls="tools-drawer" aria-expanded="false" title="Strateji testi, araştırma, piyasa derinliği ve sistem günlüğü">
           <i class="ph-bold ph-toolbox"></i><span>Araçlar</span><span id="tools-error-badge" class="tools-error-badge" hidden>0</span>
         </button>
@@ -1382,5 +1389,6 @@
   <script src="/static/balance-menu.js?v=2"></script>
   <script src="/static/mobile-shell.js?v=1"></script>
   <script src="/static/account-menu.js?v=1"></script>
+  <script src="/static/notify-center.js?v=1"></script>
 </body>
 </html>

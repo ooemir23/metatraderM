@@ -3281,7 +3281,7 @@ function showToast(message, type = "info") {
     toast.style.opacity = "0";
     toast.style.transition = "opacity 0.3s";
     setTimeout(() => toast.remove(), 300);
-  }, fixable ? 9000 : 4000);
+  }, fixable ? 9000 : type === 'error' || type === 'warning' ? 9000 : 6000);
 }
 
 // Helpers

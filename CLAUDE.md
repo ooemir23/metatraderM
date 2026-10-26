@@ -194,3 +194,7 @@ Bot kuralları DEĞİŞMEZ; filtreler bota eklenmedi (EA'da yok). Eklenmesi iste
 `app/loss_profile.py`, `/api/loss-profile` (+ `/check`): kapanmış manuel ve bot işlemlerini sembol, yön, lot (sembolün ortanca lotuna oranı), SL mesafesi (% giriş)
 ve tutma süresine göre gruplar. Riskli grup = en az 5 işlem + kazanma ≤%35 + net zarar. Bot panelinde "Zarar profili" kartı; emir kartında (lot/SL/sembol
 değişince) uyarı satırı çıkar. Emri ENGELLEMEZ, bot davranışını değiştirmez (bota engel eklemek MT5'ten farklı olur, ayrıca onay gerekir). 5 dk önbellek.
+
+## Bildirim çanı (2026-10-26, kullanıcı isteği)
+Üst çubukta çan (`notify-center.js`): her `showToast` mesajı tarayıcıda (localStorage, son 100) geçmişe yazılır; okunmamış sayı rozeti, "Tümünü sil".
+Bildirimler 6 sn (hata/uyarı 9 sn) görünür. Mobilde çan menü sayfasındadır, ☰ düğmesinde okunmamış noktası vardır. Emir/hesap davranışı değişmedi.
