@@ -7,7 +7,7 @@ from unittest.mock import Mock
 import pytest
 
 from app import bot_performance, mt5_bridge
-from app.mt5_bridge import HMA_MAGIC
+from app.mt5_bridge import HMA_MAGIC, MANUAL_MAGIC
 from app.strategy_bot import StrategyBot
 
 ACCOUNT = [7, 'demo', 'DEMO']
@@ -250,12 +250,23 @@ def test_status_explains_waiting_for_next_crossover():
 
 def test_status_explains_existing_bot_position():
     bot, client = status_bot(cross=True)
-    client.get_positions.return_value = [{'symbol': 'EURUSD', 'magic': HMA_MAGIC, 'type': 'BUY', 'ticket': 9}]
+    client.get_positions.return_value = [{'symbol': 'EURUSD', 'magic': HMA_MAGIC, 'type': 'BUY', 'ticket': 9, 'volume': 5}]
     bot.close_opposite = False
     bot._check_strategy()
     row = bot.get_status()['symbol_status']['EURUSD']
-    assert row['state'] == 'SKIPPED' and 'aynı yönde bir bot pozisyonu' in row['detail']
+    assert row['state'] == 'SKIPPED' and 'botun kendi açtığı aynı yönde pozisyon' in row['detail'] and '#9' in row['detail']
     client.open_order.assert_not_called()
+
+
+def test_manual_positions_never_block_the_bot():
+    bot, client = status_bot(cross=True)
+    # hand-opened (no magic / manual magic) same-direction positions do not count
+    client.get_positions.return_value = [{'symbol': 'EURUSD', 'magic': 0, 'type': 'BUY', 'ticket': 7, 'volume': 5},
+                                         {'symbol': 'EURUSD', 'magic': MANUAL_MAGIC, 'type': 'BUY', 'ticket': 8, 'volume': 5}]
+    client.open_order.return_value = {'success': True, 'ticket': 10, 'price': 1.1}
+    bot.close_opposite = False
+    bot._check_strategy()
+    assert client.open_order.called
 
 
 def test_status_reports_opened_and_rejected_orders():
