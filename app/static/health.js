@@ -21,22 +21,37 @@
     const reason = event.reason?.message || String(event.reason || '');
     if (reason && !/AbortError|aborted/i.test(reason)) report(`Teknik hata (işlenmeyen): ${reason.slice(0, 200)}`, 'error');
   });
+  // One message per outage instead of one per failed request: the server restarting (update) or a network drop makes every
+  // poll fail at once. 502/504 from the proxy count as the same outage; 503 = MT5/broker unavailable (health check covers it).
+  let serverDown = false;
+  const outage = () => {
+    if (serverDown) return;
+    serverDown = true;
+    window.NotifyCenter?.add('Sunucuya ulaşılamıyor (uygulama yeniden başlıyor ya da ağ kesintisi olabilir). Bağlantı gelince kendiliğinden devam eder.', 'warning');
+  };
+  const recovered = () => {
+    if (!serverDown) return;
+    serverDown = false;
+    window.NotifyCenter?.add('Sunucu bağlantısı geri geldi.', 'success');
+  };
   if (typeof window.fetch === 'function' && !window.fetch.__health) {
     const original = window.fetch;
-    const wrapped = function (input, init) {
-      const url = typeof input === 'string' ? input : input?.url || '';
+    const apiPath = (input) => {
+      try { const url = typeof input === 'string' ? input : input?.url || ''; const path = new URL(url, location.href).pathname; return path.startsWith('/api/') ? path : ''; } catch (_) { return ''; }
+    };
+    const wrapped = function (input) {
+      const path = apiPath(input);
       return original.apply(this, arguments).then((response) => {
-        try {
-          const path = new URL(url, location.href).pathname;
-          // 503 = broker/MT5 temporarily unavailable (reported once by the health check), not a bug of the page.
-          if (response.status >= 500 && response.status !== 503 && path.startsWith('/api/') && path !== '/api/health') report(`Sunucu hatası ${response.status}: ${path}`, 'error');
-        } catch (_) { /* ignore */ }
+        if (path && path !== '/api/health') {
+          if ([502, 504].includes(response.status)) outage();
+          else {
+            recovered();
+            if (response.status >= 500 && response.status !== 503) report(`Sunucu hatası ${response.status}: ${path}`, 'error');
+          }
+        }
         return response;
       }, (error) => {
-        try {
-          const path = new URL(url, location.href).pathname;
-          if (path.startsWith('/api/') && path !== '/api/health' && error?.name !== 'AbortError') report(`Sunucuya ulaşılamadı: ${path}`, 'warning');
-        } catch (_) { /* ignore */ }
+        if (path && path !== '/api/health' && error?.name !== 'AbortError') outage();
         throw error;
       });
     };

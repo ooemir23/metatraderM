@@ -206,3 +206,4 @@ toplam lot ve işlem sayısı sınırı, bot lotu-sınır uyumu, gerçek hesapta
 API cevapları da "Teknik hata" olarak çana yazılır. Araçlar > "Sistem sağlığı" panelinde elle kontrol edilir.
 Bildirim çanı satırları tıklanabilir (`notify-center.js` `route`): bilet numarası → açıksa Pozisyonlar (satır vurgulanır), değilse Geçmiş; bot/sinyal → Bot; MevO → MevO;
 Sistem sağlığı → Araçlar'da sağlık paneli; teknik hata → Araçlar; emir → Grafik emir kartı. Yönlendirilemeyen bildirim yalnız bilgidir.
+Ağ/sunucu kesintisi (2026-10-26): `health.js` istek başına değil kesinti başına tek bildirim yazar (ağ hatası, 502/504 → "Sunucuya ulaşılamıyor"; sonra "geri geldi"); 503 sayılmaz.
