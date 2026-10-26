@@ -903,6 +903,12 @@
           <p id="native-terminal-status" role="status" class="text-xs text-gray-400 mt-2"></p>
           <iframe id="native-terminal-frame" hidden title="Orijinal MetaTrader 5 terminali" class="native-terminal-frame w-full mt-3 rounded border border-gray-700 bg-black" allow="fullscreen" referrerpolicy="no-referrer"></iframe>
         </details>
+        <details id="health-panel" class="bg-[#14181f] p-4 rounded-2xl border border-gray-800 text-xs" ontoggle="if(this.open)runHealthCheck()">
+          <summary class="text-white font-bold cursor-pointer">Sistem sağlığı</summary>
+          <p class="mt-2 text-gray-400">Bağlantı, fiyat akışı, bot durumu, sınırlar ve ayar çelişkilerini kontrol eder. Yalnız okur; hiçbir ayarı değiştirmez, emir göndermez. Sorunlar dakikada bir bildirim çanına da düşer.</p>
+          <button type="button" onclick="runHealthCheck()" class="mt-2 rounded bg-cyan-700 px-3 py-2 font-semibold">Şimdi kontrol et</button>
+          <div id="health-body" class="health-body mt-2" aria-live="polite"></div>
+        </details>
         <details class="bg-[#14181f] p-4 rounded-2xl border border-gray-800 text-xs">
           <summary class="text-white font-bold cursor-pointer">Strateji testi ve broker uyumluluğu</summary>
           <p class="mt-2 text-gray-400">Geçmiş kapanmış mumlarda HMA kesişimini test eder. Sonuçlar hesap para birimi yerine puandır; geçmiş spread, swap ve kayma dahil değildir.</p>
@@ -1389,6 +1395,7 @@
   <script src="/static/balance-menu.js?v=2"></script>
   <script src="/static/mobile-shell.js?v=1"></script>
   <script src="/static/account-menu.js?v=1"></script>
-  <script src="/static/notify-center.js?v=1"></script>
+  <script src="/static/notify-center.js?v=2"></script>
+  <script src="/static/health.js?v=2"></script>
 </body>
 </html>

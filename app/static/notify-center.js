@@ -65,5 +65,6 @@
     wrapped.__nc = true;
     window.showToast = wrapped;
   }
+  window.NotifyCenter = {add: (message, type) => { try { record(message, type); } catch (_) { /* ignore */ } }};
   render();
 })();

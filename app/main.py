@@ -983,6 +983,41 @@ class TrailingRequest(CloseRequest):
     distance_points: int = Field(ge=0, le=10000000)
 
 
+@app.get('/api/health')
+def system_health():
+    """Read-only health findings (app.health). Each data source is read separately so one failure never hides the rest."""
+    from app import health
+    ctx = {'now': time.time()}
+
+    def grab(name, fn):
+        try:
+            ctx[name] = fn()
+        except Exception:
+            ctx.setdefault('unreadable', []).append(name)
+
+    grab('connected', lambda: bool(mt5_client.is_connected))
+    grab('account_type', lambda: mt5_client.account_type)
+    grab('trading_halted', lambda: bool(mt5_client.journal.trading_halted()))
+    grab('bot', lambda: bot.get_status())
+    grab('limits', lambda: mt5_client.lot_limits())
+    grab('positions', lambda: mt5_client.get_positions())
+
+    def quote():
+        symbol = (ctx.get('bot') or {}).get('symbol') or bot.symbol
+        from app import mt5_bridge as bridge
+        with mt5_client._lock:
+            tick = mt5_client.mt5.symbol_info_tick(symbol) if mt5_client.is_connected and mt5_client.mt5 is not None else None
+        result = bridge.quote_status(tick, mt5_client.tick_clock_offset, 10, True)
+        return {'symbol': symbol, 'state': result.get('state'), 'age_seconds': result.get('age_seconds')}
+    if ctx.get('connected'):
+        grab('quote', quote)
+    findings = health.evaluate(ctx)
+    for name in (ctx.get('unreadable', []) if ctx.get('connected') else []):   # offline: the connection finding covers it
+        findings.append({'id': 'unreadable:' + name, 'level': 'warn', 'title': f'Kontrol okunamadı: {name}',
+                         'detail': 'Bu bilgi okunamadığı için ilgili kontroller yapılamadı.', 'hint': '', 'target': ''})
+    return {'checked_at': int(time.time()), 'level': health.overall(findings), 'findings': findings}
+
+
 _LOSS_PROFILE_CACHE = {}
 
 

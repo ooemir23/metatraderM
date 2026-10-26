@@ -1369,3 +1369,11 @@ body[data-hide-amounts="1"] .hx-fav-value, body[data-hide-amounts="1"] .hx-balan
 .nc-item[data-type="warning"] { border-left-color:#f59e0b; }
 .nc-item.is-new { background:#161c26; }
 .nc-empty { padding:18px 8px; text-align:center; font-size:12px; color:#7c8594; }
+
+/* System health panel */
+.health-head { font-weight:700; color:#e6e9ef; margin-bottom:6px; }
+.health-item { padding:7px 9px; margin-top:5px; border-radius:7px; background:#0f1218; border-left:3px solid #3a4250; color:#c7ccd6; line-height:1.4; }
+.health-item[data-level="error"] { border-left-color:#f43f5e; }
+.health-item[data-level="warn"] { border-left-color:#f59e0b; }
+.health-item strong { color:#fff; display:block; }
+.health-hint { color:#7dd3fc; margin-top:2px; }

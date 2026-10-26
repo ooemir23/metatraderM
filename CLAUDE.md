@@ -198,3 +198,9 @@ değişince) uyarı satırı çıkar. Emri ENGELLEMEZ, bot davranışını deği
 ## Bildirim çanı (2026-10-26, kullanıcı isteği)
 Üst çubukta çan (`notify-center.js`): her `showToast` mesajı tarayıcıda (localStorage, son 100) geçmişe yazılır; okunmamış sayı rozeti, "Tümünü sil".
 Bildirimler 6 sn (hata/uyarı 9 sn) görünür. Mobilde çan menü sayfasındadır, ☰ düğmesinde okunmamış noktası vardır. Emir/hesap davranışı değişmedi.
+
+## Sistem sağlığı (2026-10-26, kullanıcı isteği; yalnız okur)
+`app/health.py` (`evaluate`, saf fonksiyon) + `GET /api/health`: MT5 bağlantısı, işlem kilidi, fiyat tazeliği, bot durumu (hata/belirsiz emir/kâr-zarar hedefi/takılma/atlanan sinyal/ret),
+toplam lot ve işlem sayısı sınırı, bot lotu-sınır uyumu, gerçek hesapta SL, manuel kopya kullanılamıyor. Hiçbir ayarı değiştirmez, emir göndermez.
+`health.js`: dakikada bir kontrol → yeni uyarı/hata bildirim çanına düşer (aynı bulgu çözülene kadar tekrar edilmez); sayfanın JS hataları ve 5xx (503 hariç)
+API cevapları da "Teknik hata" olarak çana yazılır. Araçlar > "Sistem sağlığı" panelinde elle kontrol edilir.
