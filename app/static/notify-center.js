@@ -12,6 +12,27 @@
   const clock = (t) => new Date(t).toLocaleTimeString(en() ? 'en-GB' : 'tr-TR', {hour: '2-digit', minute: '2-digit', second: '2-digit'});
   const day = (t) => new Date(t).toLocaleDateString(en() ? 'en-GB' : 'tr-TR', {day: '2-digit', month: '2-digit'});
 
+  // Where a notification belongs: the screen/tab/row it talks about (null = informational only).
+  function route(message) {
+    const text = String(message || '');
+    const ticket = (text.match(/#(\d{6,})/) || [])[1];
+    if (/Sistem sağlığı/.test(text)) return {label: en() ? 'System health' : 'Sistem sağlığı', go: () => { window.setToolsDrawer?.(true); const d = document.getElementById('health-panel'); if (d) { d.open = true; d.scrollIntoView?.({block: 'nearest'}); } }};
+    if (/Teknik hata|Sunucu hatası|Sunucuya ulaşılamadı/.test(text)) return {label: en() ? 'Tools · logs' : 'Araçlar · günlük', go: () => window.setToolsDrawer?.(true)};
+    if (ticket) {
+      const open = document.querySelector(`[data-close-ticket="${ticket}"]`);
+      return {label: open ? (en() ? 'Positions' : 'Pozisyonlar') : (en() ? 'History' : 'Geçmiş'), go: () => {
+        window.MainView?.set('trades', {persist: false, scroll: false});
+        window.hxTab?.(open ? 'positions' : 'history');
+        const row = open ? document.querySelector(`[data-close-ticket="${ticket}"]`)?.closest('tr') : null;
+        if (row) { row.scrollIntoView?.({block: 'center', behavior: 'smooth'}); row.classList.add('nc-flash'); setTimeout(() => row.classList.remove('nc-flash'), 2400); }
+      }};
+    }
+    if (/MevO/.test(text)) return {label: 'MevO', go: () => window.MainView?.set('mevo', {persist: false, scroll: false})};
+    if (/\bBot\b|HMA Algoritmik|Manuel kopya|Başlangıç uyarısı|Sinyal|sinyal/.test(text)) return {label: 'Bot', go: () => { window.MainView?.set('bot', {persist: false, scroll: false}); window.hxTab?.('signals'); }};
+    if (/[Ee]mir|Piyasa kapalı|lot/.test(text)) return {label: en() ? 'Order' : 'Emir', go: () => { window.MainView?.set('chart', {persist: false, scroll: false}); document.getElementById('order-card')?.scrollIntoView?.({block: 'start', behavior: 'smooth'}); }};
+    return null;
+  }
+
   function render() {
     unread = items.filter(i => !i.read).length;
     badge.hidden = !unread;
@@ -35,6 +56,18 @@
       const text = document.createElement('span');
       text.textContent = item.message;
       row.append(time, text);
+      const target = route(item.message);
+      if (target) {
+        row.classList.add('is-link');
+        row.tabIndex = 0;
+        row.setAttribute('role', 'button');
+        const hint = document.createElement('em');
+        hint.textContent = '→ ' + target.label;
+        row.appendChild(hint);
+        const open = () => { setOpen(false); try { target.go(); } catch (_) { /* never break the bell */ } };
+        row.addEventListener('click', open);
+        row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+      }
       list.appendChild(row);
     });
   }

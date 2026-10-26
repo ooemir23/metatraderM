@@ -204,3 +204,5 @@ Bildirimler 6 sn (hata/uyarı 9 sn) görünür. Mobilde çan menü sayfasındad�
 toplam lot ve işlem sayısı sınırı, bot lotu-sınır uyumu, gerçek hesapta SL, manuel kopya kullanılamıyor. Hiçbir ayarı değiştirmez, emir göndermez.
 `health.js`: dakikada bir kontrol → yeni uyarı/hata bildirim çanına düşer (aynı bulgu çözülene kadar tekrar edilmez); sayfanın JS hataları ve 5xx (503 hariç)
 API cevapları da "Teknik hata" olarak çana yazılır. Araçlar > "Sistem sağlığı" panelinde elle kontrol edilir.
+Bildirim çanı satırları tıklanabilir (`notify-center.js` `route`): bilet numarası → açıksa Pozisyonlar (satır vurgulanır), değilse Geçmiş; bot/sinyal → Bot; MevO → MevO;
+Sistem sağlığı → Araçlar'da sağlık paneli; teknik hata → Araçlar; emir → Grafik emir kartı. Yönlendirilemeyen bildirim yalnız bilgidir.

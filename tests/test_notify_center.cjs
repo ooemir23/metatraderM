@@ -7,3 +7,6 @@ assert.match(src, /window\.showToast = wrapped/); assert.match(src, /MAX = 100/)
 const app = fs.readFileSync('app/static/app.js', 'utf8');
 assert.match(app, /9000 : 6000/);
 console.log('Notification bell: markup, history wrapper and toast duration PASS');
+const nc = fs.readFileSync('app/static/notify-center.js', 'utf8');
+for (const word of ['Sistem sağlığı', 'data-close-ticket', "'history'", "'trades'", "'mevo'", "'bot'", 'order-card']) assert.ok(nc.includes(word), word);
+console.log('Notification bell: items link to the matching screen PASS');

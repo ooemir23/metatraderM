@@ -1377,3 +1377,9 @@ body[data-hide-amounts="1"] .hx-fav-value, body[data-hide-amounts="1"] .hx-balan
 .health-item[data-level="warn"] { border-left-color:#f59e0b; }
 .health-item strong { color:#fff; display:block; }
 .health-hint { color:#7dd3fc; margin-top:2px; }
+
+.nc-item.is-link { cursor:pointer; }
+.nc-item.is-link:hover, .nc-item.is-link:focus-visible { background:#1b2230; outline:none; }
+.nc-item em { font-style:normal; font-size:11px; color:#7dd3fc; margin-top:1px; }
+tr.nc-flash > td { animation:ncFlash 2.4s ease-out; }
+@keyframes ncFlash { 0%,40% { background:rgba(56,189,248,.28); } 100% { background:transparent; } }
