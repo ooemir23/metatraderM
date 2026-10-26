@@ -983,6 +983,9 @@ class TrailingRequest(CloseRequest):
     distance_points: int = Field(ge=0, le=10000000)
 
 
+PROCESS_STARTED_AT = int(time.time())   # app process start: a changed value between two polls = the app restarted
+
+
 @app.get('/api/health')
 def system_health():
     """Read-only health findings (app.health). Each data source is read separately so one failure never hides the rest."""
@@ -1015,7 +1018,7 @@ def system_health():
     for name in (ctx.get('unreadable', []) if ctx.get('connected') else []):   # offline: the connection finding covers it
         findings.append({'id': 'unreadable:' + name, 'level': 'warn', 'title': f'Kontrol okunamadı: {name}',
                          'detail': 'Bu bilgi okunamadığı için ilgili kontroller yapılamadı.', 'hint': '', 'target': ''})
-    return {'checked_at': int(time.time()), 'level': health.overall(findings), 'findings': findings}
+    return {'checked_at': int(time.time()), 'started_at': PROCESS_STARTED_AT, 'level': health.overall(findings), 'findings': findings}
 
 
 _LOSS_PROFILE_CACHE = {}

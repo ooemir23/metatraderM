@@ -70,7 +70,17 @@
     if (!res.ok) throw new Error('health ' + res.status);
     return res.json();
   }
+  let lastStart = 0;
+  function noteRestart(data) {
+    if (!data.started_at) return;
+    if (lastStart && data.started_at !== lastStart) {
+      const at = new Date(data.started_at * 1000).toLocaleTimeString(en() ? 'en-GB' : 'tr-TR');
+      window.NotifyCenter?.add(`Uygulama yeniden başlatıldı (${at}). Kesinti buna bağlıydı.`, 'warning');
+    }
+    lastStart = data.started_at;
+  }
   function render(data) {
+    noteRestart(data);
     const box = document.getElementById('health-body');
     if (!box) return;
     box.textContent = '';
@@ -78,7 +88,7 @@
     head.className = 'health-head';
     head.dataset.level = data.level;
     const time = new Date(data.checked_at * 1000).toLocaleTimeString(en() ? 'en-GB' : 'tr-TR');
-    head.textContent = (data.level === 'ok' ? '✅ Sorun bulunmadı' : data.level === 'warn' ? '⚠️ Dikkat edilmesi gereken şeyler var' : '⛔ Düzeltilmesi gereken sorun var') + ` · ${time}`;
+    head.textContent = (data.level === 'ok' ? '✅ Sorun bulunmadı' : data.level === 'warn' ? '⚠️ Dikkat edilmesi gereken şeyler var' : '⛔ Düzeltilmesi gereken sorun var') + ` · ${time}` + (data.started_at ? ` · ${en() ? 'running since' : 'açılış'} ${new Date(data.started_at * 1000).toLocaleTimeString(en() ? 'en-GB' : 'tr-TR')}` : '');
     box.appendChild(head);
     data.findings.forEach((f) => {
       const row = document.createElement('div');
