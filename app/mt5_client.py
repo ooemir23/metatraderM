@@ -676,8 +676,18 @@ class MT5Client:
                             if not h4 or len(h4) < max(config['hma_period'], config['second_ma_period'], config['atr_period']) + 15:
                                 raise MT5DataError('H4 filtresi için yeterli kapanmış mum verisi yok.')
                         exposure_note = None
-                        for side in ('BUY', 'SELL'):
-                            preview = self.trade_preview(symbol, side, config['lot_size'], sl, tp_points=tp, magic=mt5_bridge.HMA_MAGIC)
+                        # The bot opens the manual-copy lot (not the Bot Ayarları lot) when copying is on, so the
+                        # startup check uses the lot (and the DEMO limits) it will really send.
+                        lot, override = self._readiness_lot(symbol, config)
+                        previous_override = self.bot_lot_override
+                        if override:
+                            self.bot_lot_override = override
+                        try:
+                            previews = [self.trade_preview(symbol, side, lot, sl, tp_points=tp, magic=mt5_bridge.HMA_MAGIC)
+                                        for side in ('BUY', 'SELL')]
+                        finally:
+                            self.bot_lot_override = previous_override
+                        for preview in previews:
                             if preview.get('reason_code') == 'exposure_limit':
                                 # Like an MT5 EA the bot starts anyway; the limit is checked again when an
                                 # order is sent (open positions may be closed by then).
@@ -713,6 +723,24 @@ class MT5Client:
                         'warnings': skipped, 'candles': candles}
             except Exception as exc:
                 return {'success': False, 'error': str(exc)}
+
+    def _readiness_lot(self, symbol, config):
+        """(lot, DEMO limit override or None) the bot will really send for `symbol` (same rules as StrategyBot)."""
+        lot = float(config['lot_size'])
+        if not config.get('copy_manual_trades'):
+            return lot, None
+        try:
+            prof = self.manual_copy_profile(symbol, config.get('copy_manual_since'))
+        except Exception:
+            return lot, None
+        if not isinstance(prof, dict) or not prof.get('available'):
+            return lot, None
+        copy_lot = float(config.get('copy_lot_override') or 0) or float(prof['lot'])
+        if config.get('auto_lot_limits_demo') and self.account_type == 'DEMO':
+            n = 1 + len(config.get('extra_timeframes') or [])
+            return copy_lot, (copy_lot, copy_lot * n + float(self.max_total_lots))
+        cap = float(self.max_order_lots or 0)
+        return (min(copy_lot, cap) if cap > 0 else copy_lot), None
 
     def get_risk_status(self):
         with self._lock:

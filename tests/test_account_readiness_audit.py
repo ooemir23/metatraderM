@@ -306,3 +306,21 @@ def test_big_candle_reads_release_the_lock_between_chunks(client):
     assert len(rows) == 2500 and rows == sorted(rows, key=lambda r: r['time'])
     assert len({r['time'] for r in rows}) == 2500
     assert len(acquired) >= 3, 'lock taken per chunk, not for the whole read'
+
+
+def test_readiness_checks_the_manual_copy_lot_not_the_settings_lot(ready_client, monkeypatch):
+    # Bot Ayarları lot 10 would not fit the total limit, but the bot opens the copied 5 lot (user screenshot 2026-10-26).
+    ready_client.max_total_lots, ready_client.max_order_lots, ready_client.max_open_orders = 31., 31., 10
+    seen = []
+    real = ready_client.trade_preview
+    monkeypatch.setattr(ready_client, 'trade_preview', lambda symbol, side, lot, *a, **k: seen.append(lot) or real(symbol, side, lot, *a, **k))
+    monkeypatch.setattr(ready_client, 'manual_copy_profile', Mock(return_value={'available': True, 'lot': 5.0}))
+    bot = StrategyBot(ready_client)
+    bot.lot_size, bot.copy_manual_trades = 10.0, True
+    ready_client.bot_readiness(bot.config_snapshot())
+    assert seen and set(seen) == {5.0}
+    assert ready_client.bot_lot_override is None   # only borrowed for the check
+    seen.clear()
+    bot.copy_manual_trades = False
+    ready_client.bot_readiness(bot.config_snapshot())
+    assert set(seen) == {10.0}
