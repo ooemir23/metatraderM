@@ -244,6 +244,7 @@ class BotConfigRequest(BaseModel):
     # User decisions 2026-10-23 (not EA inputs): trend entry on start, lot/SL/TP from profitable manual trades.
     trend_entry_on_start: Optional[bool] = None
     reenter_after_stop: Optional[bool] = None
+    max_bot_positions: Optional[int] = Field(default=None, ge=1, le=20)
     stop_profit_amount: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     copy_lot_override: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     stop_loss_amount: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
@@ -1710,7 +1711,7 @@ async def manual_copy_warnings():
     if bot.auto_lot_limits_demo and mt5_client.account_type == 'DEMO':
         n = len(bot.instance_timeframes())
         capped = (f' (demo: bot emirleri için tam lot açılır; kayıtlı ayarlar değişmedi, gerçek hesapta uygulanmaz)') if cap and prof['lot'] > cap else ''
-        mt5_client.bot_lot_override = (prof['lot'], prof['lot'] * n + mt5_client.max_total_lots)
+        mt5_client.bot_lot_override = (prof['lot'], prof['lot'] * n * int(bot.max_bot_positions) + mt5_client.max_total_lots)
     else:
         capped = f' (otomatik bot sınırı {cap:g} lot; sınırda açılır)' if cap and prof['lot'] > cap else ''
     return [f"Manuel kopya: {prof['since']} sonrası {prof['count']} kârlı {bot.symbol} pozisyonu → {prof['lot']:g} lot{capped}, "

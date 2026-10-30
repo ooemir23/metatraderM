@@ -63,6 +63,9 @@ class StrategyBot:
         self.use_atr_filter = False
         self.use_h4_filter = False
         self.single_position = True
+        # User decision 2026-10-30 (MT5 EA has none: it never opens a 2nd position in the same direction): how many
+        # same-direction bot positions one timeframe instance may hold. 1 = EA behaviour.
+        self.max_bot_positions = 5
         self.er_min = .30
         self.confirmation_bars = 0
         self.min_distance_atr = .05
@@ -365,7 +368,7 @@ class StrategyBot:
                 'er_min','confirmation_bars','min_distance_atr','risk_mode','atr_stop_multiplier',
                 'atr_target_multiplier','lot_size','use_stop_loss','sl_points','use_take_profit','tp_points','close_opposite',
                 'lot_mode','risk_pct','max_consecutive_losses','trade_hours_enabled','trade_start','trade_end',
-                'trade_utc_offset_min','trade_days','blocked_windows','trend_entry_on_start','copy_manual_trades','copy_manual_since','extra_timeframes','auto_lot_limits_demo','entry_mode','reenter_after_stop','stop_profit_amount','stop_loss_amount','copy_lot_override')
+                'trade_utc_offset_min','trade_days','blocked_windows','trend_entry_on_start','copy_manual_trades','copy_manual_since','extra_timeframes','max_bot_positions','auto_lot_limits_demo','entry_mode','reenter_after_stop','stop_profit_amount','stop_loss_amount','copy_lot_override')
         with self._state_lock:
             snap = {key: (list(getattr(self, key)) if isinstance(getattr(self, key), list) else getattr(self, key)) for key in keys}
             snap['symbols'] = list(getattr(self, 'symbols', [self.symbol]))
@@ -633,7 +636,7 @@ class StrategyBot:
                 raise ValueError('Geçersiz gösterge veya risk modu.')
             bounds = {'timeframe_minutes': (1, 43200), 'hma_period': (2, 1000), 'second_ma_period': (2, 1000),
                       'kama_fast': (2, 200), 'kama_slow': (2, 200), 'atr_period': (2, 200),
-                      'confirmation_bars': (0, 3), 'sl_points': (0, None), 'tp_points': (0, None)}
+                      'confirmation_bars': (0, 3), 'sl_points': (0, None), 'tp_points': (0, None), 'max_bot_positions': (1, 20)}
             for key, (low, high) in bounds.items():
                 value = candidate[key]
                 if isinstance(value, bool) or not isinstance(value, int) or value < low or (high is not None and value > high):
@@ -760,6 +763,7 @@ class StrategyBot:
             "close_opposite": self.close_opposite,
             "trend_entry_on_start": self.trend_entry_on_start,
             "reenter_after_stop": self.reenter_after_stop,
+            "max_bot_positions": self.max_bot_positions,
             "stop_profit_amount": self.stop_profit_amount,
             "copy_lot_override": self.copy_lot_override,
             "stop_loss_amount": self.stop_loss_amount,
@@ -1348,14 +1352,16 @@ class StrategyBot:
             owned = self.mt5.get_positions(fresh=True)
             # HMA_Crossover_EA HasOpenPosition(orderType): only a bot position in the SAME direction blocks.
             # An opposite one was closed above when close_opposite is on; otherwise MT5 opens the hedge.
-            blocking = next((p for p in owned if p['symbol'] == sym and p.get('magic') == HMA_MAGIC and p.get('type') == side
-                             and self._owner_tf(p) == tf), None)
-            if blocking:
+            # User decision 2026-10-30: up to max_bot_positions same-direction positions per instance (1 = EA rule).
+            same = [p for p in owned if p['symbol'] == sym and p.get('magic') == HMA_MAGIC and p.get('type') == side
+                    and self._owner_tf(p) == tf]
+            if len(same) >= int(self.max_bot_positions):
+                blocking = same[0]
                 # Only the bot's own (automatic) positions count; hand-opened and "Şimdi AL/SAT" trades never block it.
-                status('SKIPPED', f'{side} kesişimi atlandı: botun kendi açtığı aynı yönde pozisyon açık '
-                                 f'(#{blocking.get("ticket")}, {blocking.get("volume")} lot). Manuel işlemler sayılmaz. '
-                                 'MT5 EA kuralı: aynı yönde ikinci pozisyon açılmaz.')
-                self.log(f'Bot {label} {side} pozisyonu zaten açık; yeni giriş atlandı.')
+                status('SKIPPED', f'{side} kesişimi atlandı: botun kendi açtığı aynı yönde {len(same)} pozisyon açık '
+                                 f'(en fazla {int(self.max_bot_positions)}; ilki #{blocking.get("ticket")}, {blocking.get("volume")} lot). '
+                                 'Manuel işlemler sayılmaz. Daha fazlası için Bot Ayarları\'ndan "En fazla bot pozisyonu"nu artırın.')
+                self.log(f'Bot {label} {side} pozisyon sınırına ulaştı ({len(same)}/{int(self.max_bot_positions)}); yeni giriş atlandı.')
                 self._trend_pending.pop(key, None)
                 return
 
@@ -1461,7 +1467,7 @@ class StrategyBot:
 
     def _mevo_cross(self, sym, tf, key, candle_time, status):
         """1 / -1 when MevO has a BUY / SELL opportunity for this closed candle that passes the bot's checks; 0 when
-        there is none; None when it cannot be evaluated. MevO is asked only while this instance has no own position
+        there is none; None when it cannot be evaluated. MevO is asked only while this instance holds fewer than max_bot_positions own positions
         (token cost), at most once per closed candle (MevO caches it) and not within a few candles of the last entry."""
         from app.mevo import blocking_warnings
         if self.mevo_provider is None:
@@ -1474,9 +1480,10 @@ class StrategyBot:
             status('WAITING_DATA', f'Pozisyonlar okunamadı: {exc}', candle_time=candle_time)
             self._ms_retry(key, candle_time)
             return None
-        if any(p['symbol'] == sym and p.get('magic') == HMA_MAGIC and self._owner_tf(p) == tf for p in owned):
-            status('WAITING_CROSS', 'MevO: bu zaman diliminin pozisyonu açık; yeni fırsat için MevO\'ya sorulmadı (token tasarrufu).',
-                   candle_time=candle_time)
+        open_n = sum(1 for p in owned if p['symbol'] == sym and p.get('magic') == HMA_MAGIC and self._owner_tf(p) == tf)
+        if open_n >= int(self.max_bot_positions):
+            status('WAITING_CROSS', f'MevO: bu zaman diliminde {open_n}/{int(self.max_bot_positions)} bot pozisyonu açık (sınır dolu); '
+                   'MevO\'ya sorulmadı (token tasarrufu).', candle_time=candle_time)
             return 0
         last = self._mevo_last.get(key)
         if last and int(candle_time) - last < MEVO_COOLDOWN_CANDLES * tf * 60:
@@ -1587,8 +1594,8 @@ class StrategyBot:
         demo_full = bool(self.auto_lot_limits_demo) and getattr(self.mt5, 'account_type', None) == 'DEMO'
         base_total = getattr(self.mt5, 'max_total_lots', None)
         if demo_full and isinstance(base_total, (int, float)) and not isinstance(base_total, bool):
-            # Room for one copied lot per timeframe instance on top of the saved total (other positions).
-            self.mt5.bot_lot_override = (lot, lot * len(self.instance_timeframes()) + float(base_total))
+            # Room for max_bot_positions copied lots per timeframe instance on top of the saved total (other positions).
+            self.mt5.bot_lot_override = (lot, lot * len(self.instance_timeframes()) * int(self.max_bot_positions) + float(base_total))
         else:
             demo_full = False
             if getattr(self.mt5, 'bot_lot_override', None) is not None:

@@ -6,11 +6,12 @@ from app.mt5_bridge import HMA_MAGIC
 from tests.test_bot_auto_trade_e2e import FakeMT5, POINT, live_bot, market
 
 
-def run(answer, start=450, end=470, mode='MEVO'):
+def run(answer, start=450, end=470, mode='MEVO', max_positions=1):
     rows = market()
     client = FakeMT5(rows)
     bot = live_bot(client)
     bot.entry_mode = mode
+    bot.max_bot_positions = max_positions
     calls = []
 
     def provider(sym, tf):
@@ -66,3 +67,17 @@ def test_mevo_entry_rejects_m1_for_token_cost():
     bot = live_bot(client)
     with pytest.raises(ValueError, match='M5'):
         bot.validated_config({'entry_mode': 'MEVO', 'timeframe_minutes': 1})
+
+
+def test_multiple_positions_open_up_to_max_bot_positions():
+    """Kullanıcı kararı 2026-10-30 (MT5 EA'da yok): her yeni fırsatta, sınıra kadar aynı yönde yeni pozisyon açılır."""
+    client, _, calls = run({'action': 'BUY'}, start=450, end=520, max_positions=3)
+    assert [o['side'] for o in client.opened] == ['BUY'] * 3          # 3'te durur
+    assert len(calls) == 3                                           # sınır dolunca MevO'ya sorulmaz (token)
+    candles = [o['candle'] for o in client.opened]
+    assert all(b - a >= 3 for a, b in zip(candles, candles[1:]))      # 3 mum bekleme korunur
+
+
+def test_max_one_keeps_the_ea_single_position_rule():
+    client, _, _ = run({'action': 'BUY'}, start=450, end=520, max_positions=1)
+    assert len(client.opened) == 1

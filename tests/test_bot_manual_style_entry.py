@@ -9,6 +9,7 @@ def run(plan, start=450, end=470):
     client = FakeMT5(rows)
     bot = live_bot(client)
     bot.entry_mode = 'MANUAL_STYLE'
+    bot.max_bot_positions = 1   # EA single-position rule
     calls = []
 
     def provider(sym, tf, candle_time):
@@ -73,6 +74,7 @@ def test_manual_style_mode_rejects_d1():
     from unittest.mock import Mock
     from app.strategy_bot import StrategyBot
     bot = StrategyBot(Mock())
+    bot.max_bot_positions = 1   # EA single-position rule
     with pytest.raises(ValueError):
         bot.update_config({'entry_mode': 'MANUAL_STYLE', 'timeframe_minutes': 1440}, persist=False)
     bot.update_config({'entry_mode': 'MANUAL_STYLE', 'timeframe_minutes': 15}, persist=False)

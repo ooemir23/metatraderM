@@ -210,3 +210,11 @@ Ağ/sunucu kesintisi (2026-10-26): `health.js` istek başına değil kesinti ba�
 Kesinti teşhisi (2026-10-26): `/api/health` yanıtı `started_at` (uygulama işlem başlangıcı) döner; `health.js` iki kontrol arasında değer değişirse "Uygulama yeniden başlatıldı (saat)" yazar,
 panel başlığında açılış saati görünür. Böylece kesinti yeniden başlatmadan mı ağdan mı anlaşılır. Yalnız bilgi.
 Bot takılma uyarısı (2026-10-26): durum metni değişmemesi (kesişim bekleme) takılma sayılmaz; `StrategyBot.loop_at` kalp atışı (run_loop her turda) 3 dk durursa "bot döngüsü yanıt vermedi" çıkar. Yalnız bilgi.
+
+## Çoklu bot pozisyonu (2026-10-30, kullanıcı isteği; MT5 EA'da YOK)
+`max_bot_positions` (Bot Ayarları "En fazla bot pozisyonu", 1–20, varsayılan 5): bir sembol+zaman dilimi örneği aynı yönde bu kadar bot pozisyonu tutabilir; her yeni
+fırsatta/sinyalde sınıra kadar yeni pozisyon açılır. 1 = MT5 EA kuralı (aynı yönde ikinci pozisyon açılmaz). Sayım yalnız botun kendi pozisyonlarıdır (magic 123461, o örneğin
+zaman dilimi); manuel işlemler sayılmaz. MevO modunda sınır dolunca MevO'ya sorulmaz (token tasarrufu), 3 mum bekleme korunur. CROSSOVER'da `close_opposite` açıkken ters
+sinyal örneğin pozisyonlarını kapattığı için istif ancak aynı yönde ardışık sinyallerde (MevO, yeniden giriş) oluşur. Demo lot sınırı yükseltmesi (`bot_lot_override`) toplamı
+kopya lot × zaman dilimi × `max_bot_positions` + kayıtlı toplam olarak hesaplar. Hesabın "en fazla açık işlem" sınırı (`max_open_orders`) ve günlük zarar sınırı yine geçerlidir;
+bot sınırları kendiliğinden artırmaz. Çalışan botta değiştirmek için önce bot durdurulur.

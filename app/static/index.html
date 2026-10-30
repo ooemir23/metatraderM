@@ -1182,6 +1182,8 @@
               <input type="number" id="cfg-stop-loss" min="0" step="any" value="0" class="mt-1 w-full bg-[#0b0e14] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"></label>
           </div>
           <p class="text-[11px] text-gray-500">Botun bu çalıştırmadaki net sonucu (kapanan + açık bot pozisyonları, hesap para birimi). Dolunca bot durur; açık pozisyonlar SL/TP ile sürer. <span class="text-amber-300">(MT5 EA'da yok)</span></p>
+          <label class="block text-xs text-gray-300">En fazla bot pozisyonu (her sembol ve zaman diliminde, aynı yönde; 1 = MT5 EA gibi tek pozisyon) <span class="text-amber-300">(MT5 EA'da yok)</span>
+            <input type="number" id="cfg-max-bot-pos" min="1" max="20" step="1" value="5" class="mt-1 w-full bg-[#0b0e14] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"></label>
           <label class="flex items-center gap-2"><input type="checkbox" id="cfg-trend-entry" checked>Başlarken mevcut trend yönünde hemen işlem aç <span class="text-amber-300 text-xs">(MT5 EA'da yok: EA yeni kesişimi bekler)</span></label>
           <label class="flex items-center gap-2"><input type="checkbox" id="cfg-copy-manual" checked>Lot ve SL/TP'yi kârlı manuel MT5 işlemlerinden al <span class="text-amber-300 text-xs">(MT5 EA'da yok)</span></label>
           <label class="block text-xs text-gray-300 mt-1">Manuel kopyada sabit lot (0 = manuel işlemlerimden gelen lot; ör. 5 yazarsan lot hep 5, SL/TP yine kopyalanır)

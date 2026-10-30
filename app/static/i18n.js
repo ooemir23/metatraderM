@@ -192,6 +192,7 @@
     ["Kâr al (TP)", "Take profit (TP)"],
     ["Bilet / Kaynak", "Ticket / Source"],
     ["Açılış saati", "Open time"],
+    ["En fazla bot pozisyonu (her sembol ve zaman diliminde, aynı yönde; 1 = MT5 EA gibi tek pozisyon)", "Max bot positions (per symbol and timeframe, same direction; 1 = single position like the MT5 EA)"],
     ["Manuel kopyada sabit lot (0 = manuel işlemlerimden gelen lot; ör. 5 yazarsan lot hep 5, SL/TP yine kopyalanır)", "Fixed lot for manual copy (0 = lot from my manual trades; e.g. 5 means always 5, SL/TP still copied)"],
     ["🧠 MevO (Manuel)", "🧠 MevO (Manual)"],
     ["🧠 Otomatik Sinyal (MevO)", "🧠 Automatic signal (MevO)"],

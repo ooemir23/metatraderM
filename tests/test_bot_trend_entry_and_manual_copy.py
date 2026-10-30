@@ -23,6 +23,7 @@ def trend_run(start=450, reject_first=False):
         client.open_order = open_order
     bot = live_bot(client)
     bot.trend_entry_on_start = True
+    bot.max_bot_positions = 1   # EA single-position rule
     closes = [r['close'] for r in rows]
     fast, slow = se.hma_series(closes, 14), se.ema_series(closes, 34)
     return rows, client, bot, fast, slow

@@ -234,6 +234,7 @@ def status_bot(cross):
     client.get_pending_orders.return_value = []
     client.has_unresolved_bot_order.return_value = False
     bot = StrategyBot(client)
+    bot.max_bot_positions = 1   # EA single-position rule
     bot.calc_hma = Mock(side_effect=lambda closes, period, shift=0: 2. if (cross and shift == 1) else 0.5)
     bot.calc_second_ma = Mock(return_value=1.)
     bot.last_candle_time = 1
@@ -254,7 +255,7 @@ def test_status_explains_existing_bot_position():
     bot.close_opposite = False
     bot._check_strategy()
     row = bot.get_status()['symbol_status']['EURUSD']
-    assert row['state'] == 'SKIPPED' and 'botun kendi açtığı aynı yönde pozisyon' in row['detail'] and '#9' in row['detail']
+    assert row['state'] == 'SKIPPED' and 'botun kendi açtığı aynı yönde 1 pozisyon' in row['detail'] and '#9' in row['detail']
     client.open_order.assert_not_called()
 
 
@@ -335,3 +336,33 @@ def test_lot_limits_need_second_factor_on_real_account(monkeypatch):
     web = TestClient(main.app, headers={'Authorization': 'Basic ' + token})
     assert web.post('/api/risk/lot-limits', json={'max_order_lots': 2.0, 'max_total_lots': 5.0}).status_code == 403
     assert main.mt5_client.max_order_lots == before
+
+
+def test_max_bot_positions_allows_more_same_direction_positions_up_to_the_limit():
+    """Kullanıcı kararı 2026-10-30: en fazla N bot pozisyonu; N dolunca atlanır, altındaysa açılır (MT5 EA'da yok)."""
+    bot, client = status_bot(cross=True)
+    bot.close_opposite = False
+    bot.max_bot_positions = 3
+    mk = lambda n: [{'symbol': 'EURUSD', 'magic': HMA_MAGIC, 'type': 'BUY', 'ticket': 10 + i, 'volume': 1} for i in range(n)]
+    client.get_positions.return_value = mk(2)
+    bot._check_strategy()
+    assert client.open_order.call_count == 1                          # 2 < 3: yeni pozisyon açılır
+    bot2, client2 = status_bot(cross=True)
+    bot2.close_opposite = False
+    bot2.max_bot_positions = 3
+    client2.get_positions.return_value = mk(3)
+    bot2._check_strategy()
+    client2.open_order.assert_not_called()                            # 3 = sınır
+    row = bot2.get_status()['symbol_status']['EURUSD']
+    assert row['state'] == 'SKIPPED' and '3 pozisyon açık' in row['detail'] and 'en fazla 3' in row['detail']
+
+
+def test_max_bot_positions_setting_is_validated_and_default_is_five():
+    bot = StrategyBot(Mock())
+    assert bot.max_bot_positions == 5 and bot.get_status()['max_bot_positions'] == 5
+    assert bot.config_snapshot()['max_bot_positions'] == 5
+    for bad in (0, 21, True, 1.5):
+        with pytest.raises(ValueError):
+            bot.update_config({'max_bot_positions': bad}, persist=False)
+    bot.update_config({'max_bot_positions': 8}, persist=False)
+    assert bot.max_bot_positions == 8

@@ -34,6 +34,7 @@ def install_study(monkeypatch, points):
 
 def configured(c, **fields):
     b = StrategyBot(c)
+    b.max_bot_positions = 1   # these tests cover the EA single-position rule
     b.update_config(dict(second_ma_type='KAMA', second_ma_period=10, use_atr_filter=True,
         min_distance_atr=.1, confirmation_bars=2, risk_mode='ATR', use_take_profit=True, **fields))
     return b
