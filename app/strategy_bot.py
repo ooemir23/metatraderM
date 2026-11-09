@@ -781,6 +781,8 @@ class StrategyBot:
             "instance_timeframes": self.instance_timeframes(),
             "copy_manual_trades": self.copy_manual_trades,
             "auto_lot_limits_demo": self.auto_lot_limits_demo,
+            "use_mevo_confidence": self.use_mevo_confidence,
+            "mevo_min_confidence": self.mevo_min_confidence,
             "bot_lot_override": (lambda o: list(o) if isinstance(o, (list, tuple)) else None)(getattr(self.mt5, 'bot_lot_override', None)),
             "copy_manual_since": self.copy_manual_since,
             "manual_copy": dict(self.manual_copy) if isinstance(self.manual_copy, dict) else None,
