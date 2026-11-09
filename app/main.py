@@ -254,6 +254,8 @@ class BotConfigRequest(BaseModel):
     extra_timeframes: Optional[List[int]] = None
     copy_manual_trades: Optional[bool] = None
     copy_manual_since: Optional[str] = Field(default=None, pattern=r'^20\d\d-[01]\d-[0-3]\d$')
+    use_mevo_confidence: Optional[bool] = None
+    mevo_min_confidence: Optional[int] = Field(default=None, ge=1, le=99)
     symbols: Optional[Union[List[str], str]] = None
     timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=43200)
     hma_period: Optional[int] = Field(default=None, ge=2, le=1000)
@@ -1773,6 +1775,8 @@ class BotFollowRequest(BaseModel):
     fast_ma_type: Optional[Literal["HMA", "EMA", "SMA", "LWMA"]] = None
     entry_mode: Optional[Literal["CROSSOVER", "MANUAL_STYLE", "MEVO"]] = None
     copy_manual_trades: Optional[bool] = None
+    use_mevo_confidence: Optional[bool] = None
+    mevo_min_confidence: Optional[int] = Field(default=None, ge=1, le=99)
     # More EA instances on other timeframes (MT5: the same EA attached to more charts of the symbol).
     extra_timeframes: Optional[List[Literal[1, 5, 15, 30, 60, 240, 1440]]] = Field(default=None, max_length=6)
 

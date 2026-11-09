@@ -112,6 +112,8 @@ class StrategyBot:
         self.mevo_provider = None              # set by app.main: (symbol, tf_minutes) -> opportunity dict or None
         self._mevo_levels: Dict[str, Dict[str, float]] = {}
         self._mevo_last: Dict[str, int] = {}
+        self.use_mevo_confidence = True        # model güven eşiği kontrolü (kapatılırsa güven oranı ne olursa olsun girer)
+        self.mevo_min_confidence = 65          # asgari model güven oranı (varsayılan %65, 1-99 arası değiştirilebilir)
         self.manual_copy: Optional[Dict[str, Any]] = None
         # Position sizing: FIXED = lot_size; RISK = risk_pct of equity lost at the stop.
         self.lot_mode = "FIXED"
@@ -368,7 +370,8 @@ class StrategyBot:
                 'er_min','confirmation_bars','min_distance_atr','risk_mode','atr_stop_multiplier',
                 'atr_target_multiplier','lot_size','use_stop_loss','sl_points','use_take_profit','tp_points','close_opposite',
                 'lot_mode','risk_pct','max_consecutive_losses','trade_hours_enabled','trade_start','trade_end',
-                'trade_utc_offset_min','trade_days','blocked_windows','trend_entry_on_start','copy_manual_trades','copy_manual_since','extra_timeframes','max_bot_positions','auto_lot_limits_demo','entry_mode','reenter_after_stop','stop_profit_amount','stop_loss_amount','copy_lot_override')
+                'trade_utc_offset_min','trade_days','blocked_windows','trend_entry_on_start','copy_manual_trades','copy_manual_since','extra_timeframes','max_bot_positions','auto_lot_limits_demo','entry_mode','reenter_after_stop','stop_profit_amount','stop_loss_amount','copy_lot_override',
+                'use_mevo_confidence','mevo_min_confidence')
         with self._state_lock:
             snap = {key: (list(getattr(self, key)) if isinstance(getattr(self, key), list) else getattr(self, key)) for key in keys}
             snap['symbols'] = list(getattr(self, 'symbols', [self.symbol]))
@@ -480,7 +483,7 @@ class StrategyBot:
             return [sym]
 
     # Settings a running bot may change: the chart it is attached to and the EA crossover inputs.
-    LIVE_KEYS = ('symbol', 'symbols', 'timeframe_minutes', 'entry_mode', 'copy_manual_trades', 'fast_ma_type', 'hma_period', 'second_ma_type', 'second_ma_period', 'extra_timeframes')
+    LIVE_KEYS = ('symbol', 'symbols', 'timeframe_minutes', 'entry_mode', 'copy_manual_trades', 'fast_ma_type', 'hma_period', 'second_ma_type', 'second_ma_period', 'extra_timeframes', 'use_mevo_confidence', 'mevo_min_confidence')
 
     def reinit_live(self, data: Dict[str, Any], expected_config=None, timeout: float = 30.0) -> Dict[str, Any]:
         """Running bot follows the panel selection, like an MT5 EA: a chart symbol/period change
@@ -488,7 +491,7 @@ class StrategyBot:
         open, and a crossover on a candle that closed before the change is not traded (OnInit sets
         m_lastBarTime to the current bar)."""
         if not isinstance(data, dict) or not data or set(data) - set(self.LIVE_KEYS):
-            raise ValueError('Çalışan botta yalnız sembol, zaman dilimi ve HMA/2. MA değiştirilebilir.')
+            raise ValueError('Çalışan botta yalnız sembol, zaman dilimi, HMA/2. MA ve MevO güven ayarları değiştirilebilir.')
         # Wait for the current check (it may be sending an order) so the change never lands mid-order.
         if not self._check_lock.acquire(timeout=timeout):
             raise RuntimeError('Bot döngüsü meşgul (emir gönderiliyor olabilir); ayar değiştirilmedi.')
@@ -506,6 +509,9 @@ class StrategyBot:
                 self.persist_config(candidate)        # OSError: nothing changed in memory
                 for key, value in candidate.items():
                     setattr(self, key, value)
+                if set(changed).issubset({'use_mevo_confidence', 'mevo_min_confidence'}):
+                    self.log('🧠 MevO güven filtresi: ' + (f'Aktif (en az %{self.mevo_min_confidence})' if self.use_mevo_confidence else 'Kapalı (tüm güven oranları geçerli).'))
+                    return candidate
                 if changed == ['copy_manual_trades']:
                     # Only the order size source changes (manual copy or the bot's own lot / SL / TP); the
                     # running instances and their candle markers stay as they are.
@@ -634,9 +640,12 @@ class StrategyBot:
 
             if candidate['second_ma_type'] not in ('EMA', 'SMA', 'LWMA', 'HMA', 'KAMA') or candidate['risk_mode'] not in ('POINTS', 'ATR'):
                 raise ValueError('Geçersiz gösterge veya risk modu.')
+            candidate.setdefault('use_mevo_confidence', True)
+            candidate.setdefault('mevo_min_confidence', 65)
             bounds = {'timeframe_minutes': (1, 43200), 'hma_period': (2, 1000), 'second_ma_period': (2, 1000),
                       'kama_fast': (2, 200), 'kama_slow': (2, 200), 'atr_period': (2, 200),
-                      'confirmation_bars': (0, 3), 'sl_points': (0, None), 'tp_points': (0, None), 'max_bot_positions': (1, 20)}
+                      'confirmation_bars': (0, 3), 'sl_points': (0, None), 'tp_points': (0, None), 'max_bot_positions': (1, 20),
+                      'mevo_min_confidence': (1, 99)}
             for key, (low, high) in bounds.items():
                 value = candidate[key]
                 if isinstance(value, bool) or not isinstance(value, int) or value < low or (high is not None and value > high):
@@ -652,7 +661,7 @@ class StrategyBot:
             except ValueError as exc:
                 raise ValueError('Geçersiz bot ayarı: copy_manual_since (YYYY-AA-GG)') from exc
             for key in ('use_stop_loss', 'use_take_profit', 'close_opposite', 'use_atr_filter', 'use_h4_filter', 'single_position',
-                        'trend_entry_on_start', 'copy_manual_trades', 'auto_lot_limits_demo', 'reenter_after_stop'):
+                        'trend_entry_on_start', 'copy_manual_trades', 'auto_lot_limits_demo', 'reenter_after_stop', 'use_mevo_confidence'):
                 if not isinstance(candidate[key], bool):
                     raise ValueError(f'Geçersiz bot ayarı: {key}')
             for key in ('stop_profit_amount', 'stop_loss_amount', 'copy_lot_override'):
@@ -1499,10 +1508,11 @@ class StrategyBot:
             status('WAITING_CROSS', f"MevO: fırsat yok (bekle). {(item or {}).get('reason', '')}".strip(), candle_time=candle_time)
             return 0
         conf = int(item.get('confidence') or 0)
-        need = max(MEVO_MIN_CONFIDENCE, int(item.get('min_confidence') or 0))     # MevO kötü gidişte eşiği kendisi yükseltir
-        if conf < need:
-            status('SKIPPED', f"MevO {item['action']} fırsatı model güveni %{conf} < %{need}; atlandı.", candle_time=candle_time)
-            return 0
+        if self.use_mevo_confidence:
+            need = int(self.mevo_min_confidence)
+            if conf < need:
+                status('SKIPPED', f"MevO {item['action']} fırsatı model güveni %{conf} < %{need}; atlandı.", candle_time=candle_time)
+                return 0
         blocked = blocking_warnings(item.get('warnings'))
         if blocked:
             status('SKIPPED', f"MevO {item['action']} fırsatı geçmiş zarar uyarısı nedeniyle atlandı: {blocked[0]}", candle_time=candle_time)

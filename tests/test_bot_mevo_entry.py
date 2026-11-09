@@ -6,12 +6,14 @@ from app.mt5_bridge import HMA_MAGIC
 from tests.test_bot_auto_trade_e2e import FakeMT5, POINT, live_bot, market
 
 
-def run(answer, start=450, end=470, mode='MEVO', max_positions=1):
+def run(answer, start=450, end=470, mode='MEVO', max_positions=1, **bot_kwargs):
     rows = market()
     client = FakeMT5(rows)
     bot = live_bot(client)
     bot.entry_mode = mode
     bot.max_bot_positions = max_positions
+    for k, v in bot_kwargs.items():
+        setattr(bot, k, v)
     calls = []
 
     def provider(sym, tf):
@@ -81,3 +83,19 @@ def test_multiple_positions_open_up_to_max_bot_positions():
 def test_max_one_keeps_the_ea_single_position_rule():
     client, _, _ = run({'action': 'BUY'}, start=450, end=520, max_positions=1)
     assert len(client.opened) == 1
+
+
+def test_mevo_confidence_configurable_and_toggleable():
+    # 1. Varsayılan %65 eşiği: %62 güven oranlı sinyal atlanır
+    client, bot, _ = run({'action': 'BUY', 'confidence': 62})
+    assert client.opened == []
+    key = bot._instance_key(bot.symbol, bot.timeframe_minutes)
+    assert 'MevO BUY fırsatı model güveni %62 < %65; atlandı.' in bot.symbol_status[key]['detail']
+
+    # 2. Güven oranı %60'a indirilirse: %62 güven oranlı sinyal işleme alınır
+    client2, _, _ = run({'action': 'BUY', 'confidence': 62}, mevo_min_confidence=60)
+    assert len(client2.opened) == 1 and client2.opened[0]['side'] == 'BUY'
+
+    # 3. Güven filtresi kapatılırsa: düşük güven oranında bile sinyal atlanmaz
+    client3, _, _ = run({'action': 'BUY', 'confidence': 40}, use_mevo_confidence=False)
+    assert len(client3.opened) == 1 and client3.opened[0]['side'] == 'BUY'

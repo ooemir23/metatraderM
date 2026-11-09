@@ -841,6 +841,21 @@
                       </div>
                       <p id="bot-lot-hint" class="bot-lot-hint" hidden></p>
                     </div>
+                    <div id="bot-quick-mevo-row" class="pt-1.5 border-t border-gray-800 space-y-1.5" hidden>
+                      <div class="flex items-center justify-between gap-2">
+                        <label for="bot-quick-mevo-conf-check" class="text-purple-300 font-medium flex items-center gap-1.5 cursor-pointer">
+                          <i class="ph-bold ph-brain text-purple-400"></i> MevO Güven Filtresi
+                        </label>
+                        <input type="checkbox" id="bot-quick-mevo-conf-check" onchange="saveBotQuickMevoConf()" checked class="rounded bg-gray-800 border-gray-700">
+                      </div>
+                      <div id="bot-quick-mevo-min-box" class="flex items-center justify-between gap-2">
+                        <span class="text-gray-400">Asgari Güven Eşiği</span>
+                        <div class="flex items-center gap-1">
+                          <span class="text-gray-400">%</span>
+                          <input id="bot-quick-mevo-min-conf" type="number" min="1" max="99" step="1" value="65" onchange="saveBotQuickMevoConf()" class="w-16 bg-[#14181f] border border-gray-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs font-bold">
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </details>
 
@@ -1167,6 +1182,23 @@
             <option value="HMA">HMA</option><option value="EMA" selected>EMA</option><option value="SMA">SMA</option><option value="LWMA">LWMA</option>
           </select></label>
           <label class="block">Periyot (InpSecondMAPeriod)<input type="number" id="cfg-ma2-period" value="34" min="2" max="200" class="block w-full rounded bg-gray-800 p-2"></label>
+        </fieldset>
+        <fieldset class="border border-purple-500/40 rounded-xl p-3 space-y-2 bg-purple-950/10">
+          <legend class="px-1 font-semibold text-purple-300 flex items-center gap-1.5">
+            <i class="ph-bold ph-brain text-purple-400"></i>
+            MevO AI Strateji Girişi
+          </legend>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="cfg-mevo-use-conf" checked>
+            <span>Model güven eşiği filtresi (MevO)</span>
+          </label>
+          <label class="block text-xs text-gray-300">
+            En düşük model güveni (%)
+            <input type="number" id="cfg-mevo-min-conf" min="1" max="99" step="1" value="65" class="mt-1 block w-full rounded bg-gray-800 p-2 font-mono">
+          </label>
+          <p class="text-[11px] text-gray-400">
+            Kapalıyken model güveni ne olursa olsun fırsat atlanmaz. Açıkken model güveni belirlenen oranın altındaki fırsatlar atlanır.
+          </p>
         </fieldset>
         </div>
         <div class="bot-settings-exits space-y-3">

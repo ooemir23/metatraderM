@@ -2736,16 +2736,16 @@ function renderBotLotHint(bot) {
   const cap = bot.max_order_lots == null ? NaN : Number(bot.max_order_lots);
   if (bot.lot_mode === 'RISK') {
     node.textContent = `Lot risk modunda (%${bot.risk_pct}) stopa göre hesaplanır; bu kutu kullanılmaz.`;
-    node.dataset.tone = '';
+    if (node.dataset) node.dataset.tone = '';
   } else if (cap > 0 && bot.lot_size > cap + 1e-9) {
     node.innerHTML = `"Şimdi AL/SAT" ${escapeHtml(String(bot.lot_size))} lot açar. Otomatik bot en fazla ${escapeHtml(String(cap))} lot açabilir; bu lotla bot başlatılamaz. `
       + `<button type="button" class="bot-lot-raise" onclick="raiseBotLotLimit()">Sınırı ${escapeHtml(String(bot.lot_size))} lot yap</button>`;
-    node.dataset.tone = 'warn';
+    if (node.dataset) node.dataset.tone = 'warn';
     const quick = document.getElementById('bot-quick-settings');
     if (quick && !quick.open) quick.open = true;
   } else {
     node.textContent = `"Şimdi AL/SAT" ve otomatik bot ${bot.lot_size} lot açar${cap > 0 ? ` (otomatik bot sınırı ${cap} lot)` : ''}.`;
-    node.dataset.tone = '';
+    if (node.dataset) node.dataset.tone = '';
   }
   node.hidden = false;
 }
@@ -2951,15 +2951,29 @@ function renderBotMode(bot) {
   const node = document.getElementById('bot-mode-line');
   if (!node || !bot) return;
   const pair = `${bot.fast_ma_type || 'HMA'} ${bot.hma_period} × ${bot.second_ma_type} ${bot.second_ma_period}`;
+  const confText = bot.use_mevo_confidence === false
+    ? 'güven filtresi kapalı'
+    : `güven ≥ %${bot.mevo_min_confidence ?? 65}`;
   const modes = {
-    MEVO: ['ph-brain', 'purple', 'MevO (DeepSeek)', 'Her kapanan mumda MevO fırsatına bakar; güven ≥ %65 ve geçmiş zarar uyarısı yoksa girer.'],
+    MEVO: ['ph-brain', 'purple', 'MevO (DeepSeek)', `Her kapanan mumda MevO fırsatına bakar; ${confText} ve geçmiş zarar uyarısı yoksa girer.`],
     MANUAL_STYLE: ['ph-hand-pointing', 'amber', 'Manuel işlemlerim tarzı', 'Manuel işlemlerinden öğrenilen sinyal AL/SAT olunca girer.'],
     CROSSOVER: ['ph-chart-line', 'cyan', `Strateji: ${pair} kesişimi`, 'Kapanmış mumda iki ortalama kesişince girer, ters kesişimde kapatır.'],
   };
   const [icon, tone, name, hint] = modes[bot.entry_mode] || modes.CROSSOVER;
-  node.dataset.tone = tone;
+  if (node.dataset) node.dataset.tone = tone;
   node.innerHTML = `<i class="ph-bold ${icon}"></i><span class="bot-mode-label">Çalışma şekli</span><strong>${escapeHtml(name)}</strong><span class="bot-mode-hint">${escapeHtml(hint)}</span>`;
   node.hidden = false;
+
+  const quickRow = document.getElementById('bot-quick-mevo-row');
+  if (quickRow) {
+    quickRow.hidden = bot.entry_mode !== 'MEVO';
+    const qCheck = document.getElementById('bot-quick-mevo-conf-check');
+    if (qCheck && document.activeElement !== qCheck) qCheck.checked = bot.use_mevo_confidence !== false;
+    const qMin = document.getElementById('bot-quick-mevo-min-conf');
+    if (qMin && document.activeElement !== qMin) qMin.value = String(bot.mevo_min_confidence ?? 65);
+    const minBox = document.getElementById('bot-quick-mevo-min-box');
+    if (minBox?.style) minBox.style.opacity = (bot.use_mevo_confidence !== false) ? '1' : '0.4';
+  }
 }
 
 // Protection / sizing summary line under the bot status.
@@ -3118,9 +3132,11 @@ const botSettingInputs = {
   'cfg-ma2-type': 'second_ma_type', 'cfg-ma2-period': 'second_ma_period', 'cfg-lot': 'lot_size',
   'cfg-sl-points': 'sl_points', 'cfg-tp-points': 'tp_points', 'cfg-copy-since': 'copy_manual_since',
   'cfg-stop-profit': 'stop_profit_amount', 'cfg-stop-loss': 'stop_loss_amount', 'cfg-copy-lot': 'copy_lot_override', 'cfg-max-bot-pos': 'max_bot_positions',
+  'cfg-mevo-min-conf': 'mevo_min_confidence',
 };
 const botSettingChecks = {'cfg-close-opp': 'close_opposite', 'cfg-use-sl': 'use_stop_loss', 'cfg-use-tp': 'use_take_profit',
-  'cfg-trend-entry': 'trend_entry_on_start', 'cfg-reenter': 'reenter_after_stop', 'cfg-copy-manual': 'copy_manual_trades', 'cfg-auto-lot-demo': 'auto_lot_limits_demo'};
+  'cfg-trend-entry': 'trend_entry_on_start', 'cfg-reenter': 'reenter_after_stop', 'cfg-copy-manual': 'copy_manual_trades', 'cfg-auto-lot-demo': 'auto_lot_limits_demo',
+  'cfg-mevo-use-conf': 'use_mevo_confidence'};
 // Automation lot limits (MAX_ORDER_LOTS / MAX_TOTAL_OPEN_LOTS / MAX_OPEN_ORDERS), editable from the panel.
 let loadedLotLimits = null;
 async function loadLotLimitsIntoForm() {
@@ -3160,6 +3176,7 @@ const EA_INPUTS = {
   'cfg-use-sl': true, 'cfg-sl-points': 200,                                         // InpUseStopLoss, InpStopLossPoints
   'cfg-use-tp': false, 'cfg-tp-points': 400,                                        // InpUseTakeProfit, InpTakeProfitPoints
   'cfg-max-order-lots': 0.10, 'cfg-max-total-lots': 0.50, 'cfg-max-open-orders': 10, // InpMaxOrderLots, InpMaxTotalLots, InpMaxOpenOrders
+  'cfg-mevo-use-conf': true, 'cfg-mevo-min-conf': 65,
 };
 function applyEaDefaults() {
   for (const [id, value] of Object.entries(EA_INPUTS)) {
@@ -3227,6 +3244,17 @@ async function saveBotSettings() {
   }
   const copySince = document.getElementById('cfg-copy-since')?.value;
   if (copySince) cfg.copy_manual_since = copySince;
+  const mevoUseConf = document.getElementById('cfg-mevo-use-conf');
+  if (mevoUseConf) cfg.use_mevo_confidence = Boolean(mevoUseConf.checked);
+  const mevoMinConf = document.getElementById('cfg-mevo-min-conf');
+  if (mevoMinConf && String(mevoMinConf.value || '') !== '') {
+    const mc = Number(mevoMinConf.value);
+    if (!Number.isInteger(mc) || mc < 1 || mc > 99) {
+      showToast('❌ MevO model güven oranı %1 ile %99 arası tam sayı olmalı.', 'error');
+      return;
+    }
+    cfg.mevo_min_confidence = mc;
+  }
   const limits = {
     max_order_lots: Number(document.getElementById('cfg-max-order-lots').value),
     max_total_lots: Number(document.getElementById('cfg-max-total-lots').value),
@@ -3999,6 +4027,36 @@ async function saveBotQuickLot() {
     fetchBotStatus();
   } catch (_) {
     showToast('❌ Bot lotu kaydedilemedi: sunucuya ulaşılamadı.', 'error');
+  }
+}
+
+async function saveBotQuickMevoConf() {
+  try {
+    const check = document.getElementById('bot-quick-mevo-conf-check');
+    const input = document.getElementById('bot-quick-mevo-min-conf');
+    const useConf = check ? Boolean(check.checked) : true;
+    const rawMin = parseInt(input?.value || '65', 10);
+    const minConf = Number.isFinite(rawMin) ? Math.min(99, Math.max(1, rawMin)) : 65;
+    if (input) input.value = String(minConf);
+    const minBox = document.getElementById('bot-quick-mevo-min-box');
+    if (minBox?.style) minBox.style.opacity = useConf ? '1' : '0.4';
+
+    const running = Boolean((typeof latestBotSettings !== 'undefined' && latestBotSettings?.is_running) || (typeof isBotRunning !== 'undefined' && isBotRunning));
+    const endpoint = running ? '/api/bot/follow' : '/api/bot/config';
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({use_mevo_confidence: useConf, mevo_min_confidence: minConf}),
+    });
+    if (res.ok) {
+      showToast(`🧠 MevO güven filtresi güncellendi (${useConf ? `%${minConf}` : 'kapalı'}).`, 'success');
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`❌ Ayar kaydedilemedi: ${typeof err.detail === 'string' ? err.detail : 'sunucu reddetti'}`, 'error');
+    }
+    fetchBotStatus();
+  } catch (_) {
+    showToast('❌ Ayar kaydedilemedi: sunucuya ulaşılamadı.', 'error');
   }
 }
 

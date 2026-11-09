@@ -109,11 +109,15 @@
     const ready = !!(st && st.configured && learned);
     const tf = context().tf;
     const tfOk = [5, 15, 30, 60, 240].includes(tf);
+    const botConf = (typeof latestBotSettings !== 'undefined' && latestBotSettings) || {};
+    const confNote = botConf.use_mevo_confidence === false
+      ? 'güven filtresi kapalı'
+      : `model güveni en az %${botConf.mevo_min_confidence ?? 65} olan`;
     const note = error ? `❌ ${esc(error)}`
       : !st.configured ? 'MevO için önce MevO sayfasında DeepSeek API anahtarını gir.'
       : !learned ? 'MevO henüz manuel işlemlerini öğrenmedi: MevO sayfasında "Manuel işlemlerimi öğren"e bas.'
       : !tfOk ? `MevO girişi ${esc(TF[tf] || tf)} zaman diliminde çalışmaz (token maliyeti); M5–H4 seçin.`
-      : `Bot, her kapanan mumda (pozisyon yokken) MevO'ya sorar; model güveni en az %65 olan ve geçmiş zarar uyarısı taşımayan AL/SAT fırsatını açar. SL/TP MevO'nun seviyeleri, lot kârlı manuel işlemlerinden. Mum başına en çok 1 DeepSeek isteği; bugün ${st.usage_today.calls}/${st.daily_call_limit}.`;
+      : `Bot, her kapanan mumda (pozisyon yokken) MevO'ya sorar; ${confNote} ve geçmiş zarar uyarısı taşımayan AL/SAT fırsatını açar. SL/TP MevO'nun seviyeleri, lot kârlı manuel işlemlerinden. Mum başına en çok 1 DeepSeek isteği; bugün ${st.usage_today.calls}/${st.daily_call_limit}.`;
     node.innerHTML = `<div class="sp-row sp-manual" data-tone="${current ? 'good' : 'idle'}">
       <div class="sp-rank">✨</div>
       <div class="sp-main">
